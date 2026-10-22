@@ -344,6 +344,13 @@ app.add_middleware(RequestBodySizeLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BY
 
 app.include_router(auth_router)
 
+# C02 Mission Execution backend (Phase 15 mission engine's first HTTP
+# surface) -- see orca/serve/mission_api.py's own module docstring for
+# this increment's exact, honest scope.
+from orca.serve.mission_api import router as mission_router  # noqa: E402
+
+app.include_router(mission_router)
+
 
 # G-023: every HTTPException / validation failure also carries a stable machine-readable `code` and an `error_id`, in the same shape the chat routes use.
 # `detail` is kept exactly as before so existing clients keep working.

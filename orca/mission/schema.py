@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS missions (
                            'DRAFT', 'PLANNING', 'READY', 'RUNNING', 'WAITING_TOOL',
                            'WAITING_EXTERNAL_EVENT', 'WAITING_APPROVAL', 'VERIFYING',
                            'COURT_REVIEW', 'PAUSED_USER', 'PAUSED_WINDOW_REACHED',
+                           'CANCELLATION_REQUESTED', 'CANCELLATION_UNRESOLVED',
                            'BLOCKED', 'FAILED', 'COMPLETED_UNVERIFIED',
                            'COMPLETED_VERIFIED', 'CANCELLED'
                        )),
@@ -415,4 +416,72 @@ ALTER TABLE operations ADD COLUMN IF NOT EXISTS parameters_fingerprint TEXT;
 ALTER TABLE operations ADD COLUMN IF NOT EXISTS requested_by TEXT;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS lease_id TEXT;
 ALTER TABLE authority_decisions ADD COLUMN IF NOT EXISTS requested_by TEXT;
+"""
+
+# ─────────────────────────────────────────────────────────────────
+#  AUDIT-C02-P0-03 ("cancellation truth"): adds CANCELLATION_REQUESTED
+#  as a real, persisted mission state, distinct from CANCELLED. A
+#  mission that MIGHT have a live worker process (RUNNING, any
+#  WAITING_* state, any PAUSED_* state, BLOCKED) can no longer
+#  transition directly to CANCELLED -- see
+#  orca.mission.state_machine's updated transition table -- it must
+#  pass through CANCELLATION_REQUESTED first, which is reached only
+#  to CANCELLED (worker termination confirmed) or FAILED
+#  (reconciliation could not confirm clean termination -- fail
+#  closed, never silently reported as a successful cancel). DRAFT/
+#  PLANNING/READY still go directly to CANCELLED: nothing is running
+#  in those states, so there is nothing to confirm terminated.
+#
+#  The CHECK constraint is widened by DROP + re-ADD under the same,
+#  Postgres-default-assigned name (`missions_state_check`) -- safe to
+#  re-run every `apply_schema()` call, matching this module's existing
+#  idempotent-migration discipline (ADD COLUMN IF NOT EXISTS above).
+# ─────────────────────────────────────────────────────────────────
+
+CANCELLATION_REQUESTED_MIGRATION_SQL = """
+ALTER TABLE missions DROP CONSTRAINT IF EXISTS missions_state_check;
+ALTER TABLE missions ADD CONSTRAINT missions_state_check CHECK (state IN (
+    'DRAFT', 'PLANNING', 'READY', 'RUNNING', 'WAITING_TOOL',
+    'WAITING_EXTERNAL_EVENT', 'WAITING_APPROVAL', 'VERIFYING',
+    'COURT_REVIEW', 'PAUSED_USER', 'PAUSED_WINDOW_REACHED',
+    'CANCELLATION_REQUESTED', 'CANCELLATION_UNRESOLVED',
+    'BLOCKED', 'FAILED', 'COMPLETED_UNVERIFIED',
+    'COMPLETED_VERIFIED', 'CANCELLED'
+));
+"""
+
+# ─────────────────────────────────────────────────────────────────
+#  CTO P0 correction on PR #79: the FIRST cancellation-truth fix
+#  (CANCELLATION_REQUESTED, above) still let the authenticated
+#  MISSION OWNER themselves supply a bare `termination_confirmed`
+#  boolean to /confirm-cancelled -- an ordinary user asserting their
+#  own worker's termination, with no independent evidence at all.
+#  Closed by:
+#    1. `cancellation_episode_id` -- a fresh, server-generated,
+#       unguessable token minted every time a mission ENTERS
+#       CANCELLATION_REQUESTED (never client-supplied). A
+#       confirmation must present the CURRENT episode id for this
+#       mission; a stale id (from an earlier cancellation episode) or
+#       a forged one is rejected, never silently accepted.
+#    2. `cancellation_episode_revision` -- the mission's own
+#       `current_revision` captured at the moment the episode began,
+#       so a confirmation is bound to the exact execution revision
+#       being cancelled, not merely the mission id.
+#    3. CANCELLATION_UNRESOLVED (added to the CHECK constraint above)
+#       -- a genuinely distinct, NON-terminal outcome for "a
+#       reconciliation attempt happened but could not determine the
+#       worker's fate" -- never silently folded into FAILED (which
+#       would misrepresent an unresolved cancellation as a confirmed
+#       execution failure) or into CANCELLED (which would misreport a
+#       possibly-still-running worker as safely stopped).
+#  The companion authorization fix -- confirmation requires a
+#  distinct, server-controlled reconciliation credential, never the
+#  mission owner's own session -- lives in
+#  orca.serve.mission_api._require_reconciliation_principal(), not in
+#  the schema.
+# ─────────────────────────────────────────────────────────────────
+
+CANCELLATION_EVIDENCE_MIGRATION_SQL = """
+ALTER TABLE missions ADD COLUMN IF NOT EXISTS cancellation_episode_id TEXT;
+ALTER TABLE missions ADD COLUMN IF NOT EXISTS cancellation_episode_revision TEXT;
 """
