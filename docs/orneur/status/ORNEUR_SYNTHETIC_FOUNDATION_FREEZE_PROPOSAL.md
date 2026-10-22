@@ -75,3 +75,11 @@ Founder review and explicit, recorded approval is requested for exactly one of:
 - **(c)** Decline the freeze at this time.
 
 No tag, merge, or founder-frozen marking will occur until one of the above is explicitly recorded by the founder.
+
+---
+
+## Addendum: housekeeping commits after the audited SHA
+
+Three further commits were pushed to this same branch after Section 1's `55eb4fe` (the exact commit Antigravity's Audit #078 independently reviewed and gave its PARTIAL/QUALIFIED verdict on): `d39b055` (this freeze proposal + the Audit #078 CI gate + a provenance correction), then `b1beaa6` (a mechanical fix: the imported Audit #078 suite's `import torch` broke CI's separate non-torch "Deterministic Unit Tests" job with a hard collection error instead of a clean skip — corrected to match this repo's own established `pytest.importorskip("torch")` pattern, no assertion or verdict logic touched). Exact-head CI for `b1beaa6` is independently observed green: run [`39757212478`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39757212478), `headSha` confirmed equal to `b1beaa6...`, conclusion `success`.
+
+**These three commits are documentation and CI-configuration only — no production code changed, and none of G01/G02/G03's own security logic was touched.** The proposed freeze point remains `55eb4fe`, the exact commit Antigravity's own independent audit evaluated; `d39b055`/`b1beaa6` are recorded here for transparency, not substituted as a new, unaudited freeze candidate.
