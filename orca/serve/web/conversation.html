@@ -74,6 +74,7 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .msg-actions button{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:inherit;font-size:11.5px;cursor:pointer;padding:4px 0}
 .msg-actions button:hover{color:var(--ink)}
 .unavailable-note{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;border:1px solid var(--border);border-radius:9px;padding:9px 12px;background:var(--chip)}
+.interrupted-badge{display:inline-flex;align-items:center;gap:7px;color:#b35c00;font-size:12px;border:1px solid #e3a44c;border-radius:9px;padding:7px 11px;margin-top:10px;background:var(--chip)}
 .thinking{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
 .dot-pulse{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:pulse 1.1s infinite ease-in-out}
 @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
@@ -151,7 +152,7 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
     </div>
     <div id="form-signup" style="display:none">
       <h1>Create your account</h1>
-      <p class="sub">Genesis is free. Novus and Aeternum unlock by plan.</p>
+      <p class="sub">Create an account to start a conversation.</p>
       <div class="autherr" id="su-error"></div>
       <input id="su-name" type="text" placeholder="Name"/>
       <input id="su-email" type="email" placeholder="Email" autocomplete="username"/>
@@ -272,6 +273,29 @@ function esc(t) {
   return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// AUDIT-B81-P0-01: allowlist URL schemes before a Markdown link's
+// destination is ever placed in an href attribute. esc() escapes HTML
+// metacharacters, not URL schemes -- javascript:/data:/vbscript: survive
+// esc() completely unchanged, so scheme validation has to be a separate,
+// explicit step. Browsers strip ASCII tab/newline/CR anywhere in a URL
+// before parsing its scheme (WHATWG URL spec), so "java\tscript:" is a
+// real javascript: URL at click time even though the raw text differs --
+// normalize those out before checking, not after.
+function _sanitizeLinkHref(rawUrl) {
+  const normalized = String(rawUrl)
+    .replace(/[\t\n\r]+/g, '')
+    .replace(/^[\u0000- ]+|[\u0000- ]+$/g, '');
+  const schemeMatch = normalized.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
+  if (!schemeMatch) {
+    // No scheme at all: a relative path, in-page anchor, or protocol-
+    // relative reference. Never executable, always safe as an href.
+    return rawUrl;
+  }
+  const scheme = schemeMatch[1].toLowerCase();
+  const ALLOWED_SCHEMES = new Set(['http', 'https', 'mailto']);
+  return ALLOWED_SCHEMES.has(scheme) ? rawUrl : null;
+}
+
 function mdToHtml(md) {
   let h = esc(md);
   h = h.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, c) => `<pre><code>${c.trim()}</code></pre>`);
@@ -283,7 +307,11 @@ function mdToHtml(md) {
   h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
   h = h.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
   h = h.replace(/(<li>[\s\S]+?<\/li>)/g, m => `<ul>${m}</ul>`);
-  h = h.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  h = h.replace(/\[(.+?)\]\((.+?)\)/g, (whole, text, url) => {
+    const safeHref = _sanitizeLinkHref(url);
+    if (safeHref === null) return `${text} [link removed: unsupported URL]`;
+    return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+  });
   h = h.replace(/\n\n/g, '</p><p>');
   h = h.replace(/\n/g, '<br>');
   return `<p>${h}</p>`
@@ -502,6 +530,52 @@ function appendUnavailableNote(message) {
   scrollReadingToBottom();
 }
 
+// AUDIT-B81-P1-01: a streaming answer bubble is created as soon as the
+// first chunk arrives, before we know the generation actually finished --
+// so, unlike appendAssistantMessage (used only for already-confirmed-
+// complete content: reloaded history, or a done event with no prior
+// chunks), it must NOT get a Copy action or any other "this is a
+// finished answer" affordance until finalizeStreamingMessage is called
+// from a genuine `done` event.
+function appendStreamingMessage() {
+  const container = document.getElementById('reading-container');
+  const div = document.createElement('div');
+  div.className = 'answer';
+  div.innerHTML = `<div class="answer-by"><span class="tiny-brand">O</span><b>ORNEUR</b></div>` +
+    `<div class="msg-body"></div>`;
+  container.appendChild(div);
+  scrollReadingToBottom();
+  return div;
+}
+
+function finalizeStreamingMessage(div, finalText) {
+  if (!div || div.querySelector('.msg-actions')) return;
+  const actions = document.createElement('div');
+  actions.className = 'msg-actions';
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.textContent = 'Copy';
+  btn.addEventListener('click', () => {
+    navigator.clipboard.writeText(finalText).then(() => { btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500); });
+  });
+  actions.appendChild(btn);
+  div.appendChild(actions);
+}
+
+// A closed connection is not a successful generation: mark whatever
+// partial text rendered so far as interrupted instead of letting it sit
+// there looking like a verified, completed answer.
+function markMessageInterrupted(div) {
+  if (!div) return;
+  const body = div.querySelector('.msg-body');
+  if (body && !body.querySelector('.interrupted-badge')) {
+    const badge = document.createElement('div');
+    badge.className = 'interrupted-badge';
+    badge.textContent = 'Response interrupted -- connection ended before completion.';
+    body.appendChild(badge);
+  }
+}
+
 function scrollReadingToBottom() {
   const region = document.getElementById('reading-region');
   region.scrollTop = region.scrollHeight;
@@ -533,6 +607,14 @@ async function sendMessage() {
   isStreaming = true;
   updateSendEnabled();
   const thinkEl = appendThinking();
+  // AUDIT-B81-P1-01: terminalState is the ONLY source of truth for
+  // whether generation genuinely finished. A closed network connection
+  // (the reader's `done: true` from reader.read(), or a thrown read
+  // error) is a completely different thing from a real `done` SSE event
+  // and must never be presented as one.
+  let terminalState = 'pending'; // 'pending' | 'done' | 'error'
+  let answerEl = null;
+  let rawBuffer = '';
 
   try {
     const resp = await fetch('/api/stream', {
@@ -547,7 +629,7 @@ async function sendMessage() {
     }
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
-    let answerEl = null, rawBuffer = '', sseBuf = '';
+    let sseBuf = '';
     const logMalformed = window.ORNEUR_SSE_DIAGNOSTICS ? window.ORNEUR_SSE_DIAGNOSTICS.createMalformedEventLogger() : (() => {});
 
     const processLine = (line) => {
@@ -561,14 +643,29 @@ async function sendMessage() {
           const t = thinkEl.querySelector('.thinking-text');
           if (t) t.textContent = ev.text;
         } else if (ev.type === 'chunk') {
-          if (!answerEl) { thinkEl.remove(); answerEl = appendAssistantMessage(''); }
+          if (!answerEl) { thinkEl.remove(); answerEl = appendStreamingMessage(); }
           rawBuffer += ev.text;
           answerEl.querySelector('.msg-body').innerHTML = mdToHtml(rawBuffer);
           scrollReadingToBottom();
         } else if (ev.type === 'done') {
-          if (!answerEl) { thinkEl.remove(); appendAssistantMessage(rawBuffer); }
+          terminalState = 'done';
+          if (!answerEl) {
+            thinkEl.remove();
+            if (rawBuffer.trim()) {
+              appendAssistantMessage(rawBuffer);
+            } else {
+              appendUnavailableNote('ORNEUR completed the request but returned no response content.');
+            }
+          } else {
+            finalizeStreamingMessage(answerEl, rawBuffer);
+          }
         } else if (ev.type === 'error') {
-          thinkEl.remove();
+          terminalState = 'error';
+          if (answerEl) {
+            markMessageInterrupted(answerEl);
+          } else {
+            thinkEl.remove();
+          }
           appendUnavailableNote(ev.message || 'An error occurred while generating a response.');
         }
       } catch (e) {
@@ -584,8 +681,20 @@ async function sendMessage() {
       sseBuf = lines.pop();
       lines.forEach(processLine);
     }
+
+    if (terminalState === 'pending') {
+      // The stream's underlying connection closed (EOF) without a real
+      // `done` or `error` event ever arriving -- covers a network
+      // disconnection, a truncated/malformed trailing SSE frame, or the
+      // server closing early. Never silently treat this as a successful
+      // completion just because the socket closed.
+      thinkEl.remove();
+      if (answerEl) markMessageInterrupted(answerEl);
+      appendUnavailableNote('The response stream ended unexpectedly before completion.');
+    }
   } catch (e) {
     thinkEl.remove();
+    if (answerEl) markMessageInterrupted(answerEl);
     appendUnavailableNote('Network error while streaming the response.');
   } finally {
     isStreaming = false;

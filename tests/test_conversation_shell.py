@@ -157,3 +157,14 @@ def test_session_messages_endpoint_denies_cross_user_access(client):
 def test_session_messages_endpoint_requires_authentication(client):
     resp = client.get("/api/session/some-id/messages")
     assert resp.status_code in (401, 404)  # fails closed either way -- never 200 with real content
+
+
+def test_signup_copy_makes_no_unapproved_pricing_or_plan_claims(client):
+    """AUDIT-B81-P1-02: production subscription plans/pricing/entitlements
+    have not received commercial founder approval -- the sign-up screen
+    must not promise free access, paid tiers, or specific entitlements."""
+    resp = client.get("/conversation")
+    body = resp.text
+    assert "Genesis is free" not in body
+    assert "unlock by plan" not in body
+    assert 'id="form-signup"' in body  # the form itself must still exist
