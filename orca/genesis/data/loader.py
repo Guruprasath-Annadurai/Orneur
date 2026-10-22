@@ -96,7 +96,10 @@ who can write the store and the manifest together.
 
 **Keyed mode**: pass a caller-supplied `cache_integrity_key` of at least
 32 bytes. The key is not read from the repository, not generated inside
-this module, and not treated as founder authority. The cache id then
+this module, and not treated as founder authority. After validation the
+value is stored as `CacheIntegrityKey`. Its `repr`, `str`, `format`,
+`bytes()` conversion, and pickle reduction do not include the raw key.
+`material()` is what HMAC uses. The cache id then
 includes a SHA-256 fingerprint of the key (not the key), each block
 digest is HMAC-SHA256, and the manifest carries an HMAC over the store
 digest and the digest-file digest. A coordinated rewrite that does not
@@ -182,6 +185,62 @@ class BlockStoreTamperedError(Exception):
     HMAC against a secret key)."""
 
 
+class CacheIntegrityKey:
+    """Caller-supplied HMAC key whose diagnostic forms omit the raw bytes.
+
+    `material()` is the only supported way to obtain the key for HMAC.
+    `repr`, `str`, `format`, `bytes()`, pickling, and `json` default
+    conversion do not reveal it. The object is not a `bytes` subclass,
+    because `bytes(subclass_instance)` would return the raw key.
+    """
+
+    __slots__ = ("_material",)
+
+    def __init__(self, material: bytes) -> None:
+        if not isinstance(material, (bytes, bytearray)):
+            raise TypeError("cache integrity key material must be bytes")
+        object.__setattr__(self, "_material", bytes(material))
+
+    def material(self) -> bytes:
+        return self._material
+
+    def __repr__(self) -> str:
+        return "CacheIntegrityKey(redacted)"
+
+    def __str__(self) -> str:
+        return "CacheIntegrityKey(redacted)"
+
+    def __format__(self, format_spec: str) -> str:
+        return "CacheIntegrityKey(redacted)"
+
+    def __bytes__(self) -> bytes:
+        raise TypeError("cache integrity key material is not available through bytes()")
+
+    def __reduce__(self):
+        raise TypeError("cache integrity key cannot be serialized")
+
+    def __deepcopy__(self, memo: dict) -> "CacheIntegrityKey":
+        cloned = CacheIntegrityKey(self._material)
+        memo[id(self)] = cloned
+        return cloned
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CacheIntegrityKey):
+            return NotImplemented
+        if len(self._material) != len(other._material):
+            return False
+        return hmac.compare_digest(self._material, other._material)
+
+    def __hash__(self) -> int:
+        return hash(("CacheIntegrityKey", hashlib.sha256(self._material).digest()))
+
+
+def _cache_key_bytes(key: CacheIntegrityKey | None) -> bytes | None:
+    if key is None:
+        return None
+    return key.material()
+
+
 @dataclass(frozen=True)
 class LoaderConfig:
     """Every knob the loader needs, validated eagerly. `packing=True`
@@ -242,16 +301,19 @@ class LoaderConfig:
         if self.max_record_bytes < 1:
             raise ValueError("max_record_bytes must be >= 1")
         if self.cache_integrity_key is not None:
-            if not isinstance(self.cache_integrity_key, (bytes, bytearray)):
+            raw_key = self.cache_integrity_key
+            if isinstance(raw_key, CacheIntegrityKey):
+                raw_key = raw_key.material()
+            if not isinstance(raw_key, (bytes, bytearray)):
                 raise ValueError("cache_integrity_key must be bytes")
-            key = bytes(self.cache_integrity_key)
-            object.__setattr__(self, "cache_integrity_key", key)
+            key = bytes(raw_key)
             if len(key) < _MIN_CACHE_INTEGRITY_KEY_BYTES:
                 raise ValueError(
                     f"cache_integrity_key is {len(key)} bytes; at least "
                     f"{_MIN_CACHE_INTEGRITY_KEY_BYTES} bytes are required. "
                     "A short key is not accepted, and this module will not mint one."
                 )
+            object.__setattr__(self, "cache_integrity_key", CacheIntegrityKey(key))
 
 
 @dataclass(frozen=True)
@@ -283,9 +345,10 @@ def compute_block_store_cache_id(cfg: LoaderConfig) -> str:
         "authorized_shard_digests": sorted(cfg.authorized_shard_digests.items()),
     }
     # Absent when unkeyed, so existing cache ids stay byte-identical.
-    if cfg.cache_integrity_key is not None:
+    key_bytes = _cache_key_bytes(cfg.cache_integrity_key)
+    if key_bytes is not None:
         payload["integrity_mode"] = _KEYED_INTEGRITY_MODE
-        payload["integrity_key_fingerprint"] = hashlib.sha256(cfg.cache_integrity_key).hexdigest()
+        payload["integrity_key_fingerprint"] = hashlib.sha256(key_bytes).hexdigest()
     canonical = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
 
@@ -469,9 +532,10 @@ class GenesisBlockDataset:
         return _KEYED_BLOCK_DIGEST_SIZE
 
     def _block_digest(self, raw: bytes) -> bytes:
-        if self.cfg.cache_integrity_key is None:
+        key_bytes = _cache_key_bytes(self.cfg.cache_integrity_key)
+        if key_bytes is None:
             return hashlib.sha256(raw).digest()[:_BLOCK_DIGEST_SIZE]
-        return hmac.new(self.cfg.cache_integrity_key, raw, hashlib.sha256).digest()
+        return hmac.new(key_bytes, raw, hashlib.sha256).digest()
 
     @staticmethod
     def _keyed_manifest_body(manifest: dict) -> dict:
@@ -479,7 +543,10 @@ class GenesisBlockDataset:
 
     def _keyed_manifest_tag(self, body: dict) -> str:
         canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-        return hmac.new(self.cfg.cache_integrity_key, canonical, hashlib.sha256).hexdigest()
+        key_bytes = _cache_key_bytes(self.cfg.cache_integrity_key)
+        if key_bytes is None:
+            raise BlockStoreTamperedError("keyed cache tag requested without cache_integrity_key")
+        return hmac.new(key_bytes, canonical, hashlib.sha256).hexdigest()
 
     def _require_keyed_manifest(self, manifest: dict) -> None:
         """Fail closed. A bad keyed manifest is never treated as a cache miss."""

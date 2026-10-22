@@ -6,6 +6,7 @@ represent N tasks as N native models.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 
@@ -32,6 +33,13 @@ class DependencyCycle(OrchestratorError):
 
 class UnknownTask(OrchestratorError):
     """No such task or handler."""
+
+
+class IdempotencyConflict(OrchestratorError):
+    """The idempotency key is already bound to a different request.
+
+    The error does not carry the previously registered task id.
+    """
 
 
 class ResultRejected(OrchestratorError):
@@ -84,7 +92,7 @@ class Orchestrator:
     spent: dict[str, int] = field(default_factory=dict)
     handlers: dict[str, tuple] = field(default_factory=dict)
     tasks: dict[str, TaskState] = field(default_factory=dict)
-    idempotency: dict[str, str] = field(default_factory=dict)
+    idempotency: dict[str, "_IdempotencyBinding"] = field(default_factory=dict)
     children: dict[str, list[str]] = field(default_factory=dict)
     traces: list[dict] = field(default_factory=list)
     closed: bool = False
@@ -119,8 +127,11 @@ class Orchestrator:
     def submit(self, spec: TaskSpec) -> str:
         if self.closed:
             raise ShutdownError("orchestrator is shut down")
-        if spec.idempotency_key in self.idempotency:
-            return self.idempotency[spec.idempotency_key]
+        if not spec.idempotency_key:
+            raise OrchestratorError("idempotency_key is required")
+        binding = self.idempotency.get(spec.idempotency_key)
+        if binding is not None:
+            return self._replay(spec, binding)
         if sum(1 for task in self.tasks.values() if task.status in {"QUEUED", "RUNNING", "DEFERRED"}) >= self.queue_bound:
             raise QueueSaturated(f"queue bound {self.queue_bound} reached")
         agent = self.agents.get(spec.agent_id)
@@ -142,12 +153,38 @@ class Orchestrator:
         if spec.parent_task_id is not None and spec.parent_task_id not in self.tasks:
             raise UnknownTask(f"parent task {spec.parent_task_id} is not known")
         self.tasks[spec.task_id] = TaskState(spec=spec, status="QUEUED")
-        self.idempotency[spec.idempotency_key] = spec.task_id
+        self.idempotency[spec.idempotency_key] = _IdempotencyBinding(
+            agent_id=spec.agent_id,
+            intent_digest=_intent_digest(spec),
+            task_id=spec.task_id,
+        )
         self.spent[agent.agent_id] += spec.cost_units
         if spec.parent_task_id is not None:
             self.children.setdefault(spec.parent_task_id, []).append(spec.task_id)
         self.traces.append({"event": "submit", "task_id": spec.task_id, "agent_id": spec.agent_id})
         return spec.task_id
+
+    def _replay(self, spec: TaskSpec, binding: "_IdempotencyBinding") -> str:
+        """Return the original task id only for the same principal and the same intent.
+
+        A different agent, a different payload, or a caller who no longer holds
+        the handler permission gets an error that does not include the
+        original task id. A matching retry does not enqueue a second task and
+        does not spend the budget again.
+        """
+        if binding.agent_id != spec.agent_id:
+            raise PermissionDenied("idempotency key is bound to a different principal")
+        if _intent_digest(spec) != binding.intent_digest:
+            raise IdempotencyConflict("idempotency key does not match this request")
+        agent = self.agents.get(spec.agent_id)
+        if agent is None:
+            raise PermissionDenied(f"unknown agent {spec.agent_id}")
+        if spec.handler not in self.handlers:
+            raise UnknownTask(f"unknown handler {spec.handler}")
+        _fn, permission = self.handlers[spec.handler]
+        if permission not in agent.permissions:
+            raise PermissionDenied(f"agent {agent.agent_id} lacks permission {permission}")
+        return binding.task_id
 
     def _require_acyclic(self, spec: TaskSpec) -> None:
         visiting: set[str] = set()
@@ -294,6 +331,34 @@ class Orchestrator:
             if before == after:
                 raise OrchestratorError("tick made no progress; refusing to spin")
         raise OrchestratorError("run_until_idle exceeded max_ticks")
+
+
+@dataclass(frozen=True)
+class _IdempotencyBinding:
+    agent_id: str
+    intent_digest: str
+    task_id: str
+
+
+def _intent_digest(spec: TaskSpec) -> str:
+    """Canonical identity of a request, excluding task_id and agent_id.
+
+    `task_id` may differ on a legitimate retry. `agent_id` is compared
+    separately so a cross-principal collision is not reported as a payload mismatch.
+    """
+    body = {
+        "handler": spec.handler,
+        "payload": spec.payload,
+        "depends_on": list(spec.depends_on),
+        "parent_task_id": spec.parent_task_id,
+        "cost_units": spec.cost_units,
+        "timeout_ticks": spec.timeout_ticks,
+    }
+    try:
+        canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise OrchestratorError("payload is not JSON-serializable") from exc
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _accept_result(raw: object) -> dict:

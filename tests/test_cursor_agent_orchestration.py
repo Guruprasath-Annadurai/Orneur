@@ -7,6 +7,7 @@ from orca.pretrain_foundation.agents import (
     AgentIdentity,
     BudgetExhausted,
     DependencyCycle,
+    IdempotencyConflict,
     Orchestrator,
     PermissionDenied,
     QueueSaturated,
@@ -71,12 +72,16 @@ def test_duplicate_idempotency_key_does_not_run_twice():
 
     orch = _orch()
     orch.register_handler("ok", handler, "read")
-    first = orch.submit(_task("same", idempotency_key="same-key"))
-    second = orch.submit(_task("other-id", idempotency_key="same-key"))
-    assert first == second
+    payload = {"n": "same", "a": 1}
+    first = orch.submit(_task("same", idempotency_key="same-key", payload=payload))
+    second = orch.submit(_task("other-id", idempotency_key="same-key", payload={"a": 1, "n": "same"}))
+    assert first == second == "same"
     orch.run_until_idle()
     assert calls["n"] == 1
     assert orch.tasks[first].status == "SUCCEEDED"
+    third = orch.submit(_task("replayed-id", idempotency_key="same-key", payload=payload))
+    assert third == first
+    assert calls["n"] == 1
 
 
 def test_cancellation_cascades_and_shutdown_rejects_new_work():
@@ -137,6 +142,47 @@ def test_dependency_cycle_is_rejected():
     orch.tasks["a"] = TaskState(spec=_task("a", depends_on=("b",)), status="QUEUED")
     with pytest.raises(DependencyCycle):
         orch.submit(_task("b", idempotency_key="b", depends_on=("a",)))
+
+
+def test_idempotency_key_is_bound_to_principal_and_intent():
+    victim_task = "VICTIM-TASK-9f3a"
+    orch = _orch()
+    orch.register_agent(AgentIdentity("intruder", None, frozenset({"read", "write"}), 5))
+    orch.register_handler("other", lambda payload, ctx: {"ok": True}, "read")
+    payload = {"n": "stable"}
+    original = orch.submit(_task(victim_task, idempotency_key="replay-key", payload=payload))
+    assert original == victim_task
+
+    def _rejected(submit):
+        with pytest.raises((PermissionDenied, IdempotencyConflict)) as caught:
+            submit()
+        text = f"{caught.value} {caught.value!r}"
+        assert victim_task not in text
+        assert "intruder-task" not in orch.tasks
+        assert orch.spent["intruder"] == 0
+        return caught.value
+
+    _rejected(lambda: orch.submit(_task(
+        "intruder-task", agent_id="intruder", idempotency_key="replay-key", payload=payload,
+    )))
+    _rejected(lambda: orch.submit(_task(
+        "intruder-task", agent_id="intruder", idempotency_key="replay-key", payload=payload, handler="other",
+    )))
+    mismatch = _rejected(lambda: orch.submit(_task(
+        "other-id", idempotency_key="replay-key", payload={"n": "altered"},
+    )))
+    assert isinstance(mismatch, IdempotencyConflict)
+    handler_mismatch = _rejected(lambda: orch.submit(_task(
+        "other-id", idempotency_key="replay-key", payload=payload, handler="other",
+    )))
+    assert isinstance(handler_mismatch, IdempotencyConflict)
+
+    orch.agents["root"] = AgentIdentity("root", None, frozenset(), 5)
+    with pytest.raises(PermissionDenied) as denied:
+        orch.submit(_task("ignored", idempotency_key="replay-key", payload=payload))
+    assert victim_task not in f"{denied.value} {denied.value!r}"
+    assert orch.tasks[victim_task].status == "QUEUED"
+    assert len(orch.tasks) == 1
 
 
 def test_non_object_result_is_rejected_by_the_contract():

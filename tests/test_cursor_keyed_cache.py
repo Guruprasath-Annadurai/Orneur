@@ -109,6 +109,73 @@ def test_wrong_key_does_not_accept_another_keys_cache_files(tmp_path):
         GenesisBlockDataset(cfg_b, _FakeTokenizer())
 
 
+def test_cache_integrity_key_is_absent_from_diagnostic_forms(tmp_path):
+    import copy
+    import dataclasses
+    import io
+    import logging
+    import pickle
+
+    from orca.genesis.data.loader import CacheIntegrityKey
+
+    secret = b"SYNTHETIC-CACHE-SECRET-DO-NOT-LEAK"
+    assert len(secret) >= 32
+    revealed = secret.decode("ascii")
+    mutable = bytearray(secret)
+    digests = _shard(tmp_path)
+    cfg = _cfg(tmp_path, digests, key=mutable)
+    mutable[:9] = b"MUTATED!!"
+    assert isinstance(cfg.cache_integrity_key, CacheIntegrityKey)
+    assert cfg.cache_integrity_key.material() == secret
+
+    rendered = "\n".join([
+        repr(cfg),
+        str(cfg),
+        format(cfg),
+        format(cfg.cache_integrity_key),
+        f"{cfg.cache_integrity_key}",
+        repr(dataclasses.asdict(cfg)),
+        repr(dataclasses.astuple(cfg)),
+        json.dumps(dataclasses.asdict(cfg), default=str),
+        compute_block_store_cache_id(cfg),
+    ])
+    buffer = io.StringIO()
+    logger = logging.getLogger("cursor-cache-key-redaction")
+    logger.handlers.clear()
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(buffer)
+    logger.addHandler(handler)
+    try:
+        logger.error("config %s", cfg)
+        logger.error("key %s", cfg.cache_integrity_key)
+        try:
+            raise RuntimeError(repr(cfg))
+        except RuntimeError as exc:
+            rendered += "\n" + str(exc) + "\n" + repr(exc)
+        with pytest.raises(TypeError, match="not available through bytes"):
+            bytes(cfg.cache_integrity_key)
+        with pytest.raises(TypeError, match="cannot be serialized") as pickled:
+            pickle.dumps(cfg)
+        rendered += "\n" + str(pickled.value)
+        copied = copy.deepcopy(cfg)
+        rendered += "\n" + repr(copied)
+        assert copied.cache_integrity_key.material() == secret
+    finally:
+        logger.removeHandler(handler)
+    rendered += "\n" + buffer.getvalue()
+    built = GenesisBlockDataset(cfg, _FakeTokenizer())
+    built.close()
+    for path in tmp_path.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            assert secret not in path.read_bytes()
+    assert revealed not in rendered
+
+    with pytest.raises(ValueError, match="at least") as short:
+        _cfg(tmp_path, digests, key=b"SYNTHETIC-CACHE-SECRET")
+    assert "SYNTHETIC-CACHE-SECRET" not in str(short.value)
+    assert "SYNTHETIC-CACHE-SECRET" not in repr(short.value)
+
+
 def test_unkeyed_loader_refuses_a_keyed_manifest(tmp_path):
     digests = _shard(tmp_path)
     key = b"c" * 32

@@ -21,4 +21,12 @@ Implementation commit: `4398150a41af424e1d04c7e83d314c6ef4b1ca17`. The GitHub ru
 | F13 acceptance evidence | P0 | Ledger not modified. | this directory | preflight | Founder and independent reviewers. |
 | F14 developer preflight | P1 | Script runs. | `scripts/cursor/pretraining_preflight.py` | executed locally | None. |
 
-Independent audit: required before any of this is treated as accepted. This register is not that audit.
+## Security correction on PR #80
+
+| Task | Priority | Status | Source | Tests | Blocker |
+|---|---|---|---|---|---|
+| HMAC key confidentiality | P0 | Local tests passed. Exact-head CI is the PR head after this commit. | `orca/genesis/data/loader.py` `CacheIntegrityKey` | `tests/test_cursor_keyed_cache.py::test_cache_integrity_key_is_absent_from_diagnostic_forms` | Keyed mode stays opt-in. No founder key was minted. |
+| Idempotency authority binding | P0 | Local tests passed. | `orca/pretrain_foundation/agents.py` `Orchestrator.submit` | `tests/test_cursor_agent_orchestration.py` | In-process state is still readable by the orchestrator holder. |
+| Corpus pathname substitution | P0 | Reproduced, then rejected with `O_NOFOLLOW` opens. | `orca/genesis/data/pipeline.py` | `tests/test_cursor_pipeline_admission.py` plus `tests/test_genesis_data_pipeline.py` | Ancestor symlinks above an input leaf are still followed when `allowed_root` is unset. Checkpoint confinement was not reopened. |
+
+Independent audit: required before any of this is treated as accepted. This register is not that audit. Handoff: `ORNEUR_ANTIGRAVITY_SECURITY_HANDOFF.md`.
