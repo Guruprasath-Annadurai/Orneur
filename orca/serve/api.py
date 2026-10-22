@@ -936,6 +936,19 @@ async def serve_trust():
     return HTMLResponse("<h1>Orneur trust page not found</h1>")
 
 
+@app.get("/conversation", response_class=HTMLResponse)
+async def serve_conversation_shell():
+    """B01/B02/B03 founder-approved conversation experience (separate from
+    the pre-existing /app page, which is left unmodified -- preserving its
+    existing functionality -- while this route hosts the new, approved
+    visual design wired to the SAME real backend endpoints /app already
+    uses)."""
+    page = WEB_DIR / "conversation.html"
+    if page.exists():
+        return HTMLResponse(page.read_text())
+    return HTMLResponse("<h1>Orneur conversation UI not found</h1>")
+
+
 def _brand_asset(role: str) -> Optional[Path]:
     """Founder-approved brand file for ``role`` (see web/brand/ASSETS.json), or None."""
     try:
