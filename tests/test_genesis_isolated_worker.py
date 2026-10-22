@@ -626,3 +626,406 @@ def test_phase3_checkpoint_commands_fail_closed_after_revocation(tmp_path):
         assert not worker.is_alive, "worker must terminate after a checkpoint command's own authorization check fails"
     finally:
         worker.stop()
+
+
+# ==============================================================================
+# CTO pre-freeze correction directive, Phase 1 -- checkpoint path validation vs. used path.
+# ==============================================================================
+
+def test_audit077_relative_checkpoint_path_is_actually_written_inside_the_workspace(tmp_path):
+    """AUDIT-077 Phase 1: independently reproduces, through the ACTUAL
+    save_checkpoint/restore_checkpoint IPC handlers (not the validation
+    helper in isolation), that a RELATIVE checkpoint path is both
+    validated against, AND actually written inside, the configured
+    workspace -- not silently written relative to the worker process's
+    own current working directory, which is what the pre-fix code did
+    (it validated `workspace / requested_path` but then passed the
+    ORIGINAL, unresolved `requested_path` string to the real
+    save_resumable_checkpoint() call)."""
+    workspace = tmp_path / "workspace"
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            relative_name = "relative_ckpt.pt"
+            resp = client.save_checkpoint(
+                path=relative_name, integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is True, resp
+
+            # The checkpoint (and its sidecar manifest) must exist INSIDE
+            # the configured workspace, under that exact relative name --
+            # never anywhere else (e.g. the worker's own cwd).
+            expected = workspace / relative_name
+            assert expected.exists(), f"expected checkpoint at {expected}, but it does not exist there"
+            assert expected.with_suffix(".pt.resumable.json").exists()
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_relative_checkpoint_path_round_trips_by_the_same_relative_name(tmp_path):
+    """Companion to the test above: save then restore using the exact
+    SAME relative path string through the real IPC handlers, proving
+    the validated path and the used path are now one and the same on
+    both the write and the read side."""
+    workspace = tmp_path / "workspace"
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            key = secrets.token_bytes(32)
+            relative_name = "round_trip_ckpt.pt"
+            save_resp = client.save_checkpoint(
+                path=relative_name, integrity_key=key, sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert save_resp["ok"] is True, save_resp
+            assert (workspace / relative_name).exists()
+
+            restore_resp = client.restore_checkpoint(
+                path=relative_name, integrity_key=key, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert restore_resp["ok"] is True, restore_resp
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_path_traversal_outside_workspace_via_relative_dotdot_is_rejected(tmp_path):
+    """Item 5: path traversal via '../' must still be rejected, through
+    the real IPC handler, not merely the validation helper."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            resp = client.save_checkpoint(
+                path="../escape.pt", integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is False
+            assert "CheckpointWorkspaceViolationError" in resp["error"]
+            assert not (tmp_path / "escape.pt").exists()
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_symlinked_checkpoint_target_is_rejected(tmp_path):
+    """Item 5: a pre-planted symlink AT the target checkpoint path
+    (inside an otherwise-valid workspace path) must be rejected, not
+    silently followed to wherever it points."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    outside_target = tmp_path / "outside_target.pt"
+    symlink_path = workspace / "ckpt.pt"
+    symlink_path.symlink_to(outside_target)
+
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            resp = client.save_checkpoint(
+                path="ckpt.pt", integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is False
+            assert "CheckpointWorkspaceViolationError" in resp["error"]
+            assert not outside_target.exists()
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_symlinked_parent_directory_inside_workspace_is_rejected(tmp_path):
+    """Item 5: a symlinked PARENT DIRECTORY component between the
+    workspace root and the checkpoint file -- not just the final
+    filename -- must also be rejected."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    outside_dir = tmp_path / "outside_dir"
+    outside_dir.mkdir(parents=True, exist_ok=True)
+    (workspace / "subdir").symlink_to(outside_dir)
+
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            resp = client.save_checkpoint(
+                path="subdir/ckpt.pt", integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is False
+            assert "CheckpointWorkspaceViolationError" in resp["error"]
+            assert not (outside_dir / "ckpt.pt").exists()
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_absolute_path_inside_workspace_still_works_consistently(tmp_path):
+    """Absolute and relative paths must be handled consistently: an
+    ABSOLUTE path that is genuinely inside the workspace must still
+    work, and must resolve to the exact same file a later restore by
+    the same absolute path finds."""
+    workspace = tmp_path / "workspace"
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            key = secrets.token_bytes(32)
+            abs_path = str(workspace / "abs_ckpt.pt")
+            save_resp = client.save_checkpoint(path=abs_path, integrity_key=key, sampler_position=0, sampler_seed=0, sampler_num_blocks=1)
+            assert save_resp["ok"] is True, save_resp
+            restore_resp = client.restore_checkpoint(path=abs_path, integrity_key=key, sampler_seed=0, sampler_num_blocks=1)
+            assert restore_resp["ok"] is True, restore_resp
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_phase2_cross_run_checkpoint_restoration_is_rejected_by_default(tmp_path):
+    """AUDIT-077 Phase 2: reproduced BEFORE the fix that run A's
+    checkpoint could be restored into run B (same model/step config,
+    same dataset identity fields, different run_id) with no explicit
+    authorization at all -- the restore simply succeeded. Fixed via
+    resumable_checkpoint.py's new HMAC-bound `owning_run_id` check:
+    cross-run restoration through the worker's own IPC handler (which
+    never passes `allow_cross_run_migration=True`) must now be rejected."""
+    workspace = tmp_path / "workspace"
+    cfg_a = _make_cfg(tmp_path, run_id="cross-run-a", checkpoint_workspace_dir=workspace)
+    worker_a = IsolatedTrainingWorker(cfg_a)
+    worker_a.start()
+    ckpt_path = str(workspace / "ckpt.pt")
+    key = secrets.token_bytes(32)
+    try:
+        client_a = worker_a.client()
+        client_a.connect()
+        try:
+            resp = client_a.save_checkpoint(path=ckpt_path, integrity_key=key, sampler_position=0, sampler_seed=0, sampler_num_blocks=1)
+            assert resp["ok"] is True
+        finally:
+            client_a.close()
+    finally:
+        worker_a.stop()
+
+    # Worker B: a DIFFERENT run_id, but the SAME model_cfg/step_cfg/dataset identity fields.
+    cfg_b = _make_cfg(tmp_path, run_id="cross-run-b", checkpoint_workspace_dir=workspace)
+    worker_b = IsolatedTrainingWorker(cfg_b)
+    worker_b.start()
+    try:
+        client_b = worker_b.client()
+        client_b.connect()
+        try:
+            restore_resp = client_b.restore_checkpoint(path=ckpt_path, integrity_key=key, sampler_seed=0, sampler_num_blocks=1)
+            assert restore_resp["ok"] is False
+            assert "CrossRunCheckpointAccessError" in restore_resp["error"]
+        finally:
+            client_b.close()
+    finally:
+        worker_b.stop()
+
+
+def test_audit077_destination_substitution_after_validation_is_incidentally_defeated_by_atomic_rename(tmp_path):
+    """AUDIT-077 Phase 1, item 6/8: investigates the narrow TOCTOU window
+    between `_enforce_checkpoint_path_confinement()` returning a validated
+    path and `save_resumable_checkpoint()` actually using it -- an
+    attacker swaps the validated target name to a symlink pointing
+    OUTSIDE the workspace in that exact window.
+
+    **Finding, verified directly (not assumed)**: this specific
+    substitution shape does NOT succeed, because `save_resumable
+    _checkpoint()`'s own atomic-write discipline (`tempfile.mkstemp()`
+    + `os.replace()`) never opens the destination NAME for writing --
+    POSIX `rename()`/`os.replace()` unlinks and replaces whatever
+    directory entry currently sits at the destination name (a symlink
+    included) rather than following it to write through to its target.
+    This is an INCIDENTAL protection from the pre-existing atomic-
+    publish pattern, not a purpose-built defense this phase added --
+    recorded here as a genuine, verified finding, not silently assumed.
+
+    **What remains honestly undemonstrated, not claimed closed**: a
+    substitution of an INTERMEDIATE PARENT DIRECTORY component (as
+    opposed to the final filename), or a substitution landing during
+    the temp file's own write rather than at the final rename, are
+    different attack shapes this specific test does not exercise and
+    this phase does not claim to have closed. A fully race-resistant
+    design would still require directory-descriptor-relative
+    (`openat`-style) operations threaded through `resumable_checkpoint
+    .py`'s own API -- deliberately out of scope for this phase's
+    smallest-necessary-correction mandate."""
+    import orca.genesis.training.isolated_worker as worker_module
+
+    workspace = tmp_path / "workspace"
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            real_fn = worker_module._enforce_checkpoint_path_confinement
+            outside_dir = tmp_path / "outside"
+            outside_dir.mkdir(parents=True, exist_ok=True)
+            substituted = {"done": False}
+
+            def patched(cfg_arg, requested_path):
+                resolved = real_fn(cfg_arg, requested_path)
+                if not substituted["done"]:
+                    substituted["done"] = True
+                    # Simulate an attacker swapping the validated target
+                    # to a symlink pointing OUTSIDE the workspace, in the
+                    # narrow window between validation and the actual
+                    # save_resumable_checkpoint() open() call.
+                    resolved.parent.mkdir(parents=True, exist_ok=True)
+                    resolved.symlink_to(outside_dir / "escaped.pt")
+                return resolved
+
+            worker_module._enforce_checkpoint_path_confinement = patched
+            try:
+                resp = client.save_checkpoint(
+                    path="race_target.pt", integrity_key=secrets.token_bytes(32),
+                    sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+                )
+            finally:
+                worker_module._enforce_checkpoint_path_confinement = real_fn
+
+            # The save succeeds (the atomic rename simply replaces the
+            # symlink itself), but NOTHING is ever written to the
+            # attacker's intended outside location -- verified directly,
+            # not assumed.
+            assert resp["ok"] is True, resp
+            assert not (outside_dir / "escaped.pt").exists()
+            assert not (outside_dir / "escaped.pt.resumable.json").exists()
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_phase2_lockfile_and_manifest_sidecar_paths_are_confined_with_the_checkpoint(tmp_path):
+    """CTO final pre-freeze directive, item 2: the lock-file and manifest
+    sidecar paths are derived (by resumable_checkpoint.py's own
+    _resumable_manifest_path() and its lock_path construction) directly
+    from whatever path save_resumable_checkpoint()/restore_resumable_checkpoint()
+    receive -- which, after the Phase 1 fix, is always the worker's
+    validated, confined `confined_path`, never the client's raw string.
+    This test proves that through the real IPC handlers: using a
+    relative path with an intermediate subdirectory, both the lock file
+    (`.{name}.resumable.lock`) and the manifest (`{name}.resumable.json`)
+    land strictly inside the configured workspace, next to the checkpoint
+    itself -- never at a location derived from the worker's own cwd."""
+    workspace = tmp_path / "workspace"
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            relative_name = "subdir/nested_ckpt.pt"
+            resp = client.save_checkpoint(
+                path=relative_name, integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is True, resp
+
+            expected_ckpt = workspace / relative_name
+            expected_manifest = expected_ckpt.with_suffix(".pt.resumable.json")
+            expected_lock = expected_ckpt.parent / f".{expected_ckpt.name}.resumable.lock"
+
+            assert expected_ckpt.exists(), f"checkpoint not found at {expected_ckpt}"
+            assert expected_manifest.exists(), f"manifest not found at {expected_manifest}"
+            assert expected_lock.exists(), f"lock file not found at {expected_lock}"
+
+            # None of these sidecar files exist anywhere outside the workspace
+            # (e.g. relative to the worker process's own cwd).
+            cwd_relative_manifest = Path.cwd() / relative_name
+            assert not cwd_relative_manifest.with_suffix(".pt.resumable.json").exists()
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_audit077_phase2_raw_ipc_cannot_smuggle_allow_cross_run_migration(tmp_path):
+    """CTO final pre-freeze directive, item 3: the untrusted IPC wire
+    protocol must not be able to bypass the cross-run ownership check
+    by any means, including a raw payload key the typed client method
+    never exposes. `restore_checkpoint`'s IPC handler
+    (isolated_worker.py) calls restore_resumable_checkpoint() with a
+    fixed, explicit set of kwargs derived from the worker's own
+    verified state and a handful of named payload fields -- it never
+    reads an `allow_cross_run_migration` key from `payload` at all, so
+    there is no way to reach that parameter over the wire. This test
+    proves it directly: a raw request (bypassing IsolatedWorkerClient's
+    typed restore_checkpoint() method entirely, via the same low-level
+    `_request()` the typed method itself uses) that includes
+    `allow_cross_run_migration: True` in its payload must still be
+    rejected exactly like an ordinary cross-run restore attempt."""
+    workspace_a = tmp_path / "workspace"
+    cfg_a = _make_cfg(tmp_path, run_id="smuggle-run-a", checkpoint_workspace_dir=workspace_a)
+    worker_a = IsolatedTrainingWorker(cfg_a)
+    worker_a.start()
+    key = secrets.token_bytes(32)
+    try:
+        client_a = worker_a.client()
+        client_a.connect()
+        try:
+            save_resp = client_a.save_checkpoint(
+                path="owned_by_a.pt", integrity_key=key, sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert save_resp["ok"] is True, save_resp
+        finally:
+            client_a.close()
+    finally:
+        worker_a.stop()
+
+    cfg_b = _make_cfg(tmp_path, run_id="smuggle-run-b", checkpoint_workspace_dir=workspace_a)
+    worker_b = IsolatedTrainingWorker(cfg_b)
+    worker_b.start()
+    try:
+        client_b = worker_b.client()
+        client_b.connect()
+        try:
+            # Bypass the typed restore_checkpoint() method -- which has no
+            # allow_cross_run_migration parameter to begin with -- and send
+            # the raw request directly, exactly as that typed method itself
+            # would, but with an extra, smuggled payload key.
+            raw_resp = client_b._request("restore_checkpoint", {
+                "path": "owned_by_a.pt", "integrity_key_hex": key.hex(),
+                "sampler_seed": 0, "sampler_num_blocks": 1,
+                "allow_cross_run_migration": True,
+            })
+            assert raw_resp["ok"] is False, raw_resp
+            assert "CrossRunCheckpointAccessError" in raw_resp["error"], raw_resp
+        finally:
+            client_b.close()
+    finally:
+        worker_b.stop()

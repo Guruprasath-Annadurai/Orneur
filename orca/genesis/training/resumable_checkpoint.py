@@ -177,7 +177,54 @@ Independently reproduced: the prior code only checked `if not
 integrity_key`, silently accepting e.g. a 1-byte key. `_require_strong
 _integrity_key()` now rejects any `integrity_key` shorter than
 `MIN_INTEGRITY_KEY_BYTES` (32 bytes / 256 bits) in both save and
-restore, raising `WeakIntegrityKeyError`."""
+restore, raising `WeakIntegrityKeyError`.
+
+## Antigravity Audit #077 remediation
+
+### Cross-run checkpoint ownership
+Independently reproduced before this fix: `restore_resumable_checkpoint()`
+never recorded, or checked, WHICH run a checkpoint was originally saved
+under -- `run_id` was used only to look up the anti-rollback ledger
+(Audit #075), never bound into the checkpoint's own manifest. A
+checkpoint saved under one `run_id` could therefore be restored under
+an entirely DIFFERENT `run_id` with no explicit authorization at all,
+as long as `config_fingerprint`/`dataset_identity` happened to match
+(e.g. the same model/dataset, re-authorized under a fresh grant) --
+nothing in this module's governance contract declared this an
+intended, permitted capability, and nothing required a separately
+authorized path for it.
+
+**Fixed**: the manifest now carries `owning_run_id` (the `run_id` the
+checkpoint was SAVED under), HMAC-bound exactly like every other
+tagged field -- it cannot be forged without `integrity_key`.
+`restore_resumable_checkpoint()` now REQUIRES `manifest.owning_run_id
+== run_id`, unconditionally; a mismatch raises
+`CrossRunCheckpointAccessError`, binding checkpoint ownership to the
+verified run. This does not weaken, replace, or bypass the existing
+HMAC integrity tag or the anti-rollback ledger check in any way -- it
+is an additional, independent check alongside them.
+
+**AUDIT-077 P0-02 update (CTO security remediation directive)**: an
+earlier version of this fix added an explicitly named
+`allow_cross_run_migration: bool = False` parameter for a genuinely
+intended migration. Antigravity's independent requalification found
+that, while never exposed over any untrusted worker IPC surface, ANY
+direct Python caller (an orchestration script, a test, a future
+feature) could bypass run ownership entirely merely by passing that
+boolean -- no cryptographic proof of authorization was required or
+checked at all. Per the CTO's explicit instruction, that parameter is
+now DISABLED on every callable path: passing `allow_cross_run_migration
+=True` raises `CrossRunMigrationDisabledError` instead of proceeding.
+If genuine cross-run migration is ever required, it needs a SEPARATE,
+explicitly designed governance contract -- not reinstated here --
+carrying: an authenticated source run, an authenticated target run,
+the exact checkpoint digest being migrated, the authorizing principal,
+a signed and independently verifiable grant, expiry and revocation
+semantics, single-purpose scope (a grant usable for exactly one
+migration, not a standing capability), replay resistance, and durable
+evidence of the migration having occurred. No such mechanism is
+invented, designed in detail, or issued here -- this module simply
+refuses the previously-unauthenticated bypass until one exists."""
 from __future__ import annotations
 
 import fcntl
@@ -190,11 +237,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import orca.config as orca_config
-from orca.config import _mkdir_owner_only
-from orca.genesis.training.checkpoint_integrity import ChecksumMismatchError, _sha256_of_file
+from orca.config import _dirfd_mkstemp, _mkdir_owner_only, _open_dir_no_symlinks
+from orca.genesis.training.checkpoint_integrity import ChecksumMismatchError
 from orca.genesis.training.primitives import TrainingState, load_training_state, save_training_state
 
-RESUMABLE_SCHEMA_VERSION = "genesis-resumable-checkpoint/2"  # Audit #074 P0-04: now includes an HMAC integrity tag
+RESUMABLE_SCHEMA_VERSION = "genesis-resumable-checkpoint/3"  # AUDIT-077 Phase 2: now also binds owning_run_id (see CrossRunCheckpointAccessError)
 LEDGER_SCHEMA_VERSION = "genesis-checkpoint-ledger/1"  # Audit #075 P0-04: anti-rollback monotonic ledger
 MIN_INTEGRITY_KEY_BYTES = 32  # Audit #075: minimum acceptable HMAC key strength (256 bits)
 
@@ -244,6 +291,34 @@ class WeakIntegrityKeyError(Exception):
     silently accepting a 1-byte key with no real HMAC security margin."""
 
 
+class CrossRunCheckpointAccessError(Exception):
+    """AUDIT-077 Phase 2: raised by `restore_resumable_checkpoint()`
+    when the checkpoint's own HMAC-bound `owning_run_id` does not match
+    the `run_id` the restore is being performed under. See the module
+    docstring, "Cross-run checkpoint ownership", for why this exists."""
+
+
+class CrossRunMigrationDisabledError(Exception):
+    """AUDIT-077 P0-02 (CTO security remediation directive, "Remove the
+    unauthenticated cross-run migration override"): raised when a
+    caller passes `allow_cross_run_migration=True` to
+    `restore_resumable_checkpoint()`. Antigravity's independent
+    requalification found that parameter let ANY direct Python caller
+    adopt a foreign run's checkpoint merely by passing a boolean -- no
+    cryptographic proof of authorization (no signed migration grant, no
+    founder signature, no expiry/revocation semantics) was required or
+    checked. Per the CTO's explicit instruction, this override is now
+    DISABLED on every callable path -- not merely undocumented or
+    discouraged -- until a proper governance contract is designed and
+    approved (authenticated source/target run, exact checkpoint digest,
+    authorizing principal, signed/verifiable grant, expiry/revocation,
+    single-purpose scope, replay resistance, durable evidence -- see
+    this module's own docstring, "Cross-run checkpoint ownership", for
+    the proposed shape). Ordinary same-run restoration is unaffected;
+    this exception fires ONLY when a caller explicitly asks for
+    migration, never for a normal same-run restore."""
+
+
 def compute_config_fingerprint(*objs: object) -> str:
     """A single, deterministic SHA-256 over any number of JSON-
     serializable config objects (dataclasses, via `asdict`, or plain
@@ -277,6 +352,7 @@ class DatasetIdentity:
 _TAGGED_FIELDS = (
     "schema_version", "inner_checkpoint_sha256", "global_step", "microbatch_in_cycle",
     "sampler_position", "sampler_seed", "sampler_num_blocks", "config_fingerprint", "dataset_identity",
+    "owning_run_id",
 )
 
 
@@ -300,6 +376,7 @@ class ResumableManifest:
     sampler_num_blocks: int
     config_fingerprint: str
     dataset_identity: DatasetIdentity
+    owning_run_id: str  # AUDIT-077 Phase 2: the run_id this checkpoint was SAVED under; HMAC-bound, checked on restore unless migration is explicitly requested
     integrity_tag: str  # Audit #074 P0-04: HMAC-SHA256 over every field above, keyed by the caller's integrity_key
 
     def _tagged_fields_dict(self) -> dict:
@@ -411,6 +488,23 @@ def _advance_ledger(run_id: str, integrity_key: bytes, observed_step: int) -> No
         raise
 
 
+def _sha256_via_dirfd(dir_fd: int, name: str) -> str:
+    """Same content-hash as `checkpoint_integrity._sha256_of_file()`, but
+    reads the file by opening `name` relative to an already-open,
+    no-follow-verified `dir_fd` (from `_open_dir_no_symlinks()`) instead
+    of re-resolving a fresh path string -- AUDIT-077 P0-01: once
+    `save_resumable_checkpoint()` holds `dir_fd`, every operation it
+    performs on the checkpoint it just wrote must go through that same
+    descriptor, never a new string resolution an attacker could have
+    redirected in the interim."""
+    fd = os.open(name, os.O_RDONLY, dir_fd=dir_fd)
+    h = hashlib.sha256()
+    with os.fdopen(fd, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def save_resumable_checkpoint(
     *, path: Path, training_state: TrainingState, global_step: int, microbatch_in_cycle: int,
     sampler_position: int, sampler_seed: int, sampler_num_blocks: int,
@@ -445,42 +539,66 @@ def save_resumable_checkpoint(
     if not run_id:
         raise ValueError("run_id is required and must be non-empty -- Audit #075 P0-04 binds every save to this run's own anti-rollback ledger")
 
+    # AUDIT-077 P0-01 fix (intermediate-ancestor TOCTOU escape,
+    # independently reproduced and found by Antigravity's requalification
+    # before this fix): this function used to re-resolve `path.parent` as
+    # a fresh string via `_mkdir_owner_only()` -- which deliberately
+    # FOLLOWS a same-uid-owned ancestor symlink, the exact loophole a
+    # same-uid attacker exploited by racing a symlink substitution into
+    # the window between `_enforce_checkpoint_path_confinement()`'s
+    # validation and this function's own directory resolution -- then
+    # performed the lock file, temp file, and manifest rename each via
+    # ANOTHER independent path-string resolution. `save_training_state()`
+    # (called below) now hardens its OWN inner checkpoint write the same
+    # way; this function separately opens ITS OWN held `dir_fd` via
+    # `_open_dir_no_symlinks()` (never following a non-root-owned ancestor
+    # symlink) and performs every subsequent operation of its own --
+    # hashing the just-written checkpoint, the `.resumable.lock` file,
+    # and the manifest's temp-write + rename -- through that one held
+    # descriptor, never re-resolving a path string again.
     path = Path(path)
-    parent = _mkdir_owner_only(path.parent, parents=True)
-    lock_path = parent / f".{path.name}.resumable.lock"
-    with open(lock_path, "a+") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    save_training_state(training_state, path)
+    parent_fd = _open_dir_no_symlinks(path.parent, parents=True)
+    try:
+        lock_fd = os.open(f".{path.name}.resumable.lock", os.O_RDWR | os.O_CREAT, 0o600, dir_fd=parent_fd)
         try:
-            save_training_state(training_state, path)
-            tagged_fields = {
-                "schema_version": RESUMABLE_SCHEMA_VERSION, "inner_checkpoint_sha256": _sha256_of_file(path),
-                "global_step": global_step, "microbatch_in_cycle": microbatch_in_cycle,
-                "sampler_position": sampler_position, "sampler_seed": sampler_seed,
-                "sampler_num_blocks": sampler_num_blocks, "config_fingerprint": config_fingerprint,
-                "dataset_identity": asdict(dataset_identity),
-            }
-            manifest = ResumableManifest(
-                **{k: v for k, v in tagged_fields.items() if k != "dataset_identity"},
-                dataset_identity=dataset_identity,
-                integrity_tag=_compute_integrity_tag(integrity_key, tagged_fields),
-            )
-            manifest_path = _resumable_manifest_path(path)
-            fd, tmp_str = tempfile.mkstemp(dir=parent, prefix=f".{manifest_path.name}.tmp-")
-            tmp = Path(tmp_str)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
             try:
-                with os.fdopen(fd, "w") as f:
-                    f.write(json.dumps(manifest.to_dict()))
-                    f.flush()
-                    os.fsync(f.fileno())
-                tmp.chmod(0o600)
-                os.replace(tmp, manifest_path)
-            except BaseException:
-                tmp.unlink(missing_ok=True)
-                raise
-            _advance_ledger(run_id, integrity_key, global_step)
-            return manifest
+                tagged_fields = {
+                    "schema_version": RESUMABLE_SCHEMA_VERSION, "inner_checkpoint_sha256": _sha256_via_dirfd(parent_fd, path.name),
+                    "global_step": global_step, "microbatch_in_cycle": microbatch_in_cycle,
+                    "sampler_position": sampler_position, "sampler_seed": sampler_seed,
+                    "sampler_num_blocks": sampler_num_blocks, "config_fingerprint": config_fingerprint,
+                    "dataset_identity": asdict(dataset_identity), "owning_run_id": run_id,
+                }
+                manifest = ResumableManifest(
+                    **{k: v for k, v in tagged_fields.items() if k != "dataset_identity"},
+                    dataset_identity=dataset_identity,
+                    integrity_tag=_compute_integrity_tag(integrity_key, tagged_fields),
+                )
+                manifest_name = _resumable_manifest_path(path).name
+                tmp_fd, tmp_name = _dirfd_mkstemp(parent_fd, prefix=f".{manifest_name}.tmp-")
+                try:
+                    os.fchmod(tmp_fd, 0o600)
+                    with os.fdopen(tmp_fd, "w") as f:
+                        f.write(json.dumps(manifest.to_dict()))
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_name, manifest_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                except BaseException:
+                    try:
+                        os.unlink(tmp_name, dir_fd=parent_fd)
+                    except FileNotFoundError:
+                        pass
+                    raise
+                _advance_ledger(run_id, integrity_key, global_step)
+                return manifest
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
         finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            os.close(lock_fd)
+    finally:
+        os.close(parent_fd)
 
 
 @dataclass
@@ -501,6 +619,7 @@ class RestoredRun:
 def restore_resumable_checkpoint(
     *, path: Path, expected_config_fingerprint: str, expected_dataset_identity: DatasetIdentity,
     expected_sampler_seed: int, expected_sampler_num_blocks: int, integrity_key: bytes, run_id: str,
+    allow_cross_run_migration: bool = False,
 ) -> RestoredRun:
     """The trusted, fail-closed restore boundary. Verifies, IN ORDER,
     before applying anything:
@@ -531,20 +650,81 @@ def restore_resumable_checkpoint(
        anti-rollback ledger (stored OUTSIDE this checkpoint's own
        directory -- see `_ledger_path()`'s docstring for its explicit,
        honest scope): restoring a checkpoint older than the highest
-       step this run has already recorded raises `CheckpointRollbackError`."""
+       step this run has already recorded raises `CheckpointRollbackError`.
+    7. **(AUDIT-077 Phase 2 / P0-02)** The manifest's own HMAC-bound
+       `owning_run_id` (the `run_id` it was SAVED under) must equal the
+       `run_id` this restore is being performed under, unconditionally
+       -- `allow_cross_run_migration` is accepted for signature
+       compatibility but DISABLED: passing `True` raises
+       `CrossRunMigrationDisabledError` rather than bypassing this
+       check. See the module docstring, "Cross-run checkpoint
+       ownership"."""
     _require_strong_integrity_key(integrity_key)
     if not run_id:
         raise ValueError("run_id is required and must be non-empty -- Audit #075 P0-04 checks this run's own anti-rollback ledger")
     path = Path(path)
     manifest_path = _resumable_manifest_path(path)
-    if not manifest_path.exists():
-        raise ResumableManifestTamperedError(f"no resumable manifest found at {manifest_path} for checkpoint {path}")
-    manifest = ResumableManifest.from_dict(json.loads(manifest_path.read_text()))
-    if manifest.schema_version != RESUMABLE_SCHEMA_VERSION:
+
+    # AUDIT-077 P0-01 ("ensure restore operations use equally safe
+    # file-opening semantics"): open the checkpoint's parent directory
+    # ONCE via `_open_dir_no_symlinks()` (never following a non-root-
+    # owned ancestor symlink) and read both the manifest and the
+    # checkpoint's content hash through that single held descriptor --
+    # never a freshly re-resolved path string, which a same-uid attacker
+    # could have redirected via an ancestor symlink swap between an
+    # earlier validation and this read. This is read-side defense in
+    # depth: a redirected read would in any case be caught below by the
+    # HMAC/content-hash checks (an attacker without `integrity_key`
+    # cannot forge a matching manifest), but closing the same structural
+    # class of gap as the save-side fix keeps the two paths consistent.
+    try:
+        parent_fd = _open_dir_no_symlinks(path.parent, parents=False)
+    except FileNotFoundError:
+        raise ResumableManifestTamperedError(f"no resumable manifest found at {manifest_path} for checkpoint {path}") from None
+    try:
+        try:
+            manifest_fd = os.open(manifest_path.name, os.O_RDONLY, dir_fd=parent_fd)
+        except FileNotFoundError:
+            raise ResumableManifestTamperedError(f"no resumable manifest found at {manifest_path} for checkpoint {path}") from None
+        with os.fdopen(manifest_fd, "r") as f:
+            raw_text = f.read()
+        try:
+            raw_manifest = json.loads(raw_text)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise ResumableManifestTamperedError(f"resumable manifest at {manifest_path} is not valid JSON -- refusing to trust it: {e}") from e
+        try:
+            actual_sha256 = _sha256_via_dirfd(parent_fd, path.name)
+        except FileNotFoundError:
+            raise ResumableManifestTamperedError(f"no checkpoint file found at {path} (manifest exists, but the checkpoint it describes does not)") from None
+    finally:
+        os.close(parent_fd)
+
+    # AUDIT-077 Phase 6: the schema_version check MUST happen on the raw,
+    # untrusted dict -- BEFORE ever attempting to construct a
+    # `ResumableManifest` from it. A legacy (pre-Audit-077) schema-v1/v2
+    # manifest lacks `owning_run_id` entirely; constructing the
+    # dataclass directly from such a dict previously raised a bare,
+    # unintentional-looking `TypeError` (a missing constructor argument)
+    # instead of a clean, deliberate rejection -- independently
+    # reproduced before this fix. Every unrecognized or legacy
+    # schema_version, including one from a manifest this code cannot
+    # even fully parse into today's shape, is now rejected the SAME way:
+    # fail closed, with the SAME `ResumableManifestTamperedError`, never
+    # a generic crash that could be mistaken for a bug rather than the
+    # deliberate boundary it is. An old manifest's own HMAC tag (computed
+    # under a DIFFERENT, no-longer-current field set) could never
+    # validate against today's `_TAGGED_FIELDS` shape regardless -- this
+    # check simply makes that rejection explicit and legible rather than
+    # accidental.
+    if not isinstance(raw_manifest, dict) or raw_manifest.get("schema_version") != RESUMABLE_SCHEMA_VERSION:
         raise ResumableManifestTamperedError(
-            f"resumable manifest at {manifest_path} declares schema_version={manifest.schema_version!r}, "
-            f"but this code only understands {RESUMABLE_SCHEMA_VERSION!r}"
+            f"resumable manifest at {manifest_path} declares schema_version="
+            f"{raw_manifest.get('schema_version') if isinstance(raw_manifest, dict) else '<not a JSON object>'!r}, "
+            f"but this code only understands {RESUMABLE_SCHEMA_VERSION!r} -- a legacy or unrecognized schema "
+            f"version is never authenticated against today's field set and is always rejected, fail-closed, "
+            f"rather than partially parsed"
         )
+    manifest = ResumableManifest.from_dict(raw_manifest)
 
     expected_tag = _compute_integrity_tag(integrity_key, manifest._tagged_fields_dict())
     if not hmac.compare_digest(expected_tag, manifest.integrity_tag):
@@ -555,7 +735,6 @@ def restore_resumable_checkpoint(
             f"was supplied. Refusing to trust any field in this manifest."
         )
 
-    actual_sha256 = _sha256_of_file(path)
     if actual_sha256 != manifest.inner_checkpoint_sha256:
         raise ChecksumMismatchError(
             f"checkpoint at {path} has sha256 {actual_sha256}, but its resumable manifest at "
@@ -577,6 +756,37 @@ def restore_resumable_checkpoint(
             f"cannot safely resume from {path}: the live setup does not exactly match what this "
             f"checkpoint was saved under -- mismatched field(s): {mismatches}. Exact resumption is "
             f"not possible; this is a fail-closed rejection, not a best-effort partial resume."
+        )
+
+    # AUDIT-077 Phase 2 / P0-02 (CTO security remediation directive):
+    # cross-run checkpoint ownership. Independently reproduced before
+    # the Phase 2 fix: a checkpoint saved under one run_id could be
+    # restored under a DIFFERENT run_id with no explicit authorization
+    # at all, as long as config_fingerprint/dataset_identity happened to
+    # match. Phase 2 bound ownership via HMAC-tagged `owning_run_id` but
+    # left an `allow_cross_run_migration: bool` escape hatch; Antigravity's
+    # independent requalification found that ANY direct Python caller
+    # could bypass run ownership merely by passing that boolean, with no
+    # cryptographic proof of authorization whatsoever. Per the CTO's
+    # explicit instruction, that escape hatch is now DISABLED on every
+    # callable path: requesting it raises `CrossRunMigrationDisabledError`
+    # instead of silently proceeding, rather than being silently ignored.
+    # Ordinary same-run restoration (the overwhelming common case) is
+    # completely unaffected by this -- the check below fires only for an
+    # actual cross-run restore attempt.
+    if allow_cross_run_migration:
+        raise CrossRunMigrationDisabledError(
+            "allow_cross_run_migration=True was requested, but cross-run checkpoint "
+            "migration is disabled on every callable path pending a proper, cryptographically "
+            "verifiable migration governance contract (see CrossRunMigrationDisabledError's own "
+            "docstring for the proposed shape) -- no founder grant is invented or issued here."
+        )
+    if manifest.owning_run_id != run_id:
+        raise CrossRunCheckpointAccessError(
+            f"checkpoint at {path} was saved under run_id {manifest.owning_run_id!r}, but this restore is "
+            f"being performed under run_id {run_id!r} -- checkpoint ownership is bound to the run that "
+            f"created it, and cross-run migration is not currently supported by any callable path (see "
+            f"CrossRunMigrationDisabledError)."
         )
 
     training_state = load_training_state(path)

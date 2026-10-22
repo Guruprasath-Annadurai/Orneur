@@ -155,10 +155,15 @@ def test_interrupted_manifest_write_leaves_old_manifest_intact(tmp_path, monkeyp
     # deterministic ".manifest.json.tmp" name) -- patch os.replace itself.
     original_os_replace = ci.os.replace
 
-    def _patched_replace(src, dst):
+    def _patched_replace(src, dst, **kwargs):
         if ".manifest.json.tmp-" in str(src):
             raise OSError("simulated crash during manifest rename")
-        return original_os_replace(src, dst)
+        # AUDIT-077 P0-01: save_training_state()'s own os.replace() call
+        # now passes src_dir_fd/dst_dir_fd (dir-fd-confined rename); this
+        # stub must pass them through unchanged for that unrelated call
+        # to keep working, since this test only cares about simulating a
+        # crash on checkpoint_integrity.py's OWN manifest rename above.
+        return original_os_replace(src, dst, **kwargs)
 
     monkeypatch.setattr(ci.os, "replace", _patched_replace)
     with pytest.raises(OSError, match="simulated crash"):
