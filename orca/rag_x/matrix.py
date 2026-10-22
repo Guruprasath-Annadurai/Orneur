@@ -13,7 +13,7 @@ from orca.rag_x.contracts import CapabilityClass
 CAPABILITIES: dict[str, dict[str, str]] = {
     "RAG-01": {"class": CapabilityClass.IMPLEMENTED_AND_QUALIFIED.value, "path": "orca.rag_x.kernel mode=naive", "limitation": "Term-count baseline over the in-memory corpus."},
     "RAG-02": {"class": CapabilityClass.RESEARCH_PROTOTYPE.value, "path": "orca.rag_x.rank.hash_embed", "limitation": "Default embedder is synthetic_hash_v1. mode=dense-neural is BACKEND_UNAVAILABLE without an injected function."},
-    "RAG-03": {"class": CapabilityClass.IMPLEMENTED_AND_QUALIFIED.value, "path": "orca.rag_x.rank.bm25_scores", "limitation": "In-memory Okapi BM25, not a durable posting index."},
+    "RAG-03": {"class": CapabilityClass.IMPLEMENTED_AND_QUALIFIED.value, "path": "orca.docs.sparse.bm25_scores", "limitation": "Shared in-memory Okapi BM25. Not a durable posting index. The research kernel calls this same function."},
     "RAG-04": {"class": CapabilityClass.IMPLEMENTED_AND_QUALIFIED.value, "path": "orca.rag_x.kernel mode=hybrid", "limitation": "Reciprocal rank fusion of BM25 and the active embedder. Fallback is not labeled hybrid."},
     "RAG-05": {"class": CapabilityClass.IMPLEMENTED_AND_QUALIFIED.value, "path": "orca.rag_x.kernel mode=contextual", "limitation": "Uses a stored context prefix. It does not generate a new prefix with a model."},
     "RAG-06": {"class": CapabilityClass.IMPLEMENTED_AND_QUALIFIED.value, "path": "orca.rag_x.kernel mode=rerank", "limitation": "Default reranker is lexical overlap. A callable reranker can replace it. No hosted rerank model is configured."},

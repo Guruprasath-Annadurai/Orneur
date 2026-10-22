@@ -47,6 +47,7 @@ from orca.truth.contracts import CorrectiveRound, CounterEvidenceResult, Counter
 from orca.truth.corrective import is_repeat_query, reform_query
 from orca.truth.counter_evidence import find_counter_evidence
 from orca.truth.decomposition import decompose_query
+from orca.truth.access import AccessDenied
 from orca.truth.errors import TruthBudgetExhaustedError, TruthTimeoutError
 from orca.truth.fetch import FETCH_TIMEOUT_S, extract_text, fetch_document, sanitize_extracted_text
 from orca.truth.graph import EvidenceGraph
@@ -80,8 +81,10 @@ class TruthFabric:
         *,
         doc_store=None,
         budget: CognitiveBudget | None = None,
+        access=None,
     ) -> TruthResult:
         start = time.monotonic()
+        self._require_store_access(doc_store, access)
         plan = build_retrieval_plan(request.objective, intent, complexity, request.evidence_requirement, request.freshness_requirement)
 
         if plan.mode == RetrievalMode.RAG_0_NONE:
@@ -117,7 +120,7 @@ class TruthFabric:
         deadline = time.monotonic() + OVERALL_DEADLINE_S
         try:
             evidence, sources, queries_issued = await asyncio.wait_for(
-                self._retrieve(plan, doc_store=doc_store, budget=budget, retrieval_ledger=retrieval_ledger), timeout=OVERALL_DEADLINE_S,
+                self._retrieve(plan, doc_store=doc_store, budget=budget, retrieval_ledger=retrieval_ledger, access=access), timeout=OVERALL_DEADLINE_S,
             )
         except asyncio.TimeoutError:
             raise TruthTimeoutError(internal_detail=f"exceeded OVERALL_DEADLINE_S={OVERALL_DEADLINE_S}")
@@ -178,7 +181,7 @@ class TruthFabric:
             round_index += 1
             try:
                 new_evidence, new_sources, new_queries_issued = await asyncio.wait_for(
-                    self._retrieve(plan, doc_store=doc_store, budget=budget, query_override=reformed["reformed_query"], web_allowed=False, retrieval_ledger=retrieval_ledger),
+                    self._retrieve(plan, doc_store=doc_store, budget=budget, query_override=reformed["reformed_query"], web_allowed=False, retrieval_ledger=retrieval_ledger, access=access),
                     timeout=RETRIEVAL_TIMEOUT_S,
                 )
             except TruthBudgetExhaustedError:
@@ -381,8 +384,16 @@ class TruthFabric:
             routing_decision_ids=[extractor_decision.decision_id, verifier_decision.decision_id],
         )
 
+    def _require_store_access(self, doc_store, access) -> None:
+        """Stores that opt in cannot be read with a caller-supplied tenant string."""
+        if doc_store is None or not getattr(doc_store, "requires_trusted_session", False):
+            return
+        permits = getattr(doc_store, "permits", None)
+        if not callable(permits) or not permits(access):
+            raise AccessDenied("document store requires a current trusted session")
+
     async def _retrieve(
-        self, plan, *, doc_store, budget, query_override: str | None = None, web_allowed: bool = True, retrieval_ledger=None,
+        self, plan, *, doc_store, budget, query_override: str | None = None, web_allowed: bool = True, retrieval_ledger=None, access=None,
     ) -> tuple[list[Evidence], list[EvidenceSource], int]:
         """Returns (evidence, sources, queries_issued). `query_override`
         (used by the corrective-retrieval loop) replaces the plan's own
@@ -395,6 +406,7 @@ class TruthFabric:
         call AND every corrective round -- multi-hop sub-queries within a
         single call already share the same counter/budget object, so no
         additional per-hop allocation is created here."""
+        self._require_store_access(doc_store, access)
         evidence: list[Evidence] = []
         sources: list[EvidenceSource] = []
         queries_issued = 0

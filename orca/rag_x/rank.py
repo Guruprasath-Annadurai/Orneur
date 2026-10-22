@@ -20,29 +20,10 @@ def tokenize(text: str) -> list[str]:
 
 
 def bm25_scores(query: str, documents: list[str], *, k1: float = 1.2, b: float = 0.75) -> list[float]:
-    """Okapi BM25 over the provided documents. Empty input scores nothing."""
-    tokenized = [tokenize(doc) for doc in documents]
-    query_terms = tokenize(query)
-    n_docs = len(tokenized)
-    if n_docs == 0 or not query_terms:
-        return [0.0] * n_docs
-    avgdl = sum(len(toks) for toks in tokenized) / n_docs
-    df: Counter[str] = Counter()
-    for toks in tokenized:
-        df.update(set(toks))
-    scores: list[float] = []
-    for toks in tokenized:
-        tf = Counter(toks)
-        dl = len(toks)
-        score = 0.0
-        for term in query_terms:
-            if term not in tf:
-                continue
-            idf = math.log(1.0 + (n_docs - df[term] + 0.5) / (df[term] + 0.5))
-            denom = tf[term] + k1 * (1 - b + b * dl / avgdl)
-            score += idf * (tf[term] * (k1 + 1)) / denom
-        scores.append(score)
-    return scores
+    """Okapi BM25. The implementation lives in `orca.docs.sparse` so the research kernel and the authorized index share one scorer."""
+    from orca.docs.sparse import bm25_scores as shared_bm25_scores
+
+    return shared_bm25_scores(query, documents, k1=k1, b=b)
 
 
 def term_count_scores(query: str, documents: list[str]) -> list[float]:

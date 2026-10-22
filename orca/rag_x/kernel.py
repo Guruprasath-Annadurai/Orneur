@@ -1,8 +1,12 @@
-"""Composable retrieval kernel.
+"""Research-only retrieval kernel.
 
-Strategies are selected by `RetrievalRequest.mode`. Permission filtering,
-provenance, and citation checks are always applied. A retrieved document
-cannot change the caller's scope or grant a tool.
+Canonical local retrieval is `orca.truth.indexed_query.run_authorized_retrieval`
+on `orca.docs.authorized_index.AuthorizedIndex`. This module does not make
+that path's authorization or evidence-policy decisions.
+
+Strategies here are selected by `RetrievalRequest.mode` and run on synthetic
+fixtures. A retrieved document cannot change the caller's scope or grant a tool.
+`synthetic_hash_v1` is not a neural encoder.
 """
 from __future__ import annotations
 

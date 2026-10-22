@@ -307,8 +307,10 @@ def test_foundation_lifecycle_data_scaling_and_feedback():
         checkpoint_dataset_digest="abc", evaluation_id="ev", evaluation_approved=True,
         model_family="genesis", model_family_trained=True,
     ))
-    assert complete == LifecycleDecision.CHAIN_COMPLETE_TRAINING_NOT_AUTHORIZED
-    assert "does not start training" in notes[0]
+    assert complete == LifecycleDecision.FAIL_CLOSED
+    assert "no NativePretrainingGrant was supplied" in notes
+    assert "caller authorization claim ignored: FOUNDER_GRANT" in notes
+    assert not any("founder grant matched" in note for note in notes)
 
     rights = RightsRecord("CC0-1.0", "fixture://rights", ("synthetic",))
     admitted, error = admit_text("r1", "café".encode(), rights, split="train")

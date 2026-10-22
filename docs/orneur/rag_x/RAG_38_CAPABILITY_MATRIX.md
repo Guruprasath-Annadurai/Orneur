@@ -1,6 +1,6 @@
 # RAG-38 capability matrix
 
-Scope: `orca/rag_x` on synthetic in-memory fixtures. Local test: `python3 -m pytest tests/test_rag_x_foundation.py` (16 passed in this session). This is not a production retrieval service and not an independent audit.
+Scope: `orca/rag_x` on synthetic in-memory fixtures. The canonical local path is `orca.docs.authorized_index` with `orca.truth.indexed_query`, not `orca.rag_x.execute`. Local research-kernel test: `python3 -m pytest tests/test_rag_x_foundation.py`. This matrix is not a production retrieval service and not an independent audit.
 
 `EXISTING_VERIFIED` is unused. Older Truth Fabric, memory, document, and federated-retrieval code is inventoried in the reality baseline and was not re-executed for this matrix.
 
@@ -8,7 +8,7 @@ Scope: `orca/rag_x` on synthetic in-memory fixtures. Local test: `python3 -m pyt
 |---|---|---|---|
 | RAG-01 | IMPLEMENTED_AND_QUALIFIED | `orca.rag_x.kernel mode=naive` | Term-count baseline over the in-memory corpus. |
 | RAG-02 | RESEARCH_PROTOTYPE | `orca.rag_x.rank.hash_embed` | Default embedder is synthetic_hash_v1. mode=dense-neural is BACKEND_UNAVAILABLE without an injected function. |
-| RAG-03 | IMPLEMENTED_AND_QUALIFIED | `orca.rag_x.rank.bm25_scores` | In-memory Okapi BM25, not a durable posting index. |
+| RAG-03 | IMPLEMENTED_AND_QUALIFIED | `orca.docs.sparse.bm25_scores` | Shared in-memory Okapi BM25. Not a durable posting index. The research kernel calls this same function. |
 | RAG-04 | IMPLEMENTED_AND_QUALIFIED | `orca.rag_x.kernel mode=hybrid` | Reciprocal rank fusion of BM25 and the active embedder. Fallback is not labeled hybrid. |
 | RAG-05 | IMPLEMENTED_AND_QUALIFIED | `orca.rag_x.kernel mode=contextual` | Uses a stored context prefix. It does not generate a new prefix with a model. |
 | RAG-06 | IMPLEMENTED_AND_QUALIFIED | `orca.rag_x.kernel mode=rerank` | Default reranker is lexical overlap. A callable reranker can replace it. No hosted rerank model is configured. |

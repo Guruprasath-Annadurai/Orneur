@@ -1,8 +1,9 @@
-"""In-process RAG-X kernel.
+"""Research-only RAG-X kernel.
 
-This package qualifies retrieval behavior on synthetic fixtures. It does
-not train a model, does not claim a production index, and does not replace
-`orca.truth` or `orca.connectors.federated_retrieval`.
+Canonical retrieval is the Truth Fabric plus `orca.docs.authorized_index`.
+This package qualifies strategies on synthetic fixtures. It does not train
+a model and it does not replace `orca.truth` or
+`orca.connectors.federated_retrieval`.
 """
 
 from orca.rag_x.kernel import execute

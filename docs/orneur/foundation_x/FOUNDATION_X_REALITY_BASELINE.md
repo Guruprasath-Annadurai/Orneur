@@ -15,16 +15,16 @@ Acceptance command in this session: `python3 scripts/acceptance/validate_registe
 
 | Subsystem | Class | Evidence | Limitation |
 |---|---|---|---|
-| `orca/genesis/data/pipeline.py` progress database | QUALIFIED_LOCALLY on `fc1eb1d` | `tests/test_cursor_progress_db_portability.py` and the pipeline suites, 69 passed locally | GitHub Actions for `fc1eb1d` was not finished when this baseline was written. Darwin `F_GETPATH` was not executed. |
+| `orca/genesis/data/pipeline.py` progress database | QUALIFIED_ON_LINUX_CI at `fc1eb1d` | https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39840961482 (9/9 success) | Darwin `F_GETPATH` was not executed. That blocker remains. |
 | `orca/pretrain_foundation/agents.py` task identity | IMPLEMENTED_UNQUALIFIED in this session | CI on `b5230a0` is https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39802379378 | That run does not include `fc1eb1d`. |
-| `orca/truth/` | IMPLEMENTED_UNQUALIFIED | Typed plans in `orca/truth/contracts.py`; behavior in `truth_fabric.py`, `graph.py`, `corrective.py`, `citation.py` | This session did not re-run the Truth Fabric suite. |
+| `orca/truth/` | QUALIFIED_LOCALLY for the authorized-index hook and the non-smoke Truth suites listed below | `tests/test_truth_authorized_index.py` plus corrective, planner, citation, claims, fetch, and retrieval-mode tests | Live Ollama smoke stays deselected. Neural retrieval is not claimed. |
 | `orca/connectors/federated_retrieval.py` | IMPLEMENTED_UNQUALIFIED | `federated_search` keeps `failed_connectors` and `skipped_unhealthy` | Not re-run here. `orca/rag_x` does not replace it. |
 | `orca/memory/` | IMPLEMENTED_UNQUALIFIED | Retrieval, deletion, and firewall modules exist | Not re-run here. The new kernel's memory mode is a separate in-memory contract. |
-| `orca/docs/` | IMPLEMENTED_UNQUALIFIED | Chunking, query, and rerank modules exist | Not re-run here. |
+| `orca/docs/` | QUALIFIED_LOCALLY for the authorized index and shared BM25 | `AuthorizedIndex` uses `chunk_text`, `bm25_scores`, and `reciprocal_rank_fusion` | `DocStore` Chroma/Ollama retrieval was not re-qualified as a neural backend. |
 | `orca/cognitive/` | IMPLEMENTED_UNQUALIFIED | Kernel, budget, policy, and evidence modules exist | Not wired to `orca/rag_x` in this change. |
 | `orca/evalinfra/` | IMPLEMENTED_UNQUALIFIED | Pre-registration, leakage, and paired-stats modules exist | The new X2 fixture is separate and synthetic. |
 | `orca/genesis` training math | IMPLEMENTED_UNQUALIFIED for this session | Prior torch tests live in the training-math CI job | Not re-executed while writing this baseline. |
-| `orca/rag_x` and `orca/foundation_x` | QUALIFIED_LOCALLY | `tests/test_rag_x_foundation.py` | No CI run yet. Not a production index. |
+| `orca/rag_x` and `orca/foundation_x` | RESEARCH KERNEL plus fail-closed lifecycle | `tests/test_rag_x_foundation.py`. Previous head `81e4e31` CI: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39843423059 | That run does not cover the integration commit. The kernel is not the canonical index. |
 | Native GENESIS, NOVUS, AETERNUM weights | MISSING | Lifecycle refuses those model ids | No training authorization. |
 | Audio and video retrieval | MISSING | `mode=audio` and `mode=video` return `backend_unavailable` | No encoder. |
 | Product path through PR #79 and PR #81 | BLOCKED | Those branches were not edited | End-to-end application integration is not shown. |

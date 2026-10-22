@@ -20,3 +20,28 @@ Out of scope, and not claimed:
 - Production tenant directory, KMS, or log pipeline behavior.
 
 No cross-tenant disclosure was observed in the qualifying in-memory tests. That sentence is about those tests only.
+
+## Authorized index
+
+`tests/test_truth_authorized_index.py` covers the canonical path:
+
+- A forged `TrustedSession`, a dict tenant claim, and another session are denied.
+- Two session indexes do not return each other's rows.
+- `search_documents` raises `PermissionError` when the connector identity tenant and the instance tenant differ, before `DocStore` is opened.
+- Replacing `chunks.jsonl` with a symlink raises `AccessDenied` and does not read the target.
+- A rewritten chunk whose stored digest does not match the text is dropped and named.
+- A corrupt JSON line is skipped and named.
+- Deletion revokes that digest. Re-admitting the same bytes is refused. A new text under the same filename is a new version.
+- Revoking the session makes later search and replay fail.
+- Cache hits require the same file stamp. A content change is not served from the previous ranking.
+- `deadline_s <= 0` returns no hits and the reason `deadline`.
+- An encoder that raises is a sparse result with `dense encoder failed`, not a hybrid result.
+- `synthetic_hash_v1` stays sparse and `refused:synthetic-hash-research-only`.
+- A local test encoder can produce `hybrid-rrf` with `production_neural` false.
+- Instruction text in a passage does not set `tool_grant` and does not change `tenant_id`.
+- Conflicting `KEY = value` passages abstain with `CONTRADICTED`.
+- A one-sided claim with strong lexical overlap is `PARTIALLY_SUPPORTED`, not `SUPPORTED`.
+- `TruthFabric.assess_evidence` reads the index only when `access` is the current session.
+- `assess_lifecycle` does not call `authorize_native_pretraining`.
+
+Not shown: an enterprise identity provider, a kernel sandbox, SSRF, a production vector ACL, or Darwin filesystem execution.
