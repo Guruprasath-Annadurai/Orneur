@@ -38,7 +38,13 @@ Reproduced on `7d66c721061c4d1a614c91ef38f95ea7aec91990` before the guard: `subm
 
 Reproduced before the fix, on this tree: planting `shard-0000-train.jsonl` as a symlink and calling `process_corpus` appended corpus JSON to the symlink target outside `output_dir`.
 
-Shard reads, shard appends, shard truncation, shard digesting, the process lock, and the progress database open now go through a directory descriptor and `O_NOFOLLOW`. A symlink at the output directory leaf, at a shard name, or at the input leaf raises `CorpusBoundaryError` and does not follow the link. A progress-database path that is not this output directory's own `shard-NNNN-split.jsonl` is not opened. When `allowed_root` is set, each component under that root is opened with `O_NOFOLLOW`.
+Shard reads, shard appends, shard truncation, shard digesting, the process lock, and the progress database open now go through a directory descriptor and `O_NOFOLLOW`. A symlink at the output directory leaf, at a shard name, or at the input leaf raises `CorpusBoundaryError` and does not follow the link. A stored path that is not this output directory's own `shard-NNNN-split.jsonl` is not opened. When `allowed_root` is set, each component under that root is opened with `O_NOFOLLOW`.
+
+The progress database no longer uses `file:/proc/self/fd/<database-fd>` as its only open path. Before `sqlite3.connect`, the database file and the `-wal`, `-shm`, and `-journal` names are regular files or absent, checked with `O_NOFOLLOW` on the output directory descriptor. A symlink at any of those names raises `CorpusBoundaryError` and is not unlinked or followed. `iter_kept_records` uses the same opener.
+
+On Linux the URI is `file:/proc/self/fd/<dirfd>/_progress.sqlite3?mode=rw`. The directory inode reported by `/proc/self/fd/<dirfd>` must match the descriptor. On Darwin the URI is built from `fcntl(F_GETPATH)` on that descriptor, and the path is accepted only when its inode is the opened directory. Any other `sys.platform` raises `CorpusBoundaryError` before `sqlite3.connect`. WAL mode and `synchronous=FULL` are required; a weaker journal mode is not accepted.
+
+SQLite 3.45 on Linux still reports the real directory in `PRAGMA database_list` and creates `-wal` and `-shm` beside that file. The connection is rejected unless that file's inode is the no-follow descriptor. This environment executed the Linux path and the Darwin branch with a supplied descriptor path. It did not execute Darwin `F_GETPATH`.
 
 `tests/test_genesis_data_pipeline.py` still asserts crash recovery and same-size shard tampering detection. The historical file `tests/test_audit_genesis_hardening_adversarial.py` was not edited. It remains ignored by deterministic CI as vulnerability-demonstration evidence.
 
@@ -60,7 +66,7 @@ On `7d66c72`, that command passed 106 tests. After the task-id guard, `tests/tes
 | External rollback anchor | `FailClosedExternalAnchor` still raises `AnchorUnavailable`. `SyntheticAnchorDouble.kind` is `SYNTHETIC_TEST_DOUBLE`. No witness service exists. |
 | Same-uid worker isolation | `isolated_worker.py` was not edited. Same-uid peer credentials are not a kernel sandbox. |
 | Input ancestor symlinks | Followed when `allowed_root` is omitted. The leaf itself is not followed. |
-| Progress database | Opened with `O_NOFOLLOW`, then SQLite reopens the real path for its journal. A pre-planted symlink is refused. A same-uid swap after that open is outside this claim. |
+| Progress database | Linux and the Darwin branch are descriptor-qualified. Other platforms refuse before connect. SQLite still resolves the real directory for WAL siblings. A same-uid swap after the no-follow check, and unexecuted Darwin `F_GETPATH`, remain outside the executed claim. |
 | In-process idempotency map | A conflicting `submit()` does not return another agent's task id, and a reused task id is rejected without naming the current owner. Code that already holds the `Orchestrator` can still read `tasks` and `idempotency`. |
 | Checkpoint confinement | Not reopened. No new defect was reproduced there. |
 | Formal acceptance | Numerator remains 0 of 95. Training is not authorized. |

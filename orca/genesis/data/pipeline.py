@@ -64,6 +64,7 @@ resumed run APPENDS to -- never overwrites -- prior committed output.
 """
 from __future__ import annotations
 
+import ctypes
 import errno
 import fcntl
 import hashlib
@@ -72,10 +73,12 @@ import os
 import re
 import sqlite3
 import stat
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
+from urllib.parse import quote
 
 from orca.eval.genesis_contamination import jaccard, normalize_text, word_ngrams
 from orca.genesis.data.manifest import normalize_record_text
@@ -86,6 +89,15 @@ NEAR_DUP_JACCARD_THRESHOLD = 0.85
 NEAR_DUP_WINDOW = 500  # bounded pairwise comparison window -- see module docstring
 DEFAULT_COMMIT_BATCH_SIZE = 200
 PROGRESS_DB_NAME = "_progress.sqlite3"
+_PROGRESS_SIDECAR_NAMES = (
+    PROGRESS_DB_NAME + "-wal",
+    PROGRESS_DB_NAME + "-shm",
+    PROGRESS_DB_NAME + "-journal",
+)
+# Darwin `fcntl` command. Linux does not implement it; the Linux path uses
+# `/proc/self/fd/<dirfd>` instead of calling this command.
+_DARWIN_F_GETPATH = 50
+_SQLITE_SYNCHRONOUS_FULL = 2
 
 
 class CorruptRecordError(Exception):
@@ -502,19 +514,204 @@ def _regular_shard_stat(dir_fd: int, name: str):
     return st
 
 
+def _stat_leaf_nofollow(dir_fd: int, name: str):
+    """Stat `name` relative to `dir_fd` without following a leaf symlink."""
+    try:
+        return os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+def _require_regular_leaf(dir_fd: int, name: str):
+    """Return the no-follow stat of a regular file, or raise."""
+    st = _stat_leaf_nofollow(dir_fd, name)
+    if st is None:
+        raise CorpusBoundaryError(f"refusing to use {name} -- the file is missing")
+    if stat.S_ISLNK(st.st_mode):
+        raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink")
+    if not stat.S_ISREG(st.st_mode):
+        raise CorpusBoundaryError(f"refusing to use {name} -- the path is not a regular file")
+    return st
+
+
+def _ensure_regular_leaf(dir_fd: int, name: str):
+    """Create `name` as a regular file if it is absent. A symlink is not replaced."""
+    st = _stat_leaf_nofollow(dir_fd, name)
+    if st is not None:
+        if stat.S_ISLNK(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink")
+        if not stat.S_ISREG(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is not a regular file")
+        return st
+    try:
+        fd = _open_regular_at(dir_fd, name, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        return _require_regular_leaf(dir_fd, name)
+    try:
+        return os.fstat(fd)
+    finally:
+        os.close(fd)
+
+
+def _require_descriptor_directory(dir_fd: int, raw: str) -> str:
+    """Accept a kernel-reported directory path only when it is this descriptor."""
+    if not raw.startswith("/") or raw.endswith(" (deleted)") or "\x00" in raw:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path is not a stable absolute directory"
+        )
+    pinned = os.fstat(dir_fd)
+    try:
+        st_path = os.stat(raw, follow_symlinks=False)
+    except OSError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path cannot be stat'd"
+        ) from exc
+    if stat.S_ISLNK(st_path.st_mode) or not stat.S_ISDIR(st_path.st_mode):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path is not the opened directory"
+        )
+    if (st_path.st_dev, st_path.st_ino) != (pinned.st_dev, pinned.st_ino):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path names a different directory"
+        )
+    return raw
+
+
+def _darwin_descriptor_path(fd: int) -> str:
+    """Return the path Darwin associates with an already-open descriptor.
+
+    `F_GETPATH` is a Darwin `fcntl` command. It is not called on Linux.
+    """
+    if sys.platform != "darwin":
+        raise CorpusBoundaryError(
+            f"refusing Darwin descriptor path lookup on {sys.platform}"
+        )
+    buf = ctypes.create_string_buffer(4096)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.fcntl(fd, _DARWIN_F_GETPATH, buf) == -1:
+        err = ctypes.get_errno()
+        code = errno.errorcode.get(err, str(err))
+        raise CorpusBoundaryError(
+            f"refusing to open the progress database -- F_GETPATH failed ({code})"
+        )
+    raw = os.fsdecode(buf.value)
+    if not raw:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH returned an empty path"
+        )
+    return raw
+
+
+def _progress_database_uri(dir_fd: int) -> str:
+    """URI for this directory's progress database.
+
+    Linux passes SQLite `/proc/self/fd/<dirfd>/<leaf>`, which opens relative
+    to the directory descriptor. Darwin passes the `F_GETPATH` result for
+    that same descriptor after an inode check. Any other platform is refused.
+    The caller-supplied output path is never handed to SQLite.
+    """
+    leaf = quote(PROGRESS_DB_NAME)
+    if sys.platform == "linux":
+        try:
+            reported = os.readlink(f"/proc/self/fd/{dir_fd}")
+        except OSError as exc:
+            raise CorpusBoundaryError(
+                "refusing to open the progress database -- the directory descriptor has no /proc path"
+            ) from exc
+        _require_descriptor_directory(dir_fd, reported)
+        return f"file:/proc/self/fd/{dir_fd}/{leaf}?mode=rw"
+    if sys.platform == "darwin":
+        directory = _require_descriptor_directory(dir_fd, _darwin_descriptor_path(dir_fd))
+        return "file:" + quote(directory, safe="/") + "/" + leaf + "?mode=rw"
+    raise CorpusBoundaryError(
+        f"refusing to open the progress database on {sys.platform}: "
+        "descriptor-qualified SQLite paths are implemented for Linux and Darwin only"
+    )
+
+
+def _require_sqlite_bound_to_fd(conn: sqlite3.Connection, pinned: os.stat_result) -> None:
+    """Reject a connection whose main file is not the no-follow descriptor."""
+    row = conn.execute("PRAGMA database_list").fetchone()
+    if row is None or not row[2]:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite reported no database file"
+        )
+    try:
+        st = os.lstat(row[2])
+    except OSError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite's database file cannot be lstat'd"
+        ) from exc
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite's database file is not a regular file"
+        )
+    if (st.st_dev, st.st_ino) != (pinned.st_dev, pinned.st_ino):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite opened a different file than the nofollow descriptor"
+        )
+
+
+def _require_wal(conn: sqlite3.Connection) -> None:
+    """WAL plus `synchronous=FULL` is the crash-safety contract. A weaker mode is not accepted."""
+    row = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    if row is None or str(row[0]).lower() != "wal":
+        raise CorpusBoundaryError(
+            f"refusing to open the progress database -- WAL mode was not established ({row!r})"
+        )
+    conn.execute("PRAGMA synchronous=FULL")
+    level = conn.execute("PRAGMA synchronous").fetchone()
+    if level is None or int(level[0]) != _SQLITE_SYNCHRONOUS_FULL:
+        raise CorpusBoundaryError(
+            f"refusing to open the progress database -- synchronous=FULL was not established ({level!r})"
+        )
+
+
+def _require_progress_sidecars(dir_fd: int, *, wal_required: bool) -> None:
+    """WAL siblings must be regular files. A symlink is never unlinked or followed."""
+    for name in (PROGRESS_DB_NAME + "-wal", PROGRESS_DB_NAME + "-shm"):
+        st = _stat_leaf_nofollow(dir_fd, name)
+        if st is None:
+            if wal_required:
+                raise CorpusBoundaryError(f"refusing to use {name} -- WAL did not create a regular sidecar")
+            continue
+        if stat.S_ISLNK(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink")
+        if not stat.S_ISREG(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is not a regular file")
+    journal = _stat_leaf_nofollow(dir_fd, PROGRESS_DB_NAME + "-journal")
+    if journal is None:
+        return
+    if stat.S_ISLNK(journal.st_mode):
+        raise CorpusBoundaryError(
+            f"refusing to use {PROGRESS_DB_NAME}-journal -- the path is a symlink"
+        )
+    if not stat.S_ISREG(journal.st_mode):
+        raise CorpusBoundaryError(
+            f"refusing to use {PROGRESS_DB_NAME}-journal -- the path is not a regular file"
+        )
+
+
 def _connect_progress_db(dir_fd: int) -> tuple[sqlite3.Connection, int]:
     """The single durable source of truth for this output directory's
-    processing state. `isolation_level=None` (autocommit OFF by default
-    in the sense that we issue explicit BEGIN/COMMIT) gives this module
-    full control over transaction boundaries, matching exactly where
+    processing state. `isolation_level=None` gives this module full
+    control over transaction boundaries, matching exactly where
     `process_corpus()` wants a batch to be atomic.
 
-    The database file is opened with `O_NOFOLLOW` on `dir_fd`. SQLite then
-    resolves `/proc/self/fd` and opens the real path for its journal. A
-    symlink planted at `_progress.sqlite3` is refused. `_open_progress_db`
-    closes `db_fd` after the schema statements; the returned connection
-    does not depend on that descriptor staying open.
+    The database file and its `-wal`, `-shm`, and `-journal` siblings are
+    created or checked with `O_NOFOLLOW` on `dir_fd` before SQLite is
+    invoked. SQLite still resolves a descriptor path to the real directory
+    when it places those siblings; this function checks the opened inode
+    and refuses a sibling that is a symlink. It does not fall back to the
+    caller-supplied pathname.
+
+    Linux evidence for the URI is `/proc/self/fd/<dirfd>/<leaf>`. Darwin
+    uses `F_GETPATH` on the same directory descriptor. Other platforms
+    raise `CorpusBoundaryError`. `_open_progress_db` closes `db_fd` after
+    the schema statements; the returned connection does not depend on that
+    descriptor staying open.
     """
+    uri = _progress_database_uri(dir_fd)
     try:
         db_fd = _open_regular_at(
             dir_fd,
@@ -526,9 +723,29 @@ def _connect_progress_db(dir_fd: int) -> tuple[sqlite3.Connection, int]:
         raise CorpusBoundaryError(
             "refusing to open the progress database -- the path is a symlink"
         ) from exc
-    conn = sqlite3.connect(f"file:/proc/self/fd/{db_fd}?mode=rw", uri=True, isolation_level=None)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=FULL")  # durability over raw speed -- this is a crash-safety primitive
+    try:
+        for name in _PROGRESS_SIDECAR_NAMES:
+            _ensure_regular_leaf(dir_fd, name)
+        pinned = os.fstat(db_fd)
+        _require_progress_sidecars(dir_fd, wal_required=False)
+        conn = sqlite3.connect(uri, uri=True, isolation_level=None)
+    except Exception:
+        os.close(db_fd)
+        raise
+    try:
+        _require_sqlite_bound_to_fd(conn, pinned)
+        _require_wal(conn)
+        _require_progress_sidecars(dir_fd, wal_required=True)
+        _ensure_progress_schema(conn)
+    except Exception:
+        conn.close()
+        os.close(db_fd)
+        raise
+    return conn, db_fd
+
+
+def _ensure_progress_schema(conn: sqlite3.Connection) -> None:
+    """Create the progress tables. WAL and synchronous mode are already required."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS progress (
             id INTEGER PRIMARY KEY CHECK (id = 0), resume_offset INTEGER NOT NULL,
@@ -561,18 +778,18 @@ def _connect_progress_db(dir_fd: int) -> tuple[sqlite3.Connection, int]:
     # starting from an empty window -- see _load_near_dup_window_tail()'s
     # own docstring for the reproduced defect this closes.
     conn.execute("CREATE TABLE IF NOT EXISTS near_dup_window (seq INTEGER PRIMARY KEY AUTOINCREMENT, line_number INTEGER NOT NULL, normalized_text TEXT NOT NULL)")
-    return conn, db_fd
 
 
-def _open_progress_db(output_dir: Path) -> sqlite3.Connection:
+def _open_progress_db(output_dir: Path, *, create: bool = True) -> sqlite3.Connection:
     """Open this output directory's progress database.
 
-    Callers in tests pass the directory path. The leaf directory and the
-    database file are opened with `O_NOFOLLOW`. SQLite reopens the real
-    file for its own journal, so the descriptor used to reject a symlink
-    is closed before this function returns.
+    Callers in tests pass the directory path. The leaf directory, the
+    database file, and the WAL siblings are opened with `O_NOFOLLOW`.
+    SQLite reopens the real file for its own journal, so the descriptor
+    used to reject a symlink is closed before this function returns.
+    `create=False` does not create a missing output directory.
     """
-    dir_fd = _open_directory_leaf(Path(output_dir), create=True)
+    dir_fd = _open_directory_leaf(Path(output_dir), create=create)
     db_fd: int | None = None
     try:
         conn, db_fd = _connect_progress_db(dir_fd)
@@ -849,7 +1066,7 @@ def iter_kept_records(output_dir: Path, *, page_size: int = 1000) -> Iterator[st
     `flushed` rows, since the SQLite table is the authoritative "was
     this record actually kept" truth regardless of whether its shard
     file has been written yet) `output_dir`."""
-    conn = sqlite3.connect(output_dir / PROGRESS_DB_NAME)
+    conn = _open_progress_db(output_dir, create=False)
     try:
         last_seq = 0
         while True:
