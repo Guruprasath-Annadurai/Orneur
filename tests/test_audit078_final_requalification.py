@@ -22,7 +22,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import torch
+
+# This repo's own established pattern (matching
+# tests/test_audit077_requalification_adversarial_deep.py) for any
+# torch-dependent test file: importorskip BEFORE any orca import, so
+# this file is cleanly SKIPPED (not a hard collection ERROR) in CI's
+# separate non-torch "Deterministic Unit Tests" job, which collects
+# the whole tests/ directory broadly. The original `import torch` here
+# (and the orca imports below, several of which themselves hard-import
+# torch at module level) broke that job's collection entirely --
+# a mechanical compatibility fix, not a change to any assertion.
+torch = pytest.importorskip("torch")
 
 from orca import config as orca_config
 from orca.config import (
