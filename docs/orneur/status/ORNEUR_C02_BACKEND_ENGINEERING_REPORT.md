@@ -80,6 +80,29 @@ This is a **first, scoped slice**, not the full C02-01…C02-12 surface. Explici
 
 ---
 
+## Deliverables (directive section 13)
+
+1. **Exact baseline SHA**: `55eb4fea5c5c4820db6b15e1a2aac5885bddce78` (PR #78, security baseline), independently audited.
+2. **Development branch**: `claude/c02-mission-execution-backend-2026-10-22`, based on `origin/main`, not the security branch.
+3. **Draft PR URL**: [#79](https://github.com/Guruprasath-Annadurai/Orneur/pull/79).
+4. **Changed production files**: `orca/serve/api.py` (+6 lines, router mount only), `orca/serve/mission_api.py` (new).
+5. **Changed test files**: `tests/test_mission_api.py` (new, 12 tests).
+6. **Approved design assets actually inspected**: B01–B16 handoff archive (`ORNEUR_UIUX_FINAL_CTO_REVIEW_HANDOFF(2).zip`), extracted into an isolated directory, SHA-256 manifest verified (274/274 files match). README, design system, and the B02 implementation handoff were read in full to confirm the archive is genuine, detailed implementation material (not just screenshots).
+7. **Missing design dependencies**: C02 design archive (`ORNEUR_C02_FINAL_FOUNDER_APPROVED_DESIGN_LOCK.zip`) not supplied.
+8. **B01–B16 implementation matrix**: not started this increment (see Phase A table — frontend row is NOT IMPLEMENTED).
+9. **C02 implementation matrix**: see Phase B section above (lifecycle slice done; execution/streaming/cancellation-truth open).
+10. **Auth/API integration evidence**: 12 passing integration tests against the real FastAPI app (`tests/test_mission_api.py`).
+11. **Database persistence evidence**: real Neon Postgres, pre-existing (`orca/mission/db.py`), not newly built this phase; this phase's API layer uses it through the existing, unmodified store functions.
+12. **Browser screenshots**: none — no frontend work in this increment.
+13. **Visual comparison reports**: none — no frontend work in this increment.
+14. **Responsive and accessibility results**: none — no frontend work in this increment.
+15. **Exact test counts**: 301 existing mission/relay tests passing (zero regressions) + 12 new tests passing = 313. One pre-existing, unrelated `test_api_*.py` failure confirmed present on unmodified `main`.
+16. **CI checks with immutable commit SHA**: GitHub Actions run [`39768749559`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39768749559), `headSha` confirmed equal to `ddbb5e1e56b766def4efeee3c04ee2483f43166c`, conclusion `success`.
+17. **Remaining bugs and unresolved security boundaries**: see "Known gaps" above; the Genesis-side residual boundaries (same-UID isolation, unkeyed cache integrity, local-only rollback ledger) are unrelated to this branch and remain tracked against PR #78.
+18. **Genuine operational features**: mission create/list/get/plan/cancel; operation request/get/approve/deny — all backed by real, tested persistence and authorization logic.
+19. **Disabled or unavailable features**: live execution, streaming, tool-action details, evidence/output references, resume-over-HTTP, the full C02 state surface, and all frontend screens.
+20. **Engineering verdict**: **PARTIAL** (see below).
+
 ## Verdict
 
 **PARTIAL.** A real, tested, authenticated API surface now exists for mission creation, planning, permission requests, and approval/denial decisions — built entirely on the pre-existing, mature `orca.mission` domain layer, with zero reimplementation of its already-correct authorization/idempotency/state-machine logic. The cancellation-truth gap, live execution streaming, and the full C02/B01–B16 frontend remain open, explicitly enumerated above, and are the natural next increments — not claimed done here.
