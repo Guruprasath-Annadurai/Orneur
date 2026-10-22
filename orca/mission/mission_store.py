@@ -283,14 +283,29 @@ class CancellationEvidenceError(MissionStoreError):
 
 
 def resolve_mission_cancellation(
-    conn, mission_id: str, *, cancellation_episode_id: str, outcome: str,
+    conn, mission_id: str, *, cancellation_episode_id: str,
+    expected_cancellation_episode_revision: str | None, outcome: str,
 ) -> dict:
     """The ONLY function that may move a mission OUT of
     CANCELLATION_REQUESTED / CANCELLATION_UNRESOLVED. Requires the
     CURRENT, server-minted `cancellation_episode_id` for this exact
     mission -- a mismatch (forged, stale from an earlier episode, or
     copied from a different mission) raises `CancellationEvidenceError`
-    and changes nothing. `outcome` must be one of:
+    and changes nothing.
+
+    AUDIT-B79-B-P0-02: `cancellation_episode_revision` was captured by
+    request_mission_cancellation() (the mission's `current_revision` at
+    the moment the episode was minted) but never actually enforced here
+    -- a confirmation only had to present the right episode id, never
+    the right revision. `current_revision` is not writable by any
+    existing code path while a mission sits in CANCELLATION_REQUESTED
+    today, so this could not yet be exploited in practice, but a
+    captured-and-never-checked field is exactly the kind of latent gap
+    that becomes exploitable the moment a future code path DOES touch
+    current_revision mid-episode. The caller must now present the
+    EXACT revision this episode was opened against; a mismatch is
+    treated identically to an episode-id mismatch -- rejected, nothing
+    changed. `outcome` must be one of:
 
       'TERMINATED'    -> CANCELLED (worker independently confirmed stopped)
       'STILL_RUNNING' -> stays in CANCELLATION_REQUESTED, with a FRESH
@@ -333,26 +348,42 @@ def resolve_mission_cancellation(
                 f"episode -- this is either a forged confirmation, a stale one from an earlier cancellation "
                 f"attempt on this mission, or copied from a different mission. Refusing to change anything."
             )
+        live_revision = row["cancellation_episode_revision"]
+        if expected_cancellation_episode_revision != live_revision:
+            conn.rollback()
+            raise CancellationEvidenceError(
+                f"cancellation_episode_revision does not match mission {mission_id}'s live cancellation "
+                f"episode (expected {live_revision!r}, confirmation presented "
+                f"{expected_cancellation_episode_revision!r}) -- refusing to change anything."
+            )
 
         now = _now_iso()
         if outcome == "TERMINATED":
             target = MissionState.CANCELLED
             new_episode_id = None
+            new_episode_revision = None
         elif outcome == "UNRESOLVED":
             target = MissionState.CANCELLATION_UNRESOLVED
             new_episode_id = live_episode  # same episode remains open until genuinely resolved
+            new_episode_revision = live_revision  # unchanged -- same open episode
         else:  # STILL_RUNNING
             target = MissionState.CANCELLATION_REQUESTED
             new_episode_id = f"cancep_{secrets.token_hex(16)}"  # retire the old episode, mint a fresh one
+            # AUDIT-B79-B-P0-02: re-snapshot current_revision for the
+            # FRESH episode, exactly like request_mission_cancellation()
+            # does for the first one -- a confirmation against this new
+            # episode must present the revision pinned at the moment
+            # THIS retry began, not the one from the episode just retired.
+            new_episode_revision = row["current_revision"]
 
         validated_new = transition(current, target)  # raises MissionStateError if illegal
         cur.execute(
             """
             UPDATE missions
-            SET state = %s, cancellation_episode_id = %s, updated_at = %s
+            SET state = %s, cancellation_episode_id = %s, cancellation_episode_revision = %s, updated_at = %s
             WHERE id = %s AND state = %s
             """,
-            (validated_new.value, new_episode_id, now, mission_id, current.value),
+            (validated_new.value, new_episode_id, new_episode_revision, now, mission_id, current.value),
         )
         if cur.rowcount != 1:
             conn.rollback()

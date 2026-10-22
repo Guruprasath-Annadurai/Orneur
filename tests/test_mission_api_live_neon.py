@@ -246,7 +246,7 @@ def test_concurrent_confirm_cancelled_calls_on_the_same_episode_are_serialized(c
         local_client = TestClient(api_module.app, raise_server_exceptions=False)
         resp = local_client.post(
             f"/v1/missions/{mission_id}/confirm-cancelled",
-            json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+            json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
             headers={"Authorization": f"Bearer {token}"},
         )
         with lock:

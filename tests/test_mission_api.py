@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from orca.auth import get_current_user
 from orca.auth.store import User
 from orca.mission import mission_store
+from orca.mission.mission_store import CancellationEvidenceError
 from orca.mission.state_machine import MissionState
 from orca.serve import api as api_module
 from orca.serve.mission_api import _mission_conn
@@ -375,7 +376,7 @@ def test_ordinary_authenticated_user_cannot_confirm_cancellation(client, shared_
     # No reconciliation header at all -- just the owner's own session.
     resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
     )
     assert resp.status_code == 401
 
@@ -397,7 +398,7 @@ def test_confirmation_with_no_reconciliation_token_configured_fails_closed(clien
 
     resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers("anything"),
     )
     assert resp.status_code == 503
@@ -413,7 +414,7 @@ def test_forged_reconciliation_credential_is_rejected(client, shared_db):
 
     resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers("wrong-secret-entirely"),
     )
     assert resp.status_code == 401
@@ -434,7 +435,7 @@ def test_forged_cancellation_episode_id_is_rejected(client, shared_db):
 
     resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": "completely-made-up", "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": "completely-made-up", "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers(),
     )
     assert resp.status_code == 409
@@ -455,7 +456,7 @@ def test_stale_cancellation_episode_id_is_rejected_after_still_running_retry(cli
 
     still_running_resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": stale_episode_id, "outcome": "STILL_RUNNING"},
+        json={"cancellation_episode_id": stale_episode_id, "cancellation_episode_revision": None, "outcome": "STILL_RUNNING"},
         headers=_reconciliation_headers(),
     )
     assert still_running_resp.status_code == 200, still_running_resp.text
@@ -467,7 +468,7 @@ def test_stale_cancellation_episode_id_is_rejected_after_still_running_retry(cli
     # mission is (again) legitimately CANCELLATION_REQUESTED.
     stale_replay_resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": stale_episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": stale_episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers(),
     )
     assert stale_replay_resp.status_code == 409
@@ -475,11 +476,104 @@ def test_stale_cancellation_episode_id_is_rejected_after_still_running_retry(cli
     # The FRESH episode id correctly works.
     resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": fresh_episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": fresh_episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers(),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "CANCELLED"
+
+
+# AUDIT-B79-B-P0-02: cancellation_episode_revision is captured at
+# request_mission_cancellation() time but was never enforced by
+# resolve_mission_cancellation() -- a confirmation only had to present
+# the right episode_id, never the right revision. These tests exercise
+# orca.mission.mission_store directly (not through the HTTP layer,
+# which has no way to set current_revision on a mission at all today)
+# since that's the only way to put a mission into the state where this
+# check is actually observable: a non-None current_revision.
+def test_confirmation_with_a_stale_revision_is_rejected_even_with_the_correct_episode_id(shared_db):
+    from orca.mission import mission_store
+
+    conn = _FakeConn(shared_db)
+    mission = mission_store.create_mission(
+        conn, id="mis-rev-1", repository="r", mode="ASSIST", autonomy_level="L0",
+        owner_user_id="alice", current_revision="rev-A",
+    )
+    mission_store.transition_mission(conn, mission["id"], MissionState.PLANNING)
+    mission_store.create_mission_steps(conn, mission["id"], ["step one"])
+    mission_store.transition_mission(conn, mission["id"], MissionState.READY)
+    mission_store.transition_mission(conn, mission["id"], MissionState.RUNNING)
+    requested = mission_store.request_mission_cancellation(conn, mission["id"])
+    episode_id = requested["cancellation_episode_id"]
+    assert requested["cancellation_episode_revision"] == "rev-A"
+
+    # Correct episode_id, but a DIFFERENT (stale/forged) revision claim.
+    with pytest.raises(CancellationEvidenceError):
+        mission_store.resolve_mission_cancellation(
+            conn, mission["id"],
+            cancellation_episode_id=episode_id,
+            expected_cancellation_episode_revision="rev-B-not-the-real-one",
+            outcome="TERMINATED",
+        )
+    # Nothing changed.
+    assert mission_store.get_mission(conn, mission["id"])["state"] == "CANCELLATION_REQUESTED"
+
+    # The CORRECT revision (matching what was actually pinned) succeeds.
+    resolved = mission_store.resolve_mission_cancellation(
+        conn, mission["id"],
+        cancellation_episode_id=episode_id,
+        expected_cancellation_episode_revision="rev-A",
+        outcome="TERMINATED",
+    )
+    assert resolved["state"] == "CANCELLED"
+
+
+def test_still_running_retry_pins_a_fresh_revision_for_the_new_episode(shared_db):
+    """A STILL_RUNNING retry must bind confirmations to the revision
+    current AT THE MOMENT the new episode opens -- not silently reuse
+    the old episode's pinned revision, and not leave it unenforced."""
+    from orca.mission import mission_store
+
+    conn = _FakeConn(shared_db)
+    mission = mission_store.create_mission(
+        conn, id="mis-rev-2", repository="r", mode="ASSIST", autonomy_level="L0",
+        owner_user_id="alice", current_revision="rev-A",
+    )
+    mission_store.transition_mission(conn, mission["id"], MissionState.PLANNING)
+    mission_store.create_mission_steps(conn, mission["id"], ["step one"])
+    mission_store.transition_mission(conn, mission["id"], MissionState.READY)
+    mission_store.transition_mission(conn, mission["id"], MissionState.RUNNING)
+    requested = mission_store.request_mission_cancellation(conn, mission["id"])
+    old_episode_id = requested["cancellation_episode_id"]
+
+    still_running = mission_store.resolve_mission_cancellation(
+        conn, mission["id"],
+        cancellation_episode_id=old_episode_id,
+        expected_cancellation_episode_revision="rev-A",
+        outcome="STILL_RUNNING",
+    )
+    new_episode_id = still_running["cancellation_episode_id"]
+    assert new_episode_id != old_episode_id
+    assert still_running["cancellation_episode_revision"] == "rev-A"
+
+    # A confirmation against the NEW episode with the OLD episode's id
+    # is still correctly rejected (pre-existing behavior, reconfirmed).
+    with pytest.raises(CancellationEvidenceError):
+        mission_store.resolve_mission_cancellation(
+            conn, mission["id"],
+            cancellation_episode_id=old_episode_id,
+            expected_cancellation_episode_revision="rev-A",
+            outcome="TERMINATED",
+        )
+
+    # The new episode, with its own correctly pinned revision, resolves.
+    resolved = mission_store.resolve_mission_cancellation(
+        conn, mission["id"],
+        cancellation_episode_id=new_episode_id,
+        expected_cancellation_episode_revision="rev-A",
+        outcome="TERMINATED",
+    )
+    assert resolved["state"] == "CANCELLED"
 
 
 def test_terminated_worker_outcome_confirms_cancelled(client, shared_db):
@@ -491,7 +585,7 @@ def test_terminated_worker_outcome_confirms_cancelled(client, shared_db):
 
     resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers(),
     )
     assert resp.status_code == 200, resp.text
@@ -512,7 +606,7 @@ def test_unresolved_outcome_is_distinct_from_both_cancelled_and_failed(client, s
 
     resp = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "UNRESOLVED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "UNRESOLVED"},
         headers=_reconciliation_headers(),
     )
     assert resp.status_code == 200, resp.text
@@ -532,14 +626,14 @@ def test_reconciliation_interruption_then_retry_eventually_confirms(client, shar
 
     first = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "UNRESOLVED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "UNRESOLVED"},
         headers=_reconciliation_headers(),
     )
     assert first.json()["state"] == "CANCELLATION_UNRESOLVED"
 
     second = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers(),
     )
     assert second.status_code == 200, second.text
@@ -558,14 +652,14 @@ def test_double_cancellation_confirmation_is_rejected(client, shared_db):
 
     first = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers(),
     )
     assert first.json()["state"] == "CANCELLED"
 
     second = client.post(
         f"/v1/missions/{mission_id}/confirm-cancelled",
-        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        json={"cancellation_episode_id": episode_id, "cancellation_episode_revision": None, "outcome": "TERMINATED"},
         headers=_reconciliation_headers(),
     )
     assert second.status_code == 409
@@ -635,23 +729,20 @@ def test_distinct_principal_approval_journey_reaches_a_real_allow_decision(clien
     decision from the real orca.godmode authority engine (NOT
     mocked/faked) -- not merely that self-approval is rejected.
 
-    HONEST SCOPE NOTE, called out explicitly rather than worked
-    around: this phase's HTTP API (orca/serve/mission_api.py) gates
-    BOTH operation requests and approvals on mission ownership
-    (`owner_user_id == caller.id`) -- there is currently no "approver"
-    role distinct from "mission owner" exposed over HTTP, because
-    `orca.auth.store.User` has no workspace/role concept beyond a
-    bare `id` yet. That means, AS BUILT TODAY, the only caller who can
-    reach `/approve` for a given mission is that mission's own owner
-    -- so a genuinely distinct HTTP-level requester/approver pair is
-    not yet expressible without a real multi-principal authorization
-    model (a separate, future piece of work). This test therefore
-    exercises the real domain engine directly (bypassing the HTTP
-    ownership gate, which is the part that is narrow, not the
-    underlying mechanism) to prove the mechanism itself is NOT
-    artificially limited to a single principal, and that self-
-    authorization is independently, structurally enforced by the SAME
-    code path regardless of which layer calls it."""
+    UPDATE (AUDIT-B79-B-P0-01): this test's original docstring noted
+    that the HTTP API (mission_api.py) had no way to designate a
+    distinct approver, so this test called operation_store directly to
+    prove the underlying mechanism worked while that HTTP-level gap
+    stayed open. That gap is now closed -- CreateMissionRequest.
+    workspace_id lets a mission's creator designate a second real
+    principal who can reach /approve and /deny, checked by
+    _get_tenant_mission_or_404(). See
+    test_distinct_principal_approval_journey_reaches_a_real_allow_decision_via_http
+    below for the same journey exercised through the real HTTP routes,
+    not just the domain engine directly. This test is kept as-is: it
+    still independently verifies the domain engine's own behavior in
+    isolation from the HTTP layer, which remains a legitimate, distinct
+    thing to test."""
     from orca.mission import operation_store
 
     conn = _FakeConn(shared_db)
@@ -759,3 +850,134 @@ def test_cannot_deny_an_already_denied_operation(client):
     client.post(f"/v1/missions/{mission_id}/operations/{op['id']}/deny")
     resp = client.post(f"/v1/missions/{mission_id}/operations/{op['id']}/deny")
     assert resp.status_code == 409
+
+
+# AUDIT-B79-B-P0-01: approve/deny no longer gate on mission ownership
+# alone -- a mission can designate a second real principal
+# (workspace_id) who can reach the same decision point as the owner.
+def _patch_real_user(monkeypatch, uid: str) -> None:
+    import orca.auth.store as auth_store
+
+    monkeypatch.setattr(auth_store, "get_user_by_id", lambda u: _user(uid) if u == uid else None)
+
+
+def test_workspace_id_must_name_a_different_existing_user(client, monkeypatch):
+    _as(client, _user("alice"))
+
+    # Self-reference is rejected -- the owner already has access to
+    # their own mission; naming themselves as the "second" principal
+    # is meaningless and almost certainly a caller mistake.
+    resp = client.post(
+        "/v1/missions",
+        json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0", "workspace_id": "alice"},
+    )
+    assert resp.status_code == 400
+
+    # A workspace_id that doesn't name any real user is rejected, not
+    # silently accepted into an unreachable tenant.
+    resp2 = client.post(
+        "/v1/missions",
+        json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0", "workspace_id": "nobody-by-this-id"},
+    )
+    assert resp2.status_code == 400
+
+
+def test_distinct_principal_approval_journey_reaches_a_real_allow_decision_via_http(client, monkeypatch):
+    """The actual HTTP-level fix for AUDIT-B79-B-P0-01: alice creates a
+    mission naming bob as its workspace_id (a real, existing, different
+    user), alice requests an operation, and BOB -- not alice -- reaches
+    /approve through the real route and gets a real ALLOW decision from
+    the unmodified orca.godmode authority engine. No test-only bypass
+    of the HTTP layer, unlike the domain-engine-only test above."""
+    _patch_real_user(monkeypatch, "bob")
+    _as(client, _user("alice"))
+    created = client.post(
+        "/v1/missions",
+        json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0", "workspace_id": "bob"},
+    ).json()
+    mission_id = created["id"]
+    assert created["workspace_id"] == "bob"
+
+    op = client.post(
+        f"/v1/missions/{mission_id}/operations",
+        json={"kind": "shell_exec", "target": "ls", "idempotency_key": "two-principal-k"},
+    ).json()["operation"]
+
+    _as(client, _user("bob"))
+    resp = client.post(
+        f"/v1/missions/{mission_id}/operations/{op['id']}/approve",
+        json={"reason": "bob reviewed and approves"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["allowed"] is True, "a genuinely designated, distinct approver must reach a real ALLOW"
+    assert body["operation"]["status"] == "AUTHORIZED"
+
+
+def test_an_unrelated_stranger_is_still_denied_even_with_workspace_id_in_play(client, monkeypatch):
+    """Designating bob as the tenant must not open the mission up to
+    EVERYONE -- mallory, who is neither the owner nor the designated
+    workspace principal, must still get 404 on both approve and deny."""
+    _patch_real_user(monkeypatch, "bob")
+    _as(client, _user("alice"))
+    created = client.post(
+        "/v1/missions",
+        json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0", "workspace_id": "bob"},
+    ).json()
+    mission_id = created["id"]
+    op = client.post(
+        f"/v1/missions/{mission_id}/operations",
+        json={"kind": "shell_exec", "target": "ls", "idempotency_key": "stranger-k"},
+    ).json()["operation"]
+
+    _as(client, _user("mallory"))
+    resp = client.post(
+        f"/v1/missions/{mission_id}/operations/{op['id']}/approve",
+        json={"reason": "mallory tries anyway"},
+    )
+    assert resp.status_code == 404
+    resp2 = client.post(f"/v1/missions/{mission_id}/operations/{op['id']}/deny")
+    assert resp2.status_code == 404
+
+
+def test_self_authorization_is_still_rejected_even_when_owner_is_also_the_workspace_principal_scenario(client, monkeypatch):
+    """The workspace_id relaxation must never weaken the hard
+    self-authorization guard -- alice (the requester) still cannot
+    approve her own operation, even on a mission that has a
+    workspace_id configured."""
+    _patch_real_user(monkeypatch, "bob")
+    _as(client, _user("alice"))
+    created = client.post(
+        "/v1/missions",
+        json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0", "workspace_id": "bob"},
+    ).json()
+    mission_id = created["id"]
+    op = client.post(
+        f"/v1/missions/{mission_id}/operations",
+        json={"kind": "shell_exec", "target": "ls", "idempotency_key": "self-auth-k"},
+    ).json()["operation"]
+
+    resp = client.post(
+        f"/v1/missions/{mission_id}/operations/{op['id']}/approve",
+        json={"reason": "alice tries to approve her own request"},
+    )
+    assert resp.status_code == 403
+
+
+def test_designated_workspace_principal_can_also_deny(client, monkeypatch):
+    _patch_real_user(monkeypatch, "bob")
+    _as(client, _user("alice"))
+    created = client.post(
+        "/v1/missions",
+        json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0", "workspace_id": "bob"},
+    ).json()
+    mission_id = created["id"]
+    op = client.post(
+        f"/v1/missions/{mission_id}/operations",
+        json={"kind": "shell_exec", "target": "ls", "idempotency_key": "deny-k"},
+    ).json()["operation"]
+
+    _as(client, _user("bob"))
+    resp = client.post(f"/v1/missions/{mission_id}/operations/{op['id']}/deny")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "CANCELLED"

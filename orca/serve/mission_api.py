@@ -60,7 +60,8 @@ def _mission_conn():
 
 
 def _get_owned_mission_or_404(conn, mission_id: str, user: User) -> dict:
-    """The one ownership check every route in this file goes through.
+    """The strict ownership check for routes where "is this my own
+    mission" really is the right question (create/list/fetch/cancel).
     Looks the mission up by ID (never by a client-supplied owner
     field) and requires `owner_user_id == user.id` -- a mission that
     exists but belongs to someone else returns 404, not 403, so a
@@ -73,11 +74,65 @@ def _get_owned_mission_or_404(conn, mission_id: str, user: User) -> dict:
     return mission
 
 
+def _mission_tenant_id(mission: dict) -> str:
+    """The exact tenant derivation approve_operation() already passes to
+    the real authority engine -- centralized here so the access check
+    and the authority check can never silently diverge."""
+    return mission.get("workspace_id") or mission["owner_user_id"]
+
+
+def _get_tenant_mission_or_404(conn, mission_id: str, user: User) -> dict:
+    """AUDIT-B79-B-P0-01: approve/deny must NOT gate on mission
+    ownership -- the real question for an approval decision is whether
+    the caller belongs to the mission's TENANT, not whether they
+    personally created it. Using _get_owned_mission_or_404 here made
+    legitimate two-person approval structurally impossible: an
+    authorized approver who is not the mission's creator got a 404
+    before the real authority engine (operation_store.authorize_operation
+    -> orca.godmode) was ever consulted.
+
+    `CreateMissionRequest.workspace_id` is the ONLY way a mission's
+    tenant_id can differ from its owner_user_id -- set at creation,
+    immutable afterward, and it must equal the SECOND principal's own
+    user id for that principal to pass this check (workspace_id is not
+    a role grant or a group; it is literally "this other specific
+    account is this mission's tenant too"). Before this fix, that field
+    didn't exist on the request model at all, so even a mission creator
+    who WANTED a second principal to be able to reach the decision
+    point had no way to arrange it. This remains deliberately minimal:
+    it does not add workspace membership, roles, or a grant-management
+    API -- those are a separate, larger feature this PR does not build.
+    For the default case (no workspace_id given), behavior is
+    UNCHANGED: _mission_tenant_id() reduces to owner_user_id exactly as
+    _get_owned_mission_or_404() already checked, so no new information
+    is disclosed to unrelated callers."""
+    mission = mission_store.get_mission(conn, mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="mission not found")
+    # The owner can always reach the decision point on their own mission
+    # (the ordinary single-owner flow, unchanged); a caller matching the
+    # mission's tenant_id can ALSO reach it -- the only way that differs
+    # from owner_user_id is if workspace_id was explicitly set to a
+    # second principal's id (see CreateMissionRequest.workspace_id).
+    # Either way, REACHING this point only means the real authority
+    # engine gets consulted next -- it does not itself grant approval.
+    if user.id not in (mission["owner_user_id"], _mission_tenant_id(mission)):
+        raise HTTPException(status_code=404, detail="mission not found")
+    return mission
+
+
 class CreateMissionRequest(BaseModel):
     repository: str = Field(..., min_length=1, max_length=500)
     mode: Literal["ASSIST", "PROTOTYPE", "BUILD", "LAUNCH"]
     autonomy_level: Literal["L0", "L1", "L2", "L3", "L4"]
     branch: str | None = None
+    # AUDIT-B79-B-P0-01: the only way to designate a SECOND real
+    # principal who may reach approve/deny on this mission's operations
+    # -- it must be that principal's own existing user id (never the
+    # creator's own id; checked below). Setting it to anyone else's id
+    # does not grant approval itself -- see _get_tenant_mission_or_404
+    # and operation_store.authorize_operation().
+    workspace_id: str | None = None
 
 
 @router.post("", status_code=201)
@@ -89,7 +144,22 @@ async def create_mission(
     """Authenticated mission creation (C02 Variant A: Quiet Mission
     Brief). `owner_user_id` is always the server-verified caller --
     never taken from the request body, so a caller cannot create a
-    mission "owned by" someone else."""
+    mission "owned by" someone else.
+
+    AUDIT-B79-B-P0-01: `workspace_id`, if given, must name a real,
+    existing, DIFFERENT user -- rejected otherwise (400), rather than
+    silently creating a mission whose tenant is an unreachable or
+    self-referential id."""
+    if body.workspace_id is not None:
+        if body.workspace_id == user.id:
+            raise HTTPException(
+                status_code=400,
+                detail="workspace_id must name a different principal -- the owner already has access to their own mission",
+            )
+        from orca.auth.store import get_user_by_id
+
+        if get_user_by_id(body.workspace_id) is None:
+            raise HTTPException(status_code=400, detail="workspace_id does not name an existing user")
     mission_id = _new_id("mis")
     mission = mission_store.create_mission(
         conn,
@@ -99,6 +169,7 @@ async def create_mission(
         autonomy_level=body.autonomy_level,
         owner_user_id=user.id,
         branch=body.branch,
+        workspace_id=body.workspace_id,
     )
     return mission
 
@@ -290,6 +361,12 @@ def _require_reconciliation_principal(authorization: str | None = Header(default
 
 class ConfirmCancelledRequest(BaseModel):
     cancellation_episode_id: str = Field(..., min_length=1)
+    # AUDIT-B79-B-P0-02: required, not optional -- a confirmation that
+    # doesn't even attempt to state which revision its evidence is about
+    # cannot be bound to one. None is still a legal VALUE (a mission
+    # created with no current_revision at all), but the field itself
+    # must always be present in the request.
+    cancellation_episode_revision: str | None = Field(...)
     outcome: Literal["TERMINATED", "STILL_RUNNING", "UNRESOLVED"]
 
 
@@ -329,7 +406,10 @@ async def confirm_cancelled(
         failure."""
     try:
         mission = mission_store.resolve_mission_cancellation(
-            conn, mission_id, cancellation_episode_id=body.cancellation_episode_id, outcome=body.outcome,
+            conn, mission_id,
+            cancellation_episode_id=body.cancellation_episode_id,
+            expected_cancellation_episode_revision=body.cancellation_episode_revision,
+            outcome=body.outcome,
         )
     except mission_store.MissionNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -448,7 +528,7 @@ async def approve_operation(
     operation-belongs-to-this-mission check `get_operation()` and
     `deny_operation()` already perform, BEFORE calling into the
     authority engine at all."""
-    mission = _get_owned_mission_or_404(conn, mission_id, user)
+    mission = _get_tenant_mission_or_404(conn, mission_id, user)
     existing_operation = operation_store.get_operation(conn, operation_id)
     if existing_operation is None or existing_operation["mission_id"] != mission_id:
         raise HTTPException(status_code=404, detail="operation not found")
@@ -456,7 +536,7 @@ async def approve_operation(
         operation, allowed = operation_store.authorize_operation(
             conn,
             operation_id,
-            tenant_id=mission.get("workspace_id") or mission["owner_user_id"],
+            tenant_id=_mission_tenant_id(mission),
             approved_by=user.id,
             reason=body.reason,
             arguments=body.arguments,
@@ -485,8 +565,10 @@ async def deny_operation(
     CANCELLED with the approval decision (if the caller wants one
     recorded) made via `/approve` returning `allowed=False` instead.
     This endpoint is the "I am not even going to let godmode decide"
-    fast-reject path."""
-    _get_owned_mission_or_404(conn, mission_id, user)
+    fast-reject path. Uses the same tenant-equivalence check as
+    approve_operation() (AUDIT-B79-B-P0-01) -- an authorized approver
+    must be able to deny, not just approve."""
+    _get_tenant_mission_or_404(conn, mission_id, user)
     operation = operation_store.get_operation(conn, operation_id)
     if operation is None or operation["mission_id"] != mission_id:
         raise HTTPException(status_code=404, detail="operation not found")
