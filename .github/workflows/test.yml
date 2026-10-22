@@ -271,6 +271,79 @@ jobs:
               proc.wait(timeout=10)
           "
 
+  conversation-shell-frontend-tests:
+    # AUDIT-B81-P0-01/P1-01: same precedent as sse-diagnostics above -- these
+    # Node tests (tests/frontend/test_markdown_link_sanitization.mjs,
+    # tests/frontend/test_streaming_completion_truth.mjs) exist and passed
+    # locally, but a disclosed-and-unwired test is exactly the gap that
+    # earlier Phase A CP2 finding called out. Wired into CI now, not left
+    # as a future audit item.
+    name: Conversation Shell Frontend (link sanitization + streaming truth)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Markdown link sanitization + streaming completion-truth regression suites
+        run: |
+          node --test tests/frontend/test_markdown_link_sanitization.mjs
+          node --test tests/frontend/test_streaming_completion_truth.mjs
+
+      - name: Set up Python (to actually serve the page, not just read it off disk)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Prove the Node tests extracted functions from the SAME bytes the browser is served
+        # Both Node tests above read orca/serve/web/conversation.html
+        # directly off disk -- that alone doesn't prove it's the file a
+        # real browser actually receives. This starts the real FastAPI
+        # app, fetches GET /conversation over real HTTP, and byte-diffs it
+        # against the file on disk.
+        run: |
+          python3 -c "
+          import subprocess, sys, time, urllib.request
+          proc = subprocess.Popen(
+              ['uvicorn', 'orca.serve.api:app', '--host', '127.0.0.1', '--port', '8098'],
+              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+          )
+          try:
+              deadline = time.time() + 20
+              served = None
+              last_err = b''
+              while time.time() < deadline:
+                  try:
+                      served = urllib.request.urlopen('http://127.0.0.1:8098/conversation', timeout=2).read()
+                      break
+                  except Exception as exc:
+                      last_err = str(exc).encode()
+                      time.sleep(0.5)
+              if served is None:
+                  print('server never became ready:', last_err, file=sys.stderr)
+                  sys.exit(1)
+              on_disk = open('orca/serve/web/conversation.html', 'rb').read()
+              if served != on_disk:
+                  print('MISMATCH: the served file differs from the file the Node tests extracted from', file=sys.stderr)
+                  sys.exit(1)
+              print(f'OK served bytes ({len(served)}) match the file on disk byte-for-byte')
+          finally:
+              proc.terminate()
+              proc.wait(timeout=10)
+          "
+
   genesis-v2-security:
     # Genesis Capability Eval V2 private-holdout security suite. Unlike the lightweight jobs, the encrypted-store tests MUST EXECUTE here:
     # `cryptography` comes from the `qualification` extra, ORNEUR_REQUIRE_CRYPTOGRAPHY=1 turns a missing package into a failure, and the
