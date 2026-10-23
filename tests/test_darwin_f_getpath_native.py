@@ -163,7 +163,10 @@ def test_native_darwin_symlink_path_is_not_the_descriptor_identity(tmp_path):
     try:
         reported = _darwin_descriptor_path(fd)
         assert not reported.endswith("/link")
-        with pytest.raises(CorpusBoundaryError, match="different directory"):
+        with pytest.raises(
+            CorpusBoundaryError,
+            match="the descriptor path is not the opened directory",
+        ):
             _require_descriptor_directory(fd, str(link))
     finally:
         os.close(fd)

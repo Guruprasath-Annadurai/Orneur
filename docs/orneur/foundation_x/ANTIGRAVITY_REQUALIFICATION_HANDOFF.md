@@ -11,7 +11,8 @@ Do not treat PR #83 as draft-converted; forge refused draft on GitHub-source-of-
 | #82 | `177f54801eeaa079b67c9290ed89e3df0b3f6278` |
 | #83 FAIL | `cd0f9051a2d0148eb4f1708b91ca71f41e4fb8e8` |
 | #83 second recovery | `f13c2672ecc5619a040e3a6fd037f5b8c66a77e8` |
-| #83 pointer-recovery follow-up | `git rev-parse HEAD` on `cursor/p0-foundation-security-recovery-c04e` |
+| #83 pointer-recovery follow-up | `0bab637f42252d362156983364de96cd0921b688` |
+| #83 Darwin/Linux test closeout | `git rev-parse HEAD` on `cursor/p0-foundation-security-recovery-c04e` — retest this SHA; do not reuse the previous sign-off |
 
 ## Commands
 

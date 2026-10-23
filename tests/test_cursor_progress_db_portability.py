@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 
 import pytest
 
@@ -25,6 +26,7 @@ def _record(path, text: str) -> None:
     path.write_text(json.dumps({"text": text}) + "\n")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux /proc descriptor URI only")
 def test_linux_uri_is_anchored_to_the_directory_descriptor(tmp_path, monkeypatch):
     import orca.genesis.data.pipeline as pipeline
 
@@ -123,26 +125,37 @@ def test_other_platforms_do_not_fall_back_to_a_pathname(tmp_path, monkeypatch):
     assert not (out / PROGRESS_DB_NAME).exists()
 
 
-def test_darwin_branch_binds_sqlite_to_the_descriptor_directory(tmp_path, monkeypatch):
-    """The Darwin URI path, given the directory a descriptor lookup would return.
+_HOST_PLATFORM = sys.platform
 
-    This does not execute Darwin `F_GETPATH`.
+
+def _linux_simulated_darwin_descriptor_path(fd: int) -> str:
+    """Linux stand-in for Darwin `F_GETPATH`: the kernel path of this fd."""
+    return os.readlink(f"/proc/self/fd/{fd}")
+
+
+def test_darwin_branch_binds_sqlite_to_the_descriptor_directory(tmp_path, monkeypatch):
+    """Darwin URI construction binds SQLite to the opened directory.
+
+    On Linux this simulates `F_GETPATH` without using Darwin fcntl. On macOS
+    the real descriptor lookup is used. Patching `pipeline.sys.platform`
+    also mutates the process `sys.platform`, so the host is captured first.
     """
     import orca.genesis.data.pipeline as pipeline
 
     out = tmp_path / "out"
     out.mkdir()
-    monkeypatch.setattr(pipeline.sys, "platform", "darwin")
-    monkeypatch.setattr(
-        pipeline,
-        "_darwin_descriptor_path",
-        lambda fd: os.readlink(f"/proc/self/fd/{fd}"),
-    )
+    if _HOST_PLATFORM != "darwin":
+        monkeypatch.setattr(pipeline.sys, "platform", "darwin")
+        monkeypatch.setattr(
+            pipeline, "_darwin_descriptor_path", _linux_simulated_darwin_descriptor_path,
+        )
     conn = _open_progress_db(out)
     try:
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         reported = conn.execute("PRAGMA database_list").fetchone()[2]
         assert os.lstat(reported).st_ino == (out / PROGRESS_DB_NAME).stat().st_ino
+        assert os.lstat(reported).st_dev == (out / PROGRESS_DB_NAME).stat().st_dev
+        assert not os.path.islink(reported)
     finally:
         conn.close()
 
@@ -166,6 +179,7 @@ def test_darwin_branch_rejects_a_different_directory(tmp_path, monkeypatch):
     assert list(other.iterdir()) == []
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux refuse path for Darwin F_GETPATH")
 def test_darwin_fcntl_lookup_is_refused_on_linux():
     with pytest.raises(CorpusBoundaryError, match="Darwin descriptor path lookup"):
         _darwin_descriptor_path(0)
