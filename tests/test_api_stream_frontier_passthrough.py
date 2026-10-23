@@ -43,7 +43,7 @@ def _fake_backend_response(text="4"):
     )
 
 
-async def _fake_cognitive_result(message, user, model_variant, session_id=None):
+async def _fake_cognitive_result(message, user, model_variant, session_id=None, **_kwargs):
     """See tests/test_api_chat_frontier_passthrough.py's identical helper:
     the Cognitive Kernel is now an unconditional gate in front of every
     /api/stream request too, and its internal reasoning step requires a

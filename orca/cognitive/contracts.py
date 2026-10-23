@@ -383,6 +383,12 @@ class CognitiveResult:
     # G-027 (additive, optional): the passages the Truth Fabric actually placed in the answering model's context, in the order of their [D#] tags.
     # Plain dicts (ref, identity, source_type, document_id, location, text, content_hash, retrieved_at). None = the answer did not go through it.
     evidence_passages: list[dict[str, Any]] | None = None
+    # G-026: /api/stream can ask the Kernel to plan and entitle a direct
+    # answer without calling ModelGateway.generate() first. The serving
+    # loop then streams via ModelGateway.stream() so disconnect cancels
+    # real upstream generation. /api/chat still generates to completion.
+    pending_direct_generation: bool = False
+    pending_direct_objective: str | None = None
 
 
 # ── Trace ────────────────────────────────────────────────────────────────
