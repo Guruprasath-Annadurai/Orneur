@@ -221,6 +221,7 @@ def test_full_synthetic_chain_source_to_worker_to_checkpoint_restart_to_held_out
             orca_home_override=str(tmp_path / "ornhome"), test_only_bypass_founder_ledger=True,
             test_only_pinned_registry_sha256=GOV.registry_digest(registry),
             checkpoint_workspace_dir=str(tmp_path),
+            dataset_records=("isolated-worker-fixture-record",),
         )
 
     worker_a = IsolatedTrainingWorker(_cfg("worker_a.sock", req=req, record=record, registry=registry))
@@ -363,6 +364,7 @@ def test_restart_equivalence_against_uninterrupted_training(tmp_path):
             record=record, registry=registry, req=req, revoked_ids_path=str(revoked_path),
             orca_home_override=str(tmp_path / "ornhome"), test_only_bypass_founder_ledger=True,
             test_only_pinned_registry_sha256=GOV.registry_digest(registry), checkpoint_workspace_dir=str(workspace),
+            dataset_records=("isolated-worker-fixture-record",),
         )
         worker = IsolatedTrainingWorker(cfg)
         worker.start()

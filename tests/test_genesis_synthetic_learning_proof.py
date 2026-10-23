@@ -342,7 +342,7 @@ def test_item7_dataset_mutation_after_authorization_is_detected(tmp_path, monkey
     import orca.genesis.governance.authorization as GOV
     import orca.genesis.training.orchestration as ORCH
     from orca.genesis.data.pipeline import compute_shard_digests
-    from orca.genesis.training.orchestration import AuthorizedIdentityChangedError, GenesisTrainingRun, RunState
+    from orca.genesis.training.orchestration import AuthorizedIdentityChangedError, BoundDatasetRecords, GenesisTrainingRun, RunState
 
     monkeypatch.setattr(orca_config, "ORCA_HOME", tmp_path / "ornhome")
     shard_dir = tmp_path / "shards"
@@ -372,8 +372,11 @@ def test_item7_dataset_mutation_after_authorization_is_detected(tmp_path, monkey
         "mutation-run", dataset_manifest_ids=("fixture-manifest",), environment_class="SELF_HOSTED_GPU",
         repo_root=repo_root, revocation_check=lambda auth_id: False,
     )
+    records = ["synthetic-proof-fixture-record"]
     run.validate(
-        dataset_digest=_d("dataset"), model_config_digest=mcfg, tokenizer_digest=tok_digest,
+        dataset_manifest=BoundDatasetRecords("fixture-manifest", _d("dataset"), tuple(records)),
+        dataset_records=records,
+        model_config_digest=mcfg, tokenizer_digest=tok_digest,
         authorized_shard_digests=shard_digests, shard_dir=shard_dir, reviewed_commit_sha=head,
         transformation_code_digest=tcd, optimizer_config_digest=ocd,
     )

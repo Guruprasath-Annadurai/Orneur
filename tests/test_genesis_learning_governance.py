@@ -30,7 +30,7 @@ from orca.genesis.training.learning_governance import (  # noqa: E402
     execute_authorized_training_step,
 )
 from orca.genesis.training.learning_step import TrainingStepConfig, TrainingStepEngine, set_deterministic_seed  # noqa: E402
-from orca.genesis.training.orchestration import GenesisTrainingRun, RunState  # noqa: E402
+from orca.genesis.training.orchestration import BoundDatasetRecords, GenesisTrainingRun, RunState  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV = "SELF_HOSTED_GPU"
@@ -123,8 +123,11 @@ def _build_running_run(tmp_path, monkeypatch, *, revocation_check=None) -> Genes
         "gov-test-run", dataset_manifest_ids=("gov-fixture-manifest",), environment_class=ENV,
         repo_root=REPO_ROOT, revocation_check=revocation_check or (lambda auth_id: False),
     )
+    records = ["gov-fixture-record"]
     run.validate(
-        dataset_digest=_digest("dataset"), model_config_digest=mcfg, tokenizer_digest=tok_digest,
+        dataset_manifest=BoundDatasetRecords("gov-fixture-manifest", _digest("dataset"), tuple(records)),
+        dataset_records=records,
+        model_config_digest=mcfg, tokenizer_digest=tok_digest,
         authorized_shard_digests=shard_digests, shard_dir=shard_dir, reviewed_commit_sha=HEAD_SHA,
         transformation_code_digest=tcd, optimizer_config_digest=ocd,
     )
@@ -237,8 +240,11 @@ def test_the_real_unauthorized_production_ledger_still_denies_start(tmp_path, mo
         "real-ledger-run", dataset_manifest_ids=("gov-fixture-manifest-2",), environment_class=ENV,
         repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
     )
+    records = ["gov-fixture-record-2"]
     run.validate(
-        dataset_digest=_digest("dataset2"), model_config_digest=mcfg, tokenizer_digest=tok_digest,
+        dataset_manifest=BoundDatasetRecords("gov-fixture-manifest-2", _digest("dataset2"), tuple(records)),
+        dataset_records=records,
+        model_config_digest=mcfg, tokenizer_digest=tok_digest,
         authorized_shard_digests=shard_digests, shard_dir=shard_dir, reviewed_commit_sha=HEAD_SHA,
         transformation_code_digest=tcd, optimizer_config_digest=ocd,
     )
