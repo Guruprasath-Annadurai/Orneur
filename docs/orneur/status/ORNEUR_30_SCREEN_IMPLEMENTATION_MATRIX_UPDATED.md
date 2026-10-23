@@ -17,18 +17,18 @@ The PR #85 branch (this branch) implemented and locally tested **B06, B07, B08, 
 | B01 | New Conversation / Home | Implemented | `conversation.html` | `test_conversation_shell.py`, `tests/frontend/*.mjs` | **IMPLEMENTED — INDEPENDENT AUDIT PENDING** |
 | B02 | Active Conversation | Implemented | same | same | **IMPLEMENTED — INDEPENDENT AUDIT PENDING** |
 | B03 | Answer Reading | Implemented | same | same | **IMPLEMENTED — INDEPENDENT AUDIT PENDING** |
-| B04 | Expanded Composer | None | — | — | **NOT STARTED** |
-| B05 | Native Model Selection | Partial overlap only (B01/B02's in-line model picker) | — | — | **NOT STARTED** |
+| B04 | Expanded Composer | **Implemented** — FOCUSED_EXPANDED + DRAFT_WORKSPACE states, real composer reparented (never cloned) | `conversation.html` | `test_b04_expanded_composer.mjs` | **IMPLEMENTED — INDEPENDENT AUDIT PENDING** — *changed from NOT STARTED* |
+| B05 | Native Model Selection | **Partially implemented this phase** — closed an account-switch model-selection leak, a keyboard-accessibility gap, and added a verified-fields-only Details disclosure on top of the pre-existing real picker; mobile bottom sheet and full zoom/width sweep not built | `conversation.html` | `test_b05_model_picker.mjs` | **PARTIALLY IMPLEMENTED** — *changed from NOT STARTED* |
 | B06 | Conversation History | **Implemented** — real `GET /api/sessions`, rename/delete/export layered in | `conversation.html` | `test_recent_conversation_row.mjs` + this branch's epoch/ownership suite | **IMPLEMENTED AND LOCALLY TESTED** — *changed from NOT STARTED* |
 | B07 | Conversation Search | **Implemented** — real `GET /api/sessions/search`, debounced, server-computed snippet | same | `test_search_ownership_epoch.mjs` | **IMPLEMENTED AND LOCALLY TESTED** — *changed from NOT STARTED* |
 | B08 | Conversation Management | **Implemented** — rename (`PATCH /api/session/{id}/title`), delete (`DELETE /api/session/{id}`), both real, both server-persisted (verified via reload/re-fetch, not DOM-only) | same | `test_recent_conversation_row.mjs` | **IMPLEMENTED AND LOCALLY TESTED** — *changed from NOT STARTED* |
 | B09 | Sharing & Export | **Implemented** — `GET /api/session/{id}/export` for `md` and `json`, real content verified end-to-end | same | covered by browser verification in `ORNEUR_B04_B09_ENGINEERING_REPORT.md` | **IMPLEMENTED AND LOCALLY TESTED** — *changed from NOT STARTED* |
-| B10 | Streaming & Stop | Streaming truthfulness (terminal-state tracking, interrupted badge); dedicated "Stop" control not compared against B10's own contract | `conversation.html` | `test_streaming_completion_truth.mjs` | **PARTIALLY IMPLEMENTED** (unchanged) |
+| B10 | Streaming & Stop | Streaming truthfulness (unchanged) **plus** a real, honestly-labeled client-side Stop control and a touch-target accessibility fix this phase added; full server-confirmed cancellation state machine remains blocked on backend work (no `is_disconnected()`/cancel endpoint exists) | `conversation.html` | `test_b10_stop_generation.mjs` | **PARTIALLY IMPLEMENTED** — *real functional addition, blocker documented in `ORNEUR_B10_STREAMING_AND_STOP.md`* |
 | B11 | Editing & Versions | None | — | — | **NOT STARTED** (unchanged) |
-| B12 | Error & Recovery | Generic error/unavailable-note states (PR #81); this branch added real 401/session-expiry recovery (`_handleSessionExpired()`, see `ORNEUR_SESSION_EXPIRY_401_AUDIT.md`) layered on top, but B12's own "Calm Inline Recovery" / "Guided Recovery" visual contract still not compared | `conversation.html` | `test_view_ownership_epoch.mjs` (401 tests) | **PARTIALLY IMPLEMENTED** (unchanged classification; real functional addition underneath it) |
+| B12 | Error & Recovery | Generic error/unavailable-note states, real 401/session-expiry recovery (`ORNEUR_SESSION_EXPIRY_401_AUDIT.md`), **plus** real Copy/Retry RecoveryActions this phase added on every error note; the contract's server-confirmed reconciliation surface (`GuidedRecoverySurface`, retry eligibility) remains blocked on the same backend work as B10 | `conversation.html` | `test_streaming_completion_truth.mjs` (Copy/Retry tests) | **PARTIALLY IMPLEMENTED** — *real functional addition, blocker documented in `ORNEUR_B12_ERROR_RECOVERY.md`* |
 | B13 | Temporary / Private Chat | None | — | — | **NOT STARTED** (unchanged) |
 | B14 | Multi-Conversation Navigation | None (single active conversation only; history list lets you switch, not view concurrently) | — | — | **NOT STARTED** (unchanged) |
-| B15 | Citations & Sources | None (backend `source_summary`/`sources` fields exist, unused by frontend) | — | — | **NOT STARTED** (unchanged) |
+| B15 | Citations & Sources | **Implemented** — inline `[D#]` citation markers and a collapsed-by-default Sources panel, built around the real `orca/serve/citations.py` schema (no backend blocker existed; the data was already computed, just unused by the frontend) | `conversation.html` | `test_b15_citations.mjs` | **IMPLEMENTED — INDEPENDENT AUDIT PENDING** — *changed from NOT STARTED* |
 | B16 | Context & Attachments | None | — | — | **NOT STARTED** (unchanged) |
 
 ## C-series — re-verified against newer design-handoff archives, not assumed unchanged
@@ -65,9 +65,9 @@ The CTO directive instructs implementing "the founder-approved unified C11 desig
 
 ## Rollup
 
-- **Implemented and locally tested:** 7 (B01–B03 audit-pending, B06–B09 newly so this branch)
-- **Partially implemented:** 2 (B10, B12 — B12 gained real functional ground this phase via 401 recovery, classification held at Partial since the dedicated visual contract is still uncompared)
-- **Not started:** 9 (B04, B05, B11, B13–B16)
+- **Implemented and locally tested:** 9 (B01–B03, B06–B09 audit-pending; B04 and B15 newly so this session, each source-verified and live-tested)
+- **Partially implemented:** 3 (B05, B10, B12 — each has a real functional addition this session on top of its prior state, with any remaining gap honestly documented in its own report)
+- **Not started:** 5 (B11, B13, B14, B16 — plus B05/B10/B12's own remaining anatomy items disclosed in their reports, not counted again here)
 - **Blocked on missing design source:** 11 (C01–C11)
 - **Blocked on backend/authority dependency:** 3 (C12–C14), plus C02 doubly-blocked
 
