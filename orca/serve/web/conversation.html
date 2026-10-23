@@ -89,8 +89,19 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 /* B02 reading / message list */
 .reading-region{flex:1;overflow-y:auto;scrollbar-width:thin}
 .reading-container{max-width:760px;margin:0 auto;padding:24px 0 24px}
-.msg-user{display:flex;justify-content:flex-end;margin-bottom:24px}
+.msg-user{display:flex;flex-direction:column;align-items:flex-end;margin-bottom:24px}
 .sample-q{max-width:85%;font-size:14px;line-height:1.6;background:var(--bubble);border:1px solid var(--line);border-radius:15px;padding:14px 18px;white-space:pre-wrap;word-break:break-word}
+/* B11 Inline Edit -- source-verified, see appendUserMessage()'s own
+   comment for the exact archive/SHA and the honest backend-absence
+   scoping. */
+.edit-msg-btn{display:inline-flex;align-items:center;gap:5px;margin-top:6px;background:none;border:none;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;padding:4px 6px;border-radius:6px;font-family:inherit}
+.edit-msg-btn:hover,.edit-msg-btn:focus-visible{background:var(--chip);color:var(--ink)}
+.edit-msg-panel{display:none;margin-top:8px;width:min(480px,85%);background:var(--compose);border:1px solid var(--border);border-radius:13px;padding:14px 16px}
+.edit-msg-panel.open{display:block}
+.edit-msg-textarea{width:100%;min-height:70px;border:1px solid var(--border);border-radius:9px;background:none;color:var(--ink);font:13px/1.5 inherit;padding:9px 10px;resize:vertical}
+.edit-msg-note{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.4}
+.edit-msg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.edit-msg-actions .expand-action{height:32px;padding:0 12px;font-size:11.5px}
 .answer{color:var(--ink);margin-bottom:28px}
 .answer-by{display:flex;align-items:center;gap:10px;font-size:12px;margin:0 0 10px}
 .answer-by span:last-child{color:var(--muted)}
@@ -1485,12 +1496,68 @@ function newConversation() {
   showEmptyView();
 }
 
+// AUDIT-B11: source-verified against
+// APPROVED_SOURCE_ARCHIVES/ORNEUR_B11_FINAL_LOCK_AND_HANDOFF.zip
+// (SHA-256 a6f6d0350bc3f889fdcb572447857e69f73bda59b28000a1befaa8f0e38c2401,
+// verified against manifests/SHA256_MANIFEST.json, 21/21 files). No
+// message-edit, version-lineage or regenerate backend exists anywhere in
+// this codebase (grepped orca/serve/api.py and orca/serve/conversations.py
+// for edit_message/message_version/version_id/regenerate/lineage; zero
+// hits -- only the read-only GET .../messages endpoint). The contract's
+// own explicit instruction for exactly this: "If any required contract
+// is absent, leave dependent UI disabled/fail-closed, document the gap."
+// The approved prototype is itself already labeled honestly ("B11 DESIGN
+// PREVIEW -- NO QUALIFIED MODEL OR LIVE REGENERATION", "Local preview ·
+// not submitted", "The production UI must preserve original prompts and
+// responses. It must not imply a regeneration succeeded without backend
+// confirmation.") -- reused verbatim below, not reworded.
+//
+// Scoped to Inline Edit only (the contract's own default surface); the
+// optional Response Versions/Regenerate/Compare surface is NOT built in
+// this pass -- there is no second response version anywhere in this
+// backend to compare against, so even a disabled affordance for it would
+// have nothing real to anchor to. Disclosed in the engineering report.
+let _userMsgCounter = 0;
 function appendUserMessage(text) {
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
   div.className = 'msg-user';
-  div.innerHTML = `<div class="sample-q">${esc(text)}</div>`;
+  const uid = ++_userMsgCounter;
+  div.innerHTML = `<div class="sample-q">${esc(text)}</div>` +
+    `<button type="button" class="edit-msg-btn" aria-label="Edit message" aria-expanded="false" aria-controls="edit-msg-panel-${uid}">` +
+    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Edit</button>` +
+    `<div class="edit-msg-panel" id="edit-msg-panel-${uid}" hidden>` +
+    `<textarea class="edit-msg-textarea" aria-label="Edit message draft">${esc(text)}</textarea>` +
+    `<div class="edit-msg-note">The original stays in history. Sending the edit requires an available model.</div>` +
+    `<div class="edit-msg-actions"><button type="button" class="expand-action" data-action="cancel">Cancel</button>` +
+    `<button type="button" class="expand-action primary-disabled" disabled title="Editing requires a real message-edit endpoint, which does not exist in this backend yet">Save edit</button></div>` +
+    `</div>`;
   container.appendChild(div);
+  const editBtn = div.querySelector('.edit-msg-btn');
+  const panel = div.querySelector('.edit-msg-panel');
+  const textarea = div.querySelector('.edit-msg-textarea');
+  const cancelBtn = div.querySelector('[data-action="cancel"]');
+  function closeEdit() {
+    panel.hidden = true;
+    panel.classList.remove('open');
+    editBtn.setAttribute('aria-expanded', 'false');
+    editBtn.focus();
+  }
+  editBtn.addEventListener('click', () => {
+    const willOpen = panel.hidden;
+    panel.hidden = !willOpen;
+    panel.classList.toggle('open', willOpen);
+    editBtn.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen) {
+      // AUDIT-B11: "initial text exactly equals selected message" -- reset
+      // to the real original on every open, discarding any abandoned
+      // local-only draft from a prior open/cancel, since Cancel itself
+      // "restores the original displayed message; no mutation."
+      textarea.value = text;
+      textarea.focus();
+    }
+  });
+  cancelBtn.addEventListener('click', closeEdit);
   scrollReadingToBottom();
 }
 
