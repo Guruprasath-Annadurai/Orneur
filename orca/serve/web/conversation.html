@@ -940,6 +940,7 @@ async function loadSessions() {
   try {
     const r = await fetch('/api/sessions?limit=20', { headers: _authHeaders() });
     if (!_historyResponseStillOwns(myEpoch, myToken)) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('sessions fetch failed');
     const data = await r.json();
     if (!_historyResponseStillOwns(myEpoch, myToken)) return;
@@ -1126,6 +1127,7 @@ function startRenameConversation(row, btn, sid) {
         method: 'PATCH', headers: _authHeaders(), body: JSON.stringify({ title: newTitle }),
       });
       if (myToken !== _authToken) return;
+      if (r.status === 401) { _handleSessionExpired(); return; }
       if (!r.ok) throw new Error('rename failed');
       const data = await r.json();
       if (myToken !== _authToken) return;
@@ -1168,6 +1170,7 @@ async function exportConversation(sid, title, format) {
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/export?format=${format}`, { headers: _authHeaders() });
     if (myToken !== _authToken) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('export failed');
     // The server's own Content-Disposition header only matters for a
     // real browser navigation; fetch() never acts on it, so the
@@ -1201,6 +1204,7 @@ async function deleteConversation(row, sid) {
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}`, { method: 'DELETE', headers: _authHeaders() });
     if (myToken !== _authToken) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('delete failed');
     row.remove();
     if (sid === sessionId) newConversation(); // the open conversation was just deleted -- do not keep showing its now-gone content
@@ -1277,6 +1281,7 @@ async function runConversationSearch(q) {
   try {
     const r = await fetch(`/api/sessions/search?q=${encodeURIComponent(q)}`, { headers: _authHeaders() });
     if (!_searchResponseStillOwns(myEpoch, myToken, q)) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('search failed');
     const data = await r.json();
     if (!_searchResponseStillOwns(myEpoch, myToken, q)) return; // re-check after the second await -- ownership can be lost at any point while this was in flight
@@ -1322,6 +1327,7 @@ async function openSession(sid, title) {
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/messages`, { headers: _authHeaders() });
     if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('load failed');
     const data = await r.json();
     if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
@@ -1493,13 +1499,16 @@ function updateAccountUI() {
   document.getElementById('conv-search-wrap').style.display = _authUser ? '' : 'none';
 }
 
-function doLogout() {
-  // AUDIT-P85C invariant 6: logout must clear private conversation
-  // content and prevent every prior-account response from rendering --
-  // BOTH domains, not just the message domain newConversation() below
-  // now scopes itself to (AUDIT-P85C narrowed newConversation() to
-  // message-only per the CTO directive's explicit instruction, so logout
-  // can no longer rely on it for history invalidation).
+// AUDIT-P85-SESSEXP: shared by a user-initiated logout and a genuine
+// session-expiry recovery below -- both are the same real event (the
+// authenticated principal ends), differing only in who triggered it and
+// whether there's a specific reason to show. Invariant 6: clear private
+// conversation content and prevent every prior-account response from
+// rendering -- BOTH domains, not just the message domain newConversation()
+// now scopes itself to (narrowed to message-only per the CTO directive's
+// explicit instruction, so this can no longer rely on it for history
+// invalidation).
+function _clearAuthStateAndShowSignIn(message) {
   _abandonActiveSearch();
   _abandonAllViewsForAccountChange();
   _authToken = null; _authUser = null;
@@ -1511,6 +1520,39 @@ function doLogout() {
   newConversation();
   updateAccountUI();
   openAuthOverlay();
+  if (message) {
+    const errEl = document.getElementById('si-error');
+    if (errEl) errEl.textContent = message;
+  }
+}
+
+function doLogout() {
+  _clearAuthStateAndShowSignIn();
+}
+
+// AUDIT-P85-SESSEXP (Mission 3 audit): a 401 on an authenticated request
+// means the server no longer recognizes this token (expired, revoked, or
+// rotated elsewhere). Audited honestly: before this, every call site here
+// treated a 401 identically to any other failure -- a generic "could not
+// load"/"X failed" message -- leaving the user looking signed-in (their
+// avatar and name still shown in the sidebar) while every further
+// authenticated action would silently fail, with no path back to sign-in
+// and no truthful explanation of why. This is the minimal basic recovery
+// within scope: treat a real 401 as the genuine identity transition it
+// is, reusing the exact full-account-reset doLogout() already uses, with
+// an honest, specific reason shown in the sign-in overlay instead of a
+// vague per-request error. This does not change the authentication
+// architecture itself (token issuance/refresh is unchanged) -- a design
+// change there (e.g. refresh tokens, silent re-auth) would need its own
+// escalation, which this is not.
+//
+// Guarded by the same per-domain ownership check every call site already
+// performs BEFORE this is called: a 401 for a request that has already
+// lost ownership (e.g. the user already switched to a different account)
+// must never tear down the CURRENT session based on a stale response.
+function _handleSessionExpired() {
+  if (!_authToken) return; // already signed out -- nothing to expire
+  _clearAuthStateAndShowSignIn('Your session has expired. Please sign in again.');
 }
 
 async function tryRestoreSession() {

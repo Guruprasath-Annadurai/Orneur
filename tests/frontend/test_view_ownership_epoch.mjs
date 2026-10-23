@@ -212,6 +212,7 @@ test('newConversation() invalidates ONLY the message domain, not history (the CT
 });
 
 test('doLogout() invalidates BOTH domains via the full-account-reset routine (invariant 6)', () => {
+  const clearAuthStateSrc = extractFunction(source, 'function _clearAuthStateAndShowSignIn(message) {');
   const doLogoutSrc = extractFunction(source, 'function doLogout() {');
   const calls = [];
   const sandbox = {
@@ -232,7 +233,7 @@ test('doLogout() invalidates BOTH domains via the full-account-reset routine (in
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${doLogoutSrc}`,
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${doLogoutSrc}`,
     sandbox,
   );
   sandbox.doLogout();
@@ -282,4 +283,80 @@ test('onAuthSuccess() invalidates both domains (a sign-in that never goes throug
   assert.equal(sandbox._historyEpoch, 1, 'onAuthSuccess() must invalidate history even though it never called doLogout()');
   assert.equal(sandbox._messageEpoch, 1, 'onAuthSuccess() must invalidate messages even though it never called doLogout()');
   assert.equal(sandbox._authToken, 'token-bob');
+});
+
+// --- Mission 3 audit: session-expiry / 401 basic recovery ---
+test('_handleSessionExpired() clears auth state and shows a truthful reason in the sign-in overlay', () => {
+  const clearAuthStateSrc = extractFunction(source, 'function _clearAuthStateAndShowSignIn(message) {');
+  const handleExpiredSrc = extractFunction(source, 'function _handleSessionExpired() {');
+  let shownMessage = null;
+  const sandbox = {
+    _authToken: 'token-alice',
+    _authUser: { name: 'Alice' },
+    localStorage: { removeItem: () => {} },
+    document: {
+      getElementById: (id) => {
+        if (id === 'si-error') return { set textContent(v) { shownMessage = v; } };
+        return { innerHTML: '', value: '' };
+      },
+    },
+    _abandonActiveSearch: () => {},
+    _preSearchListHTML: null,
+    newConversation: () => {},
+    updateAccountUI: () => {},
+    openAuthOverlay: () => {},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${handleExpiredSrc}`,
+    sandbox,
+  );
+  sandbox._handleSessionExpired();
+  assert.equal(sandbox._authToken, null, '_handleSessionExpired() must clear the token, exactly like a real logout');
+  assert.equal(sandbox._historyEpoch, 1);
+  assert.equal(sandbox._messageEpoch, 1);
+  assert.equal(shownMessage, 'Your session has expired. Please sign in again.', 'must show a truthful, specific reason, not a silent logout');
+});
+
+test('_handleSessionExpired() is a no-op when already signed out (no token to expire)', () => {
+  const clearAuthStateSrc = extractFunction(source, 'function _clearAuthStateAndShowSignIn(message) {');
+  const handleExpiredSrc = extractFunction(source, 'function _handleSessionExpired() {');
+  let calledClear = false;
+  const sandbox = {
+    _authToken: null,
+    document: { getElementById: () => ({ innerHTML: '', value: '' }) },
+    _abandonActiveSearch: () => { calledClear = true; },
+    _preSearchListHTML: null,
+    newConversation: () => {},
+    updateAccountUI: () => {},
+    openAuthOverlay: () => {},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${handleExpiredSrc}`,
+    sandbox,
+  );
+  sandbox._handleSessionExpired();
+  assert.equal(calledClear, false, 'must not run the full reset when there was never a token to expire (e.g. the anonymous/signed-out state)');
+});
+
+test('every authenticated call site checks r.status === 401 before the generic !r.ok failure path', () => {
+  // Structural check: a 401 must be distinguished from a generic failure
+  // at every real authenticated fetch call site this phase touched --
+  // otherwise expiry silently degrades into the old "could not load"
+  // message with no recovery path.
+  const sites = [
+    "fetch('/api/sessions?limit=20'",
+    'fetch(`/api/session/${encodeURIComponent(sid)}/messages`',
+    'fetch(`/api/sessions/search?q=',
+    'fetch(`/api/session/${encodeURIComponent(sid)}/title`',
+    'fetch(`/api/session/${encodeURIComponent(sid)}/export?format=',
+    'fetch(`/api/session/${encodeURIComponent(sid)}`, { method: \'DELETE\'',
+  ];
+  for (const marker of sites) {
+    const idx = source.indexOf(marker);
+    assert.ok(idx !== -1, `call site not found: ${marker}`);
+    const nextChunk = source.slice(idx, idx + 400);
+    assert.ok(nextChunk.includes('_handleSessionExpired()'), `call site missing a 401 -> _handleSessionExpired() check: ${marker}`);
+  }
 });
