@@ -134,7 +134,7 @@ test('resetModelSelection() clears the variant and restores the default "Choose 
 
   const sandbox = { selectedModelVariant: 'core', composerEl, isStreaming: false };
   vm.createContext(sandbox);
-  vm.runInContext(`${updateSendSrc}\n${resetSrc}`, sandbox);
+  vm.runInContext(`var SEND_ICON_SVG = '';\nvar STOP_ICON_SVG = '';\n${updateSendSrc}\n${resetSrc}`, sandbox);
   sandbox.resetModelSelection();
 
   assert.equal(sandbox.selectedModelVariant, null);

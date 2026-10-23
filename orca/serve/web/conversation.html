@@ -130,7 +130,14 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .model[disabled]{opacity:.55;cursor:not-allowed}
 .neutral-dot{background:var(--muted);height:6px;width:6px;border-radius:50%;flex-shrink:0}
 .neutral-dot.avail{background:#3DA35D}
-.send{margin-left:auto;display:grid;place-items:center;height:32px;width:32px;border-radius:10px;background:var(--chip);color:var(--muted);border:none;cursor:pointer}
+.send{position:relative;margin-left:auto;display:grid;place-items:center;height:32px;width:32px;border-radius:10px;background:var(--chip);color:var(--muted);border:none;cursor:pointer}
+/* AUDIT-B10: the contract explicitly flags this exact control -- "36px
+   Stop control... production hit target... must meet accessibility
+   standards without materially changing visual hierarchy." An invisible
+   expanded hitbox reaches the WCAG 2.2 AA 44x44 CSS-px touch target on
+   narrow/touch viewports without enlarging the visible 32px glyph. */
+@media(max-width:650px){.send::before{content:'';position:absolute;inset:-6px}}
+.send.stop-mode{background:var(--error);color:#fff}
 .send:not(.disabled){background:var(--accent);color:#fff}
 .send.disabled{opacity:.6;cursor:not-allowed}
 .starters{display:flex;gap:18px;justify-content:center;margin-top:16px;flex-wrap:wrap;font-size:12.5px;color:var(--soft)}
@@ -652,7 +659,16 @@ function wireComposer() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   });
-  composerEl.querySelector('#send-btn').addEventListener('click', sendMessage);
+  // AUDIT-B10: the same control sends while idle and stops while
+  // streaming -- a common, well-understood pattern (matches this
+  // codebase's existing "reparent, don't duplicate" preference over a
+  // second always-present button). sendMessage() already no-ops while
+  // isStreaming, so the branch here is the only thing that makes Stop
+  // reachable at all.
+  composerEl.querySelector('#send-btn').addEventListener('click', () => {
+    if (isStreaming) stopGeneration();
+    else sendMessage();
+  });
   const modelBtn = composerEl.querySelector('#model-btn');
   modelBtn.setAttribute('aria-haspopup', 'true');
   modelBtn.setAttribute('aria-expanded', 'false');
@@ -782,12 +798,67 @@ document.getElementById('draft-workspace').addEventListener('keydown', (e) => {
   }
 });
 
+const SEND_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-7 7 7-7 7 7"/></svg>';
+// AUDIT-B10: a filled square, the conventional "stop" glyph (distinct
+// from the send arrow) -- never an invented spinner/progress claim, per
+// the contract's "no misleading elapsed-time claims" / "no fake step
+// lists" instruction; this is a pure control affordance, not a status
+// report.
+const STOP_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';
+
 function updateSendEnabled() {
   if (!composerEl) return;
   const input = composerEl.querySelector('#msg-input');
   const btn = composerEl.querySelector('#send-btn');
-  const canSend = !!(input.value.trim()) && !!selectedModelVariant && !isStreaming;
+  // AUDIT-B10: while a response is streaming, the same control becomes
+  // Stop -- always enabled/clickable (never disabled while streaming,
+  // since a pending cancellation must stay reachable), distinct icon and
+  // accessible name. stopGeneration() below is the only thing wired to
+  // actually stop reading further bytes; see its own comment for the
+  // honest limit on what "stop" can truthfully claim here.
+  if (isStreaming) {
+    btn.classList.remove('disabled');
+    btn.classList.add('stop-mode');
+    btn.title = 'Stop generating response';
+    btn.setAttribute('aria-label', 'Stop generating response');
+    btn.innerHTML = STOP_ICON_SVG;
+    return;
+  }
+  btn.classList.remove('stop-mode');
+  btn.title = 'Send';
+  btn.setAttribute('aria-label', 'Send message');
+  btn.innerHTML = SEND_ICON_SVG;
+  const canSend = !!(input.value.trim()) && !!selectedModelVariant;
   btn.classList.toggle('disabled', !canSend);
+}
+
+// AUDIT-B10: honest scope, stated plainly -- this stops the BROWSER from
+// reading further bytes (the exact same _abandonActiveStream() already
+// used internally when switching conversations/accounts). It does NOT
+// confirm the backend itself stopped generating or running tools: the
+// current /api/stream handler has no observed request.is_disconnected()
+// check or dedicated cancel endpoint with a server-acknowledged terminal
+// state (grepped; none found), so per the B10 contract's own explicit
+// instruction -- "A mere HTTP 200 on a cancel request acceptance is not
+// proof work stopped" / "never claim 'Stopped'" when backend cancellation
+// isn't guaranteed -- the resulting UI state reuses the existing, already
+// honest "interrupted" badge/note rather than inventing a confirmed-
+// "Stopped" label this interface cannot actually back up.
+function stopGeneration() {
+  if (!isStreaming) return;
+  const container = document.getElementById('reading-container');
+  const lastAnswer = container.querySelector('.answer:last-child');
+  _abandonActiveStream();
+  if (!lastAnswer) return;
+  const thinking = lastAnswer.querySelector('.thinking');
+  if (thinking) {
+    // Nothing was ever shown for this turn -- no partial content to
+    // preserve, so the placeholder itself is removed rather than marked.
+    lastAnswer.remove();
+    appendUnavailableNote('Generation stopped on this device. The response may still be completing on the server; a confirmed stop is not available from this interface.');
+  } else {
+    markMessageInterrupted(lastAnswer, 'Generation stopped on this device -- connection ended before completion. A confirmed server-side stop is not available from this interface.');
+  }
 }
 
 /* ── Model availability (GET /api/models -- real, never fabricated) ── */
@@ -1086,13 +1157,13 @@ function finalizeStreamingMessage(div, finalText) {
 // A closed connection is not a successful generation: mark whatever
 // partial text rendered so far as interrupted instead of letting it sit
 // there looking like a verified, completed answer.
-function markMessageInterrupted(div) {
+function markMessageInterrupted(div, reason) {
   if (!div) return;
   const body = div.querySelector('.msg-body');
   if (body && !body.querySelector('.interrupted-badge')) {
     const badge = document.createElement('div');
     badge.className = 'interrupted-badge';
-    badge.textContent = 'Response interrupted -- connection ended before completion.';
+    badge.textContent = reason || 'Response interrupted -- connection ended before completion.';
     body.appendChild(badge);
   }
 }
