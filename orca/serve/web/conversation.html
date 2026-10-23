@@ -340,28 +340,53 @@ function _abandonActiveStream() {
   updateSendEnabled();
 }
 
-// AUDIT-P85B: a consistent account-view ownership contract for every
-// OTHER asynchronous operation that paints into the sidebar or the main
-// reading pane -- loadSessions() (conversation history) and
-// openSession() (conversation messages) share ONE epoch, deliberately
-// separate from _streamEpoch (streaming) and _searchEpoch (search),
-// which this does not touch. A single shared epoch is intentional: the
-// CTO directive asks for ONE consistent contract, and both operations
-// must be invalidated by exactly the same events (identity change,
-// logout, navigating to a different conversation, starting a new one) --
-// reproduced live before this fix: a delayed loadSessions() response
-// painted Alice's real conversation into Bob's freshly-logged-in, empty
-// sidebar; a delayed openSession() response painted Alice's private
-// message content into Bob's reading pane. Both closed below.
-let _viewEpoch = 0;
-function _abandonActiveView() {
-  _viewEpoch++;
+// AUDIT-P85C: independent ownership domains for the sidebar history list
+// (loadSessions()) and the active conversation's messages (openSession()).
+// AUDIT-P85B's first version of this shared ONE epoch between both --
+// Antigravity's independent audit (PARTIAL -- CONFIRMED LIVENESS
+// COUPLING DEFECT) correctly caught that this made two genuinely
+// unrelated UI regions invalidate each other: opening a conversation
+// discarded a still-valid, still-authorized, merely-slow sidebar
+// refresh (reproduced live: the sidebar stayed on a forced placeholder
+// forever even after the real response arrived), and refreshing the
+// sidebar discarded a still-valid message load (reproduced live: the
+// reading pane stayed on "Loading conversation..." forever even though
+// the real messages had arrived). Both are genuine liveness defects --
+// not a privacy leak, but a real "the user never sees their own valid
+// data" bug, which these two independent counters fix.
+//
+// Deliberately separate from _streamEpoch (streaming) and _searchEpoch
+// (search), neither touched here.
+let _historyEpoch = 0;
+let _messageEpoch = 0;
+function _abandonActiveHistory() {
+  _historyEpoch++;
 }
-// True only if nothing has happened since this operation started that
-// would make applying its result a lie: no newer view-owning operation,
-// and the authenticated principal hasn't changed underneath it.
-function _viewResponseStillOwns(myEpoch, myToken) {
-  if (myEpoch !== _viewEpoch) return false;
+function _abandonActiveMessage() {
+  _messageEpoch++;
+}
+// The ONLY place both domains are invalidated together -- a genuine
+// authenticated-principal change (logout, login, account switch,
+// anonymous<->authenticated). Narrower events (opening a different
+// conversation, refreshing the sidebar, starting a new conversation)
+// must invalidate ONLY their own domain; see newConversation() below
+// for the specific case the CTO directive called out by name.
+function _abandonAllViewsForAccountChange() {
+  _historyEpoch++;
+  _messageEpoch++;
+}
+// True only if nothing has happened since THIS operation started that
+// would make applying ITS result a lie: no newer request in the SAME
+// domain, and the authenticated principal hasn't changed underneath it
+// (the principal check is the one thing both domains still share,
+// since an account change must always win regardless of domain).
+function _historyResponseStillOwns(myEpoch, myToken) {
+  if (myEpoch !== _historyEpoch) return false;
+  if (myToken !== _authToken) return false;
+  return true;
+}
+function _messageResponseStillOwns(myEpoch, myToken) {
+  if (myEpoch !== _messageEpoch) return false;
   if (myToken !== _authToken) return false;
   return true;
 }
@@ -637,7 +662,15 @@ function showActiveView(title) {
 
 function newConversation() {
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: any in-flight response is no longer ours
-  _abandonActiveView(); // AUDIT-P85B: an in-flight openSession()/loadSessions() for the conversation being navigated away from is no longer ours either
+  // AUDIT-P85C: MESSAGE domain only -- starting a new conversation ends
+  // this view's claim on any in-flight MESSAGE load (there is no longer
+  // a specific conversation whose messages belong here), but an
+  // otherwise valid, authenticated, merely-slow sidebar HISTORY refresh
+  // is completely unrelated and must be left alone (CTO directive,
+  // reviewing newConversation() specifically: "starting a new
+  // conversation normally invalidates the old message view, not an
+  // otherwise valid authenticated sidebar-history request").
+  _abandonActiveMessage();
   sessionId = null;
   document.getElementById('reading-container').innerHTML = '';
   highlightSelectedRecent(null);
@@ -896,22 +929,20 @@ async function loadSessions() {
   // response still in flight when this is called must never be allowed
   // to repaint over whatever this reload produces.
   _abandonActiveSearch();
-  // AUDIT-P85B: reproduced live and confirmed real -- a delayed response
-  // from an EARLIER loadSessions() call (e.g. Alice's) had no ownership
-  // check at all, so it could overwrite a newly-logged-in Bob's correct,
-  // empty sidebar with Alice's real conversation once it finally
-  // resolved. Claims a fresh epoch + the principal at call time; both
-  // are re-checked after the fetch AND after the JSON parse.
-  const myEpoch = ++_viewEpoch;
+  // AUDIT-P85C: HISTORY domain only (invariant 1: loadSessions() may
+  // invalidate an older history request, but must never invalidate an
+  // unrelated message request -- that coupling was the exact liveness
+  // defect Antigravity caught in the prior shared-epoch version).
+  const myEpoch = ++_historyEpoch;
   const myToken = _authToken;
   if (!_authToken) return;
   const list = document.getElementById('recents-list');
   try {
     const r = await fetch('/api/sessions?limit=20', { headers: _authHeaders() });
-    if (!_viewResponseStillOwns(myEpoch, myToken)) return;
+    if (!_historyResponseStillOwns(myEpoch, myToken)) return;
     if (!r.ok) throw new Error('sessions fetch failed');
     const data = await r.json();
-    if (!_viewResponseStillOwns(myEpoch, myToken)) return;
+    if (!_historyResponseStillOwns(myEpoch, myToken)) return;
     list.innerHTML = '';
     if (!data.sessions.length) {
       list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
@@ -919,7 +950,7 @@ async function loadSessions() {
     }
     data.sessions.forEach((s) => renderRecentRow(list, s.id, s.title || '(untitled conversation)'));
   } catch (e) {
-    if (!_viewResponseStillOwns(myEpoch, myToken)) return;
+    if (!_historyResponseStillOwns(myEpoch, myToken)) return;
     list.innerHTML = '<div class="recents-empty">Could not load conversations</div>';
   }
 }
@@ -1272,17 +1303,15 @@ function restoreRecentsFromSearch() {
 
 async function openSession(sid, title) {
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: switching conversations ends this view's claim on any in-flight response
-  // AUDIT-P85B: reproduced live and confirmed real -- a delayed
-  // GET .../messages response had no ownership check at all, so it
-  // could paint Alice's private conversation content into Bob's reading
-  // pane once it resolved after a real account switch. Claims a fresh
-  // epoch + the principal + the specific conversation id being loaded
-  // (the "relevant conversation identity" the CTO directive asks for,
-  // on top of the epoch -- rapid switching between conversation X and Y
-  // is already caught by the epoch alone, since each openSession() call
-  // claims its own fresh one, but checking sid === sessionId explicitly
-  // too is a second, independent guard against the same class of bug).
-  const myEpoch = ++_viewEpoch;
+  // AUDIT-P85C: MESSAGE domain only (invariant 2: openSession() may
+  // invalidate an older message request, but must never invalidate an
+  // unrelated history request). Claims a fresh epoch + the principal +
+  // the specific conversation id being loaded (invariant 3: opening
+  // conversation Y must invalidate an obsolete load for X -- already
+  // guaranteed structurally by the fresh epoch claim alone, since every
+  // openSession() call gets its own; the sid === sessionId check is a
+  // second, independent guard against the same class of bug).
+  const myEpoch = ++_messageEpoch;
   const myToken = _authToken;
   const mySid = sid;
   sessionId = sid;
@@ -1292,10 +1321,10 @@ async function openSession(sid, title) {
   container.innerHTML = '<div class="thinking"><span class="dot-pulse"></span><span>Loading conversation...</span></div>';
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/messages`, { headers: _authHeaders() });
-    if (!_viewResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
+    if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     if (!r.ok) throw new Error('load failed');
     const data = await r.json();
-    if (!_viewResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
+    if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '';
     data.messages.forEach((m) => {
       if (m.role === 'user') appendUserMessage(m.content);
@@ -1303,7 +1332,7 @@ async function openSession(sid, title) {
     });
     if (!data.messages.length) container.innerHTML = '<div class="recents-empty">This conversation has no messages yet.</div>';
   } catch (e) {
-    if (!_viewResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
+    if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '<div class="unavailable-note">Could not load this conversation. It may have been removed, or you may not have access to it.</div>';
   }
 }
@@ -1421,6 +1450,13 @@ async function doSignup() {
 }
 
 function onAuthSuccess(data) {
+  // AUDIT-P85C invariant 5/Assignment C: a genuine authenticated-
+  // principal change -- invalidate BOTH domains, not just whichever one
+  // loadSessions() below happens to self-claim. This does NOT assume
+  // onAuthSuccess() was preceded by doLogout() (it often isn't -- e.g.
+  // anonymous-to-authenticated sign-in never calls doLogout() at all).
+  _abandonActiveSearch();
+  _abandonAllViewsForAccountChange();
   _authToken = data.token;
   _authUser = data.user;
   _anonymous = false;
@@ -1432,12 +1468,12 @@ function onAuthSuccess(data) {
 }
 
 function continueAnonymous() {
-  _anonymous = true;
-  // AUDIT-P85-P0/P85B: a genuine identity change -- any search, history
+  // AUDIT-P85-P0/P85C: a genuine identity change -- any search, history
   // load, or conversation load still in flight for whoever the caller
   // was a moment ago must never repaint.
   _abandonActiveSearch();
-  _abandonActiveView();
+  _abandonAllViewsForAccountChange();
+  _anonymous = true;
   closeAuthOverlay();
   updateAccountUI();
   loadModels();
@@ -1458,13 +1494,17 @@ function updateAccountUI() {
 }
 
 function doLogout() {
+  // AUDIT-P85C invariant 6: logout must clear private conversation
+  // content and prevent every prior-account response from rendering --
+  // BOTH domains, not just the message domain newConversation() below
+  // now scopes itself to (AUDIT-P85C narrowed newConversation() to
+  // message-only per the CTO directive's explicit instruction, so logout
+  // can no longer rely on it for history invalidation).
+  _abandonActiveSearch();
+  _abandonAllViewsForAccountChange();
   _authToken = null; _authUser = null;
   try { localStorage.removeItem('orneur_token'); } catch (e) {}
   document.getElementById('recents-list').innerHTML = '<div class="recents-empty">Sign in to see your conversations</div>';
-  // A different account may sign in next -- a stale search box/query
-  // from the PREVIOUS user must not carry over, and (AUDIT-P85-P0) any
-  // search request still in flight for them must never repaint.
-  _abandonActiveSearch();
   const searchInput = document.getElementById('conv-search-input');
   if (searchInput) searchInput.value = '';
   _preSearchListHTML = null;
@@ -1481,6 +1521,12 @@ async function tryRestoreSession() {
     const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + stored } });
     if (!r.ok) { try { localStorage.removeItem('orneur_token'); } catch (e) {} return false; }
     const data = await r.json();
+    // AUDIT-P85C Assignment C: boot-time session restore is also a real
+    // identity transition (anonymous-pending -> authenticated), named
+    // explicitly in the directive's checklist. Both epochs are already
+    // 0 at this point in practice, but this keeps the invariant correct
+    // under any future code path that restores a session later than boot.
+    _abandonAllViewsForAccountChange();
     _authToken = stored;
     _authUser = data.user;
     closeAuthOverlay();
