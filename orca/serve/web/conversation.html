@@ -52,7 +52,11 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .relay:before{content:'';width:7px;height:7px;background:#97948F;border-radius:100%;display:inline-block;margin-right:8px}
 .relay.connected:before{background:#3DA35D}
 .themebtn{width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--soft);display:grid;place-items:center;cursor:pointer}
-.topavatar{border-radius:50%;background:var(--chip);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;height:32px;width:32px;font-size:10.5px;cursor:pointer}
+/* AUDIT-UIPROG-F01: no click/keyboard handler is wired to this element
+   anywhere in this file -- cursor:pointer was a misleading affordance
+   implying an interaction that doesn't exist. Removed rather than
+   inventing new click behavior the approved design doesn't specify. */
+.topavatar{border-radius:50%;background:var(--chip);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;height:32px;width:32px;font-size:10.5px}
 
 /* B01 empty state */
 .empty-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
