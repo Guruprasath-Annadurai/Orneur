@@ -248,8 +248,11 @@ class _Identity:
         )
 
     def validate(self, run: GenesisTrainingRun) -> None:
+        records = [f"orchestration-fixture-record-{self.run_id}"]
         run.validate(
-            dataset_digest=self.dataset_digest, model_config_digest=self.model_config_digest,
+            dataset_manifest=_FakeDatasetManifest(self.dataset_manifest_id, self.dataset_digest, records),
+            dataset_records=records,
+            model_config_digest=self.model_config_digest,
             tokenizer_digest=self.tokenizer_digest, authorized_shard_digests=self.authorized_shard_digests,
             shard_dir=self.shard_dir, reviewed_commit_sha=self.reviewed_commit_sha,
             transformation_code_digest=self.transformation_code_digest,
@@ -990,8 +993,11 @@ def test_cannot_resume_a_failed_run(started_run):
 
 
 def _valid_validate_kwargs(ident) -> dict:
+    records = [f"orchestration-fixture-record-{ident.run_id}"]
     return dict(
-        dataset_digest=ident.dataset_digest, model_config_digest=ident.model_config_digest,
+        dataset_manifest=_FakeDatasetManifest(ident.dataset_manifest_id, ident.dataset_digest, records),
+        dataset_records=records,
+        model_config_digest=ident.model_config_digest,
         tokenizer_digest=ident.tokenizer_digest, authorized_shard_digests=ident.authorized_shard_digests,
         shard_dir=ident.shard_dir, reviewed_commit_sha=ident.reviewed_commit_sha,
         transformation_code_digest=ident.transformation_code_digest,
@@ -999,11 +1005,11 @@ def _valid_validate_kwargs(ident) -> dict:
     )
 
 
-def test_invalid_dataset_digest_rejects_the_run(ident):
+def test_mismatched_caller_dataset_digest_rejects_the_run(ident):
     run = ident.run()
     kwargs = _valid_validate_kwargs(ident)
     kwargs["dataset_digest"] = "not-a-real-sha256"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="does not match"):
         run.validate(**kwargs)
     assert run.state is RunState.REJECTED
 
@@ -1159,7 +1165,8 @@ def test_validate_with_a_real_manifest_object_derives_digest_from_verified_ident
     records = ["record one", "record two"]
     manifest = _FakeDatasetManifest(ident.dataset_manifest_id, ident.dataset_digest, records)
     kwargs = _valid_validate_kwargs(ident)
-    del kwargs["dataset_digest"]
+    kwargs.pop("dataset_manifest", None)
+    kwargs.pop("dataset_records", None)
     run.validate(dataset_manifest=manifest, dataset_records=records, **kwargs)
     assert run.state is RunState.VALIDATED
     assert run.identity.dataset_digest == ident.dataset_digest
@@ -1178,7 +1185,8 @@ def test_validate_rejects_a_manifest_that_fails_verify_against_records(ident):
     tampered_records = ["record one", "a substituted record"]
     manifest = _FakeDatasetManifest(ident.dataset_manifest_id, ident.dataset_digest, real_records)
     kwargs = _valid_validate_kwargs(ident)
-    del kwargs["dataset_digest"]
+    kwargs.pop("dataset_manifest", None)
+    kwargs.pop("dataset_records", None)
     with pytest.raises(ValueError, match="failed independent re-verification"):
         run.validate(dataset_manifest=manifest, dataset_records=tampered_records, **kwargs)
     assert run.state is RunState.REJECTED
@@ -1189,7 +1197,8 @@ def test_validate_rejects_a_manifest_whose_id_is_not_declared_by_this_run(ident)
     records = ["record one"]
     manifest = _FakeDatasetManifest("a-manifest-id-this-run-never-declared", ident.dataset_digest, records)
     kwargs = _valid_validate_kwargs(ident)
-    del kwargs["dataset_digest"]
+    kwargs.pop("dataset_manifest", None)
+    kwargs.pop("dataset_records", None)
     with pytest.raises(ValueError, match="not in this run's declared dataset_manifest_ids"):
         run.validate(dataset_manifest=manifest, dataset_records=records, **kwargs)
     assert run.state is RunState.REJECTED
@@ -1199,17 +1208,29 @@ def test_validate_requires_dataset_records_when_dataset_manifest_is_supplied(ide
     run = ident.run()
     manifest = _FakeDatasetManifest(ident.dataset_manifest_id, ident.dataset_digest, ["x"])
     kwargs = _valid_validate_kwargs(ident)
-    del kwargs["dataset_digest"]
-    with pytest.raises(ValueError, match="dataset_records is required"):
+    kwargs.pop("dataset_manifest", None)
+    kwargs.pop("dataset_records", None)
+    with pytest.raises(ValueError, match="bare dataset_digest refused|requires dataset_manifest"):
         run.validate(dataset_manifest=manifest, **kwargs)
     assert run.state is RunState.REJECTED
 
 
-def test_validate_requires_either_dataset_digest_or_dataset_manifest(ident):
+def test_validate_rejects_empty_dataset_records(ident):
     run = ident.run()
     kwargs = _valid_validate_kwargs(ident)
-    del kwargs["dataset_digest"]
-    with pytest.raises(ValueError, match="requires either dataset_digest or"):
+    kwargs["dataset_records"] = []
+    with pytest.raises(ValueError, match="non-empty list"):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_validate_rejects_a_bare_dataset_digest(ident):
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs.pop("dataset_manifest")
+    kwargs.pop("dataset_records")
+    kwargs["dataset_digest"] = ident.dataset_digest
+    with pytest.raises(ValueError, match="bare dataset_digest refused|requires dataset_manifest"):
         run.validate(**kwargs)
     assert run.state is RunState.REJECTED
 

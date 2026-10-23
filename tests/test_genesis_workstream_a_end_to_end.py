@@ -272,7 +272,8 @@ def test_tampering_a_shard_after_manifest_binding_invalidates_the_training_ident
         repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
     )
     run.validate(
-        dataset_digest=manifest.source_content_digest, model_config_digest=hashlib.sha256(b"mcfg").hexdigest(),
+        dataset_manifest=manifest, dataset_records=kept_records,
+        model_config_digest=hashlib.sha256(b"mcfg").hexdigest(),
         tokenizer_digest=tb.vocab_digest, authorized_shard_digests=tuple(sorted(shard_digests_after.values())),  # the NEW, tampered digests
         shard_dir=out_dir, reviewed_commit_sha=reviewed_commit_sha, transformation_code_digest=hashlib.sha256(b"tcd").hexdigest(),
         optimizer_config_digest=hashlib.sha256(b"ocd").hexdigest(),

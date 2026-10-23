@@ -234,6 +234,7 @@ def _make_worker_startup_cfg(tmp_path: Path, *, drop_to_uid: int | None = None) 
         orca_home_override=str(tmp_path / "ornhome"),
         test_only_bypass_founder_ledger=True,
         test_only_pinned_registry_sha256=pinned_registry_sha256,
+        dataset_records=("isolated-worker-fixture-record",),
     )
 
 
@@ -578,8 +579,11 @@ def test_audit_d_continuous_revalidation_immediate_revocation(tmp_path, monkeypa
         run_id, dataset_manifest_ids=("gov-manifest",), environment_class=ENV,
         repo_root=REPO_ROOT, revocation_check=revocation_check,
     )
+    records = ["gov-fixture-record"]
     run.validate(
-        dataset_digest=_digest("dataset"), model_config_digest=mcfg, tokenizer_digest=tok_digest,
+        dataset_manifest=ORCH.BoundDatasetRecords("gov-manifest", _digest("dataset"), tuple(records)),
+        dataset_records=records,
+        model_config_digest=mcfg, tokenizer_digest=tok_digest,
         authorized_shard_digests=shard_digests, shard_dir=shard_dir, reviewed_commit_sha=HEAD_SHA,
         transformation_code_digest=tcd, optimizer_config_digest=ocd,
     )

@@ -518,6 +518,24 @@ class ExecutionAcceptanceIncompleteError(Exception):
     always raises today."""
 
 
+@dataclass(frozen=True)
+class BoundDatasetRecords:
+    """Duck-typed `DatasetManifestLike` for a verified record list.
+
+    Production callers should prefer a real `GenesisDatasetManifest`.
+    This type exists so isolated workers and tests can bind identity to
+    concrete records without importing Workstream A.
+    """
+    manifest_id: str
+    source_content_digest: str
+    expected_records: tuple[str, ...]
+
+    def verify_against_records(self, normalized_records: list[str]) -> tuple[bool, str]:
+        if tuple(normalized_records) != self.expected_records:
+            return False, "records do not match the bound dataset identity"
+        return True, ""
+
+
 @dataclass
 class RunIdentity:
     """The FULL workload identity a `NativePretrainingGrant` must bind to
@@ -816,10 +834,9 @@ class GenesisTrainingRun:
            itself, deriving `dataset_digest`/the bound manifest id from
            the VERIFIED object -- not from a bare caller-supplied digest
            string that could be merely well-formed, never actually
-           checked against real content. `dataset_digest` may be omitted
-           when `dataset_manifest`+`dataset_records` are supplied (and
-           vice versa); supplying neither, or a manifest whose id is not
-           one of this run's declared `dataset_manifest_ids`, raises.
+           checked against real content. A bare `dataset_digest` without
+           `dataset_manifest` and `dataset_records` is refused. A supplied
+           `dataset_digest` must match the verified manifest digest.
 
         `shard_dir` (Audit #71 P0-01 fix, required): the real directory
         containing this run's `shard-*.jsonl` files. `authorized_shard_digests`
@@ -836,21 +853,31 @@ class GenesisTrainingRun:
         if self.state != RunState.PLANNED:
             raise InvalidTransitionError(f"validate() requires PLANNED, got {self.state.value}")
 
-        if dataset_manifest is not None:
-            if dataset_records is None:
-                self._transition(RunState.REJECTED, reason="dataset_manifest supplied without dataset_records at validation")
-                raise ValueError("dataset_records is required when dataset_manifest is supplied -- a manifest must be re-verified against real records, not trusted on its own")
-            if dataset_manifest.manifest_id not in self.identity.dataset_manifest_ids:
-                self._transition(RunState.REJECTED, reason="dataset_manifest.manifest_id is not one of this run's declared dataset_manifest_ids")
-                raise ValueError(f"dataset_manifest.manifest_id {dataset_manifest.manifest_id!r} is not in this run's declared dataset_manifest_ids {self.identity.dataset_manifest_ids!r}")
-            ok, msg = dataset_manifest.verify_against_records(dataset_records)
-            if not ok:
-                self._transition(RunState.REJECTED, reason=f"dataset_manifest failed verify_against_records(): {msg}")
-                raise ValueError(f"dataset_manifest failed independent re-verification against its own records: {msg}")
-            dataset_digest = dataset_manifest.source_content_digest
-        elif dataset_digest is None:
-            self._transition(RunState.REJECTED, reason="neither dataset_digest nor dataset_manifest supplied at validation")
-            raise ValueError("validate() requires either dataset_digest or (dataset_manifest, dataset_records)")
+        if dataset_manifest is None or dataset_records is None:
+            self._transition(
+                RunState.REJECTED,
+                reason="bare dataset_digest refused at validation -- dataset_manifest and dataset_records are required",
+            )
+            raise ValueError(
+                "validate() requires dataset_manifest and dataset_records; a bare dataset_digest is not an identity bind"
+            )
+        if not dataset_records:
+            self._transition(RunState.REJECTED, reason="dataset_records is empty at validation")
+            raise ValueError("dataset_records must be a non-empty list of normalized records")
+        if dataset_manifest.manifest_id not in self.identity.dataset_manifest_ids:
+            self._transition(RunState.REJECTED, reason="dataset_manifest.manifest_id is not one of this run's declared dataset_manifest_ids")
+            raise ValueError(f"dataset_manifest.manifest_id {dataset_manifest.manifest_id!r} is not in this run's declared dataset_manifest_ids {self.identity.dataset_manifest_ids!r}")
+        ok, msg = dataset_manifest.verify_against_records(dataset_records)
+        if not ok:
+            self._transition(RunState.REJECTED, reason=f"dataset_manifest failed verify_against_records(): {msg}")
+            raise ValueError(f"dataset_manifest failed independent re-verification against its own records: {msg}")
+        verified_digest = dataset_manifest.source_content_digest
+        if dataset_digest is not None and dataset_digest != verified_digest:
+            self._transition(RunState.REJECTED, reason="caller dataset_digest does not match the verified manifest digest")
+            raise ValueError(
+                "dataset_digest does not match dataset_manifest.source_content_digest after verify_against_records()"
+            )
+        dataset_digest = verified_digest
 
         if not isinstance(dataset_digest, str) or not _SHA256_HEX.match(dataset_digest):
             self._transition(RunState.REJECTED, reason="invalid dataset_digest at validation")

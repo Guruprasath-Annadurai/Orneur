@@ -130,6 +130,7 @@ def _make_cfg(tmp_path, *, run_id="iso-worker-run", revoked_ids_path=None, expir
         orca_home_override=str(tmp_path / "ornhome"), test_only_bypass_founder_ledger=True,
         test_only_pinned_registry_sha256=pinned_registry_sha256,
         checkpoint_workspace_dir=str(checkpoint_workspace_dir) if checkpoint_workspace_dir is not None else str(tmp_path / "ckpt_workspace"),
+        dataset_records=("isolated-worker-fixture-record",),
     )
 
 
@@ -381,6 +382,19 @@ def test_the_worker_module_never_references_the_synthetic_test_bypass(tmp_path):
     source = inspect.getsource(worker_module)
     assert "for_unchecked_synthetic_test" not in source
     assert "_unchecked" not in source
+
+
+def test_worker_refuses_to_start_without_dataset_records(tmp_path):
+    """A5: isolated workers must bind identity via dataset_records.
+    An empty record list is not a digest bind and must fail closed
+    before the worker ever serves."""
+    cfg = _make_cfg(tmp_path)
+    cfg = WorkerStartupConfig(**{**cfg.__dict__, "dataset_records": ()})
+    worker = IsolatedTrainingWorker(cfg)
+    with pytest.raises(WorkerStartupError) as exc_info:
+        worker.start()
+    assert "dataset_records" in str(exc_info.value)
+    assert not Path(cfg.sock_path).exists()
 
 
 def test_a_production_configured_worker_can_never_reach_running(tmp_path):
