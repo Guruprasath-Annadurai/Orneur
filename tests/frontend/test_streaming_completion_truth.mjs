@@ -58,6 +58,8 @@ const markers = [
   'function mdToHtml(',
   'function appendThinking() {',
   'function appendAssistantMessage(',
+  'function renderSourcesPanel(',
+  'function div_uid(',
   'function appendUnavailableNote(',
   'function appendStreamingMessage() {',
   'function finalizeStreamingMessage(',
@@ -125,7 +127,12 @@ function makeElement(tag) {
       if (direct) return direct;
       return null;
     },
+    querySelectorAll(sel) {
+      const cls = sel.replace(/^\./, '');
+      return this._children.filter((c) => (c.className || '').split(/\s+/).includes(cls));
+    },
     addEventListener() {},
+    dataset: {},
   };
   return el;
 }
@@ -151,7 +158,7 @@ const sandbox = {
   setTimeout: () => {},
 };
 vm.createContext(sandbox);
-vm.runInContext(extracted.join('\n'), sandbox);
+vm.runInContext(`var _sourceDivCounter = 0;\nvar _sourceDivIds = new WeakMap();\n${extracted.join('\n')}`, sandbox);
 const { appendThinking, appendAssistantMessage, appendUnavailableNote, appendStreamingMessage, finalizeStreamingMessage, markMessageInterrupted } = sandbox;
 
 function reset() {

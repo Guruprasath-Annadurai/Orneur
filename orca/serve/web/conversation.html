@@ -111,6 +111,37 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .recovery-actions{display:flex;gap:8px;margin-top:8px}
 .recovery-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--soft);font-size:11px;font-weight:600;padding:6px 11px;cursor:pointer;font-family:inherit}
 .recovery-btn:hover,.recovery-btn:focus-visible{background:var(--chip);color:var(--ink)}
+
+/* B15 Citations & Sources -- source-verified against
+   APPROVED_SOURCE_ARCHIVES/ORNEUR_B15_FINAL_LOCK_AND_HANDOFF.zip
+   (SHA-256 8c0403ab872766a1c6212756c7032575e62221e1391174da21c30897b87189fb,
+   verified against the archive's own verification/verify_handoff.py:
+   30/30 + 41/41, zero failures). Inline markers and the sources list
+   reuse the existing neutral/muted tokens -- no accent color, matching
+   every other non-primary control in this file. */
+.cite-marker{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;margin:0 1px;border-radius:5px;border:1px solid var(--border);background:var(--chip);color:var(--soft);font-size:10px;font-weight:700;line-height:1;cursor:pointer;vertical-align:text-top;font-family:inherit}
+.cite-marker:hover,.cite-marker:focus-visible{background:var(--accent);color:#fff;border-color:transparent}
+.sources-panel{margin-top:10px}
+.sources-toggle{background:none;border:1px solid var(--border);border-radius:8px;color:var(--soft);font-size:11px;font-weight:600;padding:6px 11px;cursor:pointer;font-family:inherit}
+.sources-toggle:hover,.sources-toggle:focus-visible{background:var(--chip);color:var(--ink)}
+/* AUDIT-B15: reproduced live, the exact same bug class already found and
+   fixed for B05's .model-details -- display:flex directly on the base
+   rule out-specifies the browser's own [hidden] rule, so `list.hidden =
+   true` had no visible effect and the panel rendered open by default.
+   display:none is the real default; .open is the authoritative toggle. */
+.sources-list{margin-top:8px;display:none;flex-direction:column;gap:8px}
+.sources-list.open{display:flex}
+.source-row{border:1px solid var(--border);border-radius:9px;padding:9px 11px;background:var(--chip);font-size:12px;transition:background .25s}
+.source-row.source-row-flash{background:var(--active)}
+.source-row-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.source-ref{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;border-radius:5px;background:var(--compose);border:1px solid var(--border);font-size:10px;font-weight:700;color:var(--soft)}
+.source-kind{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.source-cited-state{margin-left:auto;font-size:10.5px;color:var(--muted)}
+.source-name{margin-top:5px;font-weight:600;word-break:break-word}
+.source-name a{color:var(--ink)}
+.source-locator{margin-top:2px;font-size:10.5px;color:var(--muted)}
+.source-excerpt{margin-top:5px;color:var(--soft);line-height:1.5;font-size:11.5px}
+@media(max-width:650px){.sources-list{gap:6px}.source-row{padding:8px 9px}}
 .interrupted-badge{display:inline-flex;align-items:center;gap:7px;color:var(--warn-text);font-size:12px;border:1px solid #e3a44c;border-radius:9px;padding:7px 11px;margin-top:10px;background:var(--chip)}
 .thinking{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
 .dot-pulse{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:pulse 1.1s infinite ease-in-out}
@@ -575,7 +606,15 @@ function _sanitizeLinkHref(rawUrl) {
   return ALLOWED_SCHEMES.has(scheme) ? rawUrl : null;
 }
 
-function mdToHtml(md) {
+// AUDIT-B15: citation markers ([D1], [D2], ...) are only ever turned
+// into real, clickable inline references when `sources` -- the REAL,
+// backend-returned orneur.sources/1 array (orca/serve/citations.py) --
+// actually contains a matching `ref`. Bracket text that merely LOOKS
+// like a citation marker but has no matching source stays untouched,
+// literal text: "no citations means no fabricated references" (the B15
+// contract's own words) applies exactly as much to a false positive here
+// as to inventing a source outright.
+function mdToHtml(md, sources) {
   let h = esc(md);
   // AUDIT-B81-A-P2-01: code regions are protected with a placeholder
   // BEFORE any other inline substitution (bold/italic/links) runs, and
@@ -607,6 +646,14 @@ function mdToHtml(md) {
     if (safeHref === null) return `${text} [link removed: unsupported URL]`;
     return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${text}</a>`;
   });
+  if (sources && sources.length) {
+    const byRef = new Map(sources.map((s) => [s.ref, s]));
+    h = h.replace(/\[([A-Za-z]\d+)\]/g, (whole, ref) => {
+      const s = byRef.get(ref);
+      if (!s) return whole; // not a real citation -- leave the bracket text exactly as the model wrote it
+      return `<button type="button" class="cite-marker" data-ref="${esc(ref)}" aria-label="Source ${esc(ref)}${s.filename ? ': ' + esc(s.filename) : ''}">${esc(ref)}</button>`;
+    });
+  }
   // Restore the real code HTML now, before paragraph/line-break assembly,
   // so the <p> un-wrapping cleanup below still sees real <pre>/<code>
   // block boundaries exactly as it did before code was protected.
@@ -1103,20 +1150,108 @@ function appendThinking() {
   return div;
 }
 
-function appendAssistantMessage(text) {
+function appendAssistantMessage(text, sources) {
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
   div.className = 'answer';
   div.innerHTML = `<div class="answer-by"><span class="tiny-brand">O</span><b>ORNEUR</b></div>` +
-    `<div class="msg-body">${mdToHtml(text)}</div>` +
+    `<div class="msg-body">${mdToHtml(text, sources)}</div>` +
     `<div class="msg-actions"><button class="copy-btn">Copy</button></div>`;
   container.appendChild(div);
   const btn = div.querySelector('.copy-btn');
   btn.addEventListener('click', () => {
     navigator.clipboard.writeText(text).then(() => { btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500); });
   });
+  renderSourcesPanel(div, sources);
   scrollReadingToBottom();
   return div;
+}
+
+// AUDIT-B15: "Default reading: unobtrusive numbered per-claim citation
+// anchors... no citations means no fabricated references." Renders
+// NOTHING when `sources` is empty/absent -- this is the honest default,
+// not a loading or error state. When sources exist, a single closed-by-
+// default disclosure (matching this file's established .open-class
+// toggle convention from B04/B05) lists each one with only the fields
+// orca/serve/citations.py's real orneur.sources/1 schema actually
+// provides: kind, filename/url, locator, excerpt, and whether the model
+// actually cited it ("Cited" vs "Consulted, not cited" -- the exact
+// distinction the backend itself draws, never collapsed into a single
+// implied-verified label). No access/integrity/revocation/claim-support
+// badges are shown, because the real backend does not currently compute
+// or return those richer B15-contract concepts; inventing them here
+// would be exactly the fabrication the contract prohibits.
+function renderSourcesPanel(div, sources) {
+  if (!sources || !sources.length) return;
+  const panel = document.createElement('div');
+  panel.className = 'sources-panel';
+  const citedCount = sources.filter((s) => s.cited_in_answer).length;
+  const summaryLabel = citedCount
+    ? `Sources (${citedCount} cited${sources.length > citedCount ? `, ${sources.length - citedCount} more consulted` : ''})`
+    : `Sources consulted (${sources.length}, not directly cited)`;
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'sources-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.textContent = summaryLabel;
+  const list = document.createElement('div');
+  list.className = 'sources-list';
+  list.hidden = true;
+  sources.forEach((s) => {
+    const row = document.createElement('div');
+    row.className = 'source-row';
+    row.id = `source-${div_uid(div)}-${esc(s.ref)}`;
+    row.dataset.ref = s.ref;
+    const kindLabel = s.kind === 'web_page' ? 'Web page' : 'Document';
+    let linkOrName;
+    if (s.url) {
+      const safeHref = _sanitizeLinkHref(s.url);
+      linkOrName = safeHref
+        ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${esc(s.url)}</a>`
+        : `${esc(s.url)} [link removed: unsupported URL]`;
+    } else {
+      linkOrName = esc(s.filename || 'Untitled source');
+    }
+    const locatorText = s.locator && s.locator.type === 'chunk' ? `Chunk ${s.locator.chunk_index}` : '';
+    row.innerHTML = `<div class="source-row-head"><span class="source-ref">${esc(s.ref)}</span><span class="source-kind">${esc(kindLabel)}</span>` +
+      `<span class="source-cited-state">${s.cited_in_answer ? 'Cited' : 'Consulted, not cited'}</span></div>` +
+      `<div class="source-name">${linkOrName}</div>` +
+      (locatorText ? `<div class="source-locator">${esc(locatorText)}</div>` : '') +
+      (s.excerpt ? `<div class="source-excerpt">${esc(s.excerpt)}</div>` : '');
+    list.appendChild(row);
+  });
+  toggle.addEventListener('click', () => {
+    const willOpen = !list.classList.contains('open');
+    list.classList.toggle('open', willOpen);
+    list.hidden = !willOpen;
+    toggle.setAttribute('aria-expanded', String(willOpen));
+  });
+  panel.appendChild(toggle);
+  panel.appendChild(list);
+  div.appendChild(panel);
+  // Inline [D#] markers (rendered by mdToHtml above) open this panel and
+  // scroll/focus the matching row -- the "Inline source preview" the
+  // contract asks for, without a separate modal/popover surface in this
+  // first increment (disclosed as a scope limit in the engineering report).
+  div.querySelectorAll('.cite-marker').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = list.querySelector(`[data-ref="${btn.dataset.ref}"]`);
+      if (!row) return;
+      list.classList.add('open');
+      list.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+      row.scrollIntoView({ block: 'nearest' });
+      row.classList.add('source-row-flash');
+      setTimeout(() => row.classList.remove('source-row-flash'), 1200);
+    });
+  });
+}
+
+let _sourceDivCounter = 0;
+const _sourceDivIds = new WeakMap();
+function div_uid(div) {
+  if (!_sourceDivIds.has(div)) _sourceDivIds.set(div, ++_sourceDivCounter);
+  return _sourceDivIds.get(div);
 }
 
 // AUDIT-B12: RecoveryAction minimum ("Copy received text... Retry only
@@ -1182,8 +1317,17 @@ function appendStreamingMessage() {
   return div;
 }
 
-function finalizeStreamingMessage(div, finalText) {
+function finalizeStreamingMessage(div, finalText, sources) {
   if (!div || div.querySelector('.msg-actions')) return;
+  // AUDIT-B15: sources are only known once the stream's `done` event
+  // arrives, after every chunk has already been rendered citation-blind
+  // (mdToHtml(rawBuffer) during streaming, with no sources arg) -- so the
+  // body is re-rendered exactly once here, now that real source data
+  // exists, to upgrade any [D#] text into real citation markers.
+  if (sources && sources.length) {
+    const body = div.querySelector('.msg-body');
+    if (body) body.innerHTML = mdToHtml(finalText, sources);
+  }
   const actions = document.createElement('div');
   actions.className = 'msg-actions';
   const btn = document.createElement('button');
@@ -1194,6 +1338,7 @@ function finalizeStreamingMessage(div, finalText) {
   });
   actions.appendChild(btn);
   div.appendChild(actions);
+  renderSourcesPanel(div, sources);
 }
 
 // A closed connection is not a successful generation: mark whatever
@@ -1309,15 +1454,23 @@ async function sendMessage() {
           scrollReadingToBottom();
         } else if (ev.type === 'done') {
           terminalState = 'done';
+          // AUDIT-B15: the real orneur.sources/1 payload (orca/serve/citations.py),
+          // sent on the SAME done event as the final answer. Only an
+          // array means real per-source records exist; anything else
+          // (missing, or a summary-only "evidence_state_only" grounding
+          // with no sources array) renders no citation UI at all, per
+          // the contract's own "no citations means no fabricated
+          // references."
+          const doneSources = Array.isArray(ev.sources) ? ev.sources : [];
           if (!answerEl) {
             thinkEl.remove();
             if (rawBuffer.trim()) {
-              appendAssistantMessage(rawBuffer);
+              appendAssistantMessage(rawBuffer, doneSources);
             } else {
               appendUnavailableNote('ORNEUR completed the request but returned no response content.', { retryText: text });
             }
           } else {
-            finalizeStreamingMessage(answerEl, rawBuffer);
+            finalizeStreamingMessage(answerEl, rawBuffer, doneSources);
           }
         } else if (ev.type === 'error') {
           terminalState = 'error';
@@ -1785,7 +1938,14 @@ async function openSession(sid, title) {
     container.innerHTML = '';
     data.messages.forEach((m) => {
       if (m.role === 'user') appendUserMessage(m.content);
-      else appendAssistantMessage(m.content);
+      // AUDIT-B15: reloading a past conversation must show the SAME
+      // sources that were real at the time this specific message was
+      // generated -- orca/serve/conversations.py persists them under
+      // this exact message's own `meta.sources` (confirmed by reading
+      // the storage code, not assumed), so a reload binds correctly to
+      // this message's own version rather than drifting to whatever the
+      // live/latest answer happens to cite.
+      else appendAssistantMessage(m.content, m.meta && Array.isArray(m.meta.sources) ? m.meta.sources : []);
     });
     if (!data.messages.length) container.innerHTML = '<div class="recents-empty">This conversation has no messages yet.</div>';
   } catch (e) {
