@@ -312,6 +312,19 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
    ────────────────────────────────────────────────────────────────────── */
 
 let _authToken = null, _authUser = null, _anonymous = false;
+// AUDIT-P85-BOOTRACE: true once boot's "who is this" question has been
+// answered by ANY path -- a successful tryRestoreSession(), onAuthSuccess()
+// (login/signup), or continueAnonymous(). The auth overlay's sign-in form
+// is reachable and clickable WHILE tryRestoreSession()'s own fetch is
+// still in flight (nothing in boot() disables it during the await), so a
+// slower, stale restore resolving AFTER a faster, newer login/signup/
+// anonymous choice must never be allowed to apply its own (by-then-stale)
+// result on top of it. Reproduced live before this fix: a slow restore
+// for a stale stored "Alice" token, raced against a fast real login as
+// "Bob", resulted in _authToken silently flipping back to Alice's after
+// Bob's login had already completed and closed the overlay -- a real
+// identity-confusion bug, not hypothetical.
+let _identityResolved = false;
 let sessionId = null;
 let isStreaming = false;
 // AUDIT-B81-A-P1-01: every in-flight /api/stream request must prove it
@@ -1461,8 +1474,17 @@ function onAuthSuccess(data) {
   // loadSessions() below happens to self-claim. This does NOT assume
   // onAuthSuccess() was preceded by doLogout() (it often isn't -- e.g.
   // anonymous-to-authenticated sign-in never calls doLogout() at all).
+  _identityResolved = true; // this login wins; any later-resolving boot restore must defer to it
   _abandonActiveSearch();
   _abandonAllViewsForAccountChange();
+  // AUDIT-P85-CTOFIX1: must also end any in-flight STREAM and clear
+  // whatever conversation DOM content belongs to the PREVIOUS principal --
+  // _abandonAllViewsForAccountChange() above only covers the history/
+  // message list-loading epochs, not a stream already writing into the
+  // reading pane, nor the pane's existing content. newConversation()
+  // covers both (it already calls _abandonActiveStream()/
+  // _abandonActiveMessage() and clears the reading-container DOM).
+  newConversation();
   _authToken = data.token;
   _authUser = data.user;
   _anonymous = false;
@@ -1477,8 +1499,19 @@ function continueAnonymous() {
   // AUDIT-P85-P0/P85C: a genuine identity change -- any search, history
   // load, or conversation load still in flight for whoever the caller
   // was a moment ago must never repaint.
+  _identityResolved = true; // this explicit choice wins; any later-resolving boot restore must defer to it
   _abandonActiveSearch();
   _abandonAllViewsForAccountChange();
+  // AUDIT-P85-CTOFIX3: must not retain a previous authenticated principal
+  // or its private conversations. Reproduced live before this fix:
+  // onAuthSuccess(alice) followed by continueAnonymous() left _authToken
+  // and _authUser still set to Alice's real values -- _authHeaders()
+  // would keep sending Alice's Bearer token, and loadSessions() (gated
+  // only on `if (!_authToken) return`) would have gone on to fetch and
+  // render Alice's real conversations under what the UI labels "Guest".
+  newConversation();
+  _authToken = null;
+  _authUser = null;
   _anonymous = true;
   closeAuthOverlay();
   updateAccountUI();
@@ -1561,8 +1594,26 @@ async function tryRestoreSession() {
   if (!stored) return false;
   try {
     const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + stored } });
+    // AUDIT-P85-CTOFIX2: the sign-in overlay's form is reachable and
+    // clickable for the entire duration of this fetch -- boot() never
+    // disables it while awaiting. A faster, newer login/signup/anonymous
+    // choice may have already resolved the boot identity question by the
+    // time this (now-stale) restore attempt gets a response. Reproduced
+    // live before this fix: a slow restore for a stale stored token
+    // resolved AFTER a fast, real login to a DIFFERENT account had
+    // already completed, and silently overwrote _authToken/_authUser
+    // back to the stale account -- while localStorage (which the newer
+    // login had already overwritten) still correctly showed the new
+    // account's token, leaving the two completely out of sync. Checked
+    // immediately after the fetch resolves, before either the failure
+    // cleanup or the success path runs, so a stale restore can neither
+    // apply its own result NOR delete a newer token it has no business
+    // touching.
+    if (_identityResolved) return false;
     if (!r.ok) { try { localStorage.removeItem('orneur_token'); } catch (e) {} return false; }
     const data = await r.json();
+    if (_identityResolved) return false; // re-check after the second await, same reasoning
+    _identityResolved = true;
     // AUDIT-P85C Assignment C: boot-time session restore is also a real
     // identity transition (anonymous-pending -> authenticated), named
     // explicitly in the directive's checklist. Both epochs are already

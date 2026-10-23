@@ -242,12 +242,16 @@ test('doLogout() invalidates BOTH domains via the full-account-reset routine (in
   assert.equal(sandbox._authToken, null);
 });
 
-test('continueAnonymous() invalidates both domains and no longer references the deleted _abandonActiveView', () => {
+test('continueAnonymous() invalidates both domains, clears a previous principal, and marks identity resolved', () => {
   const continueAnonymousSrc = extractFunction(source, 'function continueAnonymous() {');
   assert.ok(!continueAnonymousSrc.includes('_abandonActiveView'), 'must not reference the deleted shared-epoch function');
+  let newConversationCalled = false;
   const sandbox = {
-    _authToken: 'token-alice',
+    _authToken: 'token-alice', // CTO fix 3: a previous principal must not survive continueAnonymous()
+    _authUser: { name: 'Alice' },
+    _identityResolved: false,
     _abandonActiveSearch: () => {},
+    newConversation: () => { newConversationCalled = true; },
     closeAuthOverlay: () => {},
     updateAccountUI: () => {},
     loadModels: () => {},
@@ -261,13 +265,20 @@ test('continueAnonymous() invalidates both domains and no longer references the 
   assert.equal(sandbox._historyEpoch, 1);
   assert.equal(sandbox._messageEpoch, 1);
   assert.equal(sandbox._anonymous, true);
+  assert.equal(sandbox._authToken, null, 'CTO fix 3: must not retain a previous authenticated principal\'s token');
+  assert.equal(sandbox._authUser, null, 'CTO fix 3: must not retain a previous authenticated principal\'s user object');
+  assert.equal(sandbox._identityResolved, true, 'CTO fix 2: must mark identity resolved so a later-resolving boot restore defers to this explicit choice');
+  assert.equal(newConversationCalled, true, 'CTO fix 1 (symmetric): must clear any previous principal\'s conversation DOM/stream too');
 });
 
-test('onAuthSuccess() invalidates both domains (a sign-in that never goes through doLogout())', () => {
+test('onAuthSuccess() invalidates both domains, clears previous DOM/stream, and marks identity resolved (a sign-in that never goes through doLogout())', () => {
   const onAuthSuccessSrc = extractFunction(source, 'function onAuthSuccess(data) {');
+  let newConversationCalled = false;
   const sandbox = {
     _authToken: null,
+    _identityResolved: false,
     localStorage: { setItem: () => {} },
+    newConversation: () => { newConversationCalled = true; },
     closeAuthOverlay: () => {},
     updateAccountUI: () => {},
     loadSessions: () => {},
@@ -282,6 +293,8 @@ test('onAuthSuccess() invalidates both domains (a sign-in that never goes throug
   sandbox.onAuthSuccess({ token: 'token-bob', user: { name: 'Bob' } });
   assert.equal(sandbox._historyEpoch, 1, 'onAuthSuccess() must invalidate history even though it never called doLogout()');
   assert.equal(sandbox._messageEpoch, 1, 'onAuthSuccess() must invalidate messages even though it never called doLogout()');
+  assert.equal(sandbox._identityResolved, true, 'CTO fix 2: must mark identity resolved so a later-resolving boot restore defers to this login');
+  assert.equal(newConversationCalled, true, 'CTO fix 1: must clear the previous principal\'s conversation DOM and end any in-flight stream');
   assert.equal(sandbox._authToken, 'token-bob');
 });
 
@@ -359,4 +372,71 @@ test('every authenticated call site checks r.status === 401 before the generic !
     const nextChunk = source.slice(idx, idx + 400);
     assert.ok(nextChunk.includes('_handleSessionExpired()'), `call site missing a 401 -> _handleSessionExpired() check: ${marker}`);
   }
+});
+
+// --- CTO continuous-execution directive: mandatory missed P0 corrections ---
+
+test('tryRestoreSession() defers to a faster login/signup/anonymous choice instead of overwriting it (reproduced live, unit-verified here)', async () => {
+  const tryRestoreSrc = extractFunction(source, 'async function tryRestoreSession() {');
+  let removedFromStorage = false;
+  const sandbox = {
+    _authToken: null,
+    _authUser: null,
+    _identityResolved: false,
+    localStorage: {
+      getItem: () => 'stale-alice-token',
+      removeItem: () => { removedFromStorage = true; },
+    },
+    closeAuthOverlay: () => {},
+    updateAccountUI: () => {},
+    loadSessions: () => {},
+    loadModels: () => {},
+    _abandonAllViewsForAccountChange: () => {},
+    fetch: async () => {
+      // Simulate a faster login winning the race WHILE this fetch is in flight.
+      sandbox._identityResolved = true;
+      sandbox._authToken = 'bob-token';
+      return { ok: true, json: async () => ({ user: { name: 'Alice (stale)' } }) };
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${tryRestoreSrc}`, sandbox);
+  const result = await sandbox.tryRestoreSession();
+  assert.equal(result, false, 'a restore that lost the race must report failure, not silently succeed');
+  assert.equal(sandbox._authToken, 'bob-token', 'must not overwrite the identity a faster login already established');
+  assert.equal(removedFromStorage, false, 'must not delete a newer token that a faster login already stored under the same key');
+});
+
+test('tryRestoreSession() still restores normally when nothing else wins the race first', async () => {
+  const tryRestoreSrc = extractFunction(source, 'async function tryRestoreSession() {');
+  const sandbox = {
+    _authToken: null,
+    _authUser: null,
+    _identityResolved: false,
+    localStorage: { getItem: () => 'alice-token', removeItem: () => {} },
+    closeAuthOverlay: () => {},
+    updateAccountUI: () => {},
+    loadSessions: () => {},
+    loadModels: () => {},
+    _abandonAllViewsForAccountChange: () => {},
+    fetch: async () => ({ ok: true, json: async () => ({ user: { name: 'Alice' } }) }),
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${tryRestoreSrc}`, sandbox);
+  const result = await sandbox.tryRestoreSession();
+  assert.equal(result, true);
+  assert.equal(sandbox._authToken, 'alice-token');
+  assert.equal(sandbox._identityResolved, true);
+});
+
+test('the SSE session-event loadSessions() call site exists and is the real call, not removed or renamed', () => {
+  const idx = source.indexOf("if (ev.type === 'session') {");
+  assert.ok(idx !== -1, "the SSE 'session' event handler must still exist");
+  const chunk = source.slice(idx, idx + 150);
+  assert.ok(chunk.includes('loadSessions()'), "the SSE 'session' event handler must still call loadSessions() -- live-verified safe under the independent-epoch design in ORNEUR_PR85_LIVENESS_CORRECTION.md");
+});
+
+test("restoreRecentsFromSearch()'s real reload call site exists and is the real call, not removed or renamed", () => {
+  const fnSrc = extractFunction(source, 'function restoreRecentsFromSearch() {');
+  assert.ok(fnSrc.includes('loadSessions()'), 'restoreRecentsFromSearch() must still call loadSessions() for a truthful (non-cached) reload -- live-verified safe under the independent-epoch design in ORNEUR_PR85_LIVENESS_CORRECTION.md');
 });
