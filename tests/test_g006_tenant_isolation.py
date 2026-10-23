@@ -391,7 +391,8 @@ def test_07d_revoked_api_key_stops_working_and_keys_are_user_scoped(client):
     assert client.get(f"/api/session/{sid_a}/export", headers=_hdr(tb)).status_code == 404
     assert client.delete(f"/api/auth/apikeys/{key_id}", headers=_hdr(tb)).status_code in (403, 404), "B revoked A's key"
     assert client.delete(f"/api/auth/apikeys/{key_id}", headers=_hdr(ta)).status_code == 200
-    assert client.get(f"/api/session/{sid_a}/export", headers=_hdr(key)).status_code == 404
+    # A revoked key is an authentication failure, not a guest. Guest would be 404 here.
+    assert client.get(f"/api/session/{sid_a}/export", headers=_hdr(key)).status_code == 401
 
 
 # --------------------------------------------------------------------------

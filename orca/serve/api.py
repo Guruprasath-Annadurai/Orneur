@@ -92,6 +92,7 @@ from orca.serve.authorized_product_index import (
     ProductRetrievalDenied,
     admit_uploaded_document,
     delete_uploaded_document,
+    model_context_from_authorized,
     retrieve_authorized,
 )
 from orca.code import run_code
@@ -552,6 +553,7 @@ async def _run_cognitive_kernel(
     session_id: str | None = None,
     *,
     defer_direct_generation: bool = False,
+    allow_legacy_doc_store: bool = False,
 ):
     """
     Phase 3.1: the Cognitive Kernel is now AUTHORITATIVE for planning and,
@@ -609,19 +611,20 @@ async def _run_cognitive_kernel(
         tenant=user.id if user else None,
     )
 
-    # Phase 4: a lightweight lookup into the existing module-level
-    # `_sessions` dict, not a forced full _Session construction (this
-    # function runs BEFORE session construction on the /api/chat and
-    # /api/stream paths -- see the caller's own comment on why). Only an
-    # ALREADY-LIVE session's DocStore is used; a brand-new session simply
-    # has no doc_store yet, which TruthFabric already handles honestly
-    # (no evidence found, not a fabricated citation).
-    doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
+    # Authenticated turns never receive the legacy DocStore. Planning,
+    # Truth Fabric, and the kernel's own model call would otherwise see
+    # passages before the authorized-index gate. Anonymous turns may see
+    # an already-live store, and only after the caller has checked
+    # ownership. A brand-new session simply has no store yet.
+    doc_store = None
+    if allow_legacy_doc_store and session_id and session_id in _sessions:
+        doc_store = _sessions[session_id].doc_store
     return await kernel.execute(
         cognitive_request,
         entitlement=entitlement,
         doc_store=doc_store,
         defer_direct_generation=defer_direct_generation,
+        defer_retrieval=not allow_legacy_doc_store,
     )
 
 
@@ -826,26 +829,72 @@ def _check_session_ownership(session_id: str | None, user_id: str | None) -> Non
         raise HTTPException(status_code=404, detail="session not found")
 
 
-def _authorized_retrieval_gate(user: User | None, sess: "_Session", query: str):
-    """Authenticated document retrieval must pass AuthorizedIndex.
+def _retrieval_denial_response(exc: ProductRetrievalDenied) -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": "Authorized retrieval was refused.",
+            "code": "retrieval_unauthorized",
+            "reason": exc.reason,
+        },
+        status_code=403,
+    )
 
-    Anonymous DocStore traffic is unchanged. A revoked or unbound
-    authenticated session fails closed instead of falling through to
-    unauthorized ranking.
-    """
-    if user is None or sess.doc_store.count() == 0:
+
+def _authorized_metadata(authorized, rag_result) -> dict | None:
+    if authorized is None:
         return None
+    prompt_passages = 0 if rag_result is None else len(getattr(rag_result, "citation_dna", {}) or {})
+    return {
+        "method": authorized.method,
+        "hit_count": len(authorized.hits),
+        "production_neural": authorized.production_neural,
+        "tool_grant": authorized.tool_grant,
+        "abstained": authorized.abstained,
+        "contradictions": list(authorized.contradictions),
+        "prompt_passage_count": prompt_passages,
+    }
+
+
+def _resolve_turn_documents(user, sess, query: str, cognitive_result, enriched: str, *, pending_direct: bool, route: str):
+    """Choose the document text, if any, that this turn may show a model.
+
+    Returns `(enriched, rag_result, authorized, denial, use_direct)`.
+    Authenticated turns read only replay-checked AuthorizedIndex passages.
+    `denial` is an HTTP response and means no generation should run.
+    Anonymous turns leave retrieval to the caller, which still uses the
+    legacy pipeline after this returns.
+    """
+    if user is None:
+        has_output = cognitive_result.output is not None or pending_direct
+        use_direct = has_output and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
+        return enriched, None, None, None, use_direct
     try:
-        return retrieve_authorized(user.id, sess.id, query)
+        authorized = retrieve_authorized(user.id, sess.id, query)
     except ProductRetrievalDenied as exc:
-        return JSONResponse(
-            {
-                "error": "Authorized retrieval was refused.",
-                "code": "retrieval_unauthorized",
-                "reason": exc.reason,
-            },
-            status_code=403,
-        )
+        if exc.code == "absent":
+            authorized = None
+        else:
+            return enriched, None, None, _retrieval_denial_response(exc), False
+    except Exception as exc:
+        err = public_error(exc, route=route, user_id=user.id)
+        return enriched, None, None, JSONResponse(err.as_json(), status_code=500), False
+    try:
+        rag_result = None if authorized is None else model_context_from_authorized(user.id, sess.id, authorized)
+    except ProductRetrievalDenied as exc:
+        if exc.code == "absent":
+            rag_result = None
+            authorized = None
+        else:
+            return enriched, None, authorized, _retrieval_denial_response(exc), False
+    except Exception as exc:
+        err = public_error(exc, route=route, user_id=user.id)
+        return enriched, None, authorized, JSONResponse(err.as_json(), status_code=500), False
+    document_grounded = rag_result is not None and bool(rag_result.context_block)
+    if document_grounded:
+        enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+    has_output = cognitive_result.output is not None or pending_direct
+    use_direct = has_output and not document_grounded
+    return enriched, rag_result, authorized, None, use_direct
 
 
 def _get_session(session_id: str | None, model_variant: str | None = None, user_id: str | None = None) -> _Session:
@@ -1365,7 +1414,10 @@ async def _chat_impl(
     from orca.cognitive.errors import CognitiveError
 
     try:
-        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
+        cognitive_result = await _run_cognitive_kernel(
+            req.message, user, req.model_variant, session_id=req.session_id,
+            allow_legacy_doc_store=user is None,
+        )
     except Exception as e:
         # A real internal Kernel failure -- the Kernel is authoritative
         # now, so this must surface as a clean error, never be silently
@@ -1463,15 +1515,16 @@ async def _chat_impl(
 
     used_tools: list[str] = []
     plan_action = "cognitive_direct"
-    # G-024: same rule as /api/stream. The Kernel's no-retrieval direct answer is used only if this session has no documents, or the Kernel itself
-    # grounded the answer in them (Truth Fabric). Otherwise the uploaded documents go through the deep-RAG pipeline and into the model's context --
-    # they used to be silently ignored on this route unless the wording happened to trigger retrieval.
-    kernel_answered = cognitive_result.output is not None and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
-    rag_result = None
-    authorized = _authorized_retrieval_gate(user, sess, req.message)
-    if isinstance(authorized, JSONResponse):
-        return authorized
-    if not kernel_answered and sess.doc_store.count() > 0:
+    # Authenticated document text comes only from the authorized index.
+    # Anonymous sessions keep the legacy pipeline. A direct kernel answer
+    # is not treated as document-grounded unless that pipeline, or the
+    # authorized passages below, actually supplied text.
+    enriched, rag_result, authorized, denial, kernel_answered = _resolve_turn_documents(
+        user, sess, req.message, cognitive_result, enriched, pending_direct=False, route="/api/chat",
+    )
+    if denial is not None:
+        return denial
+    if user is None and not kernel_answered and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
         try:
@@ -1531,10 +1584,12 @@ async def _chat_impl(
             "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
         })
 
+    if user is None and kernel_answered:
+        _ev_state, _ev_cov, _ev_pass = cognitive_result.evidence_state, cognitive_result.citation_coverage, cognitive_result.evidence_passages
+    else:
+        _ev_state = _ev_cov = _ev_pass = None
     _src = _build_sources(answer=final, session_id=sess.id, rag_result=rag_result,
-                          evidence_state=cognitive_result.evidence_state if kernel_answered else None,
-                          citation_coverage=cognitive_result.citation_coverage if kernel_answered else None,
-                          evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
+                          evidence_state=_ev_state, citation_coverage=_ev_cov, evidence_passages=_ev_pass)
     _ident = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered)
     _persist_turn(user, sess.id, req.message, dlp_result["safe_text"], identity=_ident, src=_src)
     payload = {
@@ -1548,14 +1603,9 @@ async def _chat_impl(
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
-    if authorized is not None:
-        payload["authorized_retrieval"] = {
-            "method": authorized.method,
-            "hit_count": len(authorized.hits),
-            "production_neural": authorized.production_neural,
-            "tool_grant": authorized.tool_grant,
-            "abstained": authorized.abstained,
-        }
+    _auth_meta = _authorized_metadata(authorized, rag_result)
+    if _auth_meta is not None:
+        payload["authorized_retrieval"] = _auth_meta
     return payload
 
 
@@ -1618,7 +1668,8 @@ async def stream_chat(
 
     try:
         cognitive_result = await _run_cognitive_kernel(
-            req.message, user, req.model_variant, session_id=req.session_id, defer_direct_generation=True
+            req.message, user, req.model_variant, session_id=req.session_id,
+            defer_direct_generation=True, allow_legacy_doc_store=user is None,
         )
     except Exception as e:
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
@@ -1713,47 +1764,33 @@ async def stream_chat(
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
 
-    # Kernel's direct-answer path is used whenever the Kernel actually
-    # produced an answer -- either because this session has no loaded
-    # documents (Phase 3.1 spec §13's original guard: the legacy RAG
-    # pipeline's query rewriting/HyDE/corrective-retrieval/citation-DNA
-    # behavior must survive cutover unconditionally whenever docs ARE
-    # present), OR because the Kernel's answer came from Truth Fabric
-    # itself (`evidence_state is not None`), in which case it already
-    # used this session's doc_store as real evidence and is authoritative
-    # over the legacy pipeline for this request (Phase 4.1 spec §26-27:
-    # "Do not allow existing RAG branches to bypass Truth Fabric for
-    # request classes where Truth Fabric is authoritative"). Before this
-    # fix, a Truth-Fabric-verified, citation-checked answer was silently
-    # discarded in favor of the legacy Gateway-bypassing pipeline for
-    # every session that had any document loaded -- exactly backwards,
-    # since that is precisely when Truth Fabric's evidence grounding
-    # matters most.
-    kernel_has_direct_answer = (
-        cognitive_result.pending_direct_generation or cognitive_result.output is not None
+    # Authenticated streams ground only on replay-checked index passages.
+    # A kernel-direct answer is ordinary chat with no document context.
+    # Anonymous streams keep legacy deep RAG, including when Truth Fabric
+    # already grounded an answer in the caller's own DocStore.
+    enriched, rag_result, authorized, denial, use_kernel_direct = _resolve_turn_documents(
+        user, sess, req.message, cognitive_result, enriched,
+        pending_direct=bool(cognitive_result.pending_direct_generation), route="/api/stream",
     )
-    use_kernel_direct = kernel_has_direct_answer and (
-        sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None
-    )
-
-    # Deep RAG: 7-stage pipeline (query intelligence → multi-signal recall →
-    # RRF fusion → rerank → sufficiency check → citation DNA). Only runs if
-    # docs are loaded for this session.
-    rag_result = None
-    denied = _authorized_retrieval_gate(user, sess, req.message)
-    if isinstance(denied, JSONResponse):
-        return denied
-    if not use_kernel_direct and sess.doc_store.count() > 0:
+    if denial is not None:
+        return denial
+    if user is None and not use_kernel_direct and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
-        rag_result = await asyncio.to_thread(
-            run_deep_rag,
-            req.message,
-            sess.doc_store,
-            history_strs,
-            CONFIG.ollama.host,
-            _model_name_for_variant(req.model_variant),
-        )
+        try:
+            rag_result = await asyncio.to_thread(
+                run_deep_rag,
+                req.message,
+                sess.doc_store,
+                history_strs,
+                CONFIG.ollama.host,
+                _model_name_for_variant(req.model_variant),
+            )
+        except Exception as e:
+            err = public_error(e, route="/api/stream", user_id=user.id if user else None)
+            async def _rag_fail():
+                yield f"data: {json.dumps(err.as_sse())}\n\n"
+            return StreamingResponse(_rag_fail(), media_type="text/event-stream")
         if rag_result.context_block:
             enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
 
@@ -1898,15 +1935,21 @@ async def stream_chat(
         # Explainability: capture the full retrieval/reasoning trace for this
         # message, keyed by message_id so the frontend "Explain" button can
         # fetch it on demand without bloating every SSE payload.
+        if user is None and use_kernel_direct:
+            _ev_state, _ev_cov, _ev_pass = cognitive_result.evidence_state, cognitive_result.citation_coverage, cognitive_result.evidence_passages
+        else:
+            _ev_state = _ev_cov = _ev_pass = None
         _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
-                              evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
-                              citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
-                              evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
+                              evidence_state=_ev_state, citation_coverage=_ev_cov, evidence_passages=_ev_pass)
         _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
+        done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
+        _auth_meta = _authorized_metadata(authorized, rag_result)
+        if _auth_meta is not None:
+            done_event['authorized_retrieval'] = _auth_meta
+        yield f"data: {json.dumps(done_event)}\n\n"
 
     return StreamingResponse(
         _event_stream(),
@@ -2655,11 +2698,13 @@ async def upload_doc(
     chunks = chunk_text(text, doc_id=doc_id, filename=filename)
 
     sess = _get_session(session_id, user_id=user.id if user else None)
+    admitted = False
     if user:
         try:
             admit_uploaded_document(
                 user.id, sess.id, filename=filename, text=text, doc_id=doc_id,
             )
+            admitted = True
         except ProductRetrievalDenied as exc:
             return JSONResponse(
                 {
@@ -2669,7 +2714,23 @@ async def upload_doc(
                 },
                 status_code=403,
             )
-    stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
+    try:
+        stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
+    except Exception as exc:
+        # The index admission is rolled back. If that rollback itself fails,
+        # the response is still a failure: the registry is not updated, and
+        # unregistered index text is not eligible for a prompt.
+        if admitted:
+            try:
+                delete_uploaded_document(user.id, sess.id, filename=filename, doc_id=doc_id)
+            except Exception:
+                _logger.exception("authorized index rollback failed after document-store rejection")
+            try:
+                sess.doc_store.delete_doc(doc_id)
+            except Exception:
+                pass
+        err = public_error(exc, route="/api/docs/upload", user_id=user.id if user else None)
+        return JSONResponse(err.as_json(), status_code=500)
     register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data))
 
     audit.log("doc_upload", user_id=user.id if user else None,
@@ -2706,9 +2767,10 @@ async def delete_doc(
     if meta is None:
         # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
         return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
+    index_removed = 0
     if user:
         try:
-            delete_uploaded_document(
+            index_removed = delete_uploaded_document(
                 user.id, sess.id, filename=str(meta.get("filename") or "upload.txt"), doc_id=doc_id,
             )
         except ProductRetrievalDenied as exc:
@@ -2720,7 +2782,22 @@ async def delete_doc(
                 },
                 status_code=403,
             )
-    ok = sess.doc_store.delete_doc(doc_id)
+    try:
+        ok = sess.doc_store.delete_doc(doc_id)
+    except Exception as exc:
+        # The index copy is already gone, so a later prompt cannot see it.
+        # Do not re-admit it to make the legacy store match.
+        err = public_error(exc, route="/api/docs/delete", user_id=user.id if user else None)
+        return JSONResponse(err.as_json(), status_code=500)
+    if user and index_removed > 0 and not ok:
+        return JSONResponse(
+            {
+                "error": "The authorized copy was removed, but the legacy copy could not be.",
+                "code": "document_store_disagreement",
+                "doc_id": doc_id,
+            },
+            status_code=500,
+        )
     unregister_doc(sess.id, doc_id)
     audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
     return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}

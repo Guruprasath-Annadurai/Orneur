@@ -118,6 +118,7 @@ class CognitiveKernel:
         doc_store=None,
         *,
         defer_direct_generation: bool = False,
+        defer_retrieval: bool = False,
     ) -> CognitiveResult:
         """
         `doc_store`, when given (Phase 4), lets the Kernel route a plan
@@ -154,6 +155,12 @@ class CognitiveKernel:
         Truth-Fabric answers still generate to completion (they must
         exist before citation verification). Default False preserves
         /api/chat and /api/cognitive/execute.
+
+        `defer_retrieval`: the caller will supply document evidence itself
+        after an authorization check. RETRIEVE/SEARCH/VERIFY are left to
+        that caller instead of Truth Fabric reading a document store that
+        has not been authorized. Default False preserves direct Kernel
+        and anonymous callers.
         """
         metrics.record_request()
         start = time.monotonic()
@@ -209,7 +216,7 @@ class CognitiveKernel:
         # that, Truth Fabric runs even with doc_store=None -- it honestly
         # reports INSUFFICIENT evidence rather than needing a fallback
         # (verified in tests/test_truth_fabric_integration.py).
-        use_truth_fabric = bool(truth_fabric_ops) and not other_ops
+        use_truth_fabric = bool(truth_fabric_ops) and not other_ops and not defer_retrieval
         non_kernel_ops = other_ops if use_truth_fabric else other_ops + truth_fabric_ops
 
         sm.transition(CognitiveState.EXECUTING)

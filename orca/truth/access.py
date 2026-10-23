@@ -1,14 +1,19 @@
 """Trusted retrieval sessions.
 
 A caller-supplied tenant string is not a session. Only `SessionAuthority.issue`
-mints a `TrustedSession`, and only a session that this authority still
-recognizes can pass `is_current`.
+mints a new `TrustedSession`, and only a session that this authority still
+recognizes can pass `is_current`. `adopt` reopens one already-issued session
+id for this process. It does not scan other sessions, does not clear a
+revocation, and does not accept an id this authority did not format.
 """
 from __future__ import annotations
 
 import hmac
+import re
 import secrets
 from dataclasses import dataclass, field
+
+_SESSION_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 class AccessDenied(PermissionError):
@@ -56,6 +61,30 @@ class SessionAuthority:
         if not isinstance(tenant_id, str) or not tenant_id or not isinstance(principal_id, str) or not principal_id:
             raise AccessDenied("tenant and principal are required to issue a session")
         session_id = secrets.token_hex(16)
+        token = secrets.token_hex(32)
+        self._records[session_id] = _Record(tenant_id, principal_id, token)
+        return TrustedSession(tenant_id, principal_id, session_id, token, _seal=_SEAL)
+
+    def adopt(self, session_id: str, tenant_id: str, principal_id: str) -> TrustedSession:
+        """Reopen one existing session id in this process.
+
+        A live matching record returns the session this process already holds.
+        A revoked record stays revoked. A different tenant or principal is
+        refused. An unknown id receives a new token for that id only — the
+        caller must already have decided the id is the one bound to this
+        conversation. This does not look at sibling directories.
+        """
+        if not isinstance(session_id, str) or _SESSION_ID.fullmatch(session_id) is None:
+            raise AccessDenied("session id is not an issued identifier")
+        if not isinstance(tenant_id, str) or not tenant_id or not isinstance(principal_id, str) or not principal_id:
+            raise AccessDenied("tenant and principal are required to adopt a session")
+        record = self._records.get(session_id)
+        if record is not None:
+            if record.revoked:
+                raise AccessDenied("trusted session is revoked")
+            if record.tenant_id != tenant_id or record.principal_id != principal_id:
+                raise AccessDenied("trusted session belongs to a different principal")
+            return TrustedSession(tenant_id, principal_id, session_id, record.token, _seal=_SEAL)
         token = secrets.token_hex(32)
         self._records[session_id] = _Record(tenant_id, principal_id, token)
         return TrustedSession(tenant_id, principal_id, session_id, token, _seal=_SEAL)

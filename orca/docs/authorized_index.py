@@ -455,6 +455,21 @@ class AuthorizedIndex:
             rows, _partial = self._load_rows()
             return len(rows)
 
+    def listed_passages(self, session: TrustedSession, *, limit: int = 5) -> tuple[IndexHit, ...]:
+        """Passages stored for this session, in filename order.
+
+        This is not a search of any other store. A caller uses it only
+        after a lexical miss on a question that refers to the user's own
+        documents. Revoked digests are already absent from `_load_rows`.
+        """
+        self._require(session)
+        bounded = min(max(int(limit), 1), self._max_top_k)
+        with self._serialized():
+            self._refresh()
+            rows, _partial = self._load_rows()
+        rows = sorted(rows, key=lambda row: (row["filename"], int(row["chunk_idx"])))
+        return tuple(self._hit(row, 0.0) for row in rows[:bounded])
+
     def replay(self, session: TrustedSession, content_sha256: str, text: str) -> bool:
         if not self.permits(session):
             return False

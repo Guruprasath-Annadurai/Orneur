@@ -274,7 +274,7 @@ def test_a_retrieval_failure_is_an_error_not_a_silent_answer_without_the_documen
     def broken(*a, **k):
         raise RuntimeError("chroma exploded at /var/secret/path")
 
-    monkeypatch.setattr(api, "run_deep_rag", broken)
+    monkeypatch.setattr(api, "retrieve_authorized", broken)
     t, _ = _signup(client)
     h = _hdr(t)
     sid = _upload(client, h)
