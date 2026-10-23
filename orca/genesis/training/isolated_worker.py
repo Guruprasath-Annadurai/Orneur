@@ -146,7 +146,7 @@ from orca.genesis.training.learning_governance import (
     verify_live_authorization_or_raise,
 )
 from orca.genesis.training.learning_step import TrainingStepConfig, TrainingStepEngine, set_deterministic_seed
-from orca.genesis.training.orchestration import GenesisTrainingRun
+from orca.genesis.training.orchestration import BoundDatasetRecords, GenesisTrainingRun
 from orca.genesis.training.primitives import TrainingState
 from orca.genesis.training.resumable_checkpoint import (
     DatasetIdentity,
@@ -252,6 +252,7 @@ class WorkerStartupConfig:
     test_only_bypass_founder_ledger: bool = False  # see this field's own check in _worker_main -- pytest-gated, misuse-resistant, not a production bypass
     test_only_pinned_registry_sha256: str | None = None  # paired with the above, for synthetic test registries only
     checkpoint_workspace_dir: str | None = None  # AUDIT-076 Phase 3: the ONLY directory save_checkpoint/restore_checkpoint may ever resolve a path under; None means those commands are refused entirely (fail-closed default)
+    dataset_records: tuple[str, ...] = ()
 
 
 def _canonical(obj) -> bytes:
@@ -481,8 +482,19 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
             cfg.run_id, dataset_manifest_ids=cfg.dataset_manifest_ids, environment_class=cfg.environment_class,
             repo_root=cfg.repo_root, revocation_check=lambda auth_id: auth_id in set(_read_revoked_ids(cfg.revoked_ids_path)),
         )
+        records = list(cfg.dataset_records)
+        if not records or not cfg.dataset_manifest_ids:
+            raise IsolationPropertiesUnavailableError(
+                "dataset_records and dataset_manifest_ids are required to bind worker identity"
+            )
         run.validate(
-            dataset_digest=cfg.dataset_digest, model_config_digest=cfg.model_config_digest,
+            dataset_manifest=BoundDatasetRecords(
+                manifest_id=cfg.dataset_manifest_ids[0],
+                source_content_digest=cfg.dataset_digest,
+                expected_records=tuple(records),
+            ),
+            dataset_records=records,
+            model_config_digest=cfg.model_config_digest,
             tokenizer_digest=cfg.tokenizer_digest, authorized_shard_digests=cfg.authorized_shard_digests,
             shard_dir=cfg.shard_dir, reviewed_commit_sha=cfg.reviewed_commit_sha,
             transformation_code_digest=cfg.transformation_code_digest, optimizer_config_digest=cfg.optimizer_config_digest,

@@ -166,8 +166,15 @@ class _GovWorld:
         this world can genuinely authorize it (Mission 2's positive
         integration path)."""
         assert self.shard_dir is not None, "validate_matching_run() requires _GovWorld to have been constructed with tmp_path"
+        records = ["cross-workstream-fixture-record"]
         run.validate(
-            dataset_digest=self.req.dataset_content_digest, model_config_digest=self.model_config_digest,
+            dataset_manifest=ORCH.BoundDatasetRecords(
+                manifest_id=self.req.dataset_manifest_id,
+                source_content_digest=self.req.dataset_content_digest,
+                expected_records=tuple(records),
+            ),
+            dataset_records=records,
+            model_config_digest=self.model_config_digest,
             tokenizer_digest=self.req.tokenizer_digest, authorized_shard_digests=self.authorized_shard_digests,
             shard_dir=self.shard_dir, reviewed_commit_sha=self.req.reviewed_commit_sha,
             transformation_code_digest=self.req.transformation_code_digest,
@@ -329,7 +336,8 @@ def test_a_lora_training_grant_still_cannot_authorize_a_genesis_training_run(tmp
     (unused_shard_dir / "shard-0000-train.jsonl").write_text('{"text": "unused fixture shard record"}\n')
     unused_shard_digests = tuple(sorted(d for _, d in ORCH._compute_authorized_shard_file_digests(unused_shard_dir)))
     run.validate(
-        dataset_digest=manifest.source_content_digest, model_config_digest=hashlib.sha256(b"unused").hexdigest(),
+        dataset_manifest=manifest, dataset_records=records,
+        model_config_digest=hashlib.sha256(b"unused").hexdigest(),
         tokenizer_digest=hashlib.sha256(b"unused").hexdigest(), authorized_shard_digests=unused_shard_digests,
         shard_dir=unused_shard_dir, reviewed_commit_sha=_HEAD_SHA,
         transformation_code_digest=hashlib.sha256(b"unused-pipeline").hexdigest(),

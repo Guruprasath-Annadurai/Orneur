@@ -60,7 +60,7 @@ from orca.genesis.training.learning_step import (
     TrainingStepEngine,
     set_deterministic_seed,
 )
-from orca.genesis.training.orchestration import GenesisTrainingRun, RunState
+from orca.genesis.training.orchestration import BoundDatasetRecords, GenesisTrainingRun, RunState
 from orca.genesis.training.primitives import (
     TrainingState,
     causal_lm_loss,
@@ -178,8 +178,11 @@ def _build_running_run(tmp_path, monkeypatch, *, revocation_check=None) -> Genes
         "requal-run", dataset_manifest_ids=("gov-fixture-manifest",), environment_class=ENV,
         repo_root=REPO_ROOT, revocation_check=revocation_check or (lambda auth_id: False),
     )
+    records = ["gov-fixture-record"]
     run.validate(
-        dataset_digest=_digest("dataset"), model_config_digest=mcfg, tokenizer_digest=tok_digest,
+        dataset_manifest=BoundDatasetRecords("gov-fixture-manifest", _digest("dataset"), tuple(records)),
+        dataset_records=records,
+        model_config_digest=mcfg, tokenizer_digest=tok_digest,
         authorized_shard_digests=shard_digests, shard_dir=shard_dir, reviewed_commit_sha=HEAD_SHA,
         transformation_code_digest=tcd, optimizer_config_digest=ocd,
     )

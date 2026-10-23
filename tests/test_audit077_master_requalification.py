@@ -256,6 +256,7 @@ def _make_worker_startup_cfg(tmp_path: Path, *, run_id: str | None = None, check
         orca_home_override=str(tmp_path / "ornhome"),
         test_only_bypass_founder_ledger=True,
         test_only_pinned_registry_sha256=pinned_registry_sha256,
+        dataset_records=("isolated-worker-fixture-record",),
     )
 
 
