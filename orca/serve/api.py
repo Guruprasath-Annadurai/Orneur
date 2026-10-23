@@ -539,7 +539,14 @@ _ABSTENTION_MESSAGES = {
 }
 
 
-async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None, session_id: str | None = None):
+async def _run_cognitive_kernel(
+    message: str,
+    user: "User | None",
+    model_variant: str | None,
+    session_id: str | None = None,
+    *,
+    defer_direct_generation: bool = False,
+):
     """
     Phase 3.1: the Cognitive Kernel is now AUTHORITATIVE for planning and,
     where possible, execution of /api/chat and /api/stream requests (see
@@ -553,6 +560,9 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
       - status == COMPLETED, output   -> the Kernel answered directly via
         is not None                      ModelGateway; use `.output` as the
                                           final response, skip AgentLoop.
+      - pending_direct_generation     -> /api/stream asked the Kernel to
+                                          plan without generate(); stream
+                                          via ModelGateway.stream().
       - status == COMPLETED, output   -> the plan needs RETRIEVE/USE_TOOL/
         is None                          RECALL_MEMORY/DELEGATE_AGENT; fall
                                           through to the existing
@@ -601,7 +611,12 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
     # has no doc_store yet, which TruthFabric already handles honestly
     # (no evidence found, not a fabricated citation).
     doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
-    return await kernel.execute(cognitive_request, entitlement=entitlement, doc_store=doc_store)
+    return await kernel.execute(
+        cognitive_request,
+        entitlement=entitlement,
+        doc_store=doc_store,
+        defer_direct_generation=defer_direct_generation,
+    )
 
 
 def _record_shadow_verification(requested_tier: str | None, resolved_tier: str | None) -> None:
@@ -1283,6 +1298,8 @@ async def _chat_impl(
             e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
             return JSONResponse(e.as_json(), status_code=e.status)
 
+    _check_session_ownership(req.session_id, user.id if user else None)
+
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
         e = coded_error("model_access_denied", message=model_reason)
@@ -1531,6 +1548,8 @@ async def stream_chat(
                 yield f"data: {json.dumps(_q.as_sse())}\n\n"
             return StreamingResponse(_quota_err(), media_type="text/event-stream")
 
+    _check_session_ownership(req.session_id, user.id if user else None)
+
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
         _g = coded_error("model_access_denied", message=model_reason)
@@ -1558,7 +1577,9 @@ async def stream_chat(
     from orca.cognitive.errors import CognitiveError
 
     try:
-        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
+        cognitive_result = await _run_cognitive_kernel(
+            req.message, user, req.model_variant, session_id=req.session_id, defer_direct_generation=True
+        )
     except Exception as e:
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
@@ -1668,7 +1689,10 @@ async def stream_chat(
     # every session that had any document loaded -- exactly backwards,
     # since that is precisely when Truth Fabric's evidence grounding
     # matters most.
-    use_kernel_direct = cognitive_result.output is not None and (
+    kernel_has_direct_answer = (
+        cognitive_result.pending_direct_generation or cognitive_result.output is not None
+    )
+    use_kernel_direct = kernel_has_direct_answer and (
         sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None
     )
 
@@ -1711,17 +1735,42 @@ async def stream_chat(
         plan_action = "direct"
         delivery = "upstream"
 
-        if use_kernel_direct:
-            # Kernel's plan needed nothing beyond a direct model call --
-            # already answered via ModelGateway, entitlement-reconciled.
-            # Word-chunked for the same incremental SSE UX as any other
-            # path (same pattern as the frontier-passthrough branch above)
-            # -- ModelGateway.generate() was a single non-streaming call,
-            # this is presentation-layer chunking, not fake generation.
+        if use_kernel_direct and cognitive_result.pending_direct_generation:
+            # G-026: plan/entitle only; stream the authorized ModelGateway
+            # request so disconnect cancels real upstream generation.
             plan_action = "cognitive_direct"
-            # G-026: the Kernel's ModelGateway call is non-streaming -- the answer is already complete here. It used to be split into words and
-            # re-emitted with sleep(0) between them (presentation-layer "typing"). It is now sent once and labelled, so a client can neither mistake it
-            # for live generation nor offer a "stop generating" control that would not stop anything.
+            delivery = "upstream"
+            from orca.cognitive.wiring import get_shared_kernel
+            kernel = get_shared_kernel()
+            objective = cognitive_result.pending_direct_objective or req.message
+            tier = cognitive_result.resolved_tier or (req.model_variant or "core")
+            inference_request, allow_experimental, gateway = kernel.direct_inference_binding(
+                objective, tier, cognitive_result.trace_id
+            )
+            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+            try:
+                async with contextlib.aclosing(
+                    gateway.stream(inference_request, allow_experimental=allow_experimental)
+                ) as achunks:
+                    async for piece in achunks:
+                        if piece.delta:
+                            full += piece.delta
+                            yield f"data: {json.dumps({'type': 'chunk', 'text': piece.delta})}\n\n"
+                        if await request.is_disconnected():
+                            audit.log(
+                                "stream_client_disconnected",
+                                user_id=user.id if user else None,
+                                detail={"chars_sent": len(full), "path": "kernel_direct"},
+                            )
+                            return
+            except Exception as e:
+                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                return
+        elif use_kernel_direct:
+            # Truth Fabric (or another path) already produced a complete
+            # answer that had to exist before citation verification.
+            # Deliver once and label replayed -- do not fake typing.
+            plan_action = "cognitive_direct"
             delivery = "replayed"
             full = cognitive_result.output or ""
             yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
