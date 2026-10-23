@@ -339,6 +339,33 @@ function _abandonActiveStream() {
   isStreaming = false;
   updateSendEnabled();
 }
+
+// AUDIT-P85B: a consistent account-view ownership contract for every
+// OTHER asynchronous operation that paints into the sidebar or the main
+// reading pane -- loadSessions() (conversation history) and
+// openSession() (conversation messages) share ONE epoch, deliberately
+// separate from _streamEpoch (streaming) and _searchEpoch (search),
+// which this does not touch. A single shared epoch is intentional: the
+// CTO directive asks for ONE consistent contract, and both operations
+// must be invalidated by exactly the same events (identity change,
+// logout, navigating to a different conversation, starting a new one) --
+// reproduced live before this fix: a delayed loadSessions() response
+// painted Alice's real conversation into Bob's freshly-logged-in, empty
+// sidebar; a delayed openSession() response painted Alice's private
+// message content into Bob's reading pane. Both closed below.
+let _viewEpoch = 0;
+function _abandonActiveView() {
+  _viewEpoch++;
+}
+// True only if nothing has happened since this operation started that
+// would make applying its result a lie: no newer view-owning operation,
+// and the authenticated principal hasn't changed underneath it.
+function _viewResponseStillOwns(myEpoch, myToken) {
+  if (myEpoch !== _viewEpoch) return false;
+  if (myToken !== _authToken) return false;
+  return true;
+}
+
 let selectedModelVariant = null;
 let _models = {};
 
@@ -610,6 +637,7 @@ function showActiveView(title) {
 
 function newConversation() {
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: any in-flight response is no longer ours
+  _abandonActiveView(); // AUDIT-P85B: an in-flight openSession()/loadSessions() for the conversation being navigated away from is no longer ours either
   sessionId = null;
   document.getElementById('reading-container').innerHTML = '';
   highlightSelectedRecent(null);
@@ -868,12 +896,22 @@ async function loadSessions() {
   // response still in flight when this is called must never be allowed
   // to repaint over whatever this reload produces.
   _abandonActiveSearch();
+  // AUDIT-P85B: reproduced live and confirmed real -- a delayed response
+  // from an EARLIER loadSessions() call (e.g. Alice's) had no ownership
+  // check at all, so it could overwrite a newly-logged-in Bob's correct,
+  // empty sidebar with Alice's real conversation once it finally
+  // resolved. Claims a fresh epoch + the principal at call time; both
+  // are re-checked after the fetch AND after the JSON parse.
+  const myEpoch = ++_viewEpoch;
+  const myToken = _authToken;
   if (!_authToken) return;
   const list = document.getElementById('recents-list');
   try {
     const r = await fetch('/api/sessions?limit=20', { headers: _authHeaders() });
+    if (!_viewResponseStillOwns(myEpoch, myToken)) return;
     if (!r.ok) throw new Error('sessions fetch failed');
     const data = await r.json();
+    if (!_viewResponseStillOwns(myEpoch, myToken)) return;
     list.innerHTML = '';
     if (!data.sessions.length) {
       list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
@@ -881,6 +919,7 @@ async function loadSessions() {
     }
     data.sessions.forEach((s) => renderRecentRow(list, s.id, s.title || '(untitled conversation)'));
   } catch (e) {
+    if (!_viewResponseStillOwns(myEpoch, myToken)) return;
     list.innerHTML = '<div class="recents-empty">Could not load conversations</div>';
   }
 }
@@ -1037,6 +1076,14 @@ function startRenameConversation(row, btn, sid) {
   input.focus();
   input.select();
 
+  // AUDIT-P85B: inspected per the CTO directive's explicit instruction
+  // ("inspect rename, delete and export completion callbacks for the
+  // same stale-account UI effects"). The authenticated principal at the
+  // moment rename STARTED -- if the account changes before the PATCH
+  // resolves (this row's element may by then be detached from a
+  // rebuilt sidebar, or worse, still attached if the account-switch
+  // repaint hasn't happened yet), the stale result is never applied.
+  const myToken = _authToken;
   let settled = false;
   const commit = async () => {
     if (settled) return;
@@ -1047,8 +1094,10 @@ function startRenameConversation(row, btn, sid) {
       const r = await fetch(`/api/session/${encodeURIComponent(sid)}/title`, {
         method: 'PATCH', headers: _authHeaders(), body: JSON.stringify({ title: newTitle }),
       });
+      if (myToken !== _authToken) return;
       if (!r.ok) throw new Error('rename failed');
       const data = await r.json();
+      if (myToken !== _authToken) return;
       // Rebuild as a plain (non-snippet) row -- a snippet's search-match
       // context is stale the instant the title changes, so it's dropped
       // here rather than preserved with now-mismatched text.
@@ -1061,6 +1110,7 @@ function startRenameConversation(row, btn, sid) {
       if (moreBtn) moreBtn.setAttribute('aria-label', `More actions for "${data.title}"`);
       if (sid === sessionId) document.getElementById('conv-title').textContent = data.title;
     } catch (e) {
+      if (myToken !== _authToken) return;
       // AUDIT-P85-P1: a real, visible, accessible failure -- the row
       // keeps its original title (row.dataset.title untouched), and the
       // user is actually told, through the same unavailable-note pattern
@@ -1078,14 +1128,22 @@ function startRenameConversation(row, btn, sid) {
 }
 
 async function exportConversation(sid, title, format) {
+  // AUDIT-P85B: inspected per the CTO directive. A completed export
+  // triggering a browser file download under the WRONG (now-switched)
+  // account is a real, if narrower, stale-account effect -- the file
+  // would carry the previous account's real content while the screen
+  // shows a different one. Blocked the same way as the view loads above.
+  const myToken = _authToken;
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/export?format=${format}`, { headers: _authHeaders() });
+    if (myToken !== _authToken) return;
     if (!r.ok) throw new Error('export failed');
     // The server's own Content-Disposition header only matters for a
     // real browser navigation; fetch() never acts on it, so the
     // download is built client-side from the actual response body --
     // no fabricated content, exactly what the endpoint returned.
     const text = format === 'json' ? JSON.stringify(await r.json(), null, 2) : await r.text();
+    if (myToken !== _authToken) return;
     const blob = new Blob([text], { type: format === 'json' ? 'application/json' : 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1097,19 +1155,28 @@ async function exportConversation(sid, title, format) {
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
+    if (myToken !== _authToken) return;
     appendUnavailableNote('Export failed. The conversation was not changed.');
   }
 }
 
 async function deleteConversation(row, sid) {
+  // AUDIT-P85B: inspected per the CTO directive. If the account
+  // switches before this DELETE resolves, the completion handler below
+  // must not touch `row` (it may now belong to a rebuilt sidebar for a
+  // DIFFERENT account) or redirect the now-different account's active
+  // conversation via newConversation().
+  const myToken = _authToken;
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}`, { method: 'DELETE', headers: _authHeaders() });
+    if (myToken !== _authToken) return;
     if (!r.ok) throw new Error('delete failed');
     row.remove();
     if (sid === sessionId) newConversation(); // the open conversation was just deleted -- do not keep showing its now-gone content
     const list = document.getElementById('recents-list');
     if (!list.querySelector('.rec-row')) list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
   } catch (e) {
+    if (myToken !== _authToken) return;
     appendUnavailableNote('Could not delete this conversation. It has not been removed.');
   }
 }
@@ -1205,6 +1272,19 @@ function restoreRecentsFromSearch() {
 
 async function openSession(sid, title) {
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: switching conversations ends this view's claim on any in-flight response
+  // AUDIT-P85B: reproduced live and confirmed real -- a delayed
+  // GET .../messages response had no ownership check at all, so it
+  // could paint Alice's private conversation content into Bob's reading
+  // pane once it resolved after a real account switch. Claims a fresh
+  // epoch + the principal + the specific conversation id being loaded
+  // (the "relevant conversation identity" the CTO directive asks for,
+  // on top of the epoch -- rapid switching between conversation X and Y
+  // is already caught by the epoch alone, since each openSession() call
+  // claims its own fresh one, but checking sid === sessionId explicitly
+  // too is a second, independent guard against the same class of bug).
+  const myEpoch = ++_viewEpoch;
+  const myToken = _authToken;
+  const mySid = sid;
   sessionId = sid;
   highlightSelectedRecent(sid);
   showActiveView(title);
@@ -1212,8 +1292,10 @@ async function openSession(sid, title) {
   container.innerHTML = '<div class="thinking"><span class="dot-pulse"></span><span>Loading conversation...</span></div>';
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/messages`, { headers: _authHeaders() });
+    if (!_viewResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     if (!r.ok) throw new Error('load failed');
     const data = await r.json();
+    if (!_viewResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '';
     data.messages.forEach((m) => {
       if (m.role === 'user') appendUserMessage(m.content);
@@ -1221,6 +1303,7 @@ async function openSession(sid, title) {
     });
     if (!data.messages.length) container.innerHTML = '<div class="recents-empty">This conversation has no messages yet.</div>';
   } catch (e) {
+    if (!_viewResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '<div class="unavailable-note">Could not load this conversation. It may have been removed, or you may not have access to it.</div>';
   }
 }
@@ -1350,9 +1433,11 @@ function onAuthSuccess(data) {
 
 function continueAnonymous() {
   _anonymous = true;
-  // AUDIT-P85-P0: a genuine identity change -- any search still in
-  // flight for whoever the caller was a moment ago must never repaint.
+  // AUDIT-P85-P0/P85B: a genuine identity change -- any search, history
+  // load, or conversation load still in flight for whoever the caller
+  // was a moment ago must never repaint.
   _abandonActiveSearch();
+  _abandonActiveView();
   closeAuthOverlay();
   updateAccountUI();
   loadModels();

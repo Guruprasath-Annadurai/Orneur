@@ -299,6 +299,7 @@ jobs:
           node --test tests/frontend/test_stream_ownership_epoch.mjs
           node --test tests/frontend/test_recent_conversation_row.mjs
           node --test tests/frontend/test_search_ownership_epoch.mjs
+          node --test tests/frontend/test_view_ownership_epoch.mjs
 
       - name: Set up Python (to actually serve the page, not just read it off disk)
         uses: actions/setup-python@v5
