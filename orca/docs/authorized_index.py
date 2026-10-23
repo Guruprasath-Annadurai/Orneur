@@ -282,7 +282,7 @@ class AuthorizedIndex:
             raise AccessDenied("document produced no chunks")
         with self._serialized():
             self._refresh()
-            rows, _partial = self._load_rows()
+            rows = self._mutable_rows()
             version = max((int(row["version"]) for row in rows if row["filename"] == filename), default=0) + 1
             kept = [row for row in rows if row["filename"] != filename]
             written: list[dict] = []
@@ -310,7 +310,7 @@ class AuthorizedIndex:
         self._require(session)
         with self._serialized():
             self._refresh()
-            rows, _partial = self._load_rows()
+            rows = self._mutable_rows()
             removed = [row for row in rows if row["filename"] == filename]
             if not removed:
                 return 0
@@ -473,9 +473,7 @@ class AuthorizedIndex:
         self._require(session)
         with self._serialized():
             self._refresh()
-            rows, partial = self._load_rows()
-            if any(reason.startswith("integrity") for reason in partial):
-                raise AccessDenied("refusing to rotate over an unrecoverable index")
+            rows = self._mutable_rows()
             new_key = secrets.token_bytes(32)
             rewritten = []
             for row in rows:
@@ -555,18 +553,35 @@ class AuthorizedIndex:
             hook(stage)
 
     def _recover(self) -> None:
-        self._sweep_incomplete(committed=self._peek_generation())
+        self._sweep_temporary()
         pointer = self._read_pointer()
         if pointer is None:
+            gens = self._generation_ids()
+            if gens:
+                raise AccessDenied(
+                    "index generation pointer is missing; existing generation files were preserved"
+                )
             legacy = self._legacy_snapshot()
             if legacy is not None:
                 key, rows, revoked = legacy
                 self._commit_generation(1, key, rows, revoked, activate=True)
                 self._unlink_legacy()
                 return
+            if self._legacy_present():
+                raise AccessDenied("legacy index files are unreadable; existing files were preserved")
             self._commit_generation(1, secrets.token_bytes(32), [], set(), activate=True)
             return
         self._activate(pointer)
+
+    def _mutable_rows(self) -> list[dict]:
+        rows, partial = self._load_rows()
+        blocking = [
+            reason for reason in partial
+            if not reason.startswith("revoked digest")
+        ]
+        if blocking:
+            raise AccessDenied("refusing to mutate an unrecoverable index: " + "; ".join(blocking))
+        return rows
 
     def _refresh(self) -> None:
         pointer = self._read_pointer()
@@ -697,29 +712,33 @@ class AuthorizedIndex:
         return rows, partial
 
     def _read_pointer(self) -> dict | None:
-        try:
-            raw = self._read_bytes(_GENERATION_NAME)
-        except AccessDenied:
+        raw = self._read_bytes_if_present(_GENERATION_NAME)
+        if raw is None:
             return None
+        if not raw.strip():
+            raise AccessDenied("index generation pointer is unreadable")
         try:
             pointer = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise AccessDenied("index generation pointer is unreadable") from exc
-        if not isinstance(pointer, dict) or not isinstance(pointer.get("generation"), int):
+        if not isinstance(pointer, dict) or not isinstance(pointer.get("generation"), int) or pointer["generation"] < 1:
             raise AccessDenied("index generation pointer is malformed")
         for field in ("key_sha256", "chunks_sha256", "revoked_sha256"):
             if not isinstance(pointer.get(field), str) or len(pointer[field]) != 64:
                 raise AccessDenied("index generation pointer is malformed")
         return pointer
 
-    def _peek_generation(self) -> int | None:
-        try:
-            pointer = self._read_pointer()
-        except AccessDenied:
-            return None
-        if pointer is None:
-            return None
-        return int(pointer["generation"])
+    def _legacy_present(self) -> bool:
+        names = set(_listdir_fd(self._dir_fd))
+        return bool(names & {_LEGACY_KEY_NAME, _LEGACY_JSONL_NAME, _LEGACY_REVOKED_NAME})
+
+    def _generation_ids(self) -> set[int]:
+        found: set[int] = set()
+        for name in _listdir_fd(self._dir_fd):
+            match = _GEN_LEAF.match(name)
+            if match:
+                found.add(int(match.group(1)))
+        return found
 
     def _legacy_snapshot(self) -> tuple[bytes, list[dict], set[str]] | None:
         try:
@@ -762,10 +781,12 @@ class AuthorizedIndex:
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise AccessDenied("index leaf is not a regular file")
 
-    def _read_bytes(self, name: str) -> bytes:
+    def _read_bytes_if_present(self, name: str) -> bytes | None:
         try:
             fd = os.open(name, _FILE_READ, dir_fd=self._dir_fd)
         except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                return None
             raise AccessDenied("index leaf refused") from exc
         try:
             info = os.fstat(fd)
@@ -780,6 +801,12 @@ class AuthorizedIndex:
         finally:
             os.close(fd)
         return b"".join(chunks)
+
+    def _read_bytes(self, name: str) -> bytes:
+        raw = self._read_bytes_if_present(name)
+        if raw is None:
+            raise AccessDenied("index leaf refused")
+        return raw
 
     def _replace_leaf(self, name: str, payload: bytes) -> None:
         temporary = f".{name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(16)}.tmp"
@@ -804,17 +831,21 @@ class AuthorizedIndex:
         os.rename(temporary, name, src_dir_fd=self._dir_fd, dst_dir_fd=self._dir_fd)
         os.fsync(self._dir_fd)
 
-    def _sweep_incomplete(self, committed: int | None) -> None:
-        names = _listdir_fd(self._dir_fd)
-        for name in names:
+    def _sweep_temporary(self) -> None:
+        for name in _listdir_fd(self._dir_fd):
             if _TMP_NAME.match(name):
                 try:
                     os.unlink(name, dir_fd=self._dir_fd)
                 except OSError:
                     continue
-                continue
+
+    def _sweep_incomplete(self, committed: int | None) -> None:
+        self._sweep_temporary()
+        if committed is None:
+            return
+        for name in _listdir_fd(self._dir_fd):
             match = _GEN_LEAF.match(name)
-            if match and (committed is None or int(match.group(1)) != committed):
+            if match and int(match.group(1)) != committed:
                 try:
                     os.unlink(name, dir_fd=self._dir_fd)
                 except OSError:

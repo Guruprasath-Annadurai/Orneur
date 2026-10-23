@@ -387,6 +387,66 @@ def test_revocation_file_tamper_without_pointer_fails_closed(tmp_path):
     assert digest
 
 
+def test_missing_generation_pointer_does_not_wipe_an_existing_store(tmp_path):
+    authority, session, index = _index(tmp_path)
+    digest = index.admit(session, "kept", "kept fact is visible")
+    index.delete(session, "kept")
+    session_dir = tmp_path / session.session_id
+    gen = index._generation
+    pointer = session_dir / ".generation"
+    pointer.unlink()
+    before = {path.name: path.read_bytes() for path in session_dir.iterdir() if path.name.startswith("g")}
+    assert before
+    index.close()
+    with pytest.raises(AccessDenied, match="generation pointer is missing"):
+        AuthorizedIndex(authority, session, tmp_path)
+    after = {path.name: path.read_bytes() for path in session_dir.iterdir() if path.name.startswith("g")}
+    assert after == before
+    assert digest.encode() in after[f"g{gen}.revoked.txt"] or digest in after[f"g{gen}.revoked.txt"].decode()
+    with pytest.raises(AccessDenied, match="generation pointer is missing"):
+        AuthorizedIndex(authority, session, tmp_path)
+
+
+def test_malformed_generation_pointer_preserves_generation_files(tmp_path):
+    authority, session, index = _index(tmp_path)
+    index.admit(session, "kept", "kept fact is visible")
+    session_dir = tmp_path / session.session_id
+    (session_dir / ".generation").write_text("{not-json")
+    before = sorted(p.name for p in session_dir.iterdir() if p.name.startswith("g"))
+    index.close()
+    with pytest.raises(AccessDenied, match="unreadable|malformed"):
+        AuthorizedIndex(authority, session, tmp_path)
+    after = sorted(p.name for p in session_dir.iterdir() if p.name.startswith("g"))
+    assert after == before
+
+
+def test_partial_integrity_failure_does_not_discard_rows_on_admit(tmp_path):
+    authority, session, index = _index(tmp_path)
+    first = index.admit(session, "alpha", "alpha fact is one")
+    second = index.admit(session, "beta", "beta fact is two")
+    leaf = tmp_path / session.session_id / _chunks_name(index._generation)
+    rows = [json.loads(line) for line in leaf.read_text().splitlines()]
+    rows[0]["mac"] = "00" * 32
+    leaf.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows))
+    _rewrite_pointer_hashes(tmp_path, session, index)
+    with pytest.raises(AccessDenied, match="unrecoverable index"):
+        index.admit(session, "gamma", "gamma fact is three")
+    report = index.search(session, "beta")
+    assert any(hit.content_sha256 == second for hit in report.hits)
+    assert any(reason.startswith("integrity mismatch") for reason in report.partial_reasons)
+    with pytest.raises(AccessDenied, match="unrecoverable index"):
+        index.delete(session, "beta")
+    assert first and second
+
+
+def test_empty_session_directory_still_bootstraps(tmp_path):
+    authority, session, index = _index(tmp_path)
+    assert index.count() == 0
+    digest = index.admit(session, "kept", "kept fact is visible")
+    assert index.replay(session, digest, "kept fact is visible") is True
+    index.close()
+
+
 def test_same_directory_hmac_is_not_a_same_uid_authenticity_boundary(tmp_path):
     """An attacker who can rewrite records, key, and the generation pointer
     can mint a valid MAC. The HMAC is not a claim against that attacker.

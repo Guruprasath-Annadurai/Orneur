@@ -10,7 +10,8 @@ Do not treat PR #83 as draft-converted; forge refused draft on GitHub-source-of-
 | #80 | `fc1eb1dd098377e8506485dbcd82d6ed148b52b3` |
 | #82 | `177f54801eeaa079b67c9290ed89e3df0b3f6278` |
 | #83 FAIL | `cd0f9051a2d0148eb4f1708b91ca71f41e4fb8e8` |
-| #83 second recovery | `git rev-parse HEAD` on `cursor/p0-foundation-security-recovery-c04e` |
+| #83 second recovery | `f13c2672ecc5619a040e3a6fd037f5b8c66a77e8` |
+| #83 pointer-recovery follow-up | `git rev-parse HEAD` on `cursor/p0-foundation-security-recovery-c04e` |
 
 ## Commands
 
