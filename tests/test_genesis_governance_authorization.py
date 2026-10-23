@@ -406,7 +406,7 @@ def test_a_hand_constructed_grant_lookalike_is_rejected():
     with pytest.raises(A.NativePretrainingNotAuthorized, match="GRANT_NOT_ISSUED_BY_GATE"):
         A.NativePretrainingGrant(
             authorization_id="gnpauth-" + "ff" * 8, key_id="fake", record_sha256="0" * 64, run_id="run-x",
-            expires_at="2099-01-01T00:00:00Z", max_wall_clock_minutes=60, model_config_digest="0" * 64,
+            issued_at="2098-01-01T00:00:00Z", expires_at="2099-01-01T00:00:00Z", max_wall_clock_minutes=60, model_config_digest="0" * 64,
             tokenizer_digest="0" * 64, dataset_manifest_id="ds-x", dataset_content_digest="0" * 64,
             authorized_shard_digests=("0" * 64,), environment_class=ENV, architecture_version="genesis-arch-v1",
             reviewed_commit_sha="a" * 40, transformation_code_digest="0" * 64, optimizer_config_digest="0" * 64,

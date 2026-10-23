@@ -22,7 +22,7 @@ from orca.rag_x.rank import HASH_EMBEDDING_ID, bm25_scores, hash_embed
 from orca.truth.access import AccessDenied, SessionAuthority, TrustedSession
 from orca.truth.contracts import ClaimSupportState, TruthRequest
 from orca.truth.indexed_query import run_authorized_retrieval
-from orca.truth.qualification import ITEMS, NEGATIVE_IF, QUALIFICATION_ID, run_qualification
+from orca.truth.qualification import DOCUMENTS, ITEMS, NEGATIVE_IF, QUALIFICATION_ID, run_qualification
 from orca.truth.truth_fabric import TruthFabric
 
 
@@ -285,7 +285,7 @@ def test_forged_founder_grant_string_is_not_authority(monkeypatch):
     with pytest.raises(NativePretrainingNotAuthorized) as caught:
         NativePretrainingGrant(
             authorization_id="forged", key_id="k", record_sha256="0" * 64, run_id="run",
-            expires_at="2099-01-01T00:00:00Z", max_wall_clock_minutes=1,
+            issued_at="2098-01-01T00:00:00Z", expires_at="2099-01-01T00:00:00Z", max_wall_clock_minutes=1,
             model_config_digest="cfg", tokenizer_digest="tok-digest",
             dataset_manifest_id="ds", dataset_content_digest="abc",
             authorized_shard_digests=(), environment_class="local", architecture_version="0",
@@ -296,10 +296,16 @@ def test_forged_founder_grant_string_is_not_authority(monkeypatch):
 
 
 def test_pre_registered_qualification_separates_synthetic_from_models(tmp_path):
+    assert len(DOCUMENTS) == 15
     assert len(ITEMS) == 12
+    assert sum(1 for item in ITEMS if item.expects_token is not None) == 7
+    assert sum(1 for item in ITEMS if item.expects_conflict) == 4
+    assert sum(1 for item in ITEMS if item.expects_token is None and not item.expects_conflict) == 1
     assert "SUPPORTED" in NEGATIVE_IF
     result = run_qualification(tmp_path)
     assert result.experiment_id == QUALIFICATION_ID
+    assert result.source_documents == 15
+    assert result.evaluation_items == 12
     assert result.model_backed is False
     assert result.production_neural is False
     assert result.dense_backend == "unavailable"
