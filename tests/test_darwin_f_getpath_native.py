@@ -19,7 +19,8 @@ import orca.genesis.data.pipeline as pipeline
 def test_pipeline_does_not_call_variadic_ctypes_fcntl():
     source = inspect.getsource(pipeline._darwin_descriptor_path)
     assert "fcntl.fcntl" in source
-    assert "bytearray" in source
+    assert 'b"\\x00" * _DARWIN_MAXPATHLEN' in source or "b'\\x00' * _DARWIN_MAXPATHLEN" in source
+    assert "bytearray(" not in source
     assert "ctypes.CDLL" not in source
     assert "CDLL" not in source
     assert "ctypes.CDLL" not in inspect.getsource(pipeline)
@@ -56,32 +57,49 @@ def test_failed_f_getpath_is_a_boundary_error_not_a_crash(monkeypatch):
         _darwin_descriptor_path(0)
 
 
+def test_fcntl_uses_returned_bytes_not_a_mutated_input(monkeypatch):
+    monkeypatch.setattr(pipeline.sys, "platform", "darwin")
+    seen: dict[str, object] = {}
+
+    def fake(_fd, _cmd, buf):
+        seen["type"] = type(buf)
+        assert isinstance(buf, (bytes, bytearray)) is True
+        assert type(buf) is bytes
+        return b"/private/tmp/orneur-fd\x00"
+
+    monkeypatch.setattr(pipeline.fcntl, "fcntl", fake)
+    assert _darwin_descriptor_path(0) == "/private/tmp/orneur-fd"
+    assert seen["type"] is bytes
+
+
+def test_unsupported_buffer_typeerror_is_fail_closed(monkeypatch):
+    monkeypatch.setattr(pipeline.sys, "platform", "darwin")
+
+    def fail(_fd, _cmd, _buf):
+        raise TypeError("can't use a bytearray")
+
+    monkeypatch.setattr(pipeline.fcntl, "fcntl", fail)
+    with pytest.raises(CorpusBoundaryError, match="buffer type is unsupported"):
+        _darwin_descriptor_path(0)
+
+
 def test_unterminated_and_empty_buffers_are_rejected(monkeypatch):
     monkeypatch.setattr(pipeline.sys, "platform", "darwin")
 
-    def no_nul(_fd, _cmd, buf):
-        buf[:] = b"A" * len(buf)
-        return 0
-
-    monkeypatch.setattr(pipeline.fcntl, "fcntl", no_nul)
+    monkeypatch.setattr(pipeline.fcntl, "fcntl", lambda *_a, **_k: b"A" * pipeline._DARWIN_MAXPATHLEN)
     with pytest.raises(CorpusBoundaryError, match="empty or unterminated"):
         _darwin_descriptor_path(0)
 
-    def empty(_fd, _cmd, buf):
-        buf[0] = 0
-        return 0
-
-    monkeypatch.setattr(pipeline.fcntl, "fcntl", empty)
+    monkeypatch.setattr(pipeline.fcntl, "fcntl", lambda *_a, **_k: b"\x00")
     with pytest.raises(CorpusBoundaryError, match="empty or unterminated"):
         _darwin_descriptor_path(0)
 
-    def deleted(_fd, _cmd, buf):
-        payload = b"/tmp/gone (deleted)\x00"
-        buf[: len(payload)] = payload
-        return 0
-
-    monkeypatch.setattr(pipeline.fcntl, "fcntl", deleted)
+    monkeypatch.setattr(pipeline.fcntl, "fcntl", lambda *_a, **_k: b"/tmp/gone (deleted)\x00")
     with pytest.raises(CorpusBoundaryError, match="malformed"):
+        _darwin_descriptor_path(0)
+
+    monkeypatch.setattr(pipeline.fcntl, "fcntl", lambda *_a, **_k: 0)
+    with pytest.raises(CorpusBoundaryError, match="did not return a path buffer"):
         _darwin_descriptor_path(0)
 
 
@@ -121,6 +139,18 @@ def test_native_darwin_rejects_invalid_closed_and_replaced_directories(tmp_path)
         _require_descriptor_directory(live_fd, reported)
     finally:
         os.close(live_fd)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="requires authorized Darwin hardware; Linux CI is not this qualification")
+def test_native_darwin_process_corpus_uses_f_getpath_sqlite(tmp_path):
+    from orca.genesis.data.pipeline import process_corpus
+
+    source = tmp_path / "in.jsonl"
+    source.write_text('{"text":"a short synthetic sentence about rain"}\n')
+    out = tmp_path / "out"
+    report, kept = process_corpus(source, out, num_shards=1)
+    assert report.kept == 1
+    assert kept == ["a short synthetic sentence about rain"]
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="requires authorized Darwin hardware; Linux CI is not this qualification")

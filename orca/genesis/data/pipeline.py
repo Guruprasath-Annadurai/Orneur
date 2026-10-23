@@ -582,8 +582,10 @@ def _require_descriptor_directory(dir_fd: int, raw: str) -> str:
 def _darwin_descriptor_path(fd: int) -> str:
     """Return the path Darwin associates with an already-open descriptor.
 
-    Uses Python `fcntl.fcntl` with a mutable buffer. Variadic ctypes
-    `libc.fcntl` is not used. Linux never enters this function.
+    Uses Python `fcntl.fcntl` with an immutable bytes buffer. The kernel
+    path is taken from the *returned* bytes, not from a mutated input
+    object. Variadic ctypes `libc.fcntl` is not used. Linux never enters
+    this function.
     """
     if sys.platform != "darwin":
         raise CorpusBoundaryError(
@@ -593,30 +595,42 @@ def _darwin_descriptor_path(fd: int) -> str:
         raise CorpusBoundaryError(
             "refusing to open the progress database -- F_GETPATH descriptor is invalid"
         )
-    buf = bytearray(_DARWIN_MAXPATHLEN)
+    request = b"\x00" * _DARWIN_MAXPATHLEN
     try:
-        status = fcntl.fcntl(fd, _DARWIN_F_GETPATH, buf)
+        result = fcntl.fcntl(fd, _DARWIN_F_GETPATH, request)
+    except TypeError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH buffer type is unsupported"
+        ) from exc
     except OSError as exc:
         code = errno.errorcode.get(exc.errno, str(exc.errno))
         raise CorpusBoundaryError(
             f"refusing to open the progress database -- F_GETPATH failed ({code})"
         ) from exc
-    if isinstance(status, int) and status == -1:
+    if isinstance(result, int):
+        if result == -1:
+            raise CorpusBoundaryError(
+                "refusing to open the progress database -- F_GETPATH returned -1"
+            )
         raise CorpusBoundaryError(
-            "refusing to open the progress database -- F_GETPATH returned -1"
+            "refusing to open the progress database -- F_GETPATH did not return a path buffer"
         )
-    if len(buf) != _DARWIN_MAXPATHLEN:
+    if not isinstance(result, (bytes, bytearray)):
         raise CorpusBoundaryError(
             "refusing to open the progress database -- F_GETPATH buffer shape is invalid"
         )
-    nul = buf.find(0)
+    raw_bytes = bytes(result)
+    if len(raw_bytes) > _DARWIN_MAXPATHLEN:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH buffer shape is invalid"
+        )
+    nul = raw_bytes.find(0)
     if nul < 1:
         raise CorpusBoundaryError(
             "refusing to open the progress database -- F_GETPATH returned an empty or unterminated path"
         )
-    raw_bytes = bytes(buf[:nul])
     try:
-        raw = os.fsdecode(raw_bytes)
+        raw = os.fsdecode(raw_bytes[:nul])
     except UnicodeDecodeError as exc:
         raise CorpusBoundaryError(
             "refusing to open the progress database -- F_GETPATH path decoding failed"

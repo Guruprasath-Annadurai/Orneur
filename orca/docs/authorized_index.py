@@ -8,6 +8,11 @@ reported as neural retrieval.
 The index does not accept a tenant id from the query. Scope is the
 `TrustedSession` that admitted the documents. Every filesystem step is
 bound to a directory descriptor opened with no-follow semantics.
+
+Committed key, chunks, and revocation state are one generation. A single
+`.generation` pointer is the durable commit. HMAC authenticity assumes
+the attacker cannot write the session directory that holds both the
+pointer and the key files; see `docs/orneur/foundation_x/AUTHORIZED_INDEX_TRUST_BOUNDARY.md`.
 """
 from __future__ import annotations
 
@@ -37,10 +42,24 @@ from orca.truth.access import AccessDenied, SessionAuthority, TrustedSession
 SYNTHETIC_HASH_EMBEDDING_ID = "orneur.rag_x.synthetic_hash_v1"
 PRODUCTION_ENCODER_ID = "nomic-embed-text"
 _INDEX_LOCK_NAME = ".index.lock"
-_KEY_NAME = ".mac.key"
-_JSONL_NAME = "chunks.jsonl"
-_REVOKED_NAME = "revoked.txt"
-_TMP_NAME = re.compile(r"^\.(chunks\.jsonl|revoked\.txt)\.[0-9]+\.[0-9]+\.[0-9a-f]{32}\.tmp$")
+_GENERATION_NAME = ".generation"
+_LEGACY_KEY_NAME = ".mac.key"
+_LEGACY_JSONL_NAME = "chunks.jsonl"
+_LEGACY_REVOKED_NAME = "revoked.txt"
+_TMP_NAME = re.compile(r"^\..+\.tmp$")
+_GEN_LEAF = re.compile(r"^g([0-9]+)\.(mac\.key|chunks\.jsonl|revoked\.txt)$")
+
+
+def _key_name(generation: int) -> str:
+    return f"g{generation}.mac.key"
+
+
+def _chunks_name(generation: int) -> str:
+    return f"g{generation}.chunks.jsonl"
+
+
+def _revoked_name(generation: int) -> str:
+    return f"g{generation}.revoked.txt"
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _FILE_READ = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
 _FILE_WRITE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -185,9 +204,14 @@ class AuthorizedIndex:
         self._max_scored = max_scored
         self._max_top_k = max_top_k
         self._epoch = 0
+        self._generation = 0
+        self._pointer_stamp: tuple = ()
+        self._mac_key = b""
+        self._revoked: set[str] = set()
         self._cache_key: tuple | None = None
         self._cache_report: IndexSearchReport | None = None
         self._ollama_probe: bool | None = None
+        self._inject_fault: Callable[[str], None] | None = None
         self._root = Path(root) / session.session_id
         self._io_lock = threading.RLock()
         self._dir_fd = _open_session_directory(Path(root), session.session_id)
@@ -195,11 +219,7 @@ class AuthorizedIndex:
             self._lock_fd = os.open(_INDEX_LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=self._dir_fd)
             fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
             try:
-                self._mac_key = self._load_or_create_key()
-                self._sweep_temporary()
-                self._ensure_leaf(_JSONL_NAME)
-                self._ensure_leaf(_REVOKED_NAME)
-                self._revoked = self._read_revoked()
+                self._recover()
             finally:
                 fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
         except Exception:
@@ -261,6 +281,7 @@ class AuthorizedIndex:
         if not chunks:
             raise AccessDenied("document produced no chunks")
         with self._serialized():
+            self._refresh()
             rows, _partial = self._load_rows()
             version = max((int(row["version"]) for row in rows if row["filename"] == filename), default=0) + 1
             kept = [row for row in rows if row["filename"] != filename]
@@ -279,25 +300,25 @@ class AuthorizedIndex:
                     "tenant_id": self._tenant_id,
                     "session_id": self._session_id,
                 }
-                row["mac"] = self._mac(row)
+                row["mac"] = self._mac(row, self._mac_key)
                 written.append(row)
-            self._write_rows(kept + written)
-            self._bump()
+            self._commit_generation(self._generation + 1, self._mac_key, kept + written, set(self._revoked))
             return written[0]["content_sha256"]
 
     def delete(self, session: TrustedSession, filename: str) -> int:
         """Remove a document and revoke the digests that were stored."""
         self._require(session)
         with self._serialized():
+            self._refresh()
             rows, _partial = self._load_rows()
             removed = [row for row in rows if row["filename"] == filename]
             if not removed:
                 return 0
+            revoked = set(self._revoked)
             for row in removed:
-                self._revoked.add(row["content_sha256"])
-            self._write_revoked()
-            self._write_rows([row for row in rows if row["filename"] != filename])
-            self._bump()
+                revoked.add(row["content_sha256"])
+            kept = [row for row in rows if row["filename"] != filename]
+            self._commit_generation(self._generation + 1, self._mac_key, kept, revoked)
             return len(removed)
 
     def search(
@@ -330,16 +351,20 @@ class AuthorizedIndex:
                 production_neural=False, partial_reasons=tuple(partial), cache_hit=False,
                 ignored_claims=tuple(ignored),
             )
-        stamp = self._leaf_stamp(_JSONL_NAME)
-        cache_key = (self._epoch, stamp, query, limit, tuple(ignored))
-        if self._cache_key == cache_key and self._cache_report is not None:
-            cached = self._cache_report
-            return IndexSearchReport(
-                hits=cached.hits, method=cached.method, dense_backend=cached.dense_backend,
-                production_neural=cached.production_neural, partial_reasons=cached.partial_reasons,
-                cache_hit=True, ignored_claims=cached.ignored_claims,
-            )
-        rows, load_partial = self._load_rows()
+        with self._serialized():
+            self._refresh()
+            cache_key = (self._epoch, self._pointer_stamp, query, limit, tuple(ignored))
+            if self._cache_key == cache_key and self._cache_report is not None:
+                cached = self._cache_report
+                return IndexSearchReport(
+                    hits=cached.hits, method=cached.method, dense_backend=cached.dense_backend,
+                    production_neural=cached.production_neural, partial_reasons=cached.partial_reasons,
+                    cache_hit=True, ignored_claims=cached.ignored_claims,
+                )
+            rows, load_partial = self._load_rows()
+            return self._finish_search(query, limit, ignored, partial, rows, load_partial, cache_key)
+
+    def _finish_search(self, query, limit, ignored, partial, rows, load_partial, cache_key) -> IndexSearchReport:
         partial.extend(load_partial)
         if len(rows) > self._max_scored:
             rows = rows[: self._max_scored]
@@ -425,33 +450,39 @@ class AuthorizedIndex:
     def count(self) -> int:
         if not self.permits(self._session):
             raise AccessDenied("document store requires a current trusted session")
-        rows, _partial = self._load_rows()
-        return len(rows)
+        with self._serialized():
+            self._refresh()
+            rows, _partial = self._load_rows()
+            return len(rows)
 
     def replay(self, session: TrustedSession, content_sha256: str, text: str) -> bool:
         if not self.permits(session):
             return False
         try:
-            rows, _partial = self._load_rows()
+            with self._serialized():
+                self._refresh()
+                rows, _partial = self._load_rows()
+                digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                if digest != content_sha256 or digest in self._revoked:
+                    return False
+                return any(row["content_sha256"] == content_sha256 and row["text"] == text for row in rows)
         except AccessDenied:
             return False
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        if digest != content_sha256 or digest in self._revoked:
-            return False
-        return any(row["content_sha256"] == content_sha256 and row["text"] == text for row in rows)
 
     def rotate_integrity_key(self, session: TrustedSession) -> None:
         self._require(session)
         with self._serialized():
+            self._refresh()
             rows, partial = self._load_rows()
             if any(reason.startswith("integrity") for reason in partial):
                 raise AccessDenied("refusing to rotate over an unrecoverable index")
-            self._mac_key = secrets.token_bytes(32)
-            self._replace_leaf(_KEY_NAME, self._mac_key)
+            new_key = secrets.token_bytes(32)
+            rewritten = []
             for row in rows:
-                row["mac"] = self._mac(row)
-            self._write_rows(rows)
-            self._bump()
+                updated = dict(row)
+                updated["mac"] = self._mac(updated, new_key)
+                rewritten.append(updated)
+            self._commit_generation(self._generation + 1, new_key, rewritten, set(self._revoked))
 
     def _require(self, session: TrustedSession) -> None:
         if not self.permits(session):
@@ -504,7 +535,7 @@ class AuthorizedIndex:
             and encoder.qualified()
         )
 
-    def _mac(self, row: dict) -> str:
+    def _mac(self, row: dict, key: bytes) -> str:
         payload = {
             "tenant_id": self._tenant_id,
             "session_id": self._session_id,
@@ -516,11 +547,121 @@ class AuthorizedIndex:
             "text": row["text"],
         }
         body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hmac.new(self._mac_key, body, hashlib.sha256).hexdigest()
+        return hmac.new(key, body, hashlib.sha256).hexdigest()
+
+    def _fault(self, stage: str) -> None:
+        hook = self._inject_fault
+        if hook is not None:
+            hook(stage)
+
+    def _recover(self) -> None:
+        self._sweep_incomplete(committed=self._peek_generation())
+        pointer = self._read_pointer()
+        if pointer is None:
+            legacy = self._legacy_snapshot()
+            if legacy is not None:
+                key, rows, revoked = legacy
+                self._commit_generation(1, key, rows, revoked, activate=True)
+                self._unlink_legacy()
+                return
+            self._commit_generation(1, secrets.token_bytes(32), [], set(), activate=True)
+            return
+        self._activate(pointer)
+
+    def _refresh(self) -> None:
+        pointer = self._read_pointer()
+        if pointer is None:
+            raise AccessDenied("index generation pointer is missing")
+        if pointer["generation"] == self._generation and self._mac_key:
+            self._verified_generation_bytes(pointer)
+            self._pointer_stamp = (
+                pointer["generation"], pointer["key_sha256"],
+                pointer["chunks_sha256"], pointer["revoked_sha256"],
+            )
+            return
+        self._activate(pointer)
+
+    def _verified_generation_bytes(self, pointer: dict) -> tuple[bytes, bytes, bytes]:
+        generation = int(pointer["generation"])
+        key = self._read_bytes(_key_name(generation))
+        chunks = self._read_bytes(_chunks_name(generation))
+        revoked_raw = self._read_bytes(_revoked_name(generation))
+        if hashlib.sha256(key).hexdigest() != pointer["key_sha256"]:
+            raise AccessDenied("committed key does not match the generation pointer")
+        if hashlib.sha256(chunks).hexdigest() != pointer["chunks_sha256"]:
+            raise AccessDenied("committed index does not match the generation pointer")
+        if hashlib.sha256(revoked_raw).hexdigest() != pointer["revoked_sha256"]:
+            raise AccessDenied("committed revocation state does not match the generation pointer")
+        if len(key) < 32:
+            raise AccessDenied("integrity key is unusable")
+        return key, chunks, revoked_raw
+
+    def _activate(self, pointer: dict) -> None:
+        generation = int(pointer["generation"])
+        key, _chunks, revoked_raw = self._verified_generation_bytes(pointer)
+        self._generation = generation
+        self._pointer_stamp = (
+            pointer["generation"], pointer["key_sha256"],
+            pointer["chunks_sha256"], pointer["revoked_sha256"],
+        )
+        self._mac_key = key
+        self._revoked = {
+            line.strip() for line in revoked_raw.decode("utf-8").splitlines() if line.strip()
+        }
+        self._bump()
+        self._sweep_incomplete(committed=generation)
+
+    def _commit_generation(
+        self,
+        generation: int,
+        key: bytes,
+        rows: list[dict],
+        revoked: set[str],
+        *,
+        activate: bool = True,
+    ) -> None:
+        chunks = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode("utf-8")
+        revoked_raw = (("\n".join(sorted(revoked)) + "\n").encode("utf-8")) if revoked else b""
+        self._fault("before-key")
+        self._replace_leaf(_key_name(generation), key)
+        self._fault("after-key")
+        self._replace_leaf(_chunks_name(generation), chunks)
+        self._fault("after-chunks")
+        self._replace_leaf(_revoked_name(generation), revoked_raw)
+        self._fault("after-revoked")
+        os.fsync(self._dir_fd)
+        self._fault("after-dirsync")
+        pointer = json.dumps(
+            {
+                "generation": generation,
+                "key_sha256": hashlib.sha256(key).hexdigest(),
+                "chunks_sha256": hashlib.sha256(chunks).hexdigest(),
+                "revoked_sha256": hashlib.sha256(revoked_raw).hexdigest(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self._replace_leaf(_GENERATION_NAME, pointer)
+        self._fault("after-publish")
+        os.fsync(self._dir_fd)
+        self._fault("after-commit-dirsync")
+        if activate:
+            self._generation = generation
+            self._mac_key = key
+            self._revoked = set(revoked)
+            self._pointer_stamp = (
+                generation,
+                hashlib.sha256(key).hexdigest(),
+                hashlib.sha256(chunks).hexdigest(),
+                hashlib.sha256(revoked_raw).hexdigest(),
+            )
+            self._bump()
+        self._sweep_incomplete(committed=generation)
+        self._fault("after-cleanup")
 
     def _load_rows(self) -> tuple[list[dict], list[str]]:
         partial: list[str] = []
-        raw = self._read_leaf(_JSONL_NAME)
+        raw = self._read_bytes(_chunks_name(self._generation)).decode("utf-8")
         rows: list[dict] = []
         for line_number, line in enumerate(raw.splitlines(), start=1):
             if not line.strip():
@@ -543,7 +684,7 @@ class AuthorizedIndex:
             if actual != digest:
                 partial.append(f"digest mismatch line {line_number}")
                 continue
-            if not isinstance(mac, str) or not hmac.compare_digest(mac, self._mac(row)):
+            if not isinstance(mac, str) or not hmac.compare_digest(mac, self._mac(row, self._mac_key)):
                 partial.append(f"integrity mismatch line {line_number}")
                 continue
             if row.get("tenant_id") not in {None, self._tenant_id} or row.get("session_id") not in {None, self._session_id}:
@@ -555,25 +696,63 @@ class AuthorizedIndex:
             rows.append(row)
         return rows, partial
 
-    def _write_rows(self, rows: list[dict]) -> None:
-        payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows).encode("utf-8")
-        self._replace_leaf(_JSONL_NAME, payload)
-
-    def _read_revoked(self) -> set[str]:
-        raw = self._read_leaf(_REVOKED_NAME)
-        return {line.strip() for line in raw.splitlines() if line.strip()}
-
-    def _write_revoked(self) -> None:
-        payload = (("\n".join(sorted(self._revoked)) + "\n").encode("utf-8")) if self._revoked else b""
-        self._replace_leaf(_REVOKED_NAME, payload)
-
-    def _ensure_leaf(self, name: str) -> None:
+    def _read_pointer(self) -> dict | None:
         try:
-            fd = os.open(name, _FILE_WRITE, 0o600, dir_fd=self._dir_fd)
-        except FileExistsError:
-            self._require_regular(name)
-            return
-        os.close(fd)
+            raw = self._read_bytes(_GENERATION_NAME)
+        except AccessDenied:
+            return None
+        try:
+            pointer = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AccessDenied("index generation pointer is unreadable") from exc
+        if not isinstance(pointer, dict) or not isinstance(pointer.get("generation"), int):
+            raise AccessDenied("index generation pointer is malformed")
+        for field in ("key_sha256", "chunks_sha256", "revoked_sha256"):
+            if not isinstance(pointer.get(field), str) or len(pointer[field]) != 64:
+                raise AccessDenied("index generation pointer is malformed")
+        return pointer
+
+    def _peek_generation(self) -> int | None:
+        try:
+            pointer = self._read_pointer()
+        except AccessDenied:
+            return None
+        if pointer is None:
+            return None
+        return int(pointer["generation"])
+
+    def _legacy_snapshot(self) -> tuple[bytes, list[dict], set[str]] | None:
+        try:
+            key = self._read_bytes(_LEGACY_KEY_NAME)
+        except AccessDenied:
+            return None
+        try:
+            chunks = self._read_bytes(_LEGACY_JSONL_NAME)
+        except AccessDenied:
+            chunks = b""
+        try:
+            revoked_raw = self._read_bytes(_LEGACY_REVOKED_NAME)
+        except AccessDenied:
+            revoked_raw = b""
+        rows: list[dict] = []
+        for line in chunks.decode("utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
+        revoked = {line.strip() for line in revoked_raw.decode("utf-8").splitlines() if line.strip()}
+        return key, rows, revoked
+
+    def _unlink_legacy(self) -> None:
+        for name in (_LEGACY_KEY_NAME, _LEGACY_JSONL_NAME, _LEGACY_REVOKED_NAME):
+            try:
+                os.unlink(name, dir_fd=self._dir_fd)
+            except OSError:
+                continue
 
     def _require_regular(self, name: str) -> None:
         try:
@@ -583,10 +762,7 @@ class AuthorizedIndex:
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise AccessDenied("index leaf is not a regular file")
 
-    def _leaf_stamp(self, name: str) -> str:
-        return hashlib.sha256(self._read_leaf(name).encode("utf-8")).hexdigest()
-
-    def _read_leaf(self, name: str) -> str:
+    def _read_bytes(self, name: str) -> bytes:
         try:
             fd = os.open(name, _FILE_READ, dir_fd=self._dir_fd)
         except OSError as exc:
@@ -603,7 +779,7 @@ class AuthorizedIndex:
                 chunks.append(block)
         finally:
             os.close(fd)
-        return b"".join(chunks).decode("utf-8")
+        return b"".join(chunks)
 
     def _replace_leaf(self, name: str, payload: bytes) -> None:
         temporary = f".{name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(16)}.tmp"
@@ -628,34 +804,17 @@ class AuthorizedIndex:
         os.rename(temporary, name, src_dir_fd=self._dir_fd, dst_dir_fd=self._dir_fd)
         os.fsync(self._dir_fd)
 
-    def _load_or_create_key(self) -> bytes:
-        try:
-            fd = os.open(_KEY_NAME, _FILE_WRITE, 0o600, dir_fd=self._dir_fd)
-        except FileExistsError:
-            fd = os.open(_KEY_NAME, _FILE_READ, dir_fd=self._dir_fd)
-            try:
-                info = os.fstat(fd)
-                if not stat.S_ISREG(info.st_mode):
-                    raise AccessDenied("integrity key is not a regular file")
-                key = os.read(fd, 64)
-            finally:
-                os.close(fd)
-            if len(key) < 32:
-                raise AccessDenied("integrity key is unusable")
-            return key
-        try:
-            key = secrets.token_bytes(32)
-            os.write(fd, key)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.fsync(self._dir_fd)
-        return key
-
-    def _sweep_temporary(self) -> None:
+    def _sweep_incomplete(self, committed: int | None) -> None:
         names = _listdir_fd(self._dir_fd)
         for name in names:
             if _TMP_NAME.match(name):
+                try:
+                    os.unlink(name, dir_fd=self._dir_fd)
+                except OSError:
+                    continue
+                continue
+            match = _GEN_LEAF.match(name)
+            if match and (committed is None or int(match.group(1)) != committed):
                 try:
                     os.unlink(name, dir_fd=self._dir_fd)
                 except OSError:

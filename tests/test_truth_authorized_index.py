@@ -14,7 +14,7 @@ import pytest
 from orca.cognitive.contracts import ComplexityLevel, EvidenceLevel, FreshnessLevel, IntentCategory, IntentPlan
 from orca.connectors.contracts import ConnectorIdentity, ConnectorInstance, ConnectorReadRequest, ConnectorType
 from orca.connectors.document_store import search_documents
-from orca.docs.authorized_index import SYNTHETIC_HASH_EMBEDDING_ID, AuthorizedIndex, LocalEncoder
+from orca.docs.authorized_index import SYNTHETIC_HASH_EMBEDDING_ID, AuthorizedIndex, LocalEncoder, _chunks_name
 from orca.docs.sparse import bm25_scores as shared_bm25_scores
 from orca.foundation_x.lifecycle import LifecycleChain, LifecycleDecision, _grant_binding_reasons, assess_lifecycle
 from orca.genesis.governance.authorization import NativePretrainingGrant, NativePretrainingNotAuthorized
@@ -113,10 +113,15 @@ def test_revocation_deletion_reuse_and_cache(tmp_path):
 def test_digest_mismatch_corrupt_line_symlink_and_deadline(tmp_path):
     _authority, session, index = _index(tmp_path)
     digest = index.admit(session, "kept", "kept fact is visible")
-    leaf = tmp_path / session.session_id / "chunks.jsonl"
+    leaf = tmp_path / session.session_id / _chunks_name(index._generation)
     rows = [json.loads(line) for line in leaf.read_text().splitlines()]
     rows[0]["text"] = "kept fact is substituted"
-    leaf.write_text(json.dumps(rows[0]) + "\n" + "{not-json\n")
+    payload = json.dumps(rows[0]) + "\n" + "{not-json\n"
+    leaf.write_text(payload)
+    pointer = tmp_path / session.session_id / ".generation"
+    record = json.loads(pointer.read_text())
+    record["chunks_sha256"] = hashlib.sha256(payload.encode()).hexdigest()
+    pointer.write_text(json.dumps(record, sort_keys=True, separators=(",", ":")))
     mismatched = index.search(session, "kept")
     assert mismatched.hits == ()
     assert any(reason.startswith("digest mismatch") for reason in mismatched.partial_reasons)
@@ -331,4 +336,4 @@ def test_replay_is_stable_for_an_unmodified_index(tmp_path):
     second = index.search(session, "harbor")
     assert first.hits[0].content_sha256 == second.hits[0].content_sha256
     assert index.replay(session, first.hits[0].content_sha256, first.hits[0].text) is True
-    os.chmod(tmp_path / session.session_id / "chunks.jsonl", 0o600)
+    os.chmod(tmp_path / session.session_id / _chunks_name(index._generation), 0o600)

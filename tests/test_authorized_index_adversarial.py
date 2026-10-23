@@ -12,11 +12,14 @@ from unittest.mock import patch
 
 import pytest
 
+import hashlib
+
 from orca.docs.authorized_index import (
     PRODUCTION_ENCODER_ID,
     AuthorizedIndex,
     LocalEncoder,
     TrustedOllamaEncoder,
+    _chunks_name,
 )
 from orca.truth.access import AccessDenied, SessionAuthority
 from orca.truth.indexed_query import scan_conflicts
@@ -71,19 +74,43 @@ def test_directory_replacement_does_not_follow_a_new_symlink(tmp_path):
     index.close()
 
 
+def _pointer(tmp_path, session):
+    return tmp_path / session.session_id / ".generation"
+
+
+def _rewrite_pointer_hashes(tmp_path, session, index):
+    session_dir = tmp_path / session.session_id
+    gen = index._generation
+    record = json.loads(_pointer(tmp_path, session).read_text())
+    record["key_sha256"] = hashlib.sha256((session_dir / f"g{gen}.mac.key").read_bytes()).hexdigest()
+    record["chunks_sha256"] = hashlib.sha256((session_dir / _chunks_name(gen)).read_bytes()).hexdigest()
+    record["revoked_sha256"] = hashlib.sha256((session_dir / f"g{gen}.revoked.txt").read_bytes()).hexdigest()
+    _pointer(tmp_path, session).write_text(json.dumps(record, sort_keys=True, separators=(",", ":")))
+
+
 def test_coordinated_text_and_digest_edit_is_integrity_mismatch(tmp_path):
     _authority, session, index = _index(tmp_path)
     original = index.admit(session, "kept", "kept fact is visible")
-    leaf = tmp_path / session.session_id / "chunks.jsonl"
+    leaf = tmp_path / session.session_id / _chunks_name(index._generation)
     rows = [json.loads(line) for line in leaf.read_text().splitlines()]
     rows[0]["text"] = "kept fact is substituted"
-    rows[0]["content_sha256"] = __import__("hashlib").sha256(rows[0]["text"].encode()).hexdigest()
+    rows[0]["content_sha256"] = hashlib.sha256(rows[0]["text"].encode()).hexdigest()
     leaf.write_text(json.dumps(rows[0]) + "\n")
+    _rewrite_pointer_hashes(tmp_path, session, index)
     report = index.search(session, "kept")
     assert report.hits == ()
     assert any(reason.startswith("integrity mismatch") for reason in report.partial_reasons)
     assert index.replay(session, original, "kept fact is visible") is False
     assert index.replay(session, rows[0]["content_sha256"], rows[0]["text"]) is False
+
+
+def test_tampered_chunks_without_pointer_update_fail_closed(tmp_path):
+    _authority, session, index = _index(tmp_path)
+    index.admit(session, "kept", "kept fact is visible")
+    leaf = tmp_path / session.session_id / _chunks_name(index._generation)
+    leaf.write_text('{"text":"substituted"}\n')
+    with pytest.raises(AccessDenied, match="does not match the generation pointer"):
+        index.search(session, "kept")
 
 
 def test_stale_temporary_files_are_swept_without_dropping_committed_rows(tmp_path):
@@ -250,3 +277,138 @@ def test_natural_language_conflicts_and_uncertain_without_a_model():
     assert uncertain.conflicts == ()
     assert uncertain.uncertain
     assert uncertain.model_backed is False
+
+
+class _Injected(RuntimeError):
+    pass
+
+
+def _stop_at(target: str):
+    def hook(stage: str) -> None:
+        if stage == target:
+            raise _Injected(stage)
+    return hook
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [
+        "before-key",
+        "after-key",
+        "after-chunks",
+        "after-revoked",
+        "after-dirsync",
+        "after-publish",
+        "after-commit-dirsync",
+        "after-cleanup",
+    ],
+)
+def test_rotation_interruption_preserves_or_commits_one_generation(tmp_path, stage):
+    authority, session, index = _index(tmp_path)
+    digest = index.admit(session, "beacon", "beacon interval is hourly")
+    before = index._generation
+    index._inject_fault = _stop_at(stage)
+    try:
+        index.rotate_integrity_key(session)
+    except _Injected:
+        pass
+    index.close()
+    recovered = AuthorizedIndex(authority, session, tmp_path)
+    assert recovered.replay(session, digest, "beacon interval is hourly") is True
+    assert recovered.search(session, "beacon").hits[0].content_sha256 == digest
+    if stage in {"before-key", "after-key", "after-chunks", "after-revoked", "after-dirsync"}:
+        assert recovered._generation == before
+    else:
+        assert recovered._generation == before + 1
+    recovered.close()
+
+
+def test_second_handle_sees_delete_and_cannot_readmit(tmp_path):
+    authority, session, first = _index(tmp_path)
+    digest = first.admit(session, "manual", "manual code = secret")
+    second = AuthorizedIndex(authority, session, tmp_path)
+    warmed = first.search(session, "manual")
+    assert warmed.hits
+    assert second.delete(session, "manual") == 1
+    stale = first.search(session, "manual")
+    assert stale.hits == ()
+    assert stale.cache_hit is False
+    assert first.replay(session, digest, "manual code = secret") is False
+    with pytest.raises(AccessDenied, match="revoked"):
+        first.admit(session, "manual", "manual code = secret")
+    first.close()
+    second.close()
+
+
+def test_rotation_is_visible_to_the_other_open_handle(tmp_path):
+    authority, session, first = _index(tmp_path)
+    digest = first.admit(session, "beacon", "beacon interval is hourly")
+    second = AuthorizedIndex(authority, session, tmp_path)
+    second.rotate_integrity_key(session)
+    assert first.replay(session, digest, "beacon interval is hourly") is True
+    assert first.search(session, "beacon").hits[0].content_sha256 == digest
+    first.close()
+    second.close()
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="requires os.fork")
+def test_forked_process_delete_is_visible_after_reopen(tmp_path):
+    authority, session, index = _index(tmp_path)
+    digest = index.admit(session, "kept", "kept fact is visible")
+    index.close()
+    pid = os.fork()
+    if pid == 0:
+        try:
+            child = AuthorizedIndex(authority, session, tmp_path)
+            child.delete(session, "kept")
+            child.close()
+            os._exit(0)
+        except Exception:
+            os._exit(1)
+    _pid, status = os.waitpid(pid, 0)
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+    parent = AuthorizedIndex(authority, session, tmp_path)
+    assert parent.search(session, "kept").hits == ()
+    assert parent.replay(session, digest, "kept fact is visible") is False
+    parent.close()
+
+
+def test_revocation_file_tamper_without_pointer_fails_closed(tmp_path):
+    _authority, session, index = _index(tmp_path)
+    digest = index.admit(session, "kept", "kept fact is visible")
+    index.delete(session, "kept")
+    revoked = tmp_path / session.session_id / f"g{index._generation}.revoked.txt"
+    revoked.write_text("")
+    with pytest.raises(AccessDenied, match="revocation state"):
+        index.search(session, "kept")
+    index.close()
+    with pytest.raises(AccessDenied, match="revocation state"):
+        AuthorizedIndex(_authority, session, tmp_path)
+    assert digest
+
+
+def test_same_directory_hmac_is_not_a_same_uid_authenticity_boundary(tmp_path):
+    """An attacker who can rewrite records, key, and the generation pointer
+    can mint a valid MAC. The HMAC is not a claim against that attacker.
+    """
+    _authority, session, index = _index(tmp_path)
+    index.admit(session, "kept", "kept fact is visible")
+    session_dir = tmp_path / session.session_id
+    gen = index._generation
+    key = (session_dir / f"g{gen}.mac.key").read_bytes()
+    row = {
+        "doc_id": "kept",
+        "filename": "kept",
+        "chunk_idx": 0,
+        "text": "kept fact is forged",
+        "version": 9,
+        "content_sha256": hashlib.sha256(b"kept fact is forged").hexdigest(),
+        "tenant_id": "tenant-a",
+        "session_id": session.session_id,
+    }
+    row["mac"] = index._mac(row, key)
+    payload = json.dumps(row, sort_keys=True) + "\n"
+    (session_dir / _chunks_name(gen)).write_text(payload)
+    _rewrite_pointer_hashes(tmp_path, session, index)
+    forged = index.search(session, "forged")
+    assert forged.hits and forged.hits[0].text == "kept fact is forged"
