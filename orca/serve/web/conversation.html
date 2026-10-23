@@ -105,6 +105,12 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .msg-actions button{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:inherit;font-size:11.5px;cursor:pointer;padding:4px 0}
 .msg-actions button:hover{color:var(--ink)}
 .unavailable-note{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;border:1px solid var(--border);border-radius:9px;padding:9px 12px;background:var(--chip)}
+/* AUDIT-B12: neutral error-recovery actions -- deliberately no accent
+   color on these controls ("no borrowed blue/gold/coral UI accent or
+   decorative alerts" per the contract's visual-fidelity section). */
+.recovery-actions{display:flex;gap:8px;margin-top:8px}
+.recovery-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--soft);font-size:11px;font-weight:600;padding:6px 11px;cursor:pointer;font-family:inherit}
+.recovery-btn:hover,.recovery-btn:focus-visible{background:var(--chip);color:var(--ink)}
 .interrupted-badge{display:inline-flex;align-items:center;gap:7px;color:var(--warn-text);font-size:12px;border:1px solid #e3a44c;border-radius:9px;padding:7px 11px;margin-top:10px;background:var(--chip)}
 .thinking{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
 .dot-pulse{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:pulse 1.1s infinite ease-in-out}
@@ -1113,12 +1119,48 @@ function appendAssistantMessage(text) {
   return div;
 }
 
-function appendUnavailableNote(message) {
+// AUDIT-B12: RecoveryAction minimum ("Copy received text... Retry only
+// if both server policy and user/tenant access permit"). Copy is always
+// safe (purely client-side, copies the error text itself -- useful for
+// support/bug reports) and offered on every note. Retry is opt-in via
+// `retryText` and, when passed, submits the SAME user message as a
+// genuinely NEW request through the real sendMessage() path -- this
+// deliberately sidesteps the B12 contract's harder reconciliation
+// problem (resuming/confirming the OLD request's uncertain outcome,
+// which needs a server-authenticated status endpoint this codebase does
+// not have, exactly the same backend gap documented for B10's Stop) by
+// never attempting to resume anything: a retry here is indistinguishable
+// from the user re-typing and re-sending the same words, which needs no
+// new backend capability and makes no claim about the failed request's
+// fate.
+function appendUnavailableNote(message, options) {
+  const retryText = options && options.retryText;
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
   div.className = 'answer';
-  div.innerHTML = `<div class="unavailable-note">${esc(message)}</div>`;
+  div.innerHTML = `<div class="unavailable-note">${esc(message)}</div>` +
+    `<div class="recovery-actions"><button type="button" class="recovery-btn" data-action="copy">Copy</button>` +
+    (retryText ? `<button type="button" class="recovery-btn" data-action="retry">Retry</button>` : '') +
+    `</div>`;
   container.appendChild(div);
+  div.querySelector('[data-action="copy"]').addEventListener('click', (e) => {
+    navigator.clipboard.writeText(message).then(() => {
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  });
+  const retryBtn = div.querySelector('[data-action="retry"]');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => {
+      if (!composerEl || isStreaming) return; // a retry must not race an already-active generation
+      const input = composerEl.querySelector('#msg-input');
+      input.value = retryText;
+      input.dispatchEvent(new Event('input'));
+      sendMessage();
+    });
+  }
   scrollReadingToBottom();
 }
 
@@ -1227,9 +1269,18 @@ async function sendMessage() {
       signal: myController.signal,
     });
     if (!isOwner()) return; // navigated away while awaiting the response headers
+    // AUDIT-B12: "A token expiring on the client must not be silently
+    // treated as backend execution failure." /api/stream shares the same
+    // get_current_user_optional backend gap documented in
+    // ORNEUR_SESSION_EXPIRY_401_AUDIT.md (it does not currently emit a
+    // real 401 for an invalid token either), but this check is added for
+    // the same defense-in-depth reason as the other six call sites: correct
+    // today if the backend ever does, and distinguishes a genuine session
+    // expiry from an undifferentiated "could not be completed" error now.
+    if (resp.status === 401) { thinkEl.remove(); _handleSessionExpired(); return; }
     if (!resp.ok || !resp.body) {
       thinkEl.remove();
-      appendUnavailableNote('The request could not be completed (status ' + resp.status + '). This is a genuine error state, not a simulated one.');
+      appendUnavailableNote('The request could not be completed (status ' + resp.status + '). This is a genuine error state, not a simulated one.', { retryText: text });
       return;
     }
     const reader = resp.body.getReader();
@@ -1263,7 +1314,7 @@ async function sendMessage() {
             if (rawBuffer.trim()) {
               appendAssistantMessage(rawBuffer);
             } else {
-              appendUnavailableNote('ORNEUR completed the request but returned no response content.');
+              appendUnavailableNote('ORNEUR completed the request but returned no response content.', { retryText: text });
             }
           } else {
             finalizeStreamingMessage(answerEl, rawBuffer);
@@ -1275,7 +1326,7 @@ async function sendMessage() {
           } else {
             thinkEl.remove();
           }
-          appendUnavailableNote(ev.message || 'An error occurred while generating a response.');
+          appendUnavailableNote(ev.message || 'An error occurred while generating a response.', { retryText: text });
         }
       } catch (e) {
         logMalformed(e);
@@ -1301,7 +1352,7 @@ async function sendMessage() {
       // completion just because the socket closed.
       thinkEl.remove();
       if (answerEl) markMessageInterrupted(answerEl);
-      appendUnavailableNote('The response stream ended unexpectedly before completion.');
+      appendUnavailableNote('The response stream ended unexpectedly before completion.', { retryText: text });
     }
   } catch (e) {
     // AbortError fires when _abandonActiveStream() cancelled OUR OWN
@@ -1312,7 +1363,7 @@ async function sendMessage() {
     if (isOwner()) {
       thinkEl.remove();
       if (answerEl) markMessageInterrupted(answerEl);
-      appendUnavailableNote('Network error while streaming the response.');
+      appendUnavailableNote('Network error while streaming the response.', { retryText: text });
     }
   } finally {
     if (isOwner()) {
