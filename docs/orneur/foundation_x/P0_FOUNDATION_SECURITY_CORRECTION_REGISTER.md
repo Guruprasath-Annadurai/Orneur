@@ -19,6 +19,7 @@ Remediation remains stacked on PR #82. Training remains NO-GO. The acceptance le
 | P0 recovery sweep | `_recover()` swept `gN.*` when the pointer was missing/unreadable, then created an empty store | Sweep only `.tmp` until a pointer is validated. Missing pointer with existing `gN.*` files fails closed and preserves bytes. Mutations fail closed on non-revocation row-integrity errors | Missing/malformed pointer on a store with docs+revocations; integrity-failed admit/delete | `test_missing_generation_pointer_does_not_wipe_an_existing_store`, `test_malformed_generation_pointer_preserves_generation_files`, `test_partial_integrity_failure_does_not_discard_rows_on_admit` | ENGINEERING FIXED on Linux; audit pending |
 | P1 HMAC trust boundary | Key in the same session directory as the records | Documented and tested: HMAC is not authenticity against same-UID directory rewrite | `test_same_directory_hmac_is_not_a_same_uid_authenticity_boundary` | `AUTHORIZED_INDEX_TRUST_BOUNDARY.md` | Honest limitation, not a stronger claim |
 | P1-02 Q1/X2 (kept) | Incomplete counts; weak X2 assertion | 15/12/7/4/1 locked; X2 2/0/0 + negative path | qualification + research tests | same | Kept |
+| P0 Darwin corpus lock ENOENT | Concurrent `openat(O_RDWR\|O_CREAT\|O_NOFOLLOW)` of `.process_corpus.lock` can return ENOENT before `flock` on Darwin/APFS. Not claimed as a kernel defect. Linux did not reproduce the race. | Bounded (8) ENOENT retry only when `O_CREAT` is set, `dir_fd` remains the same live directory, `O_NOFOLLOW` stays on, `O_TRUNC` is refused. Persistent ENOENT/EACCES/ENOSPC re-raised. | Antigravity: `test_concurrent_writers_to_the_same_output_dir_are_serialized_not_corrupted`. Standalone: `scripts/repro_darwin_corpus_lock_race.py` | `tests/test_genesis_corpus_lock_concurrency.py` | ENGINEERING FIXED on Linux; native Darwin 100-round test SKIPPED here, not PASS |
 
 ## Key-rotation commit design
 
@@ -31,10 +32,12 @@ Remediation remains stacked on PR #82. Training remains NO-GO. The acceptance le
 
 ## Readiness
 
-Final engineering status: **ENGINEERING PARTIAL — SPECIFIED BLOCKERS**
+Final engineering status: **ENGINEERING PASS — INDEPENDENT NATIVE AUDIT PENDING**
 
-1. Native Darwin `F_GETPATH` and `process_corpus()` have not been executed on authorized Mac hardware in this run.
+Linux engineering for the corpus lock race is in. Native Apple Silicon confirmation is not. Skipped Darwin tests are not PASS.
+
+1. Native Darwin `F_GETPATH`, `process_corpus()`, and 100-round lock stress have not been executed on authorized Mac hardware in this run. Use `scripts/repro_darwin_corpus_lock_race.py --rounds 100 --writers 8`.
 2. Independent Antigravity requalification at the new head.
-3. Training remains NO-GO.
+3. Training remains NO-GO. Ledger `[]` / 0/95.
 
 Training: **NO-GO**.
