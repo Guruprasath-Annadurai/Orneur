@@ -139,14 +139,24 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 
 /* Model dropdown */
 .modelmenu{position:relative}
-.modelmenu-panel{display:none;position:absolute;bottom:40px;left:0;width:260px;background:var(--compose);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px var(--shadow);padding:6px;z-index:20}
+.modelmenu-panel{display:none;position:absolute;bottom:40px;left:0;width:300px;max-height:min(420px,70vh);overflow-y:auto;background:var(--compose);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px var(--shadow);padding:6px;z-index:20}
 .modelmenu-panel.open{display:block}
 .modelopt{display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;cursor:pointer;width:100%;text-align:left;background:none;border:none;font-family:inherit;color:inherit}
 .modelopt:hover,.modelopt:focus-visible{background:var(--chip)}
 .modelopt:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.modelopt.unavailable,.modelopt:disabled{opacity:.55;cursor:not-allowed}
+.modelopt.unavailable,.modelopt[aria-disabled="true"]{opacity:.55;cursor:default}
 .modelopt .mname{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
 .modelopt .mnote{font-size:11px;color:var(--muted)}
+/* B05 -- Details disclosure, verified fields only (GET /api/models). */
+.modelrow{position:relative}
+.modelrow-sep{height:1px;background:var(--line);margin:4px 6px}
+.details-btn{position:absolute;top:8px;right:6px;background:none;border:none;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;padding:3px 6px;border-radius:6px;font-family:inherit}
+.details-btn:hover,.details-btn:focus-visible{background:var(--chip);color:var(--ink)}
+.model-details{padding:4px 10px 9px;display:none;flex-direction:column;gap:4px}
+.model-details.open{display:flex}
+.detail-row{display:flex;justify-content:space-between;gap:10px;font-size:11px}
+.detail-k{color:var(--muted)}
+.detail-v{color:var(--ink);text-align:right}
 
 /* B04 Expanded Composer -- source-verified against
    APPROVED_SOURCE_ARCHIVES/ORNEUR_B04_FINAL_LOCK_AND_HANDOFF.zip
@@ -800,7 +810,7 @@ function renderModelOptions() {
   panel.innerHTML = '';
   const variants = ['nano', 'core', 'ultra'];
   let anySendable = false;
-  variants.forEach((variant) => {
+  variants.forEach((variant, i) => {
     const info = _models[variant] || {};
     // AUDIT-C02-B02: `publicly_served` means "this request would be
     // routed and answered at all" -- it does NOT mean the tier's own
@@ -819,21 +829,81 @@ function renderModelOptions() {
     if (info.fallback_active) parts.push(`Currently serving via ${MODEL_LABELS[_variantForModel(info.resolved_model)] || info.resolved_model}`);
     if (!sendable) parts.push('Not available');
     const note = parts.length ? parts.join(' — ') : (sendable ? 'Available' : 'Not available');
-    // AUDIT-B81-A-P1-03: a real <button>, not a clickable <div>, so the
-    // model list is reachable and activatable with Tab/Enter/Space --
-    // the simplest accessible pattern that matches the actual keyboard
-    // interaction (no ARIA menu/listbox role is added, since this isn't
-    // implementing roving-tabindex arrow-key navigation).
+
+    const row = document.createElement('div');
+    row.className = 'modelrow';
+    const reasonId = `model-reason-${variant}`;
+    const detailsId = `model-details-${variant}`;
+
+    // AUDIT-B81-A-P1-03/AUDIT-B05: a real <button>, reachable with Tab
+    // whether sendable or not -- B05's contract explicitly requires an
+    // unavailable row's reason stay discoverable by keyboard/screen-
+    // reader users ("Never disable the entire row when it would hide
+    // reason/details from keyboard users"). Reproduced by inspection:
+    // the previous use of the native disabled attribute made the WHOLE button
+    // unreachable by Tab, silently hiding its reason text from anyone
+    // not using a mouse. aria-disabled (not the disabled attribute)
+    // keeps it focusable; no click handler is attached when unavailable,
+    // so activating it is simply a no-op, and its accessible name is
+    // linked to the visible reason via aria-describedby.
     const opt = document.createElement('button');
     opt.type = 'button';
     opt.className = 'modelopt' + (sendable ? '' : ' unavailable');
-    if (!sendable) opt.disabled = true;
+    opt.setAttribute('aria-describedby', reasonId);
+    if (!sendable) opt.setAttribute('aria-disabled', 'true');
     opt.innerHTML = `<span class="mname"><span class="neutral-dot${sendable ? ' avail' : ''}"></span>${MODEL_LABELS[variant]}</span>` +
-      `<span class="mnote">${esc(note)}</span>`;
+      `<span class="mnote" id="${reasonId}">${esc(note)}</span>`;
     if (sendable) {
       opt.addEventListener('click', () => selectModel(variant, note));
     }
-    panel.appendChild(opt);
+    row.appendChild(opt);
+
+    // AUDIT-B05: "Details disclose only verified attributes... Hide
+    // empty/unverified metrics rather than displaying invented numbers."
+    // Every field below comes directly from GET /api/models's own
+    // response for this tier -- nothing here is inferred, estimated or
+    // copied from the archive's illustrative screenshots. Reachable and
+    // togglable even when the row above is unavailable, per the contract.
+    const detailsBtn = document.createElement('button');
+    detailsBtn.type = 'button';
+    detailsBtn.className = 'details-btn';
+    detailsBtn.setAttribute('aria-expanded', 'false');
+    detailsBtn.setAttribute('aria-controls', detailsId);
+    detailsBtn.textContent = 'Details';
+    const detailsPanel = document.createElement('div');
+    detailsPanel.className = 'model-details';
+    detailsPanel.id = detailsId;
+    const fields = [];
+    if (info.model) fields.push(['Model', info.model]);
+    fields.push(['Lifecycle', info.lifecycle || 'Unverified']);
+    fields.push(['Availability', sendable ? 'Ready' : 'Not available']);
+    if (typeof info.vision_capable === 'boolean') fields.push(['Vision input', info.vision_capable ? 'Supported' : 'Not supported']);
+    if (info.fallback_active && info.resolved_model) fields.push(['Actually serving', info.resolved_model]);
+    if (info.disclosure) fields.push(['Disclosure', info.disclosure]);
+    detailsPanel.innerHTML = fields.map(([k, v]) => `<div class="detail-row"><span class="detail-k">${esc(k)}</span><span class="detail-v">${esc(String(v))}</span></div>`).join('')
+      || '<div class="detail-row"><span class="detail-v">No further verified attributes reported.</span></div>';
+    // AUDIT-B05: ".open" is the authoritative toggle (the `.model-details`
+    // base rule sets `display` directly, which out-specifies the browser's
+    // own `[hidden]` user-agent rule -- reproduced live: every details
+    // panel rendered open by default despite `hidden` being set). `hidden`
+    // is still mirrored for assistive tech that honors it independently
+    // of CSS, but only `.open` controls visibility here.
+    detailsPanel.hidden = true;
+    detailsBtn.addEventListener('click', () => {
+      const willOpen = !detailsPanel.classList.contains('open');
+      detailsPanel.classList.toggle('open', willOpen);
+      detailsPanel.hidden = !willOpen;
+      detailsBtn.setAttribute('aria-expanded', String(willOpen));
+    });
+    row.appendChild(detailsBtn);
+    row.appendChild(detailsPanel);
+
+    panel.appendChild(row);
+    if (i < variants.length - 1) {
+      const sep = document.createElement('div');
+      sep.className = 'modelrow-sep';
+      panel.appendChild(sep);
+    }
   });
   if (!anySendable) {
     const note = document.createElement('div');
@@ -868,6 +938,33 @@ function selectModel(variant, disclosureNote) {
   } else {
     disclosureEl.style.display = 'none';
   }
+  updateSendEnabled();
+}
+
+// AUDIT-B05: "On account/tenant switch or logout: clear selected model
+// and cached private entitlements" -- selectedModelVariant previously
+// was NEVER reset anywhere except by picking a new one, so logging out
+// and back in as a different account (or an anonymous->authenticated
+// transition) left the PREVIOUS account's model choice, label and
+// disclosure note showing, with the send button enabled based on a
+// selection never re-validated against the new account's eligibility.
+// Not a security hole by itself (the backend must still fail closed on a
+// stale/unauthorized model_variant at request time, per the contract),
+// but a real client-side truthfulness bug this closes. Called from every
+// genuine identity transition, matching this session's established audit
+// of doLogout()/onAuthSuccess()/continueAnonymous()/tryRestoreSession().
+function resetModelSelection() {
+  selectedModelVariant = null;
+  if (!composerEl) return;
+  composerEl.querySelector('#model-label').textContent = 'Choose model';
+  composerEl.querySelector('#model-dot').classList.remove('avail');
+  const btn = composerEl.querySelector('#model-btn');
+  btn.title = '';
+  btn.setAttribute('aria-label', '');
+  btn.removeAttribute('aria-label');
+  const disclosureEl = composerEl.querySelector('#model-disclosure');
+  disclosureEl.style.display = 'none';
+  disclosureEl.textContent = '';
   updateSendEnabled();
 }
 
@@ -1704,6 +1801,7 @@ function onAuthSuccess(data) {
   // covers both (it already calls _abandonActiveStream()/
   // _abandonActiveMessage() and clears the reading-container DOM).
   newConversation();
+  resetModelSelection(); // AUDIT-B05: the previous principal's model choice must not survive a sign-in
   _authToken = data.token;
   _authUser = data.user;
   _anonymous = false;
@@ -1729,6 +1827,7 @@ function continueAnonymous() {
   // only on `if (!_authToken) return`) would have gone on to fetch and
   // render Alice's real conversations under what the UI labels "Guest".
   newConversation();
+  resetModelSelection(); // AUDIT-B05: the previous principal's model choice must not survive going anonymous
   _authToken = null;
   _authUser = null;
   _anonymous = true;
@@ -1763,6 +1862,7 @@ function updateAccountUI() {
 function _clearAuthStateAndShowSignIn(message) {
   _abandonActiveSearch();
   _abandonAllViewsForAccountChange();
+  resetModelSelection(); // AUDIT-B05: a logout/session-expiry is a genuine identity transition
   _authToken = null; _authUser = null;
   try { localStorage.removeItem('orneur_token'); } catch (e) {}
   document.getElementById('recents-list').innerHTML = '<div class="recents-empty">Sign in to see your conversations</div>';
