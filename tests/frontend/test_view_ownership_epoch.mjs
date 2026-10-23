@@ -195,6 +195,9 @@ test('newConversation() invalidates ONLY the message domain, not history (the CT
     sessionId: 'old-sid',
     composerEl: null, // B04: newConversation() guards its collapseComposer() call on this
     closeTempModePanel: () => {},
+    _saveCurrentDraft: () => {},
+    _restoreDraftFor: () => {},
+    closeQuickSwitch: () => {},
     document: {
       getElementById: () => ({ innerHTML: '' }),
     },
@@ -236,7 +239,7 @@ test('doLogout() invalidates BOTH domains via the full-account-reset routine (in
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${doLogoutSrc}`,
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${doLogoutSrc}`,
     sandbox,
   );
   sandbox.doLogout();
@@ -262,7 +265,7 @@ test('continueAnonymous() invalidates both domains, clears a previous principal,
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${continueAnonymousSrc}`,
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${continueAnonymousSrc}`,
     sandbox,
   );
   sandbox.continueAnonymous();
@@ -292,7 +295,7 @@ test('onAuthSuccess() invalidates both domains, clears previous DOM/stream, and 
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${onAuthSuccessSrc}`,
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${onAuthSuccessSrc}`,
     sandbox,
   );
   sandbox.onAuthSuccess({ token: 'token-bob', user: { name: 'Bob' } });
@@ -327,7 +330,7 @@ test('_handleSessionExpired() clears auth state and shows a truthful reason in t
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${handleExpiredSrc}`,
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${handleExpiredSrc}`,
     sandbox,
   );
   sandbox._handleSessionExpired();
@@ -352,7 +355,7 @@ test('_handleSessionExpired() is a no-op when already signed out (no token to ex
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${handleExpiredSrc}`,
+    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${handleExpiredSrc}`,
     sandbox,
   );
   sandbox._handleSessionExpired();

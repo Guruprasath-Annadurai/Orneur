@@ -172,6 +172,20 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
 .temp-mode-actions .expand-action{flex:1;height:auto;min-height:40px;padding:9px 10px;text-align:center;justify-content:center;white-space:normal;line-height:1.3}
 .expand-action.primary-disabled{opacity:.6;cursor:not-allowed}
 @media(max-width:650px){.temp-mode-panel{top:auto;bottom:0;left:0;right:0;width:100%;max-height:82vh;border-radius:18px 18px 0 0}.temp-entry span:not(.temp-entry-icon){display:none}.temp-entry{padding:0 10px}}
+
+/* B14 Quick Switch */
+.quick-switch-entry{display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:9px;border:1px solid var(--border);background:none;color:var(--soft);cursor:pointer;margin-right:4px;flex-shrink:0}
+.quick-switch-entry:hover,.quick-switch-entry:focus-visible{background:var(--chip);color:var(--ink)}
+.quick-switch-panel{left:24px;right:auto}
+.sr-only-heading{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.quick-switch-list{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+.quick-switch-row{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:9px;padding:8px 10px;cursor:pointer;font-family:inherit;color:inherit}
+.quick-switch-row:hover,.quick-switch-row.qs-active{background:var(--chip);border-color:var(--border)}
+.quick-switch-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.quick-switch-row .qs-title{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.quick-switch-row .qs-current{font-size:10.5px;color:var(--muted);margin-left:6px;font-weight:500}
+.quick-switch-empty{font-size:12px;color:var(--muted);padding:8px 2px}
+@media(max-width:650px){.quick-switch-panel{left:0;right:0}}
 .interrupted-badge{display:inline-flex;align-items:center;gap:7px;color:var(--warn-text);font-size:12px;border:1px solid #e3a44c;border-radius:9px;padding:7px 11px;margin-top:10px;background:var(--chip)}
 .thinking{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
 .dot-pulse{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:pulse 1.1s infinite ease-in-out}
@@ -361,6 +375,33 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
   </div>
 </div>
 
+<!-- B14 Multi-Conversation Navigation (Quick Switch) -- source-verified
+     against APPROVED_SOURCE_ARCHIVES/ORNEUR_B14_FINAL_LOCK_AND_HANDOFF.zip
+     (SHA-256 810f1a472db61360261c678404e40a50c0c3fc79471bef8dc9a740e468e88c14,
+     verified via the archive's own verification/verify_handoff.py: 40
+     packaged + 31 approved source files, zero failures). Lists REAL
+     recent conversations from the already-existing GET /api/sessions
+     endpoint -- never the archive's own illustrative example titles --
+     and switching uses the real, already-hardened openSession(), so this
+     gets B14's draft-isolation and B85-era ownership-epoch correctness
+     for free rather than re-implementing it. Workspace Tabs (the other
+     named B14 feature) is NOT built in this pass -- disclosed in the
+     engineering report, not fabricated; it is explicitly optional even
+     in the approved design itself ("Illustrative conversations only. No
+     session sync, account access or model execution.") and would need
+     real per-tab stream-subscription/correlation work the contract's own
+     section 4 flags as a hard, separate problem. -->
+<div id="quick-switch-backdrop" class="temp-mode-backdrop" hidden></div>
+<div id="quick-switch-panel" class="temp-mode-panel quick-switch-panel" role="dialog" aria-modal="true" aria-labelledby="quick-switch-title" hidden tabindex="-1">
+  <div class="temp-mode-head">
+    <span class="temp-mode-eyebrow">Switch conversations</span>
+    <button type="button" id="quick-switch-close" class="expand-action iconbtn" aria-label="Close">×</button>
+  </div>
+  <h2 id="quick-switch-title" class="sr-only-heading">Switch conversations</h2>
+  <p class="temp-mode-sub">Jump between recent conversations. Your unsent text stays with its own draft.</p>
+  <div id="quick-switch-list" class="quick-switch-list" role="listbox" aria-label="Recently viewed conversations"></div>
+</div>
+
 <!-- B13 Temporary / Private Chat -- source-verified against
      APPROVED_SOURCE_ARCHIVES/ORNEUR_B13_FINAL_LOCK_AND_HANDOFF.zip (SHA-256
      f0ee3ddc1c44885a8adf3cb88d95cfd9b0a13202bdc8aaeeb78541606a14f9a8,
@@ -434,6 +475,9 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
     <header class="topbar">
       <button type="button" class="mobilemenu-btn" id="mobilemenu-btn" aria-label="Open navigation">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <button type="button" id="quick-switch-btn" class="quick-switch-entry" aria-label="Switch conversations" aria-haspopup="dialog" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
       </button>
       <div class="conversationtitle" id="conv-title">New conversation</div>
       <div class="topright">
@@ -760,6 +804,46 @@ function toggleThemeFromSidebar() {} // account row reserved for future account 
 const composerTemplate = document.getElementById('composer-template');
 let composerEl = null;
 
+// AUDIT-B14 (per-conversation draft isolation): "Each unsent draft must
+// be keyed by authenticated user + tenant/workspace + conversation ID...
+// Never use a singleton shared input state that shows draft from chat A
+// when chat B opens." Reproduced live before this fix: switching
+// conversations left the composer's text completely untouched, silently
+// attributing one conversation's unsent words to whichever conversation
+// happened to be opened next.
+//
+// In-memory only, keyed by this one tab's own _draftsByConversation Map
+// -- never claimed as server-persisted (the contract's own explicit
+// warning: "Do not claim server persistence when only local in-memory
+// draft exists"). Does not survive a reload, a different device, or a
+// different tab; a real server-backed draft endpoint does not exist in
+// this backend (grepped orca/serve/api.py; none found), so this is
+// disclosed as the honest, bounded scope it actually is. Cleared
+// entirely on every genuine identity transition (see
+// _clearAuthStateAndShowSignIn()/onAuthSuccess()/continueAnonymous()),
+// since a draft keyed only by conversation id must never survive an
+// account switch on the same device.
+const _draftsByConversation = new Map();
+function _draftKeyFor(id) { return id || '__new__'; }
+function _saveCurrentDraft() {
+  if (!composerEl) return;
+  const input = composerEl.querySelector('#msg-input');
+  if (!input) return;
+  const key = _draftKeyFor(sessionId);
+  const text = input.value;
+  if (text) _draftsByConversation.set(key, text);
+  else _draftsByConversation.delete(key);
+}
+function _restoreDraftFor(id) {
+  if (!composerEl) return;
+  const input = composerEl.querySelector('#msg-input');
+  if (!input) return;
+  input.value = _draftsByConversation.get(_draftKeyFor(id)) || '';
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  updateSendEnabled();
+}
+
 function mountComposer(slotId) {
   const slot = document.getElementById(slotId);
   if (composerEl && composerEl.parentElement === slot) return;
@@ -979,6 +1063,129 @@ document.getElementById('temp-mode-panel').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.preventDefault(); closeTempModePanel(); return; }
   if (e.key !== 'Tab') return;
   const focusables = _tempModeFocusableEls();
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
+
+/* ── B14 Quick Switch -- real recent conversations, roving-focus listbox.
+   Reuses the already-hardened openSession() for the actual switch, so
+   every ownership-epoch/draft-isolation guarantee already built applies
+   here automatically -- this is a new way to REACH openSession(), not a
+   new switching mechanism. ──────────────────────────────────────────── */
+let _preQuickSwitchFocusEl = null;
+
+function _quickSwitchRows() {
+  return [...document.getElementById('quick-switch-list').querySelectorAll('.quick-switch-row')];
+}
+
+async function openQuickSwitch() {
+  const panel = document.getElementById('quick-switch-panel');
+  const backdrop = document.getElementById('quick-switch-backdrop');
+  if (!panel.hidden) return; // already open -- idempotent
+  _preQuickSwitchFocusEl = document.activeElement;
+  const list = document.getElementById('quick-switch-list');
+  list.innerHTML = '<div class="quick-switch-empty">Loading…</div>';
+  panel.hidden = false;
+  backdrop.hidden = false;
+  document.getElementById('quick-switch-btn').setAttribute('aria-expanded', 'true');
+  if (!_authToken) {
+    list.innerHTML = '<div class="quick-switch-empty">Sign in to see your conversations</div>';
+    document.getElementById('quick-switch-close').focus();
+    return;
+  }
+  try {
+    // AUDIT-B14: the SAME real GET /api/sessions this app's own sidebar
+    // already uses -- never the approved archive's own illustrative
+    // example titles. Bounded to a short "recently viewed" list per the
+    // locked design, not the full history (that's what B06's sidebar is for).
+    const r = await fetch('/api/sessions?limit=8', { headers: _authHeaders() });
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (!r.ok) throw new Error('sessions fetch failed');
+    const data = await r.json();
+    if (panel.hidden) return; // closed while this was in flight
+    list.innerHTML = '';
+    if (!data.sessions.length) {
+      list.innerHTML = '<div class="quick-switch-empty">No conversations yet</div>';
+      document.getElementById('quick-switch-close').focus();
+      return;
+    }
+    data.sessions.forEach((s) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'quick-switch-row' + (s.id === sessionId ? ' qs-active' : '');
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(s.id === sessionId));
+      row.dataset.sid = s.id;
+      const title = s.title || '(untitled conversation)';
+      // AUDIT-B14: a rendered conversation title is untrusted content --
+      // esc() here, never raw innerHTML of server text, is what prevents
+      // the "rendered conversation title injection" the contract names.
+      row.innerHTML = `<span class="qs-title">${esc(title)}</span>` + (s.id === sessionId ? '<span class="qs-current">Current</span>' : '');
+      row.addEventListener('click', () => {
+        closeQuickSwitch();
+        if (s.id !== sessionId) openSession(s.id, title);
+      });
+      list.appendChild(row);
+    });
+    const firstRow = list.querySelector('.quick-switch-row');
+    if (firstRow) firstRow.focus();
+  } catch (e) {
+    if (panel.hidden) return;
+    list.innerHTML = '<div class="quick-switch-empty">Could not load conversations</div>';
+    document.getElementById('quick-switch-close').focus();
+  }
+}
+
+function closeQuickSwitch() {
+  const panel = document.getElementById('quick-switch-panel');
+  const backdrop = document.getElementById('quick-switch-backdrop');
+  if (panel.hidden) return; // already closed -- safe no-op
+  panel.hidden = true;
+  backdrop.hidden = true;
+  document.getElementById('quick-switch-btn').setAttribute('aria-expanded', 'false');
+  const restoreTo = (_preQuickSwitchFocusEl && document.body.contains(_preQuickSwitchFocusEl))
+    ? _preQuickSwitchFocusEl
+    : document.getElementById('quick-switch-btn');
+  restoreTo.focus();
+  _preQuickSwitchFocusEl = null;
+}
+
+document.getElementById('quick-switch-btn').addEventListener('click', () => {
+  const panel = document.getElementById('quick-switch-panel');
+  if (panel.hidden) openQuickSwitch(); else closeQuickSwitch();
+});
+document.getElementById('quick-switch-close').addEventListener('click', closeQuickSwitch);
+document.getElementById('quick-switch-backdrop').addEventListener('click', closeQuickSwitch);
+document.getElementById('quick-switch-panel').addEventListener('keydown', (e) => {
+  const panel = document.getElementById('quick-switch-panel');
+  if (panel.hidden) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeQuickSwitch(); return; }
+  const rows = _quickSwitchRows();
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!rows.length) return;
+    const closeBtn = document.getElementById('quick-switch-close');
+    const focusables = [closeBtn, ...rows];
+    const idx = focusables.indexOf(document.activeElement);
+    const dir = e.key === 'ArrowDown' ? 1 : -1;
+    const next = focusables[(idx + dir + focusables.length) % focusables.length];
+    next.focus();
+    return;
+  }
+  if (e.key === 'Enter' && document.activeElement.classList.contains('quick-switch-row')) {
+    document.activeElement.click();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const focusables = [document.getElementById('quick-switch-close'), ...rows];
   if (!focusables.length) return;
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
@@ -1255,6 +1462,7 @@ function newConversation() {
   // are both idempotent no-ops if neither state is active.
   if (composerEl) collapseComposer();
   closeTempModePanel(); // AUDIT-B13: same reasoning -- a derelict dialog must not survive an account/conversation transition
+  closeQuickSwitch(); // AUDIT-B14: same reasoning
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: any in-flight response is no longer ours
   // AUDIT-P85C: MESSAGE domain only -- starting a new conversation ends
   // this view's claim on any in-flight MESSAGE load (there is no longer
@@ -1265,7 +1473,13 @@ function newConversation() {
   // conversation normally invalidates the old message view, not an
   // otherwise valid authenticated sidebar-history request").
   _abandonActiveMessage();
+  // AUDIT-B14: the "new conversation" composer is its own draft slot too
+  // -- save whatever the departing conversation had unsent, then restore
+  // this slot's own previously-saved draft (if the user started typing a
+  // new conversation earlier, got interrupted, and came back).
+  _saveCurrentDraft();
   sessionId = null;
+  _restoreDraftFor(null);
   document.getElementById('reading-container').innerHTML = '';
   highlightSelectedRecent(null);
   showEmptyView();
@@ -1952,6 +2166,7 @@ async function deleteConversation(row, sid) {
     if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('delete failed');
     row.remove();
+    _draftsByConversation.delete(_draftKeyFor(sid)); // AUDIT-B14: no point keeping a draft slot for a conversation that no longer exists
     if (sid === sessionId) newConversation(); // the open conversation was just deleted -- do not keep showing its now-gone content
     const list = document.getElementById('recents-list');
     if (!list.querySelector('.rec-row')) list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
@@ -2064,7 +2279,17 @@ async function openSession(sid, title) {
   const myEpoch = ++_messageEpoch;
   const myToken = _authToken;
   const mySid = sid;
+  // AUDIT-B14: "Never use a singleton shared input state that shows
+  // draft from chat A when chat B opens." Reproduced before this fix:
+  // switching conversations left whatever was typed in the composer
+  // untouched, silently attributing conversation A's unsent text to
+  // conversation B. Save the DEPARTING conversation's draft under its
+  // own id before sessionId changes, then restore the TARGET's own
+  // saved draft (or empty) -- in-memory only, never claimed as
+  // server-persisted (see _draftsByConversation's own comment).
+  _saveCurrentDraft();
   sessionId = sid;
+  _restoreDraftFor(sid);
   highlightSelectedRecent(sid);
   showActiveView(title);
   const container = document.getElementById('reading-container');
@@ -2225,6 +2450,7 @@ function onAuthSuccess(data) {
   // _abandonActiveMessage() and clears the reading-container DOM).
   newConversation();
   resetModelSelection(); // AUDIT-B05: the previous principal's model choice must not survive a sign-in
+  _draftsByConversation.clear(); // AUDIT-B14: an unsent draft keyed only by conversation id must not survive an account switch on this device
   _authToken = data.token;
   _authUser = data.user;
   _anonymous = false;
@@ -2251,6 +2477,7 @@ function continueAnonymous() {
   // render Alice's real conversations under what the UI labels "Guest".
   newConversation();
   resetModelSelection(); // AUDIT-B05: the previous principal's model choice must not survive going anonymous
+  _draftsByConversation.clear(); // AUDIT-B14: same reasoning -- a draft must not survive going anonymous
   _authToken = null;
   _authUser = null;
   _anonymous = true;
@@ -2286,6 +2513,7 @@ function _clearAuthStateAndShowSignIn(message) {
   _abandonActiveSearch();
   _abandonAllViewsForAccountChange();
   resetModelSelection(); // AUDIT-B05: a logout/session-expiry is a genuine identity transition
+  _draftsByConversation.clear(); // AUDIT-B14: same reasoning -- a draft must not survive logout/session-expiry
   _authToken = null; _authUser = null;
   try { localStorage.removeItem('orneur_token'); } catch (e) {}
   document.getElementById('recents-list').innerHTML = '<div class="recents-empty">Sign in to see your conversations</div>';

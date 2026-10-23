@@ -249,6 +249,9 @@ test("newConversation() collapses the composer (and any open workspace) when com
     composerEl: {}, // truthy -- collapseComposer() must be called
     collapseComposer: () => { collapseCalled = true; },
     closeTempModePanel: () => {},
+    _saveCurrentDraft: () => {},
+    _restoreDraftFor: () => {},
+    closeQuickSwitch: () => {},
     document: { getElementById: () => ({ innerHTML: '' }) },
     highlightSelectedRecent: () => {},
     showEmptyView: () => {},
