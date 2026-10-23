@@ -16,7 +16,7 @@ PR #83 remains not merge-ready. This correction is isolated on
 | #80 | `fc1eb1dd098377e8506485dbcd82d6ed148b52b3` |
 | #82 | `177f54801eeaa079b67c9290ed89e3df0b3f6278` |
 | #83 portability closeout (baseline) | `3833f55cad4d236a8023649918edbbf8be57de5e` |
-| Darwin lock-race correction | `git rev-parse HEAD` on `cursor/genesis-darwin-lock-race-c04e` |
+| Darwin lock-race correction | `c153b9267ea06792e77cc6dd79b9e822988e3a33` on `cursor/genesis-darwin-lock-race-c04e` (retest branch HEAD) |
 
 ## Root cause
 
