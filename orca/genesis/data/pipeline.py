@@ -74,6 +74,7 @@ import sqlite3
 import stat
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
@@ -119,6 +120,13 @@ class CorpusBoundaryError(Exception):
 
 _SYMLINK_ERRNOS = (errno.ELOOP, errno.EMLINK, errno.EPERM)
 _SHARD_LEAF = re.compile(r"^shard-(\d{4})-(train|validation|test)\.jsonl$")
+# Concurrent `openat(O_CREAT|O_NOFOLLOW)` of a newly created leaf can
+# return ENOENT while the parent directory fd remains valid. Observed on
+# Darwin/APFS during `.process_corpus.lock` creation; not treated as a
+# kernel defect. Retry is bounded and only applies when the caller asked
+# to create the leaf. Persistent ENOENT is re-raised.
+_OPEN_REGULAR_TRANSIENT_ENOENT_ATTEMPTS = 8
+_OPEN_REGULAR_TRANSIENT_ENOENT_SLEEP_S = 0.001
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -181,19 +189,77 @@ def _is_symlink_errno(exc: OSError) -> bool:
     return exc.errno in _SYMLINK_ERRNOS
 
 
+def _directory_fd_identity(dir_fd: int) -> tuple[int, int]:
+    """Return `(st_dev, st_ino)` for a live directory descriptor, or raise."""
+    try:
+        st = os.fstat(dir_fd)
+    except OSError as exc:
+        raise CorpusBoundaryError(
+            "refusing filesystem access -- the directory descriptor is invalid"
+        ) from exc
+    if not stat.S_ISDIR(st.st_mode):
+        raise CorpusBoundaryError(
+            "refusing filesystem access -- the directory descriptor is not a directory"
+        )
+    return st.st_dev, st.st_ino
+
+
 def _open_regular_at(dir_fd: int, name: str, flags: int, *, mode: int = 0o600) -> int:
-    """Open `name` relative to `dir_fd` without following a leaf symlink."""
+    """Open `name` relative to `dir_fd` without following a leaf symlink.
+
+    `O_NOFOLLOW` is always applied. `O_CREAT` may be retried a bounded
+    number of times on ENOENT when `dir_fd` still names the same live
+    directory; that covers a create-visibility race without turning a
+    missing parent, a dangling name, or a replaced descriptor into
+    success. The existing lock file is never truncated: callers must not
+    pass `O_TRUNC`, and this helper refuses that flag.
+    """
     if not name or name in {".", ".."} or "/" in name or "\\" in name:
         raise CorpusBoundaryError(f"refusing filesystem name {name!r}")
     if not hasattr(os, "O_NOFOLLOW"):
         raise CorpusBoundaryError("refusing corpus filesystem access without O_NOFOLLOW")
-    try:
-        fd = os.open(name, flags | os.O_NOFOLLOW | os.O_CLOEXEC, mode, dir_fd=dir_fd)
-    except OSError as exc:
-        if _is_symlink_errno(exc):
-            raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink") from exc
-        raise
-    return fd
+    if flags & getattr(os, "O_TRUNC", 0):
+        raise CorpusBoundaryError(f"refusing to truncate {name}")
+    create = bool(flags & os.O_CREAT)
+    attempts = _OPEN_REGULAR_TRANSIENT_ENOENT_ATTEMPTS if create else 1
+    identity = _directory_fd_identity(dir_fd)
+    last_enoent: OSError | None = None
+    for attempt in range(attempts):
+        current = _directory_fd_identity(dir_fd)
+        if current != identity:
+            raise CorpusBoundaryError(
+                f"refusing to use {name} -- the directory descriptor no longer refers to the same directory"
+            )
+        try:
+            fd = os.open(name, flags | os.O_NOFOLLOW | os.O_CLOEXEC, mode, dir_fd=dir_fd)
+        except OSError as exc:
+            if _is_symlink_errno(exc):
+                raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink") from exc
+            if create and exc.errno == errno.ENOENT:
+                last_enoent = exc
+                if attempt + 1 < attempts:
+                    if hasattr(os, "sched_yield"):
+                        os.sched_yield()
+                    time.sleep(_OPEN_REGULAR_TRANSIENT_ENOENT_SLEEP_S * (attempt + 1))
+                    continue
+            raise
+        try:
+            opened = os.fstat(fd)
+        except OSError:
+            os.close(fd)
+            raise
+        if stat.S_ISLNK(opened.st_mode):
+            os.close(fd)
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink")
+        if stat.S_ISDIR(opened.st_mode):
+            os.close(fd)
+            raise IsADirectoryError(errno.EISDIR, "Is a directory", name)
+        if not stat.S_ISREG(opened.st_mode):
+            os.close(fd)
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is not a regular file")
+        return fd
+    assert last_enoent is not None
+    raise last_enoent
 
 
 def _write_all(fd: int, payload: bytes) -> None:
@@ -218,7 +284,9 @@ def _open_corpus_input(path: Path, *, allowed_root: Path | None) -> int:
         parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
         try:
             return _open_regular_at(parent_fd, path.name, os.O_RDONLY)
-        except CorpusBoundaryError:
+        except CorpusBoundaryError as exc:
+            if "symlink" not in str(exc):
+                raise
             raise CorpusBoundaryError(f"refusing to read {path} -- the input path is a symlink") from None
         finally:
             os.close(parent_fd)
@@ -256,7 +324,9 @@ def _open_corpus_input(path: Path, *, allowed_root: Path | None) -> int:
             dir_fd = nxt
         try:
             return _open_regular_at(dir_fd, relative.parts[-1], os.O_RDONLY)
-        except CorpusBoundaryError:
+        except CorpusBoundaryError as exc:
+            if "symlink" not in str(exc):
+                raise
             raise CorpusBoundaryError(f"refusing to read {path} -- the input path is a symlink") from None
     finally:
         os.close(dir_fd)
