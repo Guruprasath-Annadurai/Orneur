@@ -148,6 +148,70 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .modelopt .mname{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
 .modelopt .mnote{font-size:11px;color:var(--muted)}
 
+/* B04 Expanded Composer -- source-verified against
+   APPROVED_SOURCE_ARCHIVES/ORNEUR_B04_FINAL_LOCK_AND_HANDOFF.zip
+   (SHA-256 ad5e1304c096029df337c8d8aee2ecef79d6a3c62ad46a08bf9879dd093fffad,
+   verified against SHA256_MANIFEST.txt and the archive's own 26-file
+   verify_assets.py, zero failures). Reuses the existing design tokens
+   (--bg/--compose/--border/--ink/--soft/--muted/--shadow) rather than new
+   hardcoded colors, since they already match the contract's locked
+   Obsidian/Meridian values exactly. */
+.expand-btn{display:grid;place-items:center;height:32px;width:32px;border-radius:9px;background:none;border:1px solid var(--border);color:var(--soft);cursor:pointer;flex-shrink:0}
+.expand-btn:hover,.expand-btn:focus-visible{background:var(--chip)}
+#live-composer.focused-expanded{max-width:840px;padding:0 20px 16px}
+#live-composer.focused-expanded .expand-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.expand-head{display:none}
+.expand-caption{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:650;color:var(--ink)}
+.expand-caption .draftnote{font-weight:400;font-size:11px;color:var(--muted);margin-left:5px}
+.expand-actions{display:flex;align-items:center;gap:8px}
+.expand-action{background:none;border:1px solid var(--border);border-radius:9px;color:var(--ink);height:34px;padding:0 11px;display:inline-flex;gap:7px;align-items:center;font-weight:530;font-size:12px;cursor:pointer;font-family:inherit}
+.expand-action:hover,.expand-action:focus-visible{background:var(--chip)}
+#live-composer.focused-expanded textarea{min-height:260px;max-height:none}
+@media(max-width:650px){#live-composer.focused-expanded textarea{min-height:220px}.expand-action .action-word{display:none}.expand-action{width:34px;padding:0;justify-content:center}}
+
+/* Draft workspace -- the dedicated full dialog (B04 DRAFT_WORKSPACE
+   state). The SAME live composer (textarea, model picker, send button)
+   is reparented into #draft-workspace-slot, never cloned or copied --
+   this is the only way to guarantee caret position, selection, IME
+   composition, undo/redo history and scroll position survive the
+   transition exactly as the contract's "Editing fidelity" section
+   requires, since nothing about the real element ever changes. */
+#draft-workspace-scrim{position:fixed;inset:0;background:var(--overlay,rgba(0,0,0,.6));z-index:90;display:none;align-items:center;justify-content:center;padding:28px}
+#draft-workspace-scrim.open{display:flex}
+#draft-workspace{width:min(900px,100%);max-height:min(760px,calc(100vh - 56px));background:var(--compose);border:1px solid var(--border);box-shadow:0 30px 80px var(--shadow);border-radius:18px;display:flex;flex-direction:column;overflow:hidden}
+.workspace-header{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:22px 24px 18px;border-bottom:1px solid var(--line)}
+.workspace-header h2{font-size:18px;font-weight:620;margin:0;letter-spacing:-.3px;color:var(--ink)}
+.workspace-header .hint{font-size:11px;color:var(--muted);margin-top:4px}
+.workspace-return-short{display:none}
+.workspace-body{padding:18px 24px 0;overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column}
+.workspace-body #live-composer{max-width:none;width:100%;margin:0;box-shadow:none;border:none;padding:0;background:none}
+/* AUDIT-B04: the original ".composer textarea" rule only matches while
+   #live-composer sits inside a ".composer"-classed slot -- reproduced
+   live: once reparented here (.workspace-body has no such ancestor), the
+   textarea silently fell back to the browser's default white UA
+   textarea style, breaking dark theme. Full base styling repeated here,
+   not just the size override, so it never depends on which ancestor
+   #live-composer currently happens to have. */
+.workspace-body #live-composer textarea{width:100%;border:none;background:none;resize:none;outline:none;color:var(--ink);font:14px/1.5 inherit;padding:0;min-height:280px;max-height:none;flex:1}
+/* The composer keeps its .focused-expanded marker while inside the
+   workspace (so FOCUSED_EXPANDED is correctly restored on close, per the
+   contract's state diagram) -- but its own expand-head bar, with an
+   "Open draft workspace" button, would be redundant and confusing
+   stacked above the workspace dialog's own header. Suppressed here only. */
+.workspace-body #live-composer .expand-head{display:none}
+.workspace-attach{border-top:1px solid var(--line);padding:13px 0;display:flex;align-items:center;gap:9px;font-size:12px;color:var(--muted)}
+.workspace-footer{padding:12px 24px 20px}
+.workspace-footer .helper{font-size:12px;color:var(--muted);line-height:1.5;margin-top:10px}
+@media(max-width:650px){
+  #draft-workspace-scrim{padding:0;align-items:stretch}
+  #draft-workspace{width:100%;height:100%;max-height:100%;border-radius:0;border:0}
+  .workspace-header{padding:20px 16px 14px}
+  .workspace-return-long{display:none}.workspace-return-short{display:inline}
+  .workspace-body{padding:16px 16px 0}
+  .workspace-footer{padding:12px 16px 18px}
+}
+@media(prefers-reduced-motion:reduce){#draft-workspace-scrim,#draft-workspace{transition:none!important}}
+
 /* Auth overlay */
 #auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center}
 #auth-overlay.hidden{display:none}
@@ -213,7 +277,7 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
   </div>
 </div>
 
-<div class="app">
+<div class="app" id="app-root">
   <aside class="sidebar" aria-label="Primary navigation">
     <div class="branding"><img src="/static/b01_approved_assets/orneur_logo_horizontal.png" alt="ORNEUR"/></div>
     <nav class="primary">
@@ -282,8 +346,25 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 </div>
 
 <template id="composer-template">
+  <!-- B04 FOCUSED_EXPANDED header -- visible only while the composer has
+       the .focused-expanded class (see expandComposer()/collapseComposer()). -->
+  <div class="expand-head">
+    <span class="expand-caption">Expanded prompt<span class="draftnote">· Unsent draft</span></span>
+    <div class="expand-actions">
+      <button type="button" class="expand-action" id="open-workspace-btn" title="Open a dedicated draft workspace">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+        <span class="action-word">Open draft workspace</span>
+      </button>
+      <button type="button" class="expand-action" id="collapse-composer-btn" title="Collapse" aria-label="Collapse expanded composer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 20v-5h5M20 9h-5V4M4 15h5v5"/></svg>
+      </button>
+    </div>
+  </div>
   <textarea id="msg-input" placeholder="Message ORNEUR..." rows="1"></textarea>
   <div class="controls">
+    <button type="button" class="expand-btn" id="expand-btn" title="Expand composer" aria-label="Expand composer">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3"/></svg>
+    </button>
     <div class="modelmenu">
       <button type="button" class="model" id="model-btn">
         <span class="neutral-dot" id="model-dot"></span>
@@ -298,6 +379,37 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
   </div>
   <div class="model-disclosure" id="model-disclosure" style="display:none"></div>
 </template>
+
+<!-- B04 DRAFT_WORKSPACE -- a dedicated modal editor. The live composer
+     (#msg-input, model picker, send button) is reparented into
+     #draft-workspace-slot by openDraftWorkspace() and back by
+     closeDraftWorkspace(); never cloned, so caret/selection/IME/undo
+     state survives exactly, per the implementation contract's "Editing
+     fidelity" requirements. -->
+<div id="draft-workspace-scrim">
+  <div id="draft-workspace" role="dialog" aria-modal="true" aria-labelledby="draft-workspace-title" tabindex="-1">
+    <div class="workspace-header">
+      <div>
+        <h2 id="draft-workspace-title">Dedicated draft workspace</h2>
+        <div class="hint">A quiet space to prepare long instructions. Nothing has been submitted.</div>
+      </div>
+      <button type="button" class="expand-action" id="close-workspace-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
+        <span class="workspace-return-long">Return to conversation</span>
+        <span class="workspace-return-short">Back</span>
+      </button>
+    </div>
+    <div class="workspace-body" id="draft-workspace-slot"></div>
+    <div class="workspace-attach">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5 12 19.5a5 5 0 0 1-7-7l9-9a3 3 0 0 1 4.2 4.2L9.5 16.4a1 1 0 0 1-1.4-1.4l8-8"/></svg>
+      <span>Attachments</span>
+      <span style="margin-left:auto">0 files · None uploaded</span>
+    </div>
+    <div class="workspace-footer">
+      <div class="helper">This optional workspace expands the same draft. Returning to the conversation preserves the text.</div>
+    </div>
+  </div>
+</div>
 
 <script src="/static/sse_diagnostics.js"></script>
 <script>
@@ -508,6 +620,15 @@ function mountComposer(slotId) {
   if (composerEl && composerEl.parentElement === slot) return;
   if (!composerEl) {
     composerEl = document.createElement('div');
+    // AUDIT-B04: the pre-existing ".composer" class lives on the fixed
+    // SLOT elements (#composer-empty-slot/#composer-active-slot) in the
+    // static markup, not on this movable wrapper -- composerEl itself
+    // has always been an unstyled div. A stable id is needed so B04's
+    // reparenting-based expand/workspace CSS can target "the live
+    // composer, wherever it currently sits" without depending on which
+    // slot (or the workspace, which has no .composer-classed container
+    // of its own) happens to be its current parent.
+    composerEl.id = 'live-composer';
     composerEl.appendChild(composerTemplate.content.cloneNode(true));
     wireComposer();
   }
@@ -557,7 +678,99 @@ function wireComposer() {
     }
   });
   renderModelOptions();
+  composerEl.querySelector('#expand-btn').addEventListener('click', () => {
+    if (composerEl.classList.contains('focused-expanded')) collapseComposer();
+    else expandComposer();
+  });
+  composerEl.querySelector('#collapse-composer-btn').addEventListener('click', collapseComposer);
+  composerEl.querySelector('#open-workspace-btn').addEventListener('click', openDraftWorkspace);
+  document.getElementById('close-workspace-btn').addEventListener('click', closeDraftWorkspace);
 }
+
+/* ── B04 Expanded Composer / Draft Workspace ─────────────────────────
+   Source-verified against ORNEUR_B04_FINAL_LOCK_AND_HANDOFF.zip (SHA-256
+   confirmed against SHA256_MANIFEST.txt, 26/26 files passing the
+   archive's own verify_assets.py). State machine per
+   docs/B04_IMPLEMENTATION_CONTRACT.md section 3:
+     normal composer -> FOCUSED_EXPANDED -> DRAFT_WORKSPACE
+                                          <- Return/Close/Escape
+   Both editor surfaces are the SAME #msg-input element, reparented
+   (never cloned), so caret position, selection, undo/redo history, IME
+   composition state and scroll position all survive every transition
+   automatically -- there is no "sync" step and therefore no class of bug
+   where the two views' content could ever diverge. ────────────────── */
+function expandComposer() {
+  if (!composerEl) return;
+  composerEl.classList.add('focused-expanded');
+  const input = composerEl.querySelector('#msg-input');
+  input.focus();
+}
+
+function collapseComposer() {
+  if (!composerEl) return;
+  // Closing the dedicated workspace returns here, per the contract's own
+  // state diagram -- never past FOCUSED_EXPANDED back to normal in one step.
+  if (document.getElementById('draft-workspace-scrim').classList.contains('open')) closeDraftWorkspace();
+  composerEl.classList.remove('focused-expanded');
+  composerEl.querySelector('#expand-btn').focus();
+}
+
+let _preWorkspaceFocusEl = null;
+let _composerOriginSlot = null;
+
+function _workspaceFocusableEls() {
+  const dialog = document.getElementById('draft-workspace');
+  return [...dialog.querySelectorAll('button, textarea, input, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => el.offsetParent !== null && !el.disabled);
+}
+
+function openDraftWorkspace() {
+  if (!composerEl) return;
+  const scrim = document.getElementById('draft-workspace-scrim');
+  if (scrim.classList.contains('open')) return; // already open -- idempotent
+  _preWorkspaceFocusEl = document.activeElement;
+  _composerOriginSlot = composerEl.parentElement;
+  document.getElementById('draft-workspace-slot').appendChild(composerEl);
+  scrim.classList.add('open');
+  const appRoot = document.getElementById('app-root');
+  if (appRoot) appRoot.setAttribute('inert', '');
+  composerEl.querySelector('#msg-input').focus();
+}
+
+function closeDraftWorkspace() {
+  const scrim = document.getElementById('draft-workspace-scrim');
+  if (!scrim.classList.contains('open')) return; // already closed -- safe no-op
+  scrim.classList.remove('open');
+  const appRoot = document.getElementById('app-root');
+  if (appRoot) appRoot.removeAttribute('inert');
+  if (composerEl && _composerOriginSlot && document.body.contains(_composerOriginSlot)) {
+    _composerOriginSlot.appendChild(composerEl);
+  }
+  _composerOriginSlot = null;
+  const restoreTo = (_preWorkspaceFocusEl && document.body.contains(_preWorkspaceFocusEl))
+    ? _preWorkspaceFocusEl
+    : (composerEl && composerEl.querySelector('#open-workspace-btn'));
+  if (restoreTo) restoreTo.focus();
+  _preWorkspaceFocusEl = null;
+}
+
+document.getElementById('draft-workspace').addEventListener('keydown', (e) => {
+  const scrim = document.getElementById('draft-workspace-scrim');
+  if (!scrim.classList.contains('open')) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeDraftWorkspace(); return; }
+  if (e.key !== 'Tab') return;
+  const focusables = _workspaceFocusableEls();
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
 
 function updateSendEnabled() {
   if (!composerEl) return;
@@ -674,6 +887,12 @@ function showActiveView(title) {
 }
 
 function newConversation() {
+  // AUDIT-B04: a derelict draft-workspace dialog (and the taller
+  // focused-expanded composer state) must not silently survive starting
+  // a new conversation, switching accounts, or logging out -- all of
+  // which route through here. closeDraftWorkspace()/collapseComposer()
+  // are both idempotent no-ops if neither state is active.
+  if (composerEl) collapseComposer();
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: any in-flight response is no longer ours
   // AUDIT-P85C: MESSAGE domain only -- starting a new conversation ends
   // this view's claim on any in-flight MESSAGE load (there is no longer

@@ -193,6 +193,7 @@ test('newConversation() invalidates ONLY the message domain, not history (the CT
     _authToken: 'token-alice',
     _abandonActiveStream: () => {},
     sessionId: 'old-sid',
+    composerEl: null, // B04: newConversation() guards its collapseComposer() call on this
     document: {
       getElementById: () => ({ innerHTML: '' }),
     },
