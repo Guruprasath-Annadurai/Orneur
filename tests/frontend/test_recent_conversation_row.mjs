@@ -44,7 +44,7 @@ function extractBalancedFunction(src, startMarker, fromIndex) {
 
 const escFn = extractBalancedFunction(source, 'function esc(t) {', 0);
 const renderRowFn = extractBalancedFunction(source, 'function renderRecentRow(list, sid, title, snippet) {', escFn.end);
-const closeMenusFn = extractBalancedFunction(source, 'function closeAllRecMenus() {', renderRowFn.end);
+const closeMenusFn = extractBalancedFunction(source, 'function closeAllRecMenus(opts) {', renderRowFn.end);
 
 // --- Minimal hand-rolled DOM stub, same pattern as
 // test_streaming_completion_truth.mjs's makeElement -----------------
@@ -74,8 +74,14 @@ function makeElement(tag) {
     appendChild(child) { this._children.push(child); return child; },
     remove() { this._removed = true; },
     querySelector(sel) {
-      const cls = sel.replace(/^\./, '');
-      const direct = this._children.find((c) => (c.className || '').split(/\s+/).includes(cls));
+      // Supports a compound class selector like ".rec-menu-item.danger"
+      // (all listed classes must be present), not just a single class.
+      const requiredClasses = sel.split('.').filter(Boolean);
+      const matches = (c) => {
+        const classes = (c.className || '').split(/\s+/);
+        return requiredClasses.every((rc) => classes.includes(rc));
+      };
+      const direct = this._children.find(matches);
       if (direct) return direct;
       for (const c of this._children) {
         const nested = c.querySelector && c.querySelector(sel);
@@ -84,24 +90,30 @@ function makeElement(tag) {
       return null;
     },
     querySelectorAll(sel) {
-      const cls = sel.replace(/^\./, '').replace(/\.open$/, '');
-      const wantsOpen = sel.endsWith('.open');
+      const requiredClasses = sel.split('.').filter(Boolean);
       const out = [];
       const walk = (node) => {
         for (const c of node._children) {
           const classes = (c.className || '').split(/\s+/);
-          if (classes.includes(cls) && (!wantsOpen || classes.includes('open'))) out.push(c);
+          if (requiredClasses.every((rc) => classes.includes(rc))) out.push(c);
           walk(c);
         }
       };
       walk(this);
       return out;
     },
-    addEventListener() {},
+    _listeners: {},
+    addEventListener(type, fn) {
+      (this._listeners[type] = this._listeners[type] || []).push(fn);
+    },
+    click() {
+      const ev = { stopPropagation() {}, preventDefault() {} };
+      (this._listeners.click || []).forEach((fn) => fn(ev));
+    },
     setAttribute(k, v) { this._attrs[k] = v; },
     getAttribute(k) { return this._attrs[k] ?? null; },
     classList: null,
-    focus() {},
+    focus() { this._focused = true; },
   };
   el.classList = {
     add: (c) => { el.className = (el.className + ' ' + c).trim(); },
@@ -111,15 +123,24 @@ function makeElement(tag) {
   return el;
 }
 
+// A single root all rows are appended under -- lets document.querySelectorAll
+// (used internally by closeAllRecMenus(), which queries the GLOBAL
+// document, not a specific row) actually find them.
+const root = makeElement('div');
 const sandbox = {
-  document: { createElement: makeElement, querySelectorAll: () => [], addEventListener() {} },
+  document: {
+    createElement: makeElement,
+    querySelectorAll: (sel) => root.querySelectorAll(sel),
+    querySelector: (sel) => root.querySelector(sel),
+    addEventListener() {},
+  },
 };
 vm.createContext(sandbox);
 vm.runInContext(
   `var sessionId = null;\n${escFn.text}\n${renderRowFn.text}\n${closeMenusFn.text}`,
   sandbox,
 );
-const { renderRecentRow } = sandbox;
+const { renderRecentRow, closeAllRecMenus } = sandbox;
 
 test('a plain recent-conversation row has exactly the 4 expected menu actions, in order', () => {
   const list = makeElement('div');
@@ -157,4 +178,58 @@ test('the more-actions button carries an accessible name naming the actual conve
   assert.equal(moreBtn.getAttribute('aria-label'), 'More actions for "Quarterly planning"');
   assert.equal(moreBtn.getAttribute('aria-haspopup'), 'true');
   assert.equal(moreBtn.getAttribute('aria-expanded'), 'false');
+});
+
+// AUDIT-P85-P1: menu interaction correctness, using the real
+// document.querySelectorAll-driven closeAllRecMenus() against a shared
+// root (rows appended via renderRecentRow() into `root`, matching how
+// the real app always appends into one shared #recents-list).
+test('clicking the more-actions button opens the menu; closeAllRecMenus() closes it and restores focus', () => {
+  root._children = [];
+  renderRecentRow(root, 'sid-5', 'Row A');
+  const row = root._children[0];
+  const moreBtn = row.querySelector('.rec-more-btn');
+  moreBtn.click();
+  assert.equal(row.querySelector('.rec-menu-panel').classList.contains('open'), true);
+  assert.equal(moreBtn.getAttribute('aria-expanded'), 'true');
+
+  closeAllRecMenus({ restoreFocus: true });
+  assert.equal(row.querySelector('.rec-menu-panel').classList.contains('open'), false);
+  assert.equal(moreBtn.getAttribute('aria-expanded'), 'false');
+  assert.equal(moreBtn._focused, true, 'focus must be restored to the button that opened the menu');
+});
+
+test('AUDIT-P85-P1 (the real bug): an armed delete-confirm is reset when the menu closes without confirming, not left armed for next time', () => {
+  root._children = [];
+  renderRecentRow(root, 'sid-6', 'Row B');
+  const row = root._children[0];
+  const moreBtn = row.querySelector('.rec-more-btn');
+  moreBtn.click(); // open
+  const deleteItem = row.querySelector('.rec-menu-panel').querySelectorAll('.rec-menu-item')
+    .find((i) => i.textContent === 'Delete' || i.textContent === 'Click again to delete');
+  deleteItem.click(); // arm (first click)
+  assert.equal(deleteItem.textContent, 'Click again to delete');
+
+  // Close the menu WITHOUT a second (confirming) click -- e.g. an
+  // outside click or Escape in the real app.
+  closeAllRecMenus();
+
+  // Reopen the SAME row's menu: a fresh "first click" must behave like
+  // a fresh first click, not silently fire the delete because
+  // `confirming` was left true from before.
+  moreBtn.click();
+  const deleteItemAgain = row.querySelector('.rec-menu-panel').querySelectorAll('.rec-menu-item')
+    .find((i) => i.textContent === 'Delete' || i.textContent === 'Click again to delete');
+  assert.equal(deleteItemAgain.textContent, 'Delete', 'reopening the menu must never show an already-armed delete button');
+});
+
+test('AUDIT-P85-P1 (the real bug): row.dataset.title is updated by renderRecentRow and is what a second rename/export would read -- never a stale closure', () => {
+  root._children = [];
+  renderRecentRow(root, 'sid-7', 'Original Title');
+  const row = root._children[0];
+  assert.equal(row.dataset.title, 'Original Title');
+  // Simulates what the real commit() handler inside startRenameConversation
+  // does after a successful PATCH response.
+  row.dataset.title = 'Renamed By Server';
+  assert.equal(row.dataset.title, 'Renamed By Server', 'the row\'s title must be mutable in place, so a second rename reads the NEW value');
 });
