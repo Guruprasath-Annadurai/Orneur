@@ -44,7 +44,7 @@ def _fake_backend_response(text="4"):
     )
 
 
-async def _fake_cognitive_result(message, user, model_variant, session_id=None):
+async def _fake_cognitive_result(message, user, model_variant, session_id=None, **_kwargs):
     """Phase 3.1 made the Cognitive Kernel an authoritative, unconditional
     gate in front of EVERY /api/chat request -- including requests that
     will ultimately be routed to a frontier backend. The Kernel's own

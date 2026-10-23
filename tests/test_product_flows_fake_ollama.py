@@ -49,9 +49,15 @@ def test_chat_reaches_the_model_and_returns_the_reply_with_a_session(client, fak
 def test_stream_emits_session_chunk_done_with_a_message_id(client, fake):
     t, _ = _signup(client)
     evs = _events(client, _hdr(t), {"message": "hello again", "model_variant": "core"})
-    assert [e["type"] for e in evs] == ["session", "model", "stream", "chunk", "done"]
-    chunk, done = evs[3], evs[4]
-    assert chunk["text"] == "FAKE-REPLY" and chunk["replayed"] is True and done["message_id"] and "citation_compliance" in done
+    types = [e["type"] for e in evs]
+    assert types[0] == "session" and types[1] == "model" and "stream" in types and types[-1] == "done"
+    chunks = [e for e in evs if e["type"] == "chunk"]
+    assert "".join(e["text"] for e in chunks) == "FAKE-REPLY"
+    assert not any(e.get("replayed") for e in chunks)
+    stream = next(e for e in evs if e["type"] == "stream")
+    assert stream == {"type": "stream", "delivery": "upstream", "cancellable": True}
+    done = evs[-1]
+    assert done["message_id"] and "citation_compliance" in done and done["delivery"] == "upstream"
 
 
 def test_response_discloses_which_model_served(client, fake):
@@ -60,12 +66,14 @@ def test_response_discloses_which_model_served(client, fake):
     assert fake.requests[0]["model"] in json.dumps(r)
 
 
-@pytest.mark.xfail(strict=True, reason="G-026: a simple question is generated NON-streaming (stream=false upstream) and delivered as one chunk after the whole "
-                                       "answer exists, so there is nothing incremental to show and nothing to cancel mid-generation.")
 def test_simple_answers_are_generated_with_streaming_upstream(client, fake):
     t, _ = _signup(client)
     _events(client, _hdr(t), {"message": "long answer please", "model_variant": "core"})
-    assert fake.requests and all(q.get("stream") for q in fake.requests)
+    answer_reqs = [
+        q for q in fake.requests
+        if q.get("messages") and q["messages"][-1].get("content") == "long answer please"
+    ]
+    assert answer_reqs and all(q.get("stream") for q in answer_reqs)
 
 
 # ── streaming and cancellation ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -101,6 +109,17 @@ async def _drive(app, path, body, token, stop_after):
     t0 = time.monotonic()
     await app(scope, receive, send)
     return len(chunks), time.monotonic() - t0
+
+
+def test_client_disconnect_cancels_kernel_direct_generation(client, monkeypatch):
+    import orca.serve.api as api
+
+    with FakeOllama(chunks=tuple(f"w{i} " for i in range(40)), chunk_delay=0.1) as f:
+        point_orneur_at(f, monkeypatch)
+        t, _ = _signup(client)
+        got, took = asyncio.run(_drive(api.app, "/api/stream", {"message": "hello there", "model_variant": "core"}, t, 2))
+        assert f.stream_aborted.wait(timeout=3), "kernel-direct backend never saw the hang-up"
+        assert got == 2 and took < 2.0 and f.chunks_sent < 40
 
 
 def test_client_disconnect_cancels_the_backend_generation_on_the_streaming_path(client, monkeypatch):
