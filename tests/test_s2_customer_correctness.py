@@ -274,7 +274,7 @@ def test_a_retrieval_failure_is_an_error_not_a_silent_answer_without_the_documen
     def broken(*a, **k):
         raise RuntimeError("chroma exploded at /var/secret/path")
 
-    monkeypatch.setattr(api, "run_deep_rag", broken)
+    monkeypatch.setattr(api, "retrieve_authorized", broken)
     t, _ = _signup(client)
     h = _hdr(t)
     sid = _upload(client, h)
@@ -285,15 +285,21 @@ def test_a_retrieval_failure_is_an_error_not_a_silent_answer_without_the_documen
 
 # ══ G-026 stream delivery semantics ══════════════════════════════════════════════════════════════════════════════════════════════
 
-def test_a_completed_answer_is_delivered_once_and_labelled_replayed_not_as_token_streaming(client, monkeypatch):
+def test_a_simple_kernel_direct_answer_is_streamed_upstream_and_cancellable(client, monkeypatch):
     with FakeOllama(reply="one two three four five six", chunks=("one two ", "three four five six")) as f:
         point_orneur_at(f, monkeypatch)
         t, _ = _signup(client)
         evs = _events(client, _hdr(t), {"message": SIMPLE, "model_variant": "core"})
     chunks = [e for e in evs if e["type"] == "chunk"]
-    assert len(chunks) == 1 and chunks[0]["replayed"] is True and chunks[0]["text"] == "one two three four five six"
+    assert [c["text"] for c in chunks] == ["one two ", "three four five six"]
+    assert not any(c.get("replayed") for c in chunks)
     s = next(e for e in evs if e["type"] == "stream")
-    assert s == {"type": "stream", "delivery": "replayed", "cancellable": False} and _done(evs)["delivery"] == "replayed"
+    assert s == {"type": "stream", "delivery": "upstream", "cancellable": True} and _done(evs)["delivery"] == "upstream"
+    answer_reqs = [
+        q for q in f.requests
+        if q.get("messages") and q["messages"][-1].get("content") == SIMPLE
+    ]
+    assert answer_reqs and all(q.get("stream") for q in answer_reqs)
 
 
 def test_genuine_upstream_streaming_is_labelled_upstream_and_cancellable(client, monkeypatch):

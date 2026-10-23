@@ -111,7 +111,15 @@ class CognitiveKernel:
         )
         return plan
 
-    async def execute(self, request: CognitiveRequest, entitlement: EntitlementPolicy | None = None, doc_store=None) -> CognitiveResult:
+    async def execute(
+        self,
+        request: CognitiveRequest,
+        entitlement: EntitlementPolicy | None = None,
+        doc_store=None,
+        *,
+        defer_direct_generation: bool = False,
+        defer_retrieval: bool = False,
+    ) -> CognitiveResult:
         """
         `doc_store`, when given (Phase 4), lets the Kernel route a plan
         needing RETRIEVE/SEARCH/VERIFY through orca.truth.truth_fabric's
@@ -139,6 +147,20 @@ class CognitiveKernel:
         Gateway's own proven cancellation/permit-release path (Phase 2)
         without the Kernel swallowing or needing to special-case it
         (Phase 3 spec §38).
+
+        `defer_direct_generation` (G-026): when True, a plan that would
+        otherwise call ModelGateway.generate() returns
+        `pending_direct_generation=True` instead. The caller must stream
+        via ModelGateway.stream() using `pending_direct_objective`.
+        Truth-Fabric answers still generate to completion (they must
+        exist before citation verification). Default False preserves
+        /api/chat and /api/cognitive/execute.
+
+        `defer_retrieval`: the caller will supply document evidence itself
+        after an authorization check. RETRIEVE/SEARCH/VERIFY are left to
+        that caller instead of Truth Fabric reading a document store that
+        has not been authorized. Default False preserves direct Kernel
+        and anonymous callers.
         """
         metrics.record_request()
         start = time.monotonic()
@@ -194,7 +216,7 @@ class CognitiveKernel:
         # that, Truth Fabric runs even with doc_store=None -- it honestly
         # reports INSUFFICIENT evidence rather than needing a fallback
         # (verified in tests/test_truth_fabric_integration.py).
-        use_truth_fabric = bool(truth_fabric_ops) and not other_ops
+        use_truth_fabric = bool(truth_fabric_ops) and not other_ops and not defer_retrieval
         non_kernel_ops = other_ops if use_truth_fabric else other_ops + truth_fabric_ops
 
         sm.transition(CognitiveState.EXECUTING)
@@ -274,6 +296,24 @@ class CognitiveKernel:
             # about to happen, so MODEL_CALLS is enforced pre-flight.
             consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
             tier = resolved_tier
+            if defer_direct_generation:
+                working_memory.lifecycle_state = WorkingMemoryLifecycle.DISCARDED
+                sm.transition(CognitiveState.COMPLETED)
+                trace_builder.record_transition(sm.history[-1])
+                trace_builder.record_operation_outcome("direct_generation_deferred_to_stream")
+                trace_builder.finalize(plan.budget)
+                latency_ms = (time.monotonic() - start) * 1000
+                metrics.record_total_latency(latency_ms)
+                return CognitiveResult(
+                    request_id=request.request_id, trace_id=request.trace_id, status=CognitiveState.COMPLETED,
+                    output=None, resolved_tier=resolved_tier, plan_id=plan.plan_id,
+                    operations_executed=[op.type for op in executable_ops], latency_ms=latency_ms,
+                    warnings=warnings,
+                    degraded=degraded, degradation_reason=degradation_reason,
+                    user_notification_required=notification_required,
+                    pending_direct_generation=True,
+                    pending_direct_objective=objective_for_model,
+                )
             output_text, resolved_model, usage = await self._answer_directly(objective_for_model, tier, request.trace_id)
             # TOKENS can only be known AFTER the call completes -- record
             # actual consumption for observability, but don't retroactively
@@ -423,12 +463,12 @@ class CognitiveKernel:
             return request.objective
         return f"{request.objective}\n\n[Relevant remembered context -- may be stale, verify if load-bearing]\n" + "\n".join(lines)
 
-    async def _answer_directly(self, objective: str, tier: str, trace_id: str) -> tuple[str, str, dict]:
-        """The one place the Kernel actually reaches ModelGateway --
-        exactly the canonical path Phase 3 spec §27 requires (Kernel ->
-        model policy -> ModelGateway -> deployment/runtime), reusing the
-        EXISTING tier router (orca/serve/registry.py) and wiring bridge
-        (orca/gateway/wiring.py) unchanged, per Phase 2.1's own cutover."""
+    def direct_inference_binding(self, objective: str, tier: str, trace_id: str):
+        """Build the Kernel -> policy -> Gateway inference request without generating.
+
+        Used by `_answer_directly` and by `/api/stream` so a deferred
+        direct answer streams the same authorized request.
+        """
         import uuid
 
         from orca.gateway.contracts import InferenceRequest
@@ -442,7 +482,16 @@ class CognitiveKernel:
             model_id=gateway_brain.model_id, model_version=gateway_brain.model_version,
             messages=[{"role": "user", "content": objective}], max_tokens=1024,
         )
-        response = await self._gateway().generate(inference_request, allow_experimental=gateway_brain.allow_experimental)
+        return inference_request, gateway_brain.allow_experimental, self._gateway()
+
+    async def _answer_directly(self, objective: str, tier: str, trace_id: str) -> tuple[str, str, dict]:
+        """The one place the Kernel actually reaches ModelGateway --
+        exactly the canonical path Phase 3 spec §27 requires (Kernel ->
+        model policy -> ModelGateway -> deployment/runtime), reusing the
+        EXISTING tier router (orca/serve/registry.py) and wiring bridge
+        (orca/gateway/wiring.py) unchanged, per Phase 2.1's own cutover."""
+        inference_request, allow_experimental, gateway = self.direct_inference_binding(objective, tier, trace_id)
+        response = await gateway.generate(inference_request, allow_experimental=allow_experimental)
         usage = {
             "prompt_tokens": response.prompt_tokens, "completion_tokens": response.completion_tokens,
             "total_tokens": (response.prompt_tokens or 0) + (response.completion_tokens or 0),

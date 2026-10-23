@@ -169,7 +169,8 @@ def test_remediation_p0_01_post_authorization_shard_tampering_is_denied(tmp_path
         repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
     )
     run.validate(
-        dataset_digest=manifest.source_content_digest, model_config_digest=mcfg, tokenizer_digest=tb.vocab_digest,
+        dataset_manifest=manifest, dataset_records=kept_records,
+        model_config_digest=mcfg, tokenizer_digest=tb.vocab_digest,
         authorized_shard_digests=tuple(sorted(original_digests.values())), shard_dir=out_dir,
         reviewed_commit_sha=reviewed_commit_sha, transformation_code_digest=tcd, optimizer_config_digest=ocd,
     )
@@ -221,7 +222,8 @@ def test_remediation_p0_01_untampered_run_still_starts_and_resumes_normally(tmp_
         repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
     )
     run.validate(
-        dataset_digest=manifest.source_content_digest, model_config_digest=mcfg, tokenizer_digest=tb.vocab_digest,
+        dataset_manifest=manifest, dataset_records=kept_records,
+        model_config_digest=mcfg, tokenizer_digest=tb.vocab_digest,
         authorized_shard_digests=tuple(sorted(digests.values())), shard_dir=out_dir,
         reviewed_commit_sha=reviewed_commit_sha, transformation_code_digest=tcd, optimizer_config_digest=ocd,
     )
