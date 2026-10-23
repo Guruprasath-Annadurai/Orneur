@@ -194,6 +194,7 @@ test('newConversation() invalidates ONLY the message domain, not history (the CT
     _abandonActiveStream: () => {},
     sessionId: 'old-sid',
     composerEl: null, // B04: newConversation() guards its collapseComposer() call on this
+    closeTempModePanel: () => {},
     document: {
       getElementById: () => ({ innerHTML: '' }),
     },

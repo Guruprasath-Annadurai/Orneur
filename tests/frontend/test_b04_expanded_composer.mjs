@@ -248,6 +248,7 @@ test("newConversation() collapses the composer (and any open workspace) when com
     sessionId: 'old-sid',
     composerEl: {}, // truthy -- collapseComposer() must be called
     collapseComposer: () => { collapseCalled = true; },
+    closeTempModePanel: () => {},
     document: { getElementById: () => ({ innerHTML: '' }) },
     highlightSelectedRecent: () => {},
     showEmptyView: () => {},
