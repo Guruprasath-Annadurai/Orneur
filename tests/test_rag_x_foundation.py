@@ -15,7 +15,7 @@ from orca.rag_x.corpus import Chunk, Corpus, Document, GraphEdge, SymbolRecord
 from orca.rag_x.kernel import execute, verify_claim
 from orca.rag_x.matrix import CAPABILITIES
 from orca.rag_x.rank import bm25_scores, term_count_scores
-from orca.rag_x.research import X2_ITEMS, arbitrate, authorize_action, replay, run_contradiction_first
+from orca.rag_x.research import X2_ITEMS, arbitrate, authorize_action, replay, run_contradiction_first, x2_hypothesis
 
 
 def _scope(principal="ada", tenant="tenant-a", workspace="ws", session="s1", as_of="2024-06-01"):
@@ -291,8 +291,17 @@ def test_contradiction_first_experiment_is_frozen_and_recorded():
     result = run_contradiction_first(corpus, _scope(), software_revision="test")
     assert result.experiment_id == "X2-contradiction-first-v1"
     assert result.endpoint == "confident_despite_conflict"
-    assert (result.hypothesis_supported, result.negative_result) in {(True, False), (False, True)}
-    assert result.baseline >= result.treatment
+    assert result.baseline == 2
+    assert result.treatment == 0
+    assert result.correct_loss == 0
+    assert result.hypothesis_supported is True
+    assert result.negative_result is False
+    supported, negative = x2_hypothesis(2, 2, 0)
+    assert supported is False
+    assert negative is True
+    supported_loss, negative_loss = x2_hypothesis(2, 0, 1)
+    assert supported_loss is False
+    assert negative_loss is True
 
 
 def test_foundation_lifecycle_data_scaling_and_feedback():

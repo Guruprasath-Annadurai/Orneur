@@ -48,6 +48,12 @@ class ExperimentResult:
     detail: str
 
 
+def x2_hypothesis(baseline: int, treatment: int, correct_loss: int) -> tuple[bool, bool]:
+    """Lock both the positive and negative interpretations of the X2 rule."""
+    supported = treatment < baseline and correct_loss == 0
+    return supported, not supported
+
+
 def confident_despite_conflict(result: AnswerResult) -> bool:
     return result.status == RetrievalStatus.SUCCESS and any(not item.temporal for item in result.contradictions)
 
@@ -75,10 +81,10 @@ def run_contradiction_first(corpus: Corpus, scope, *, software_revision: str) ->
             correct_loss += 1
         if item.expects_conflict and plain.status == RetrievalStatus.SUCCESS and not plain.evidence:
             correct_loss += 0
-    supported = treatment < baseline and correct_loss == 0
+    supported, negative = x2_hypothesis(baseline, treatment, correct_loss)
     return ExperimentResult(
         X2_ID, X2_PRIMARY_ENDPOINT, baseline, treatment, correct_loss, supported,
-        not supported, X2_NEGATIVE_IF,
+        negative, X2_NEGATIVE_IF,
     )
 
 

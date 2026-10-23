@@ -14,7 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from orca.genesis.governance.authorization import NativePretrainingGrant, NativePretrainingNotAuthorized
+from orca.genesis.governance.authorization import (
+    NativePretrainingGrant,
+    NativePretrainingNotAuthorized,
+    grant_revocation_reasons,
+    grant_time_validity_reasons,
+)
 
 
 class LifecycleDecision(str, Enum):
@@ -80,7 +85,7 @@ def _grant_binding_reasons(chain: LifecycleChain, grant) -> list[str]:
     return reasons
 
 
-def _authorization(chain: LifecycleChain, grant) -> tuple[list[str], list[str]]:
+def _authorization(chain: LifecycleChain, grant, *, now=None, revocation_check=None) -> tuple[list[str], list[str]]:
     ignored: list[str] = []
     if chain.authorization_kind:
         ignored.append(f"caller authorization claim ignored: {chain.authorization_kind}")
@@ -92,11 +97,22 @@ def _authorization(chain: LifecycleChain, grant) -> tuple[list[str], list[str]]:
         grant.verify_integrity()
     except NativePretrainingNotAuthorized as exc:
         return ["grant integrity failed: " + ",".join(exc.reasons)], ignored
+    timed = grant_time_validity_reasons(grant, now)
+    if timed:
+        return ["grant time validity failed: " + ",".join(timed)], ignored
+    revoked = grant_revocation_reasons(grant, revocation_check)
+    if revoked:
+        return ["grant revocation check failed: " + ",".join(revoked)], ignored
     return _grant_binding_reasons(chain, grant), ignored
 
 
-def assess_lifecycle(chain: LifecycleChain, grant=None) -> tuple[LifecycleDecision, list[str]]:
-    """Return the decision and every failed link. Training is not authorized here."""
+def assess_lifecycle(chain: LifecycleChain, grant=None, *, now=None, revocation_check=None) -> tuple[LifecycleDecision, list[str]]:
+    """Return the decision and every failed link. Training is not authorized here.
+
+    Integrity, time validity, and live revocation are separate from
+    `assert_execution_permitted()`. A complete chain is still
+    `CHAIN_COMPLETE_TRAINING_NOT_AUTHORIZED`.
+    """
     reasons: list[str] = []
     if not chain.dataset_id or not chain.dataset_digest:
         reasons.append("missing dataset manifest")
@@ -106,7 +122,7 @@ def assess_lifecycle(chain: LifecycleChain, grant=None) -> tuple[LifecycleDecisi
         reasons.append("tokenizer does not match the expected identity")
     if not chain.config_digest:
         reasons.append("missing config digest")
-    auth_reasons, ignored = _authorization(chain, grant)
+    auth_reasons, ignored = _authorization(chain, grant, now=now, revocation_check=revocation_check)
     reasons.extend(auth_reasons)
     if not chain.run_id:
         reasons.append("missing run identity")

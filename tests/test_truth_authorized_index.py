@@ -14,7 +14,7 @@ import pytest
 from orca.cognitive.contracts import ComplexityLevel, EvidenceLevel, FreshnessLevel, IntentCategory, IntentPlan
 from orca.connectors.contracts import ConnectorIdentity, ConnectorInstance, ConnectorReadRequest, ConnectorType
 from orca.connectors.document_store import search_documents
-from orca.docs.authorized_index import SYNTHETIC_HASH_EMBEDDING_ID, AuthorizedIndex, LocalEncoder
+from orca.docs.authorized_index import SYNTHETIC_HASH_EMBEDDING_ID, AuthorizedIndex, LocalEncoder, _chunks_name
 from orca.docs.sparse import bm25_scores as shared_bm25_scores
 from orca.foundation_x.lifecycle import LifecycleChain, LifecycleDecision, _grant_binding_reasons, assess_lifecycle
 from orca.genesis.governance.authorization import NativePretrainingGrant, NativePretrainingNotAuthorized
@@ -22,7 +22,7 @@ from orca.rag_x.rank import HASH_EMBEDDING_ID, bm25_scores, hash_embed
 from orca.truth.access import AccessDenied, SessionAuthority, TrustedSession
 from orca.truth.contracts import ClaimSupportState, TruthRequest
 from orca.truth.indexed_query import run_authorized_retrieval
-from orca.truth.qualification import ITEMS, NEGATIVE_IF, QUALIFICATION_ID, run_qualification
+from orca.truth.qualification import DOCUMENTS, ITEMS, NEGATIVE_IF, QUALIFICATION_ID, run_qualification
 from orca.truth.truth_fabric import TruthFabric
 
 
@@ -113,10 +113,15 @@ def test_revocation_deletion_reuse_and_cache(tmp_path):
 def test_digest_mismatch_corrupt_line_symlink_and_deadline(tmp_path):
     _authority, session, index = _index(tmp_path)
     digest = index.admit(session, "kept", "kept fact is visible")
-    leaf = tmp_path / session.session_id / "chunks.jsonl"
+    leaf = tmp_path / session.session_id / _chunks_name(index._generation)
     rows = [json.loads(line) for line in leaf.read_text().splitlines()]
     rows[0]["text"] = "kept fact is substituted"
-    leaf.write_text(json.dumps(rows[0]) + "\n" + "{not-json\n")
+    payload = json.dumps(rows[0]) + "\n" + "{not-json\n"
+    leaf.write_text(payload)
+    pointer = tmp_path / session.session_id / ".generation"
+    record = json.loads(pointer.read_text())
+    record["chunks_sha256"] = hashlib.sha256(payload.encode()).hexdigest()
+    pointer.write_text(json.dumps(record, sort_keys=True, separators=(",", ":")))
     mismatched = index.search(session, "kept")
     assert mismatched.hits == ()
     assert any(reason.startswith("digest mismatch") for reason in mismatched.partial_reasons)
@@ -285,7 +290,7 @@ def test_forged_founder_grant_string_is_not_authority(monkeypatch):
     with pytest.raises(NativePretrainingNotAuthorized) as caught:
         NativePretrainingGrant(
             authorization_id="forged", key_id="k", record_sha256="0" * 64, run_id="run",
-            expires_at="2099-01-01T00:00:00Z", max_wall_clock_minutes=1,
+            issued_at="2098-01-01T00:00:00Z", expires_at="2099-01-01T00:00:00Z", max_wall_clock_minutes=1,
             model_config_digest="cfg", tokenizer_digest="tok-digest",
             dataset_manifest_id="ds", dataset_content_digest="abc",
             authorized_shard_digests=(), environment_class="local", architecture_version="0",
@@ -296,10 +301,16 @@ def test_forged_founder_grant_string_is_not_authority(monkeypatch):
 
 
 def test_pre_registered_qualification_separates_synthetic_from_models(tmp_path):
+    assert len(DOCUMENTS) == 15
     assert len(ITEMS) == 12
+    assert sum(1 for item in ITEMS if item.expects_token is not None) == 7
+    assert sum(1 for item in ITEMS if item.expects_conflict) == 4
+    assert sum(1 for item in ITEMS if item.expects_token is None and not item.expects_conflict) == 1
     assert "SUPPORTED" in NEGATIVE_IF
     result = run_qualification(tmp_path)
     assert result.experiment_id == QUALIFICATION_ID
+    assert result.source_documents == 15
+    assert result.evaluation_items == 12
     assert result.model_backed is False
     assert result.production_neural is False
     assert result.dense_backend == "unavailable"
@@ -325,4 +336,4 @@ def test_replay_is_stable_for_an_unmodified_index(tmp_path):
     second = index.search(session, "harbor")
     assert first.hits[0].content_sha256 == second.hits[0].content_sha256
     assert index.replay(session, first.hits[0].content_sha256, first.hits[0].text) is True
-    os.chmod(tmp_path / session.session_id / "chunks.jsonl", 0o600)
+    os.chmod(tmp_path / session.session_id / _chunks_name(index._generation), 0o600)

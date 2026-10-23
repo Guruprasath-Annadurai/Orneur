@@ -14,7 +14,7 @@ Live backends: no native model, no hosted embedder, no live connector. The templ
 
 ## B. Research
 
-Prior-art titles were fetched for Self-RAG, Corrective RAG, RAPTOR, GraphRAG, and ColBERTv2. X2 on six frozen items: baseline 2 confident conflicted answers, treatment 0, correct-answer loss 0. Q1 on twelve frozen local documents: sparse hits 7/7, basic confident conflicts 4, contradiction-first confident conflicts 0, citation `SUPPORTED` 0, `model_backed` false. That is not a general result and not a neural evaluation. No external benchmark was run.
+Prior-art titles were fetched for Self-RAG, Corrective RAG, RAPTOR, GraphRAG, and ColBERTv2. X2 on six frozen items: baseline 2 confident conflicted answers, treatment 0, correct-answer loss 0. Q1 on fifteen frozen source documents and twelve evaluation items: sparse hits 7/7, basic confident conflicts 4, contradiction-first confident conflicts 0, citation `SUPPORTED` 0, `model_backed` false. That is not a general result and not a neural evaluation. No external benchmark was run.
 
 ## C. Security
 
@@ -26,7 +26,7 @@ PR #80: https://github.com/Guruprasath-Annadurai/Orneur/pull/80 at `fc1eb1dd0983
 
 PR #82 previous head `81e4e310c6ca6e08428aa22cd178e8d0f1c4b57a`: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39843423059 (9/9 success). That run does not cover the integration commit.
 
-Local Linux runs for this integration: `tests/test_truth_authorized_index.py`, `tests/test_rag_x_foundation.py`, and the non-smoke Truth, connector, and tenant suites named in the test run (163 passed, 12 deselected, 2 xfailed). Q1 resource observation: about 9.7 ms and 92324 peak bytes for twelve items. p50/p95 for the earlier 100 in-memory sparse queries: 0.199 ms / 0.262 ms.
+Local Linux runs for this integration: `tests/test_truth_authorized_index.py`, `tests/test_rag_x_foundation.py`, and the non-smoke Truth, connector, and tenant suites named in the test run (163 passed, 12 deselected, 2 xfailed). Q1 resource observation: about 9.7 ms and 92324 peak bytes for twelve evaluation items over fifteen source documents. p50/p95 for the earlier 100 in-memory sparse queries: 0.199 ms / 0.262 ms.
 
 ## E. Models
 

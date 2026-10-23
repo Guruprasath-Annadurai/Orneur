@@ -86,7 +86,7 @@ _TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _SEAL = object()
 _PROCESS_KEY = secrets.token_bytes(32)
 _GRANT_MAC_FIELDS = (
-    "authorization_id", "key_id", "record_sha256", "run_id", "expires_at", "max_wall_clock_minutes",
+    "authorization_id", "key_id", "record_sha256", "run_id", "issued_at", "expires_at", "max_wall_clock_minutes",
     "model_config_digest", "tokenizer_digest", "dataset_manifest_id", "dataset_content_digest",
     "authorized_shard_digests", "environment_class",
     # Mission 2 M2-01 fix: previously the issued grant object discarded
@@ -397,6 +397,7 @@ class NativePretrainingGrant:
     key_id: str
     record_sha256: str
     run_id: str
+    issued_at: str
     expires_at: str
     max_wall_clock_minutes: int
     model_config_digest: str
@@ -549,7 +550,7 @@ def authorize_native_pretraining(
     record_sha = hashlib.sha256(_canonical(record)).hexdigest()
     return NativePretrainingGrant(
         authorization_id=record["authorization_id"], key_id=record["authorizing_authority"]["key_id"],
-        record_sha256=record_sha, run_id=req.run_id, expires_at=record["expires_at"],
+        record_sha256=record_sha, run_id=req.run_id, issued_at=record["issued_at"], expires_at=record["expires_at"],
         max_wall_clock_minutes=record["limits"]["max_wall_clock_minutes"], model_config_digest=req.model_config_digest,
         tokenizer_digest=req.tokenizer_digest, dataset_manifest_id=req.dataset_manifest_id,
         dataset_content_digest=req.dataset_content_digest, authorized_shard_digests=req.authorized_shard_digests,
@@ -560,24 +561,49 @@ def authorize_native_pretraining(
     )
 
 
+def grant_time_validity_reasons(grant: NativePretrainingGrant, now: datetime | None = None) -> list[str]:
+    """Time window only. Integrity and live revocation are separate."""
+    now = now or datetime.now(timezone.utc)
+    issued = _parse_ts(getattr(grant, "issued_at", None))
+    expires = _parse_ts(grant.expires_at)
+    if issued is None or expires is None:
+        return ["BAD_TIMESTAMPS"]
+    reasons: list[str] = []
+    if expires <= issued:
+        reasons.append("EXPIRES_BEFORE_ISSUED")
+    if now < issued:
+        reasons.append("NOT_YET_VALID")
+    if now >= expires:
+        reasons.append("EXPIRED")
+    return reasons
+
+
+def grant_revocation_reasons(grant: NativePretrainingGrant, revocation_check: Callable[[str], bool] | None) -> list[str]:
+    """Live revocation only. A missing checker is a denial, not an all-clear."""
+    if revocation_check is None:
+        return ["REVOCATION_CHECK_REQUIRED"]
+    try:
+        if revocation_check(grant.authorization_id):
+            return ["AUTHORIZATION_REVOKED_LIVE"]
+    except NativePretrainingNotAuthorized:
+        raise
+    except Exception as e:  # noqa: BLE001
+        return [f"REVOCATION_CHECK_UNAVAILABLE:{e!r}"]
+    return []
+
+
 def assert_execution_permitted(grant: NativePretrainingGrant, *, revocation_check: Callable[[str], bool], now: datetime | None = None) -> None:
     """MANDATORY re-check at the actual execution boundary (Mission F3).
     Never assume a grant issued earlier is still valid: re-verifies HMAC
-    integrity, expiry, AND live revocation -- the same mandatory,
+    integrity, time validity, AND live revocation -- the same mandatory,
     non-optional revocation check `authorize_native_pretraining()` itself
     requires. An unavailable or erroring revocation service denies
     execution; it never silently permits it."""
     grant.verify_integrity()
     now = now or datetime.now(timezone.utc)
-    expires = _parse_ts(grant.expires_at)
-    if expires is None or now >= expires:
-        raise NativePretrainingNotAuthorized(["EXPIRED"])
-    if revocation_check is None:
-        raise NativePretrainingNotAuthorized(["REVOCATION_CHECK_REQUIRED"])
-    try:
-        if revocation_check(grant.authorization_id):
-            raise NativePretrainingNotAuthorized(["AUTHORIZATION_REVOKED_LIVE"])
-    except NativePretrainingNotAuthorized:
-        raise
-    except Exception as e:  # noqa: BLE001
-        raise NativePretrainingNotAuthorized([f"REVOCATION_CHECK_UNAVAILABLE:{e!r}"]) from e
+    timed = grant_time_validity_reasons(grant, now)
+    if timed:
+        raise NativePretrainingNotAuthorized(timed)
+    revoked = grant_revocation_reasons(grant, revocation_check)
+    if revoked:
+        raise NativePretrainingNotAuthorized(revoked)

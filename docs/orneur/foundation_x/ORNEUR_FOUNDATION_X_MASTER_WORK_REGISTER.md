@@ -11,7 +11,7 @@ Base for this branch: `fc1eb1dd098377e8506485dbcd82d6ed148b52b3` on `cursor/orne
 | FX-feedback | P1 | QUALIFIED_LOCALLY | Self-approval and protected-path refusals | Cannot accept work by itself. | Human review remains required. |
 | RAG-01–38 and X1–X8 | P0 | RESEARCH KERNEL | `tests/test_rag_x_foundation.py` | Classes are not production certification. Canonical sparse path is separate. | Do not relabel rows without a new test. |
 | Canonical authorized index | P0 | QUALIFIED_LOCALLY | `tests/test_truth_authorized_index.py` | No production neural encoder. CI for this commit not yet recorded. | Wait for exact-head CI. |
-| X2 and Q1 | P1 | QUALIFIED_LOCALLY | X2 is 2 vs 0 on six items. Q1 is 7/7 sparse hits and 0 contradiction-first conflicts on twelve items | Synthetic and lexical only. `model_backed` is false. | Keep both item lists frozen. |
+| X2 and Q1 | P1 | QUALIFIED_LOCALLY | X2 is 2 vs 0 on six items. Q1 is 15 source documents, 12 evaluation items, 7/7 sparse hits and 0 contradiction-first conflicts | Synthetic and lexical only. `model_backed` is false. | Keep both item lists frozen. |
 | Truth Fabric non-smoke suites | P1 | QUALIFIED_LOCALLY | Corrective, planner, citation, fetch, retrieval-mode, connector, and tenant tests passed with the access hook | Live Ollama smoke was deselected. | Do not treat that as neural retrieval. |
 | G9 application integration | P0 | BLOCKED | None | PR #79 and PR #81 were not edited. | A separate integration change. |
 | G10 independent audit | P0 | NOT_STARTED | None | No independent report. | Antigravity or another reviewer. |

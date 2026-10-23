@@ -64,7 +64,6 @@ resumed run APPENDS to -- never overwrites -- prior committed output.
 """
 from __future__ import annotations
 
-import ctypes
 import errno
 import fcntl
 import hashlib
@@ -96,7 +95,10 @@ _PROGRESS_SIDECAR_NAMES = (
 )
 # Darwin `fcntl` command. Linux does not implement it; the Linux path uses
 # `/proc/self/fd/<dirfd>` instead of calling this command.
-_DARWIN_F_GETPATH = 50
+# Darwin MAXPATHLEN is 1024. Variadic ctypes `libc.fcntl` is not used:
+# the ARM calling convention for that path has already crashed.
+_DARWIN_F_GETPATH = getattr(fcntl, "F_GETPATH", 50)
+_DARWIN_MAXPATHLEN = 1024
 _SQLITE_SYNCHRONOUS_FULL = 2
 
 
@@ -580,24 +582,62 @@ def _require_descriptor_directory(dir_fd: int, raw: str) -> str:
 def _darwin_descriptor_path(fd: int) -> str:
     """Return the path Darwin associates with an already-open descriptor.
 
-    `F_GETPATH` is a Darwin `fcntl` command. It is not called on Linux.
+    Uses Python `fcntl.fcntl` with an immutable bytes buffer. The kernel
+    path is taken from the *returned* bytes, not from a mutated input
+    object. Variadic ctypes `libc.fcntl` is not used. Linux never enters
+    this function.
     """
     if sys.platform != "darwin":
         raise CorpusBoundaryError(
             f"refusing Darwin descriptor path lookup on {sys.platform}"
         )
-    buf = ctypes.create_string_buffer(4096)
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.fcntl(fd, _DARWIN_F_GETPATH, buf) == -1:
-        err = ctypes.get_errno()
-        code = errno.errorcode.get(err, str(err))
+    if not isinstance(fd, int) or fd < 0:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH descriptor is invalid"
+        )
+    request = b"\x00" * _DARWIN_MAXPATHLEN
+    try:
+        result = fcntl.fcntl(fd, _DARWIN_F_GETPATH, request)
+    except TypeError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH buffer type is unsupported"
+        ) from exc
+    except OSError as exc:
+        code = errno.errorcode.get(exc.errno, str(exc.errno))
         raise CorpusBoundaryError(
             f"refusing to open the progress database -- F_GETPATH failed ({code})"
-        )
-    raw = os.fsdecode(buf.value)
-    if not raw:
+        ) from exc
+    if isinstance(result, int):
+        if result == -1:
+            raise CorpusBoundaryError(
+                "refusing to open the progress database -- F_GETPATH returned -1"
+            )
         raise CorpusBoundaryError(
-            "refusing to open the progress database -- F_GETPATH returned an empty path"
+            "refusing to open the progress database -- F_GETPATH did not return a path buffer"
+        )
+    if not isinstance(result, (bytes, bytearray)):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH buffer shape is invalid"
+        )
+    raw_bytes = bytes(result)
+    if len(raw_bytes) > _DARWIN_MAXPATHLEN:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH buffer shape is invalid"
+        )
+    nul = raw_bytes.find(0)
+    if nul < 1:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH returned an empty or unterminated path"
+        )
+    try:
+        raw = os.fsdecode(raw_bytes[:nul])
+    except UnicodeDecodeError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH path decoding failed"
+        ) from exc
+    if "\x00" in raw or raw.endswith(" (deleted)"):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH path is malformed"
         )
     return raw
 

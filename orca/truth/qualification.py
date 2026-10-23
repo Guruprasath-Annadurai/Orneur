@@ -69,6 +69,8 @@ ITEMS: tuple[QualItem, ...] = (
 @dataclass(frozen=True)
 class QualificationResult:
     experiment_id: str
+    source_documents: int
+    evaluation_items: int
     model_backed: bool
     dense_backend: str
     production_neural: bool
@@ -158,6 +160,8 @@ def run_qualification(root: Path) -> QualificationResult:
     )
     return QualificationResult(
         experiment_id=QUALIFICATION_ID,
+        source_documents=len(DOCUMENTS),
+        evaluation_items=len(ITEMS),
         model_backed=False,
         dense_backend=dense_backend,
         production_neural=production_neural,

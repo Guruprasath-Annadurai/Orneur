@@ -15,6 +15,20 @@ from orca.truth.evidence import evidence_from_document_chunk
 from orca.truth.verification import _LEXICAL_STRONG_THRESHOLD, _LEXICAL_WEAK_THRESHOLD, _lexical_overlap
 
 _FACT = re.compile(r"([A-Za-z][A-Za-z0-9_]*)\s*=\s*([A-Za-z0-9_.:-]+)")
+_COPULA = re.compile(
+    r"\b(?:the\s+)?([A-Za-z][A-Za-z0-9_-]*)\s+(?:is|was|are|were)\s+"
+    r"(?:(?:currently|now|still)\s+)?([A-Za-z0-9_.:-]+)\b",
+    re.I,
+)
+_UNRESOLVED = re.compile(r"\b(however|although|but|instead|contradict(?:s|ed|ion)?)\b", re.I)
+
+
+@dataclass(frozen=True)
+class ConflictScan:
+    conflicts: tuple[str, ...]
+    method: str
+    uncertain: tuple[str, ...]
+    model_backed: bool = False
 
 
 @dataclass(frozen=True)
@@ -37,12 +51,42 @@ class AuthorizedAnswer:
     ignored_claims: tuple[str, ...]
 
 
-def fact_conflicts(texts: list[str]) -> list[str]:
+def scan_conflicts(texts: list[str]) -> ConflictScan:
+    """Lexical contradiction scan. This is not model-backed entailment.
+
+    KEY=value and copula forms (`the lamp is on`) are extracted. Discourse
+    that looks contradictory without extractable values is `uncertain`,
+    not a silent all-clear and not a model claim.
+    """
     found: dict[str, set[str]] = {}
+    used_copula = False
+    used_key = False
     for text in texts:
         for key, value in _FACT.findall(text):
-            found.setdefault(key, set()).add(value)
-    return [f"{key}={'/'.join(sorted(values))}" for key, values in sorted(found.items()) if len(values) > 1]
+            used_key = True
+            found.setdefault(key.lower(), set()).add(value.lower())
+        for key, value in _COPULA.findall(text):
+            used_copula = True
+            found.setdefault(key.lower(), set()).add(value.lower())
+    conflicts = tuple(
+        f"{key}={'/'.join(sorted(values))}"
+        for key, values in sorted(found.items())
+        if len(values) > 1
+    )
+    uncertain: tuple[str, ...] = ()
+    if not conflicts and any(_UNRESOLVED.search(text) for text in texts):
+        uncertain = ("lexical extractor cannot confirm a contradiction without a model",)
+    if used_key and used_copula:
+        method = "lexical-key-value+copula"
+    elif used_copula:
+        method = "lexical-copula"
+    else:
+        method = "lexical-key-value"
+    return ConflictScan(conflicts=conflicts, method=method, uncertain=uncertain, model_backed=False)
+
+
+def fact_conflicts(texts: list[str]) -> list[str]:
+    return list(scan_conflicts(texts).conflicts)
 
 
 def lexical_claim_support(claim_id: str, claim_text: str, evidence: list) -> ClaimSupport:
