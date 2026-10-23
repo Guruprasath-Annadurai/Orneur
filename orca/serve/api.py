@@ -88,6 +88,12 @@ from orca.serve.citations import build_sources as _build_sources
 from orca.serve import streaming
 from orca.serve.streaming import aiter_blocking
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
+from orca.serve.authorized_product_index import (
+    ProductRetrievalDenied,
+    admit_uploaded_document,
+    delete_uploaded_document,
+    retrieve_authorized,
+)
 from orca.code import run_code
 
 _START_TIME = time.time()
@@ -805,6 +811,28 @@ def _check_session_ownership(session_id: str | None, user_id: str | None) -> Non
         raise HTTPException(status_code=404, detail="session not found")
 
 
+def _authorized_retrieval_gate(user: User | None, sess: "_Session", query: str):
+    """Authenticated document retrieval must pass AuthorizedIndex.
+
+    Anonymous DocStore traffic is unchanged. A revoked or unbound
+    authenticated session fails closed instead of falling through to
+    unauthorized ranking.
+    """
+    if user is None or sess.doc_store.count() == 0:
+        return None
+    try:
+        return retrieve_authorized(user.id, sess.id, query)
+    except ProductRetrievalDenied as exc:
+        return JSONResponse(
+            {
+                "error": "Authorized retrieval was refused.",
+                "code": "retrieval_unauthorized",
+                "reason": exc.reason,
+            },
+            status_code=403,
+        )
+
+
 def _get_session(session_id: str | None, model_variant: str | None = None, user_id: str | None = None) -> _Session:
     """Phase 14C edge-qualification finding, fixed centrally here rather
     than per-route: a CALLER-SUPPLIED `session_id` (never a freshly
@@ -1423,6 +1451,9 @@ async def _chat_impl(
     # they used to be silently ignored on this route unless the wording happened to trigger retrieval.
     kernel_answered = cognitive_result.output is not None and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
     rag_result = None
+    authorized = _authorized_retrieval_gate(user, sess, req.message)
+    if isinstance(authorized, JSONResponse):
+        return authorized
     if not kernel_answered and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
@@ -1489,7 +1520,7 @@ async def _chat_impl(
                           evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
     _ident = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered)
     _persist_turn(user, sess.id, req.message, dlp_result["safe_text"], identity=_ident, src=_src)
-    return {
+    payload = {
         "response": dlp_result["safe_text"],
         "session_id": sess.id,
         "used_tools": used_tools,
@@ -1500,6 +1531,15 @@ async def _chat_impl(
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
+    if authorized is not None:
+        payload["authorized_retrieval"] = {
+            "method": authorized.method,
+            "hit_count": len(authorized.hits),
+            "production_neural": authorized.production_neural,
+            "tool_grant": authorized.tool_grant,
+            "abstained": authorized.abstained,
+        }
+    return payload
 
 
 @app.post("/api/stream")
@@ -1676,6 +1716,9 @@ async def stream_chat(
     # RRF fusion → rerank → sufficiency check → citation DNA). Only runs if
     # docs are loaded for this session.
     rag_result = None
+    denied = _authorized_retrieval_gate(user, sess, req.message)
+    if isinstance(denied, JSONResponse):
+        return denied
     if not use_kernel_direct and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
@@ -2563,6 +2606,20 @@ async def upload_doc(
     chunks = chunk_text(text, doc_id=doc_id, filename=filename)
 
     sess = _get_session(session_id, user_id=user.id if user else None)
+    if user:
+        try:
+            admit_uploaded_document(
+                user.id, sess.id, filename=filename, text=text, doc_id=doc_id,
+            )
+        except ProductRetrievalDenied as exc:
+            return JSONResponse(
+                {
+                    "error": "Document was not admitted to the authorized index.",
+                    "code": "retrieval_unauthorized",
+                    "reason": exc.reason,
+                },
+                status_code=403,
+            )
     stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
     register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data))
 
@@ -2595,9 +2652,25 @@ async def delete_doc(
 ):
     """Remove a document and all its chunks from the session store."""
     sess = _get_session(session_id, user_id=user.id if user else None)
-    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id)):
+    listed = list_docs(sess.id)
+    meta = next((d for d in listed if d.get("doc_id") == doc_id), None)
+    if meta is None:
         # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
         return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
+    if user:
+        try:
+            delete_uploaded_document(
+                user.id, sess.id, filename=str(meta.get("filename") or "upload.txt"), doc_id=doc_id,
+            )
+        except ProductRetrievalDenied as exc:
+            return JSONResponse(
+                {
+                    "error": "Authorized document deletion was refused.",
+                    "code": "retrieval_unauthorized",
+                    "reason": exc.reason,
+                },
+                status_code=403,
+            )
     ok = sess.doc_store.delete_doc(doc_id)
     unregister_doc(sess.id, doc_id)
     audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
