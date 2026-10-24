@@ -1,5 +1,7 @@
 # Independent qualification handoff
 
+The table below is the measurement-branch snapshot. Later counts, the readiness-report fix, and the synthetic task collection are in `ORNEUR_AGENT_TRUST_AND_EVAL_HANDOFF.md`. This table is not rewritten.
+
 Status: engineering candidate. Not independently qualified. Not production authorized.
 
 | Count | Value |
