@@ -1047,6 +1047,19 @@ class TemporaryChatRequest(BaseModel):
     session_id: str | None = None
 
 
+class FolderRequest(BaseModel):
+    name: str
+
+
+class FolderSessionRequest(BaseModel):
+    session_id: str
+
+
+class ShareGrantRequest(BaseModel):
+    grantee_id: str
+    ttl_seconds: int = 86400
+
+
 class MemoryRequest(BaseModel):
     query: str
     session_id: str | None = None
@@ -2343,10 +2356,138 @@ async def list_sessions(
     total = len(visible)
     page = visible[offset:offset + limit]
     nxt = offset + limit if offset + limit < total else None
+    from orca.serve import organization
+
+    pinned = set(organization.pins_for(user.id) if user is not None else [])
     return {
-        "sessions": [{"id": s, "title": _session_titles.get(s, ""), "updated_at": activity.get(s) or None} for s in page],
+        "sessions": [
+            {"id": s, "title": _session_titles.get(s, ""), "updated_at": activity.get(s) or None, "pinned": s in pinned}
+            for s in page
+        ],
         "total": total, "limit": limit, "offset": offset, "next_offset": nxt,
     }
+
+
+def _organization_error(exc) -> JSONResponse:
+    status = 404 if exc.code in {"share_not_found", "folder_not_found"} else 409 if exc.code.endswith("_full") or exc.code == "share_not_active" else 400
+    return JSONResponse({"error": exc.reason, "code": exc.code}, status_code=status)
+
+
+@app.post("/api/session/{session_id}/pin")
+async def pin_session(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import organization
+
+    try:
+        return organization.pin(user.id, session_id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.delete("/api/session/{session_id}/pin")
+async def unpin_session(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import organization
+
+    return organization.unpin(user.id, session_id)
+
+
+@app.get("/api/folders")
+async def list_folders(user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    return {"folders": organization.folders_for(user.id)}
+
+
+@app.post("/api/folders")
+async def create_folder(req: FolderRequest, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    try:
+        return organization.create_folder(user.id, req.name)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.post("/api/folders/{folder_id}/sessions")
+async def add_session_to_folder(folder_id: str, req: FolderSessionRequest, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(req.session_id, user)
+    from orca.serve import organization
+
+    try:
+        return organization.add_to_folder(user.id, folder_id, req.session_id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.post("/api/session/{session_id}/shares")
+async def create_session_share(session_id: str, req: ShareGrantRequest, user: User | None = Depends(get_current_user_optional)):
+    """Grant one account read access through a share id. The session id stays private."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import organization
+
+    try:
+        return organization.create_share(user.id, session_id, req.grantee_id, req.ttl_seconds)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.post("/api/shares/{share_id}/revoke")
+async def revoke_session_share(share_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    try:
+        return organization.revoke_share(share_id, user.id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.get("/api/shares/incoming")
+async def incoming_shares(user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    return {"shares": organization.incoming_shares(user.id)}
+
+
+@app.get("/api/shares/{share_id}/messages")
+async def shared_messages(share_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Read a transcript through an active grant. This does not make the grantee the owner."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations, organization
+
+    try:
+        session_id = organization.share_session_for_reader(share_id, user.id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+    body = conversations.transcript(session_id)
+    body.pop("session_id", None)
+    return body
 
 
 @app.post("/api/session/load")
@@ -2672,10 +2813,14 @@ async def delete_conversation(session_id: str, user: User | None = Depends(get_c
 
     if session_id not in set(get_user_session_ids(user.id)):
         raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
+    from orca.serve import organization
+
+    organization.forget_session(user.id, session_id)
     result = await asyncio.to_thread(_delete_session_data, session_id)
     _remove_session_title(session_id)
     _sessions.pop(session_id, None)
     release_session(session_id, user.id)
+    organization.revoke_session(session_id)
     audit.log("conversation_deleted", user_id=user.id, detail={"session_id": session_id})
     return {"deleted": True, "session_id": session_id, "stores": {k: v for k, v in result.items() if not k.endswith("_error")}}
 
