@@ -361,20 +361,39 @@ class ModelGateway:
             finally:
                 if not finished:
                     # Whatever ended the stream early, make sure the upstream stops generating and the slot is freed.
-                    await self._stop_upstream(runtime, upstream, request.request_id)
+                    await self._stop_upstream(runtime, upstream, request.request_id, request)
 
     @staticmethod
-    async def _stop_upstream(runtime, upstream, request_id: str) -> None:
+    async def _stop_upstream(runtime, upstream, request_id: str, request=None) -> bool:
+        """Stop one upstream iterator and record whether ``aclose`` returned.
+
+        ``runtime.cancel`` is only a cooperative flag. It is not proof.
+        Proof is ``aclose`` returning without an error, which is what the
+        runtime's own stream context uses to leave its HTTP response.
+        Swallowed close errors stay unconfirmed. For Ollama this proves the
+        local HTTP stream context exited, not that the remote server aborted
+        an in-flight token: that server has no cancel endpoint.
+        """
+        evidence = {"confirmed": False, "reason": "not_closed"}
+        metadata = getattr(request, "metadata", None)
+        if isinstance(metadata, dict):
+            metadata["upstream_closure"] = evidence
         try:
             await asyncio.shield(runtime.cancel(request_id))
         except Exception:
             pass
         close = getattr(upstream, "aclose", None)
-        if close is not None:
-            try:
-                await asyncio.shield(close())
-            except Exception:
-                pass
+        if close is None:
+            evidence["reason"] = "no_aclose"
+            return False
+        try:
+            await asyncio.shield(close())
+        except Exception:
+            evidence["reason"] = "close_failed"
+            return False
+        evidence["confirmed"] = True
+        evidence["reason"] = "closed"
+        return True
 
     async def cancel(self, model_id: str, request_id: str) -> bool:
         """Best-effort cancellation propagation to whichever runtime is serving this model family."""

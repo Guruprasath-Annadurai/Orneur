@@ -1,33 +1,46 @@
-# Cancellation, deletion, and orphan reconciliation
+# Cancellation, deletion, and recovery
 
-This branch starts at PR #111 `6b2d37ad5bee2e381e56246a679d59fffeaad930` (`test/combined-candidate-fresh`). PRs #108–#113 are unchanged.
+PR #114 branch `cursor/cancellation-reconcile-a8b0`. PR #113 is not changed.
+The product parent is `test/combined-candidate-fresh` at `571f7d8c750ba99953222cd39eecfee5ec8038ef`, merged without a rebase.
 
 ## Cancellation
 
-A browser disconnect does not write `cancelled`. An in-stream authenticated stop closes the attempt and the terminal generation event is written after that stop is stored, so the event state is `cancelled`. A disconnect inside the loop is stored as `interrupted_unknown` with upstream `unconfirmed`. A later POST can confirm `cancelled` only when the stored upstream is already `stopped`. An unconfirmed upstream stays `interrupted_unknown` with `cancel_requested` true and `cancel_accepted` false.
+A browser disconnect does not write `cancelled`. An authenticated stop stores `cancel_requested` immediately. That flag is not proof the upstream stopped.
 
-`completed`, `cancelled`, `failed`, and `interrupted_unknown` stay distinct. `finish` does not replace an existing terminal state, so a late completion cannot overwrite a cancellation. A completion that sees a stored stop before the upstream is proven stopped leaves the record `running`, so the explicit cancel publication can still commit. It does not invent `interrupted_unknown` for that race. A live lock that has been dropped is reconciled to `interrupted_unknown`, not to `cancelled`. The lock is single-host `flock`.
+The stream loop leaves the upstream `aclosing` block before it writes the terminal generation record. `cancelled` is written only when that close returned and an authenticated stop is already stored. The generation SSE is read back from that record, so the event and a later GET name the same state.
 
-## Deletion
+`aiter_blocking` reports `closed` only after `close()` returns. If `next()` is still in flight, the report is `close_deferred_until_inflight_read_returns` and the later callback does not rewrite the terminal record. A raised `close()` is `close_failed`. Both stay `interrupted_unknown` even when the stop flag is set.
 
-`delete_uploaded_document()` remains. The keyword fallback is purged only after the collection delete succeeds. Partial state is reported with `atomic: false`. The registry stays when a store still holds the document, and the authorized copy is not re-admitted. HTTP 200 `deleted: false` is preserved when the index was not removed, matching the client chip contract. An index removal plus a failed legacy delete stays HTTP 500 `document_store_disagreement`.
+`ModelGateway._stop_upstream` treats `runtime.cancel()` as a cooperative flag. Proof is `aclose()` returning. For Ollama that means the local HTTP response context exited. It does not mean the remote server aborted an in-flight token. A local HTTP server observed that connection drop in `tests/test_upstream_closure_contract.py`.
+
+If the worker sees the stop before the gateway iterator is entered, the closure reason is `upstream_not_started`. No request was opened. An authenticated stop can then be `cancelled`. A disconnect in that window stays `interrupted_unknown`.
+
+`completed`, `failed`, `cancelled`, and `interrupted_unknown` stay distinct. A terminal record is not overwritten. A dead or stale lease becomes `interrupted_unknown`, not `cancelled`. The lock is single-host `flock`.
 
 ## Orphan uploads
 
-`retention.reconcile_orphan_uploads()` inventories the live document directory, the authorized-index directory, and temporary-chat records. Dry-run is the default. The only applied deletion is a regular, non-symlink document temp file older than 60 seconds, and a second apply removes nothing further. Keyword fallback files, vector files, the session registry, authorized bindings, index temp files, symlinks, and failed temporary-chat records are report-only. A registry session that still lists documents is marked `preserve`. A fallback line whose document is absent from the registry is a `storage_disagreement` and is kept. A binding whose `user_id` does not match its directory is `owner_uncertain` and is kept. The scan sets `atomic` and `exactly_once` to false.
+`reconcile_orphan_uploads()` inventories the document directory, the authorized index, and temporary-chat records. It does not delete them. `apply=True` still returns `removed: []`, `deletion_performed: false`, and `automatic_deletion: "refused"`. Age is not orphan proof. A temp file is `uncertain`: `active_upload` or `interrupted_upload` is only an age hint. Referenced sessions and matching bindings are `referenced`. A fallback line the registry does not list, and a failed temporary closure, are `partially_deleted`. Nothing is classified `orphan_safe`.
 
-## Other contracts
+The missing piece is an owner-scoped journal committed before the bytes, with `upload_id`, owner, session, and a state. Deletion would be allowed only when that journal says abandoned, the owner matches, no live lock is held, and the file is opened with `O_NOFOLLOW` inside the journal directory. This layout does not have that journal. `atomic` and `exactly_once` stay false.
 
-`user_message_id` is added to the stream `done` event only after the user line is readable in the transcript. An edit replay with the same idempotency key returns `reconciled: true` and does not create another version. `retry_failed_closure()` retries a `failed` temporary chat for the same owner and only writes `closed` or `expired` when the transcript is gone and that intended state was stored.
+## Temporary-chat recovery
+
+`POST /api/session/{session_id}/temporary/closure/retry` retries the stored `intended_state` for the owning account. The contract is `docs/orneur/cursor/ORNEUR_CLOSURE_RECOVERY_CONTRACT.md`. `closed` and `expired` are returned only when the re-read stores are empty. A remaining transcript, message version, document registry row, keyword fallback, episodic file, generation record, live session, title, or authorized binding stays `failed` and is listed in `remaining`. Revocation does not prove authorized-index bytes are gone, so a binding blocks success. The route does not guess a final state and does not grant another account access.
+
+## Edit cache
+
+If `message_versions.edit` commits and `_replace_visible_copy` then raises, the edit route returns HTTP 500 `edit_saved_cache_uncertain` with `authoritative_content`. The same idempotency key returns HTTP 200 `reconciled: true` and does not append a second version. When the parent text is still in the live history, that replay replaces it. The conversation UI was not changed. Claude's existing client treats HTTP 500 from this route as ambiguous and retries the same key.
+
+## Repair boundary
+
+PR #113 stays `fd04b135d376632b2acefdbbdd96fd3dbf71f8e1`. This assignment does not extend autonomous execution. `patch_generation` stays `NOT DEMONSTRATED`. `repair_proof` stays false where a real observed repair is absent. Production authorization stays `DENIED`. No model was run. No patch is executed when user-namespace isolation is unavailable.
 
 ## Local tests
 
-`tests/test_cancellation_lifecycle.py`: 16 passed. The cases cover disconnect without a stop, unconfirmed stop after POST, proven stop, duplicate cancel, dropped POST, reread of an unknown termination, stale heartbeat, a live lock held by another process, worker failure, failed temporary closure, missing intended state, edit replay, transcript-confirmed `user_message_id`, temp-file deletion, and an uncertain-store scan that deletes nothing.
+`tests/test_upstream_closure_contract.py` covers the known-bad publish-inside-close order, the product order, a failed close, a disconnect that stays unknown until a later post, a deferred in-flight read, a local HTTP close through `OllamaRuntime` and `ModelGateway`, and a gateway close that raises.
 
-`tests/test_generation_atomicity.py`, `tests/test_b10_generation_state.py`, `tests/test_b11_message_versions.py`, `tests/test_b13_temporary_chat.py`, and `tests/test_audit_cancellation_and_attachments_addendum.py`: 43 passed.
+`tests/test_recovery_contracts.py` covers an edit rejected before commit, a write failure before replace, a cache failure after commit with a same-key heal, owner-scoped closure retry, remaining transcript evidence, and an authorized binding that blocks `closed`.
 
-`tests/test_p0_authorized_context.py`, `tests/test_b2_conversation_documents.py`, `tests/test_doc_session_no_model_runtime.py`, `tests/test_b11_message_versions.py`, and `tests/test_g006_tenant_isolation.py` were run on the earlier head of this branch: 85 passed, 2 xfailed. They were not re-run after the inventory change.
+`tests/test_cancellation_lifecycle.py` no longer expects an old temp file to be deleted.
 
 Production authorization remains DENIED. No model was loaded. The acceptance ledger was not modified.
-
-Verdict: `ENGINEERING PARTIAL — SPECIFIC BLOCKERS`.

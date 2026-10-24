@@ -1,13 +1,13 @@
-"""Inventory of upload stores. Deletion is limited to abandoned temp files.
+"""Inventory of upload stores. This scan does not delete durable bytes.
 
-A missing owner, an active document-only conversation, a vector collection,
-a keyword fallback, an authorized-index binding, or a temporary chat whose
-deletion is incomplete is reported and left in place. Dry-run is the default.
+Age, a dead process id, and an 8-character keyword prefix do not prove that
+a file is an orphan. Without an owner-scoped upload journal there is no
+safe automatic deletion, so ``apply=True`` still removes nothing. Dry-run
+remains the default. ``atomic`` and ``exactly_once`` stay false.
 """
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 
@@ -28,11 +28,19 @@ def reconcile_orphan_uploads(
     index_files = _walk(Path(index_dir)) if index_dir is not None else []
     temporary_files = _walk(Path(temporary_dir)) if temporary_dir is not None else []
     discrepancies = _classify(docs, docs_files, index_files, temporary_files, moment)
-    removed: list[str] = []
-    if apply:
-        removed = _remove_abandoned_temps(docs, moment)
     return {
         "dry_run": not apply,
+        "apply_requested": bool(apply),
+        "deletion_performed": False,
+        "automatic_deletion": "refused",
+        "required_architecture": (
+            "An owner-scoped journal must be committed before upload bytes are written. "
+            "It has to name upload_id, owner, session, and a state (started, committed, abandoned). "
+            "A later deleter may remove a regular file only when that journal says abandoned, the owner matches, "
+            "no live lock is held, and the path is opened with O_NOFOLLOW inside the journal directory. "
+            "This storage layout has no such journal, so active uploads, interrupted uploads, and safe orphans "
+            "cannot be distinguished from uncertain files. Uncertain files are left untouched."
+        ),
         "atomic": False,
         "exactly_once": False,
         "inventory": {
@@ -42,7 +50,7 @@ def reconcile_orphan_uploads(
             "file_count": sum(1 for item in docs_files + index_files + temporary_files if item["kind"] == "file"),
         },
         "discrepancies": discrepancies,
-        "removed": removed,
+        "removed": [],
         "document_only_preserved": [row["session_id"] for row in discrepancies if row["class"] == "document_only"],
     }
 
@@ -95,15 +103,14 @@ def _classify(docs: Path, docs_files: list[dict], index_files: list[dict], tempo
             continue
         if item["name"].endswith(".tmp"):
             age = now - float(item.get("mtime") or now)
-            if age >= 60:
-                rows.append({"class": "abandoned_temp", "path": item["path"], "remediation": "eligible"})
-            else:
-                rows.append({
-                    "class": "incomplete_upload",
-                    "path": item["path"],
-                    "remediation": "ineligible",
-                    "reason": "a temp file newer than 60 seconds may still belong to an active upload",
-                })
+            hint = "active_upload" if age < 60 else "interrupted_upload"
+            rows.append({
+                "class": hint,
+                "category": "uncertain",
+                "path": item["path"],
+                "remediation": "refused",
+                "reason": "a temp file has no owner-scoped journal, so age cannot prove it is active, interrupted, or safe to remove",
+            })
             continue
         if item["name"].startswith("kw_") and item["name"].endswith(".jsonl"):
             rows.append(_report("keyword_fallback", item, "an 8-character session prefix can collide, so the owner is not certain"))
@@ -111,7 +118,7 @@ def _classify(docs: Path, docs_files: list[dict], index_files: list[dict], tempo
         if item["name"] == "registry.json":
             registry_docs, readable = _registry_documents(path)
             if readable:
-                rows.append(_report("session_registry", item, "the session registry is a reference, not an orphan"))
+                rows.append(_report("session_registry", item, "the session registry is a reference, not an orphan", category="referenced"))
                 rows.extend(_document_only_rows(registry_path, registry_docs))
             else:
                 rows.append(_report("session_registry", item, "the session registry could not be read, so nothing it might reference is deleted"))
@@ -125,8 +132,14 @@ def _classify(docs: Path, docs_files: list[dict], index_files: list[dict], tempo
     return rows
 
 
-def _report(kind: str, item: dict, reason: str) -> dict:
-    return {"class": kind, "path": item["path"], "remediation": "report_only", "reason": reason}
+def _report(kind: str, item: dict, reason: str, *, category: str = "uncertain") -> dict:
+    return {
+        "class": kind,
+        "category": category,
+        "path": item["path"],
+        "remediation": "refused",
+        "reason": reason,
+    }
 
 
 def _registry_documents(path: Path) -> tuple[dict[str, set[str]], bool]:
@@ -152,6 +165,7 @@ def _document_only_rows(registry_path: Path, registry_docs: dict[str, set[str]])
             continue
         rows.append({
             "class": "document_only",
+            "category": "referenced",
             "path": str(registry_path),
             "session_id": session_id,
             "remediation": "preserve",
@@ -189,9 +203,10 @@ def _disagreements_for_fallback(path: Path, registry_docs: dict[str, set[str]]) 
         if isinstance(doc_id, str) and doc_id not in known:
             rows.append({
                 "class": "storage_disagreement",
+                "category": "partially_deleted",
                 "path": str(path),
                 "doc_id": doc_id,
-                "remediation": "report_only",
+                "remediation": "refused",
                 "reason": "the keyword fallback names a document the registry does not list",
             })
     return rows
@@ -211,7 +226,7 @@ def _index_row(item: dict) -> dict:
             return _report("owner_uncertain", item, "the binding record could not be read")
         if not isinstance(payload, dict) or payload.get("user_id") != user_dir:
             return _report("owner_uncertain", item, "the binding owner does not match the directory")
-        return _report("authorized_index", item, "an authorized binding is kept with its conversation")
+        return _report("authorized_index", item, "an authorized binding is kept with its conversation", category="referenced")
     return _report("authorized_index", item, "an authorized-index file is kept until its binding is certain")
 
 
@@ -227,29 +242,7 @@ def _temporary_row(item: dict) -> dict:
     if not isinstance(payload, dict) or not payload.get("user_id"):
         return _report("owner_uncertain", item, "the temporary chat has no owner")
     if payload.get("state") == "failed" or payload.get("reason") == "deletion_incomplete":
-        return _report("incomplete_deletion", item, "a failed temporary-chat closure is not deleted by this scan")
-    return _report("temporary_chat", item, "temporary-chat retention stays with the temporary-chat owner")
+        return _report("incomplete_deletion", item, "a failed temporary-chat closure is not deleted by this scan", category="partially_deleted")
+    return _report("temporary_chat", item, "temporary-chat retention stays with the temporary-chat owner", category="referenced")
 
 
-def _remove_abandoned_temps(root: Path, now: float) -> list[str]:
-    removed = []
-    if not root.exists():
-        return removed
-    for path in list(root.rglob("*")):
-        if path.is_symlink() or not path.is_file() or not path.name.endswith(".tmp"):
-            continue
-        if "vectors" in path.parts:
-            continue
-        try:
-            if now - path.stat().st_mtime < 60:
-                continue
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        except OSError:
-            continue
-        os.close(fd)
-        try:
-            path.unlink()
-        except OSError:
-            continue
-        removed.append(str(path))
-    return removed

@@ -6,8 +6,11 @@ socket closes, and can ask this process to stop a cancellable stream.
 
 State changes are one read-modify-write under an exclusive file lock.
 `cancelled` is stored only when an authenticated stop is already recorded
-and the upstream attempt is classified `stopped`. A disconnect does not
-write `cancelled`. A cancel request records the flag. It does not by
+and the upstream attempt is classified `stopped`. That classification is
+the close call returning, or a worker exit before the upstream iterator
+was entered (`upstream_not_started`). A close that fails, or that is
+still waiting on an in-flight read, is `unconfirmed`. A disconnect does
+not write `cancelled`. A cancel request records the flag. It does not by
 itself claim that a live upstream has stopped.
 
 The owning request holds a live lock and refreshes the heartbeat while
@@ -155,6 +158,7 @@ def public(record: dict, *, now: float | None = None, stale_after: float = STALE
         "retry_eligible": state in _RETRYABLE,
         "terminal": state != "running",
         "reason": record.get("reason"),
+        "upstream_closure": record.get("upstream_closure"),
     }
 
 
@@ -353,12 +357,12 @@ def finish(generation_id: str, state: str, *, reason: str | None = None) -> dict
     return _mutate(generation_id, apply)
 
 
-def end_worker(generation_id: str, *, upstream: str) -> dict | None:
+def end_worker(generation_id: str, *, upstream: str, closure_reason: str | None = None) -> dict | None:
     """Publish the worker's end without treating a disconnect as cancellation.
 
     `cancelled` is written only when an authenticated stop is already recorded
     and this call proved the upstream attempt is stopped. Anything else stays
-    `interrupted_unknown`.
+    `interrupted_unknown`. ``closure_reason`` is evidence, not a second state.
     """
     if upstream not in {"stopped", "unconfirmed"}:
         raise GenerationDenied("upstream classification is not valid")
@@ -367,6 +371,8 @@ def end_worker(generation_id: str, *, upstream: str) -> dict | None:
         if record.get("state") != "running":
             return None
         record["upstream"] = upstream
+        if closure_reason:
+            record["upstream_closure"] = closure_reason
         record["updated_at"] = time.time()
         if record.get("cancel_requested") and upstream == "stopped":
             record["state"] = "cancelled"

@@ -88,7 +88,7 @@ def test_failed_temporary_closure_retries_only_for_the_recorded_owner(tmp_path, 
     assert again["state"] == "closed"
 
 
-def test_orphan_reconcile_deletes_only_an_old_temp_file(tmp_path, monkeypatch):
+def test_orphan_reconcile_does_not_delete_an_old_temp_file_from_age(tmp_path, monkeypatch):
     monkeypatch.setattr("orca.docs.store.DOCS_DIR", tmp_path)
     registry = tmp_path / "registry.json"
     registry.write_text("{}\n")
@@ -100,13 +100,21 @@ def test_orphan_reconcile_deletes_only_an_old_temp_file(tmp_path, monkeypatch):
     report = reconcile_orphan_uploads(now=time.time(), apply=True)
     assert registry.exists()
     assert fresh.exists()
-    assert not old.exists()
-    assert str(old) in report["removed"]
+    assert old.exists()
+    assert report["removed"] == []
+    assert report["deletion_performed"] is False
+    assert report["automatic_deletion"] == "refused"
     assert report["atomic"] is False
     assert report["exactly_once"] is False
+    by_path = {row["path"]: row for row in report["discrepancies"]}
+    assert by_path[str(fresh)]["class"] == "active_upload"
+    assert by_path[str(fresh)]["category"] == "uncertain"
+    assert by_path[str(old)]["class"] == "interrupted_upload"
+    assert by_path[str(old)]["category"] == "uncertain"
+    assert by_path[str(old)]["remediation"] == "refused"
     replay = reconcile_orphan_uploads(now=time.time(), apply=True)
     assert replay["removed"] == []
-    assert not old.exists()
+    assert old.exists()
 
 
 def test_worker_failure_is_not_rewritten_as_cancelled(tmp_path, monkeypatch):
@@ -237,7 +245,8 @@ def test_orphan_scan_reports_uncertain_stores_and_keeps_them(tmp_path, monkeypat
     assert "incomplete_deletion" in classes
     assert "uncertain_link" in classes
     assert "sess-doc" in dry["document_only_preserved"]
-    assert all(row["remediation"] != "eligible" or row["class"] == "abandoned_temp" for row in dry["discrepancies"])
+    assert all(row["remediation"] != "eligible" for row in dry["discrepancies"])
+    assert all(row.get("category") != "orphan_safe" for row in dry["discrepancies"])
     applied = reconcile_orphan_uploads(
         now=time.time(),
         apply=True,

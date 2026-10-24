@@ -87,7 +87,7 @@ def _lock(session_id: str):
 
 def _public(record: dict) -> dict:
     state = record.get("state")
-    return {
+    view = {
         "session_id": record.get("session_id"),
         "state": state,
         "ttl_seconds": record.get("ttl_seconds"),
@@ -97,6 +97,11 @@ def _public(record: dict) -> dict:
         "reason": record.get("reason"),
         "transitions": list(record.get("transitions") or []),
     }
+    if isinstance(record.get("remaining"), list):
+        view["remaining"] = list(record["remaining"])
+    if isinstance(record.get("intended_state"), str):
+        view["intended_state"] = record["intended_state"]
+    return view
 
 
 def read(session_id: str, user_id: str) -> dict | None:
@@ -192,19 +197,126 @@ def _transcript_gone(session_id: str) -> bool:
         return False
 
 
-def _delete_contents(session_id: str, user_id: str) -> None:
+def _delete_contents(session_id: str, user_id: str) -> dict:
     from orca.serve import generations
     from orca.serve.account_delete import _delete_session_data, _remove_session_title
     from orca.auth.store import release_session
     import sys
 
-    _delete_session_data(session_id)
+    result = _delete_session_data(session_id)
+    if not isinstance(result, dict):
+        result = {}
     generations.delete_for_session(session_id, user_id)
     _remove_session_title(session_id)
     live = getattr(sys.modules.get("orca.serve.api"), "_sessions", None)
     if isinstance(live, dict):
         live.pop(session_id, None)
     release_session(session_id, user_id)
+    try:
+        from orca.serve.authorized_product_index import revoke
+        revoke(user_id, session_id)
+        result["authorized_binding_revoke_attempted"] = True
+    except Exception:
+        result["authorized_binding_error"] = "revoke_failed"
+    return result
+
+
+def _remaining_evidence(session_id: str, user_id: str, delete_result: dict | None = None) -> list[dict]:
+    """Re-read the stores a closure has to clear.
+
+    A store that cannot be read is remaining evidence. Age is not used.
+    An authorized binding that still exists is remaining: revocation does
+    not prove the index bytes are gone. An 8-character keyword file with
+    bytes is remaining because its owner is not certain.
+    """
+    import orca.brain.memory as mem
+    import orca.config as orca_config
+
+    found: list[dict] = []
+    result = delete_result if isinstance(delete_result, dict) else {}
+    for key in result:
+        if isinstance(key, str) and key.endswith("_error"):
+            found.append({
+                "store": key[: -len("_error")],
+                "detail": "cleanup reported an error and this store was not proven empty",
+            })
+    if not _transcript_gone(session_id):
+        found.append({"store": "transcript", "detail": "the conversation transcript is still present or could not be read"})
+    versions = Path(mem.MEMORY_DIR) / "message_versions" / session_id
+    try:
+        if versions.exists():
+            leftovers = [path.name for path in versions.iterdir() if path.name.endswith(".json") or path.is_symlink()]
+            if leftovers:
+                found.append({"store": "message_versions", "detail": "message version files remain"})
+    except OSError:
+        found.append({"store": "message_versions", "detail": "message versions could not be read"})
+    try:
+        from orca.docs.store import DOCS_DIR, list_docs
+        docs = list_docs(session_id)
+        if docs:
+            found.append({"store": "documents", "detail": "the document registry still lists this session"})
+        fallback = Path(DOCS_DIR) / f"kw_{session_id[:8]}.jsonl"
+        if fallback.is_symlink() or (fallback.exists() and fallback.stat().st_size > 0):
+            found.append({
+                "store": "keyword_fallback",
+                "detail": "a keyword fallback still has bytes; an 8-character prefix does not prove which session owns it",
+            })
+    except Exception:
+        found.append({"store": "documents", "detail": "document stores could not be read"})
+    episodes = Path(mem.MEMORY_DIR) / "episodes" / f"{session_id}.json"
+    if episodes.exists():
+        found.append({"store": "episodic_memory", "detail": "the episodic memory file remains"})
+    generation_dir = Path(mem.MEMORY_DIR) / "generations"
+    if generation_dir.exists():
+        try:
+            for path in generation_dir.glob("*.json"):
+                if path.is_symlink():
+                    found.append({"store": "generations", "detail": "a generation symlink was not followed"})
+                    break
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError, json.JSONDecodeError):
+                    found.append({"store": "generations", "detail": "a generation record could not be read"})
+                    break
+                if isinstance(payload, dict) and payload.get("session_id") == session_id and payload.get("user_id") in (user_id, None):
+                    found.append({"store": "generations", "detail": "a generation record for this session remains"})
+                    break
+        except OSError:
+            found.append({"store": "generations", "detail": "generation records could not be read"})
+    import sys
+    live = getattr(sys.modules.get("orca.serve.api"), "_sessions", None)
+    if isinstance(live, dict) and session_id in live:
+        found.append({"store": "live_session", "detail": "this process still holds the session"})
+    titles = getattr(sys.modules.get("orca.serve.api"), "_session_titles", None)
+    if isinstance(titles, dict) and session_id in titles:
+        found.append({"store": "session_title", "detail": "the live session title remains"})
+    title_path = Path(orca_config.ORCA_HOME) / "session_titles.json"
+    try:
+        if title_path.is_file() and not title_path.is_symlink():
+            stored_titles = json.loads(title_path.read_text(encoding="utf-8"))
+            if isinstance(stored_titles, dict) and session_id in stored_titles:
+                found.append({"store": "session_title", "detail": "the stored session title remains"})
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        found.append({"store": "session_title", "detail": "session titles could not be read"})
+    try:
+        binding = Path(orca_config.ORCA_HOME) / "authorized_index" / user_id / "bindings" / f"{session_id}.json"
+        if binding.exists():
+            found.append({
+                "store": "authorized_binding",
+                "detail": "an authorized retrieval binding still exists; revocation does not prove the index bytes are gone",
+            })
+    except OSError:
+        found.append({"store": "authorized_binding", "detail": "the authorized binding could not be read"})
+    return found
+
+
+def _closure_view(record: dict, *, deleted: bool, retried: bool | None = None) -> dict:
+    view = _public(record)
+    view["deleted"] = deleted
+    view["remaining"] = list(record.get("remaining") or [])
+    if retried is not None:
+        view["retried"] = retried
+    return view
 
 
 def finish(session_id: str, user_id: str, final_state: str, *, now: float | None = None) -> dict:
@@ -228,30 +340,23 @@ def finish(session_id: str, user_id: str, final_state: str, *, now: float | None
         record["transitions"] = list(record.get("transitions") or []) + [{"state": "closing", "at": moment}]
         _write(path, record)
         try:
-            _delete_contents(session_id, user_id)
+            delete_result = _delete_contents(session_id, user_id)
         except Exception:
+            delete_result = {"deletion_error": "cleanup_raised"}
+        evidence = _remaining_evidence(session_id, user_id, delete_result if isinstance(delete_result, dict) else {})
+        if evidence:
             record["state"] = "failed"
             record["reason"] = "deletion_incomplete"
+            record["remaining"] = evidence
             record["transitions"].append({"state": "failed", "at": time.time()})
             _write(path, record)
-            view = _public(record)
-            view["deleted"] = False
-            return view
-        if not _transcript_gone(session_id):
-            record["state"] = "failed"
-            record["reason"] = "deletion_incomplete"
-            record["transitions"].append({"state": "failed", "at": time.time()})
-            _write(path, record)
-            view = _public(record)
-            view["deleted"] = False
-            return view
+            return _closure_view(record, deleted=False)
         record["state"] = final_state
         record["reason"] = final_state
+        record["remaining"] = []
         record["transitions"].append({"state": final_state, "at": time.time()})
         _write(path, record)
-        view = _public(record)
-        view["deleted"] = True
-        return view
+        return _closure_view(record, deleted=True)
 
 
 def retry_failed_closure(session_id: str, user_id: str) -> dict:
@@ -265,36 +370,29 @@ def retry_failed_closure(session_id: str, user_id: str) -> dict:
         if record is None or record.get("user_id") != user_id:
             raise TemporaryChatDenied("temporary chat was not found", "temporary_not_found")
         if record.get("state") != "failed":
-            view = _public(record)
-            view["retried"] = False
-            return view
+            return _closure_view(record, deleted=record.get("state") in {"closed", "expired"}, retried=False)
         intended = record.get("intended_state")
         if intended not in {"closed", "expired"}:
-            view = _public(record)
-            view["retried"] = False
-            view["deleted"] = False
+            record["remaining"] = list(record.get("remaining") or [])
+            view = _closure_view(record, deleted=False, retried=False)
             view["reason"] = "intended closure was not recorded"
             return view
         try:
-            _delete_contents(session_id, user_id)
+            delete_result = _delete_contents(session_id, user_id)
         except Exception:
-            view = _public(record)
-            view["retried"] = True
-            view["deleted"] = False
-            return view
-        if not _transcript_gone(session_id):
-            view = _public(record)
-            view["retried"] = True
-            view["deleted"] = False
-            return view
+            delete_result = {"deletion_error": "cleanup_raised"}
+        evidence = _remaining_evidence(session_id, user_id, delete_result if isinstance(delete_result, dict) else {})
+        if evidence:
+            record["remaining"] = evidence
+            record["reason"] = "deletion_incomplete"
+            _write(path, record)
+            return _closure_view(record, deleted=False, retried=True)
         record["state"] = intended
         record["reason"] = intended
+        record["remaining"] = []
         record["transitions"] = list(record.get("transitions") or []) + [{"state": intended, "at": time.time()}]
         _write(path, record)
-        view = _public(record)
-        view["retried"] = True
-        view["deleted"] = True
-        return view
+        return _closure_view(record, deleted=True, retried=True)
 
 
 def enforce(session_id: str, *, now: float | None = None) -> dict | None:
