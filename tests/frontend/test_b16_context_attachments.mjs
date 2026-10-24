@@ -108,7 +108,7 @@ test('removeAttachment() reads doc_id from chip.dataset.docId, never a second cl
   assert.ok(fnSrc.includes('chip.dataset.docId'), 'doc_id must be read from the chip itself, the single place uploadAttachment() writes it on success');
   assert.ok(fnSrc.includes('if (!docId)'), 'a chip with no doc_id yet (never finished uploading, or still uploading) takes the local-only branch');
   assert.ok(fnSrc.includes("method: 'DELETE'"), 'must call the real DELETE endpoint once a doc_id is known');
-  assert.ok(fnSrc.includes('if (r.ok) chip.remove();'), 'a failed delete must leave the chip in place, never silently claim removal');
+  assert.ok(fnSrc.includes('data.deleted === true'), 'INTEGRATION P0: an HTTP 200 does not by itself prove deletion -- only a literal deleted:true body field does; a failed or unconfirmed delete must leave the chip in place, never silently claim removal');
 });
 
 test('removeAttachment() marks a deferred removal request when the chip has no doc_id yet (upload still in-flight)', () => {
@@ -189,11 +189,12 @@ function buildSandbox({ fetchImpl }) {
 function loadFns(sandbox) {
   const escSrc = extractBalancedFunction(source, 'function esc(t) {').text;
   const renderSrc = extractBalancedFunction(source, 'function renderAttachChip(doc) {').text;
+  const setFailedSrc = extractBalancedFunction(source, 'function _setChipFailedState(chip, message) {').text;
   const deleteOrphanSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
   const uploadSrc = extractBalancedFunction(source, 'async function uploadAttachment(file) {').text;
   const removeSrc = extractBalancedFunction(source, 'async function removeAttachment(chip) {').text;
   vm.createContext(sandbox);
-  vm.runInContext(`${escSrc}\n${renderSrc}\n${deleteOrphanSrc}\n${uploadSrc}\n${removeSrc}`, sandbox);
+  vm.runInContext(`${escSrc}\n${renderSrc}\n${setFailedSrc}\n${deleteOrphanSrc}\n${uploadSrc}\n${removeSrc}`, sandbox);
 }
 
 test('renderAttachChip() builds a chip with filename, no state label when ready, and a working remove handler', () => {
@@ -443,11 +444,11 @@ test('openQuickSwitch() captures and checks account identity before acting on it
   assert.ok(fetchIdx < identityCheckIdx && identityCheckIdx < check401Idx, 'the identity check must run between the fetch resolving and the 401 branch, exactly where the confirmed defect was: a stale request\'s 401 reaching _handleSessionExpired() unconditionally');
 });
 
-test('_deleteOrphanedUpload() inspects the real DELETE response instead of assuming success', async () => {
+test('_deleteOrphanedUpload() inspects the real DELETE response body, not just HTTP status, before treating deletion as confirmed', async () => {
   const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
-  assert.ok(fnSrc.includes('if (r.ok) return;'), 'must check the real response ok flag before treating the deletion as confirmed');
-  assert.ok(fnSrc.includes("r.status === 404"), 'an already-gone document (404) is a legitimate non-failure outcome, not an error to report');
-  assert.ok(fnSrc.includes('console.warn'), 'a genuine failure (401/403/500/network) must be surfaced somehow -- there is no UI surface left, so silently discarding it would hide a real orphaned document from ever being found');
+  assert.ok(fnSrc.includes('data.deleted === true'), 'INTEGRATION P0: a 200 does not by itself prove deletion -- only a literal deleted:true body field does');
+  assert.ok(fnSrc.includes("r.status === 404") && fnSrc.includes('data.doc_id === docId'), 'a 404 is only treated as confirmed-absent when the body echoes the requested doc_id (the genuinely-not-found case) -- an ambiguous session-ownership 404 (no doc_id) must not be treated the same way');
+  assert.ok(fnSrc.includes('console.warn'), 'a genuine or ambiguous failure (401/403/500/network/ambiguous-404) must be surfaced somehow -- there is no UI surface left, so silently discarding it would hide a real orphaned document from ever being found');
 });
 
 test('_deleteOrphanedUpload(): a 200 response is treated as success, with no warning logged', async () => {
@@ -460,14 +461,35 @@ test('_deleteOrphanedUpload(): a 200 response is treated as success, with no war
   assert.equal(warnings.length, 0);
 });
 
-test('_deleteOrphanedUpload(): a 404 (already gone) is treated as a non-failure, with no warning logged', async () => {
+test('_deleteOrphanedUpload(): a 404 that echoes the requested doc_id (genuinely already-gone) is treated as a non-failure, with no warning logged', async () => {
   const warnings = [];
-  const sandbox = { fetch: async () => ({ ok: false, status: 404, json: async () => ({ error: 'not_found' }) }), console: { warn: (...a) => warnings.push(a) } };
+  const sandbox = { fetch: async () => ({ ok: false, status: 404, json: async () => ({ error: 'No such document in this conversation.', code: 'not_found', doc_id: 'doc-1' }) }), console: { warn: (...a) => warnings.push(a) } };
   const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
   vm.createContext(sandbox);
   vm.runInContext(fnSrc, sandbox);
   await sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1');
   assert.equal(warnings.length, 0);
+});
+
+test('_deleteOrphanedUpload(): an AMBIGUOUS 404 (session-ownership failing, no doc_id in the body) is logged, never silently treated as confirmed deletion', async () => {
+  const warnings = [];
+  // The real shape of a session-ownership 404 from _get_session: no doc_id field, an error_id instead.
+  const sandbox = { fetch: async () => ({ ok: false, status: 404, json: async () => ({ detail: 'session not found', error: 'session not found', code: 'not_found', error_id: 'abc123' }) }), console: { warn: (...a) => warnings.push(a) } };
+  const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+  vm.createContext(sandbox);
+  vm.runInContext(fnSrc, sandbox);
+  await sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1');
+  assert.equal(warnings.length, 1, 'this 404 does not prove the document is gone -- it only proves this request could not reach it, which must be logged as unconfirmed, not silently treated as success');
+});
+
+test('_deleteOrphanedUpload(): a 200 with deleted:false is treated as unconfirmed, never silently treated as success', async () => {
+  const warnings = [];
+  const sandbox = { fetch: async () => ({ ok: true, status: 200, json: async () => ({ deleted: false, doc_id: 'doc-1' }) }), console: { warn: (...a) => warnings.push(a) } };
+  const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+  vm.createContext(sandbox);
+  vm.runInContext(fnSrc, sandbox);
+  await sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1');
+  assert.equal(warnings.length, 1, 'an HTTP 200 with deleted:false is the confirmed real gap this P0 correction fixes -- must be logged, not silently assumed to mean success');
 });
 
 for (const status of [401, 403, 500]) {
@@ -490,4 +512,57 @@ test('_deleteOrphanedUpload(): a network failure (connection drop / cancellation
   vm.runInContext(fnSrc, sandbox);
   await assert.doesNotReject(() => sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1'));
   assert.equal(warnings.length, 1, 'a network-level failure must also be logged, not swallowed as if cleanup succeeded');
+});
+
+// --- INTEGRATION P0 (2026-10-24): removeAttachment() against the real
+// DELETE response shapes confirmed by reading delete_doc() directly on
+// the PR #90-98 integration candidate ---
+
+async function removeWithResponse(mockResponse) {
+  const { sandbox, container } = buildSandbox({ fetchImpl: async () => mockResponse });
+  sandbox.sessionId = 'sid-1';
+  loadFns(sandbox);
+  const chip = sandbox.renderAttachChip({ doc_id: 'doc-1', filename: 'a.txt', state: 'ready' });
+  await sandbox.removeAttachment(chip);
+  return { chip, container };
+}
+
+test('removeAttachment(): a 200 with deleted:true removes the chip (genuinely confirmed)', async () => {
+  const { chip } = await removeWithResponse({ ok: true, status: 200, json: async () => ({ deleted: true, doc_id: 'doc-1' }) });
+  assert.equal(chip._removed, true);
+});
+
+test('removeAttachment(): a 200 with deleted:false leaves the chip in place and shows an honest unconfirmed state', async () => {
+  const { chip } = await removeWithResponse({ ok: true, status: 200, json: async () => ({ deleted: false, doc_id: 'doc-1' }) });
+  assert.notEqual(chip._removed, true, 'the confirmed real gap this P0 correction fixes -- HTTP 200 alone must never be treated as deletion');
+  assert.equal(chip.classList.contains('failed'), true);
+});
+
+test('removeAttachment(): 403 retrieval_unauthorized is shown honestly, chip preserved, never treated as session-expiry', async () => {
+  const { sandbox } = buildSandbox({ fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({ error: 'Authorized document deletion was refused.', code: 'retrieval_unauthorized', reason: 'revoked' }) }) });
+  sandbox.sessionId = 'sid-1';
+  loadFns(sandbox);
+  const chip = sandbox.renderAttachChip({ doc_id: 'doc-1', filename: 'a.txt', state: 'ready' });
+  await sandbox.removeAttachment(chip);
+  assert.notEqual(chip._removed, true, 'a 403 refusal must never be treated as deletion');
+  assert.notEqual(sandbox._sessionExpiredCalled, true, '403 retrieval_unauthorized is explicitly not session expiry -- must not trigger a sign-out');
+  assert.equal(chip.classList.contains('failed'), true);
+  const stateEl = chip.querySelector('.chip-state');
+  assert.ok(stateEl && stateEl.textContent.includes('refused'));
+});
+
+test('removeAttachment(): a 404 echoing the requested doc_id (genuinely absent) removes the chip', async () => {
+  const { chip } = await removeWithResponse({ ok: false, status: 404, json: async () => ({ error: 'No such document in this conversation.', code: 'not_found', doc_id: 'doc-1' }) });
+  assert.equal(chip._removed, true, 'this 404 shape genuinely confirms the document is already gone from this conversation');
+});
+
+test('removeAttachment(): an AMBIGUOUS 404 (session-ownership failing, no doc_id) preserves the chip -- unconfirmed, not assumed deleted', async () => {
+  const { chip } = await removeWithResponse({ ok: false, status: 404, json: async () => ({ detail: 'session not found', error: 'session not found', code: 'not_found', error_id: 'xyz789' }) });
+  assert.notEqual(chip._removed, true, 'this 404 shape only means the request could not reach the session -- it says nothing about whether the document still exists, and must not be silently treated as deletion');
+});
+
+test('removeAttachment(): a 500 document_store_disagreement leaves the chip in place, shown as a real failure', async () => {
+  const { chip } = await removeWithResponse({ ok: false, status: 500, json: async () => ({ error: 'The authorized copy was removed, but the legacy copy could not be.', code: 'document_store_disagreement', doc_id: 'doc-1' }) });
+  assert.notEqual(chip._removed, true);
+  assert.equal(chip.classList.contains('failed'), true);
 });

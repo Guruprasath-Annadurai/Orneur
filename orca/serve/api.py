@@ -2034,111 +2034,124 @@ async def stream_chat(
         return f"data: {json.dumps({'type': 'generation', **generations.public(current)})}\n\n"
 
     async def _event_stream_inner() -> AsyncIterator[str]:
-        # Send session_id first
-        yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
-        yield _generation_sse()
-        identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
-        yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
-        if rag_result and rag_result.sources:
-            yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
+        try:
+            # Send session_id first
+            yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
+            yield _generation_sse()
+            identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
+            yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
+            if rag_result and rag_result.sources:
+                yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
 
-        full = ""
-        tool_names: list[str] = []
-        plan_action = "direct"
-        delivery = "upstream"
-
-        if use_kernel_direct and cognitive_result.pending_direct_generation:
-            # G-026: plan/entitle only; stream the authorized ModelGateway
-            # request so disconnect cancels real upstream generation.
-            plan_action = "cognitive_direct"
+            full = ""
+            tool_names: list[str] = []
+            plan_action = "direct"
             delivery = "upstream"
-            from orca.cognitive.wiring import get_shared_kernel
-            kernel = get_shared_kernel()
-            objective = cognitive_result.pending_direct_objective or req.message
-            tier = cognitive_result.resolved_tier or (req.model_variant or "core")
-            inference_request, allow_experimental, gateway = kernel.direct_inference_binding(
-                objective, tier, cognitive_result.trace_id
-            )
-            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
-            try:
-                async with contextlib.aclosing(
-                    gateway.stream(inference_request, allow_experimental=allow_experimental)
-                ) as achunks:
-                    async for piece in achunks:
-                        if piece.delta:
-                            full += piece.delta
-                            yield f"data: {json.dumps({'type': 'chunk', 'text': piece.delta})}\n\n"
-                        stop_reason = await _stop_if_needed()
-                        if stop_reason:
-                            audit.log(
-                                "stream_client_disconnected",
-                                user_id=user.id if user else None,
-                                detail={"chars_sent": len(full), "path": "kernel_direct", "reason": stop_reason, "generation_id": generation_id},
-                            )
-                            yield _generation_sse()
-                            return
-            except Exception as e:
-                generations.finish(generation_id, "failed", reason="stream_failed")
-                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
-                return
-        elif use_kernel_direct:
-            # Truth Fabric (or another path) already produced a complete
-            # answer that had to exist before citation verification.
-            # Deliver once and label replayed -- do not fake typing.
-            plan_action = "cognitive_direct"
-            delivery = "replayed"
-            full = cognitive_result.output or ""
-            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
-            yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
-        else:
-            try:
-                gen, trace = await asyncio.to_thread(
-                    lambda: sess.agent.stream(enriched, persona_system)
+
+            if use_kernel_direct and cognitive_result.pending_direct_generation:
+                # G-026: plan/entitle only; stream the authorized ModelGateway
+                # request so disconnect cancels real upstream generation.
+                plan_action = "cognitive_direct"
+                delivery = "upstream"
+                from orca.cognitive.wiring import get_shared_kernel
+                kernel = get_shared_kernel()
+                objective = cognitive_result.pending_direct_objective or req.message
+                tier = cognitive_result.resolved_tier or (req.model_variant or "core")
+                inference_request, allow_experimental, gateway = kernel.direct_inference_binding(
+                    objective, tier, cognitive_result.trace_id
                 )
-                # Send tool activity if any
-                if trace.plan_action == "tools":
-                    yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
-                # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
                 yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                try:
+                    async with contextlib.aclosing(
+                        gateway.stream(inference_request, allow_experimental=allow_experimental)
+                    ) as achunks:
+                        async for piece in achunks:
+                            if piece.delta:
+                                full += piece.delta
+                                yield f"data: {json.dumps({'type': 'chunk', 'text': piece.delta})}\n\n"
+                            stop_reason = await _stop_if_needed()
+                            if stop_reason:
+                                audit.log(
+                                    "stream_client_disconnected",
+                                    user_id=user.id if user else None,
+                                    detail={"chars_sent": len(full), "path": "kernel_direct", "reason": stop_reason, "generation_id": generation_id},
+                                )
+                                yield _generation_sse()
+                                return
+                except Exception as e:
+                    generations.finish(generation_id, "failed", reason="stream_failed")
+                    yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                    return
+            elif use_kernel_direct:
+                # Truth Fabric (or another path) already produced a complete
+                # answer that had to exist before citation verification.
+                # Deliver once and label replayed -- do not fake typing.
+                plan_action = "cognitive_direct"
+                delivery = "replayed"
+                full = cognitive_result.output or ""
+                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
+            else:
+                try:
+                    gen, trace = await asyncio.to_thread(
+                        lambda: sess.agent.stream(enriched, persona_system)
+                    )
+                    # Send tool activity if any
+                    if trace.plan_action == "tools":
+                        yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
+                    # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
+                    yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
 
-                # contextlib.aclosing, not a bare `async for`: breaking the
-                # loop below on client disconnect does not by itself call
-                # aclose() on an async generator (same rule as a sync
-                # generator abandoned mid-`for`) -- without this, a
-                # disconnected client's backend generator is only closed
-                # whenever Python eventually garbage-collects it, leaking
-                # the worker thread and the backend connection until then.
-                async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
-                    async for chunk in achunks:
-                        full += chunk
-                        yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                        stop_reason = await _stop_if_needed()
-                        if stop_reason:
-                            audit.log("stream_client_disconnected", user_id=user.id if user else None,
-                                      detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
-                            yield _generation_sse()
-                            return
+                    # contextlib.aclosing, not a bare `async for`: breaking the
+                    # loop below on client disconnect does not by itself call
+                    # aclose() on an async generator (same rule as a sync
+                    # generator abandoned mid-`for`) -- without this, a
+                    # disconnected client's backend generator is only closed
+                    # whenever Python eventually garbage-collects it, leaking
+                    # the worker thread and the backend connection until then.
+                    async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
+                        async for chunk in achunks:
+                            full += chunk
+                            yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                            stop_reason = await _stop_if_needed()
+                            if stop_reason:
+                                audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                          detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
+                                yield _generation_sse()
+                                return
 
-                tool_names = [tc.tool for tc in trace.tool_calls]
-                plan_action = trace.plan_action
+                    tool_names = [tc.tool for tc in trace.tool_calls]
+                    plan_action = trace.plan_action
 
-            except streaming.StreamingUnavailable as e:
-                generations.finish(generation_id, "failed", reason="server_busy")
-                err = public_error(e, route="/api/stream", user_id=user.id if user else None,
-                                   code="server_busy", message="The server is at capacity. Please retry shortly.")
-                yield f"data: {json.dumps(err.as_sse())}\n\n"
-                return
-            except Exception as e:
-                generations.finish(generation_id, "failed", reason="stream_failed")
-                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
-                return
+                except streaming.StreamingUnavailable as e:
+                    generations.finish(generation_id, "failed", reason="server_busy")
+                    err = public_error(e, route="/api/stream", user_id=user.id if user else None,
+                                       code="server_busy", message="The server is at capacity. Please retry shortly.")
+                    yield f"data: {json.dumps(err.as_sse())}\n\n"
+                    return
+                except Exception as e:
+                    generations.finish(generation_id, "failed", reason="stream_failed")
+                    yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                    return
 
-        # Persist
-        sess.memory.add_turn("user", req.message)
-        sess.memory.add_turn("assistant", full)
-        _retain_turn(sess, req.message, full)
-        if user:
-            increment_usage(user.id, "message")
+            # Persist
+            sess.memory.add_turn("user", req.message)
+            sess.memory.add_turn("assistant", full)
+            _retain_turn(sess, req.message, full)
+            if user:
+                increment_usage(user.id, "message")
+        finally:
+            # Backend correction: ensure durable terminal state on disconnect / cancellation
+            # even when aborted before the first generated chunk or during slow generation.
+            try:
+                curr = generations.read(generation_id)
+                if curr and curr.get("state") == "running":
+                    if generations.cancel_requested(generation_id):
+                        generations.finish(generation_id, "cancelled", reason="cancel_requested")
+                    elif await request.is_disconnected():
+                        generations.finish(generation_id, "cancelled", reason="client_disconnected")
+            except Exception:
+                pass
 
         # Knowledge graph extraction — fire-and-forget, NOT awaited. This is
         # an LLM call (real latency on CPU inference per this project's own
@@ -2147,11 +2160,15 @@ async def stream_chat(
         # too would be pure UX cost for a background-enrichment feature.
         # Failures here are silent by design (extract_and_add never raises)
         # and don't affect the conversation that already completed.
-        # Temporary chats do not extract a graph that would outlive the TTL.
+        # INTEGRATION (2026-10-24): reconciles two independent fixes --
+        # AUDIT-B81-A-P2-03 (this branch) tracks the task via
+        # _track_background_task so it holds a strong reference and can't
+        # be garbage-collected mid-run; B13 temporary-chat (PR #95-98)
+        # skips the extraction entirely for a temporary session, since
+        # that graph would outlive the chat's own TTL. Neither change
+        # supersedes the other -- combined, not chosen between.
         from orca.serve import temporary_chat
         if not temporary_chat.is_active(sess.id):
-            # AUDIT-B81-A-P2-03: tracked via _track_background_task so the task
-            # holds a strong reference and can't be garbage-collected mid-run.
             _track_background_task(
                 asyncio.to_thread(
                     sess.knowledge_graph.extract_and_add,

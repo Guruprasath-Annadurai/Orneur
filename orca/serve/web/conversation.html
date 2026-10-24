@@ -660,6 +660,15 @@ let isStreaming = false;
 // request no longer belongs to.
 let _streamEpoch = 0;
 let _activeStreamController = null;
+// INTEGRATION (2026-10-24, Phase B): real generation identity from the
+// backend's `generation` SSE event (PR #92-93). Reset at the start of
+// every sendMessage() call, before the fetch. `_activeGenerationId` is
+// null whenever no generation event has arrived yet for the in-flight
+// request (e.g. the frontier passthrough path, which the contract
+// states never emits one) -- stopGeneration() must never invent
+// server-confirmed cancellation in that case.
+let _activeGenerationId = null;
+let _activeGenerationCancellable = false;
 function _abandonActiveStream() {
   _streamEpoch++;
   if (_activeStreamController) {
@@ -1049,6 +1058,17 @@ function renderAttachChip(doc) {
   return chip;
 }
 
+function _setChipFailedState(chip, message) {
+  // Shared by uploadAttachment()'s failure branch and removeAttachment()'s
+  // refused/unconfirmed-deletion branches, so both render the same way.
+  chip.classList.add('failed');
+  chip.querySelector('.chip-state')?.remove();
+  const stateEl = document.createElement('span');
+  stateEl.className = 'chip-state';
+  stateEl.textContent = message;
+  chip.insertBefore(stateEl, chip.querySelector('.attach-chip-remove'));
+}
+
 async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {
   // AUDIT-B16-FIX, corrected by AUDIT-SEC-FINAL-B: cleanup for a document
   // that finished uploading server-side after the caller no longer wants
@@ -1083,12 +1103,22 @@ async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {
       method: 'DELETE',
       headers: tokenForAuth ? { Authorization: `Bearer ${tokenForAuth}` } : {},
     });
-    if (r.ok) return; // genuinely confirmed deleted by the server
-    if (r.status === 404) return; // already gone (e.g. a duplicate cleanup attempt) -- not a failure
-    // A real, unresolved failure (401/403/500/etc): the document may
-    // still exist server-side. console.warn is the most honest signal
-    // available at this layer -- there is no UI surface left for it.
-    console.warn('[B16] orphaned attachment cleanup failed; the document may still exist server-side', { docId, status: r.status });
+    const data = await r.json().catch(() => ({}));
+    // INTEGRATION P0 (2026-10-24): a 200 does not by itself prove
+    // deletion -- only a literal `deleted === true` does (see
+    // removeAttachment()'s identical, more detailed comment).
+    if (r.ok && data.deleted === true) return; // genuinely confirmed deleted by the server
+    if (r.status === 404 && data.code === 'not_found' && data.doc_id === docId) return; // genuinely confirmed already absent from this conversation
+    // Everything else is treated as unconfirmed, including: a 200 with
+    // deleted:false, an AMBIGUOUS 404 (session-ownership failing tells
+    // us nothing about whether the document still exists -- see
+    // removeAttachment()'s identical reasoning), 403
+    // retrieval_unauthorized, 500 document_store_disagreement, or any
+    // other failure. The document may still exist server-side.
+    // console.warn is the most honest signal available at this layer --
+    // there is no UI surface left for it (the chip is already gone by
+    // the time this runs).
+    console.warn('[B16] orphaned attachment cleanup unconfirmed; the document may still exist server-side', { docId, status: r.status, code: data.code });
   } catch (e) {
     console.warn('[B16] orphaned attachment cleanup failed (network error); the document may still exist server-side', { docId, error: String(e) });
   }
@@ -1151,12 +1181,7 @@ async function uploadAttachment(file) {
       return;
     }
     if (!r.ok) {
-      chip.classList.add('failed');
-      chip.querySelector('.chip-state')?.remove();
-      const stateEl = document.createElement('span');
-      stateEl.className = 'chip-state';
-      stateEl.textContent = data.error || 'Upload failed';
-      chip.insertBefore(stateEl, chip.querySelector('.attach-chip-remove'));
+      _setChipFailedState(chip, data.error || 'Upload failed');
       return;
     }
     // AUDIT-B16: uploading to a brand-new conversation (sessionId was
@@ -1219,8 +1244,56 @@ async function removeAttachment(chip) {
     // comment) -- /api/docs/{doc_id} also uses get_current_user_optional and
     // live-verified does not itself raise 401 for an invalid token.
     if (r.status === 401) { _handleSessionExpired(); return; }
-    if (r.ok) chip.remove();
-    // else: leave the chip in place -- a failed delete must not silently claim removal
+    const data = await r.json().catch(() => ({}));
+    // INTEGRATION P0 (2026-10-24): PR #90-98's authorized-index deletion
+    // can refuse with 403 retrieval_unauthorized (orca/serve/api.py
+    // delete_doc(), confirmed by reading the route body directly). This
+    // is not session expiry and not a generic failure -- the document
+    // may still exist. Never claim deletion; show an honest refused
+    // state instead of silently removing or silently doing nothing.
+    if (r.status === 403 && data.code === 'retrieval_unauthorized') {
+      _setChipFailedState(chip, data.error || 'Deletion was refused (authorized-index refusal).');
+      return;
+    }
+    if (r.status === 404) {
+      // AUDIT-P0-B16: a DELETE 404 on this backend is AMBIGUOUS, not a
+      // confirmed non-existence. delete_doc() returns 404 in two
+      // genuinely different cases with two different body shapes:
+      // (a) "No such document in this conversation" -- code:"not_found"
+      //     WITH doc_id echoing the one requested -- this document is
+      //     genuinely already absent from this conversation's list, so
+      //     it is safe to treat as effectively deleted.
+      // (b) the session-ownership check failing ("session not found")
+      //     via _get_session -- code:"not_found" but NO doc_id field,
+      //     an error_id instead -- this tells us nothing about whether
+      //     the document still exists; it only means THIS request
+      //     couldn't reach it. Treated as unconfirmed, not success.
+      if (data.code === 'not_found' && data.doc_id === docId) {
+        chip.remove(); // genuinely confirmed absent from this conversation
+      }
+      // else: ambiguous -- leave the chip exactly as it is, unconfirmed.
+      return;
+    }
+    if (r.ok) {
+      // INTEGRATION P0 (confirmed real gap via Phase A source reading):
+      // an HTTP 200 response does NOT by itself prove deletion on this
+      // backend. doc_store.delete_doc() can return False without
+      // raising (e.g. a document that was never admitted to the
+      // authorized index), and the route still answers
+      // 200 {"deleted": false, ...}. Only a literal `deleted === true`
+      // in the body is treated as confirmed; a 200 with `deleted: false`
+      // is deliberately NOT presented as success.
+      if (data.deleted === true) {
+        chip.remove();
+      } else {
+        _setChipFailedState(chip, 'The server did not confirm this document was deleted.');
+      }
+      return;
+    }
+    // Any other status (a 500 document_store_disagreement, a 403 without
+    // retrieval_unauthorized, etc.): a real, unresolved failure. Leave
+    // the chip in place -- never silently claim removal.
+    _setChipFailedState(chip, data.error || `Deletion failed (status ${r.status}).`);
   } catch (e) {
     // leave the chip in place -- a failed delete must not silently claim removal
   }
@@ -1552,20 +1625,73 @@ function updateSendEnabled() {
 // isn't guaranteed -- the resulting UI state reuses the existing, already
 // honest "interrupted" badge/note rather than inventing a confirmed-
 // "Stopped" label this interface cannot actually back up.
-function stopGeneration() {
+async function stopGeneration() {
   if (!isStreaming) return;
   const container = document.getElementById('reading-container');
   const lastAnswer = container.querySelector('.answer:last-child');
+  // Captured before _abandonActiveStream() touches anything, and before
+  // any further chunk/done event could arrive and replace '.thinking'
+  // with real content underneath us.
+  const wasThinkingOnly = lastAnswer ? !!lastAnswer.querySelector('.thinking') : false;
+  const genId = _activeGenerationId;
+  const cancellable = _activeGenerationCancellable;
+  const myToken = _authToken;
+  // Always end the local connection immediately -- the user asked to
+  // stop NOW, regardless of whether the server can confirm a true
+  // cancellation. This alone is never presented as a confirmed stop.
   _abandonActiveStream();
   if (!lastAnswer) return;
-  const thinking = lastAnswer.querySelector('.thinking');
-  if (thinking) {
-    // Nothing was ever shown for this turn -- no partial content to
-    // preserve, so the placeholder itself is removed rather than marked.
-    lastAnswer.remove();
-    appendUnavailableNote('Generation stopped on this device. The response may still be completing on the server; a confirmed stop is not available from this interface.');
-  } else {
-    markMessageInterrupted(lastAnswer, 'Generation stopped on this device -- connection ended before completion. A confirmed server-side stop is not available from this interface.');
+
+  function showLocal(reason) {
+    if (wasThinkingOnly) {
+      // Nothing was ever shown for this turn -- no partial content to
+      // preserve, so the placeholder itself is removed rather than marked.
+      lastAnswer.remove();
+      appendUnavailableNote(reason);
+    } else {
+      markMessageInterrupted(lastAnswer, reason);
+    }
+  }
+
+  if (!genId || !cancellable) {
+    // INTEGRATION (Phase B): no real generation id was ever issued for
+    // this request (the frontier passthrough path never emits one per
+    // ORNEUR_B10_GENERATION_HANDOFF.md), or the backend itself marked
+    // this run not cancellable (a replayed Truth Fabric answer). Do not
+    // invent server-confirmed cancellation for either case -- this is
+    // the exact, unchanged honest local-abort message from before real
+    // generation tracking existed.
+    showLocal('Generation stopped on this device. The response may still be completing on the server; a confirmed stop is not available from this interface.');
+    return;
+  }
+
+  // INTEGRATION (Phase B): a real, server-authenticated cancellation
+  // request. `cancel_accepted: true` only means the server set a flag --
+  // it is not proof the worker stopped (explicit in the contract and in
+  // the CTO directive). Confirm the real terminal state via GET before
+  // ever claiming a stop succeeded.
+  try {
+    await fetch(`/api/generations/${encodeURIComponent(genId)}/cancel`, { method: 'POST', headers: _authHeaders() });
+    if (myToken !== _authToken) return; // account changed while the cancel request was in flight
+    const confirmR = await fetch(`/api/generations/${encodeURIComponent(genId)}`, { headers: _authHeaders() });
+    if (myToken !== _authToken) return;
+    const confirmed = confirmR.ok ? await confirmR.json().catch(() => null) : null;
+    const finalState = confirmed ? confirmed.state : null;
+    if (finalState === 'cancelled') {
+      showLocal('Generation stopped. The server confirmed cancellation.');
+    } else if (finalState === 'completed') {
+      showLocal('The response finished generating on the server before the stop request took effect.');
+    } else if (finalState === 'failed') {
+      showLocal('Generation stopped (the run itself failed on the server).');
+    } else {
+      // 'running' (heartbeat still current), 'interrupted_unknown' (a
+      // derived observation, not a stored state -- never presented as
+      // a confirmed stop), or the GET itself failed.
+      showLocal('Stop requested. The server has not yet confirmed the generation stopped; it may complete independently of this device.');
+    }
+  } catch (e) {
+    if (myToken !== _authToken) return;
+    showLocal('Generation stopped on this device. The stop request to the server could not be confirmed (network error).');
   }
 }
 
@@ -2115,6 +2241,22 @@ async function sendMessage() {
   _activeStreamController = myController;
 
   isStreaming = true;
+  // INTEGRATION (Phase B): reset generation tracking for THIS attempt.
+  // Every call to sendMessage() -- including a user-initiated Retry,
+  // which re-populates the input and calls this function fresh per
+  // B12's own established "a genuinely new request, never attempting to
+  // reconcile the old request's fate" -- is a new generation with its
+  // own id and its own Idempotency-Key. The key's job is narrower than
+  // "is this a retry": it protects against a lower-level duplicate
+  // delivery of this SAME specific attempt (a double-click before
+  // updateSendEnabled() disables Send, or a network-level resend of the
+  // identical POST), never across distinct user-initiated attempts --
+  // reusing a key across attempts would incorrectly 409
+  // generation_not_reusable once the first attempt reaches a terminal
+  // state, per ORNEUR_B10_GENERATION_HANDOFF.md.
+  _activeGenerationId = null;
+  _activeGenerationCancellable = false;
+  const myIdempotencyKey = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
   updateSendEnabled();
   const thinkEl = appendThinking();
   // AUDIT-B81-P1-01: terminalState is the ONLY source of truth for
@@ -2129,7 +2271,7 @@ async function sendMessage() {
   try {
     const resp = await fetch('/api/stream', {
       method: 'POST',
-      headers: _authHeaders(),
+      headers: { ..._authHeaders(), 'Idempotency-Key': myIdempotencyKey },
       body: JSON.stringify({ message: text, session_id: sessionId, model_variant: selectedModelVariant }),
       signal: myController.signal,
     });
@@ -2164,6 +2306,13 @@ async function sendMessage() {
         if (ev.type === 'session') {
           sessionId = ev.session_id;
           loadSessions();
+        } else if (ev.type === 'generation') {
+          // INTEGRATION (Phase B): real generation identity (PR #92-93).
+          // cancellable is per-request -- false for a replayed Truth
+          // Fabric answer, per the contract's own explicit instruction
+          // not to present a stop control that cannot stop generation.
+          _activeGenerationId = ev.generation_id || null;
+          _activeGenerationCancellable = !!ev.cancellable;
         } else if (ev.type === 'thinking') {
           const t = thinkEl.querySelector('.thinking-text');
           if (t) t.textContent = ev.text;
@@ -2199,7 +2348,17 @@ async function sendMessage() {
           } else {
             thinkEl.remove();
           }
-          appendUnavailableNote(ev.message || 'An error occurred while generating a response.', { retryText: text });
+          // CONFIRMED BUG FIX (Phase B, found via live end-to-end
+          // testing against the integration candidate, not a reported
+          // issue): PublicError.as_sse() (orca/serve/errors.py) always
+          // emits the error text under the key `text`, never `message`.
+          // This branch read `ev.message` -- always undefined -- so
+          // every real backend error (confirmed live: a real
+          // model_access_denied refusal) silently fell through to the
+          // generic fallback string below, discarding the server's own
+          // specific, often actionable message. Pre-dates this
+          // integration work; not caused by it.
+          appendUnavailableNote(ev.text || 'An error occurred while generating a response.', { retryText: text });
         }
       } catch (e) {
         logMalformed(e);
