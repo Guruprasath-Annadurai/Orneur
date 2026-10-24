@@ -1802,6 +1802,11 @@ async def stream_chat(
         )
     message_id = str(uuid.uuid4())
     idempotency_key = request.headers.get("idempotency-key") or None
+    request_hash = None
+    if idempotency_key:
+        request_hash = generations.fingerprint(
+            message=req.message, session_id=sess.id, model_variant=req.model_variant,
+        )
     cancellable_generation = not (use_kernel_direct and not cognitive_result.pending_direct_generation)
     try:
         generation, generation_created = generations.begin(
@@ -1810,6 +1815,12 @@ async def stream_chat(
             delivery="upstream" if cancellable_generation else "replayed",
             cancellable=cancellable_generation,
             idempotency_key=idempotency_key,
+            request_hash=request_hash,
+        )
+    except generations.GenerationMismatch as exc:
+        return JSONResponse(
+            {"error": exc.reason, "code": "idempotency_mismatch", "generation_id": exc.generation_id},
+            status_code=422,
         )
     except generations.GenerationDenied as exc:
         return JSONResponse({"error": exc.reason, "code": "generation_rejected"}, status_code=400)
@@ -1832,7 +1843,7 @@ async def stream_chat(
         current = generations.read(generation_id) or generation
         return f"data: {json.dumps({'type': 'generation', **generations.public(current)})}\n\n"
 
-    async def _event_stream() -> AsyncIterator[str]:
+    async def _event_stream_inner() -> AsyncIterator[str]:
         # Send session_id first
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
         yield _generation_sse()
@@ -1984,7 +1995,7 @@ async def stream_chat(
         sess.explain_store.add(explain_record)
 
         finished = generations.finish(generation_id, "completed")
-        if finished is not None and finished.get("state") != "completed":
+        if finished is None or finished.get("state") != "completed":
             yield _generation_sse()
             return
         done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'generation_id': generation_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
@@ -1992,6 +2003,14 @@ async def stream_chat(
         if _auth_meta is not None:
             done_event['authorized_retrieval'] = _auth_meta
         yield f"data: {json.dumps(done_event)}\n\n"
+
+    async def _event_stream() -> AsyncIterator[str]:
+        heartbeat = generations.start_heartbeat(generation_id)
+        try:
+            async for piece in _event_stream_inner():
+                yield piece
+        finally:
+            heartbeat.stop()
 
     return StreamingResponse(
         _event_stream(),
