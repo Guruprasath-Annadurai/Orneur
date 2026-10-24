@@ -95,6 +95,8 @@ def _write_once(journal: Journal, mission_id: str, owner: str, effect_key: str, 
         elif crash_after == f"revoke_after_bytes:{effect_key}":
             journal.revoke(mission_id, owner)
         journal.note_write(mission_id, owner, effect_key)
+    elif effect["status"] == "started":
+        journal.note_write(mission_id, owner, effect_key)
     if crash_after == f"after_bytes:{effect_key}":
         journal.transition(mission_id, owner, "interrupted")
         raise JourneyInterrupted()
@@ -176,6 +178,17 @@ def run_business_report(
         raise JourneyRefused("timed_out", _report(mission_id, owner_user_id, journal, state="failed", total=None, verified=False, code="timed_out", integrity="timed_out"))
 
     if mission["state"] != "verifying":
+        try:
+            journal.bind_input(mission_id, owner_user_id, canonical_records(records))
+        except MissionError as exc:
+            if exc.code == "input_revision_mismatch":
+                current = journal.get(mission_id, owner_user_id)
+                return _report(
+                    mission_id, owner_user_id, journal,
+                    state=current["state"], total=None, verified=False,
+                    code="input_revision_mismatch", integrity="input_revision_mismatch",
+                )
+            raise
         select_pending = any(step["id"] == "select_tool" and step["status"] == "pending" for step in mission["steps"])
         decision = route(task_type="structured_arithmetic", requested_family=requested_family, budget_usd=budget_usd, capability_cost_usd=0)
         if decision["decision"] != "selected":
@@ -200,6 +213,7 @@ def run_business_report(
             "calculator": decision["tool"],
             "native_model_used": None,
             "verified": False,
+            "effect_key": "write_report",
         }
         payload = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
         try:
@@ -237,11 +251,17 @@ def run_business_report(
         if fresh["state"] == "verifying":
             journal.transition(mission_id, owner_user_id, "cancelled" if fresh["cancel_requested"] else "revoked")
         return _report(mission_id, owner_user_id, journal, state=journal.get(mission_id, owner_user_id)["state"], total=recomputed, verified=False, code="cancelled" if fresh["cancel_requested"] else "revoked", integrity="cancelled_during_verification")
+    if fresh.get("input_sha256") != _sha(canonical_records(records)):
+        return _report(
+            mission_id, owner_user_id, journal,
+            state=fresh["state"], total=None, verified=False, code="input_revision_mismatch",
+            writes=effect.get("writes", 0), route=decision, integrity="input_revision_mismatch",
+        )
     if not intact:
         journal.transition(mission_id, owner_user_id, "failed")
         return _report(mission_id, owner_user_id, journal, state="failed", total=recomputed, verified=False, code="verifier_rejected", writes=effect.get("writes", 0), route=decision, integrity="verifier_rejected")
     journal.mark_step(mission_id, owner_user_id, "verify", "completed")
-    journal.seal_verified(mission_id, owner_user_id, input_bytes=canonical_records(records), total_cents=recomputed)
+    journal.seal_verified(mission_id, owner_user_id)
     return _report(
         mission_id, owner_user_id, journal,
         state="completed_verified", total=recomputed, verified=True, code="ok",

@@ -40,6 +40,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The frozen-path governance test diffs against cd6af2a. A
+          # depth-1 checkout hides that commit and must not skip the check.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -2,7 +2,9 @@
 
 Writes use O_NOFOLLOW, O_EXCL, and rename on a directory file descriptor.
 A single-host flock serializes one machine. It is not multi-host durability.
-``completed_verified`` is not a generic transition.
+``completed_verified`` is not a generic transition. The actor id is a
+caller label: this process does not authenticate it, and the journal
+directory must not be shared with untrusted users.
 """
 from __future__ import annotations
 
@@ -13,13 +15,28 @@ import json
 import os
 import re
 import secrets
+import stat
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = "orneur-local-mission/1"
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-_FIXED_DIRS = frozenset({"missions", "effects", "artifacts", "memory"})
+_FIXED_DIRS = frozenset({"missions", "effects", "artifacts", "memory", "inputs"})
+VERIFIER_ID = "orneur-deterministic-recompute/1"
+_REPORT_EFFECT = "write_report"
+_ARTIFACT_KEYS = frozenset({
+    "calculator",
+    "effect_key",
+    "line_count",
+    "mission_id",
+    "native_model_used",
+    "owner_user_id",
+    "schema",
+    "total_cents",
+    "verified",
+})
+_BINDABLE = frozenset({"draft", "running", "interrupted"})
 _TERMINAL = frozenset({"completed_verified", "failed", "cancelled", "partial"})
 _TRANSITIONS = {
     "draft": {"running", "cancelled"},
@@ -62,6 +79,19 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _canonical(value) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _effect_snapshot(effect: dict) -> dict:
+    return {
+        "payload_sha256": effect.get("payload_sha256"),
+        "status": effect.get("status"),
+        "external_outcome": effect.get("external_outcome"),
+        "external_bytes_present": bool(effect.get("external_bytes_present")),
+    }
+
+
 def _directory_name(part: str) -> bool:
     return part in _FIXED_DIRS or bool(_ID.fullmatch(part))
 
@@ -75,6 +105,13 @@ def _file_name(part: str) -> bool:
 
 
 class Journal:
+    """Single-host journal. Actor ids are not authenticated.
+
+    ``share_with`` stores a same-owner label. It does not grant another
+    user access. ``seal_verified`` recomputes the bound input itself and
+    rejects caller-supplied totals or input bytes.
+    """
+
     def __init__(self, root: Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -89,15 +126,49 @@ class Journal:
         else:
             os.close(probe)
 
+    def _check_lock(self, dirfd: int, fd: int) -> None:
+        info = os.fstat(fd)
+        parent = os.fstat(dirfd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_dev != parent.st_dev:
+            raise MissionError("lock_refused")
+        try:
+            named = os.stat(".lock", dir_fd=dirfd, follow_symlinks=False)
+        except OSError as exc:
+            raise MissionError("lock_refused") from exc
+        if not stat.S_ISREG(named.st_mode) or named.st_ino != info.st_ino or named.st_dev != info.st_dev:
+            raise MissionError("lock_refused")
+
     @contextmanager
     def _exclusive(self):
-        handle = open(self._lock_path, "a+")
+        """Single-host flock. The lock file is opened from the root directory descriptor.
+
+        A symlink, hard link, or cross-device replacement is refused. This is
+        not multi-host durability.
+        """
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            yield
+            dirfd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        except OSError as exc:
+            raise MissionError("symlink_refused") from exc
+        fd = None
+        try:
+            try:
+                fd = os.open(".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=dirfd)
+            except OSError as exc:
+                if exc.errno == errno.ELOOP:
+                    raise MissionError("symlink_refused") from exc
+                raise MissionError("lock_refused") from exc
+            self._check_lock(dirfd, fd)
+            os.fchmod(fd, 0o600)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            try:
+                self._check_lock(dirfd, fd)
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            handle.close()
+            if fd is not None:
+                os.close(fd)
+            os.close(dirfd)
 
     def _opendir(self, parts: tuple[str, ...]) -> int:
         try:
@@ -242,6 +313,9 @@ class Journal:
             "actor_authenticated": False,
             "durability": "single_host_flock",
             "verification": None,
+            "objective_sha256": _sha(_canonical(objective)),
+            "input_sha256": None,
+            "admitted_effects": {},
             "created_at": _now(),
             "updated_at": _now(),
         }
@@ -273,37 +347,135 @@ class Journal:
             self._atomic(self._mission_rel(mission_id), record)
             return record
 
-    def seal_verified(self, mission_id: str, actor_user_id: str, *, input_bytes: bytes, total_cents: int) -> dict:
-        """Bind the on-disk artifact to this input. Caller flags are ignored."""
-        if type(total_cents) is not int or total_cents < 0:
+    def _remember_effect(self, record: dict, effect: dict) -> None:
+        admitted = dict(record.get("admitted_effects") or {})
+        admitted[effect["effect_key"]] = _effect_snapshot(effect)
+        record["admitted_effects"] = admitted
+        record["updated_at"] = _now()
+        self._atomic(self._mission_rel(record["mission_id"]), record)
+
+    def _heal_committed(self, record: dict, effect: dict) -> None:
+        prior = (record.get("admitted_effects") or {}).get(effect.get("effect_key"))
+        if not isinstance(prior, dict):
+            return
+        if prior.get("payload_sha256") != effect.get("payload_sha256"):
+            raise MissionError("effect_conflict")
+        if prior != _effect_snapshot(effect):
+            self._remember_effect(record, effect)
+
+    def bind_input(self, mission_id: str, actor_user_id: str, data: bytes) -> dict:
+        """Store the mission input once, before an effect is admitted."""
+        if isinstance(data, str) or not isinstance(data, (bytes, bytearray)) or len(data) == 0:
+            raise MissionError("missing_data")
+        data = bytes(data)
+        if len(data) > 1_000_000:
+            raise MissionError("input_too_large")
+        digest = _sha(data)
+        mission_id = _check_id(mission_id, "mission_id")
+        relative = Path("inputs") / f"{mission_id}.json"
+        with self._exclusive():
+            record = self._get_unlocked(mission_id, actor_user_id)
+            current = record.get("input_sha256")
+            if current == digest:
+                return record
+            if current is not None or record.get("state") not in _BINDABLE or record.get("admitted_effects"):
+                raise MissionError("input_revision_mismatch")
+            self._write_bytes(relative, data)
+            if _sha(self._read_bytes(relative)) != digest:
+                raise MissionError("input_revision_mismatch")
+            record["input_sha256"] = digest
+            record["updated_at"] = _now()
+            self._atomic(self._mission_rel(mission_id), record)
+            return record
+
+    def seal_verified(self, mission_id: str, actor_user_id: str, **rejected) -> dict:
+        """Recompute the stored input and seal only that result.
+
+        Caller totals, input bytes, and verifier names are rejected. A
+        planted effect file is not an admission. Cancellation, revocation,
+        and an unconfirmed external outcome stay unverified.
+        """
+        if rejected:
             raise MissionError("verifier_rejected")
         mission_id = _check_id(mission_id, "mission_id")
-        relative = Path("artifacts") / mission_id / "report.json"
+        artifact_rel = Path("artifacts") / mission_id / "report.json"
+        input_rel = Path("inputs") / f"{mission_id}.json"
         with self._exclusive():
             record = self._get_unlocked(mission_id, actor_user_id)
             refusal = self._refusal_unlocked(record)
             if refusal:
                 raise MissionError(refusal)
-            if record["state"] != "verifying":
+            if record.get("state") != "verifying":
                 raise MissionError("verification_required")
+            objective = record.get("objective")
+            if not isinstance(objective, dict) or record.get("objective_sha256") != _sha(_canonical(objective)):
+                raise MissionError("objective_mismatch")
+            digest = record.get("input_sha256")
+            if not isinstance(digest, str):
+                raise MissionError("missing_input")
             try:
-                artifact = self._read_bytes(relative)
+                stored_input = self._read_bytes(input_rel)
+            except FileNotFoundError:
+                raise MissionError("missing_input") from None
+            if _sha(stored_input) != digest:
+                raise MissionError("input_revision_mismatch")
+            try:
+                parsed_input = json.loads(stored_input)
+            except json.JSONDecodeError:
+                raise MissionError("verifier_rejected") from None
+            from orca.core_runtime.report import recompute
+
+            try:
+                total = recompute(parsed_input)
+            except MissionError as exc:
+                raise MissionError("verifier_rejected") from exc
+            admission = (record.get("admitted_effects") or {}).get(_REPORT_EFFECT)
+            if not isinstance(admission, dict):
+                raise MissionError("effect_not_authorized")
+            if admission.get("status") != "committed" or admission.get("external_outcome") != "local_receipt_only":
+                if admission.get("external_outcome") != "local_receipt_only":
+                    raise MissionError("outcome_unconfirmed")
+                raise MissionError("effect_not_authorized")
+            try:
+                effect = self._load(self._effect_rel(mission_id, _REPORT_EFFECT))
+            except FileNotFoundError:
+                raise MissionError("effect_not_authorized") from None
+            if effect.get("mission_id") != mission_id or effect.get("effect_key") != _REPORT_EFFECT:
+                raise MissionError("effect_not_authorized")
+            if effect.get("status") != "committed" or effect.get("external_outcome") != "local_receipt_only":
+                raise MissionError("outcome_unconfirmed")
+            if effect.get("payload_sha256") != admission.get("payload_sha256"):
+                raise MissionError("effect_not_authorized")
+            try:
+                artifact = self._read_bytes(artifact_rel)
             except FileNotFoundError:
                 raise MissionError("verifier_rejected") from None
+            if _sha(artifact) != effect.get("payload_sha256"):
+                raise MissionError("verifier_rejected")
             try:
                 parsed = json.loads(artifact)
             except json.JSONDecodeError:
                 raise MissionError("verifier_rejected") from None
-            if parsed.get("mission_id") != mission_id or parsed.get("total_cents") != total_cents:
+            if set(parsed) != _ARTIFACT_KEYS:
                 raise MissionError("verifier_rejected")
-            if parsed.get("verified") is not False:
+            if parsed["schema"] != "orneur-business-report/1" or parsed["mission_id"] != mission_id:
+                raise MissionError("verifier_rejected")
+            if parsed["owner_user_id"] != record.get("owner_user_id") or parsed["effect_key"] != _REPORT_EFFECT:
+                raise MissionError("verifier_rejected")
+            if parsed["calculator"] != "deterministic.calculator" or parsed["native_model_used"] is not None:
+                raise MissionError("verifier_rejected")
+            if parsed["verified"] is not False or type(parsed["total_cents"]) is not int or parsed["total_cents"] != total:
+                raise MissionError("verifier_rejected")
+            if type(parsed["line_count"]) is not int or parsed["line_count"] != len(parsed_input):
                 raise MissionError("verifier_rejected")
             record["state"] = "completed_verified"
             record["verification"] = {
-                "verifier": "deterministic.recompute",
-                "input_sha256": _sha(input_bytes),
+                "verifier": VERIFIER_ID,
+                "input_sha256": digest,
                 "artifact_sha256": _sha(artifact),
-                "total_cents": total_cents,
+                "total_cents": total,
+                "line_count": len(parsed_input),
+                "effect_key": _REPORT_EFFECT,
             }
             record["updated_at"] = _now()
             self._atomic(self._mission_rel(mission_id), record)
@@ -359,9 +531,18 @@ class Journal:
             if existing is not None:
                 if existing["payload_sha256"] != digest:
                     raise MissionError("effect_conflict")
-                existing["replay"] = True
                 if refusal and existing.get("status") != "committed":
                     raise MissionError(refusal)
+                prior = (record.get("admitted_effects") or {}).get(effect_key)
+                snapshot = _effect_snapshot(existing)
+                if prior != snapshot:
+                    if not isinstance(prior, dict):
+                        if existing.get("status") in {"committed", "not_committed"}:
+                            raise MissionError("effect_not_authorized")
+                    elif prior.get("payload_sha256") != snapshot["payload_sha256"]:
+                        raise MissionError("effect_conflict")
+                    self._remember_effect(record, existing)
+                existing["replay"] = True
                 return existing
             if refusal:
                 raise MissionError("effect_refused")
@@ -376,6 +557,7 @@ class Journal:
                 "external_outcome": "unconfirmed",
             }
             self._atomic(relative, effect)
+            self._remember_effect(record, effect)
             effect["replay"] = False
             return effect
 
@@ -385,8 +567,12 @@ class Journal:
             record = self._get_unlocked(mission_id, actor_user_id)
             effect = self._load(relative)
             if effect["status"] == "committed":
+                self._heal_committed(record, effect)
                 effect["replay"] = True
                 return effect
+            prior = (record.get("admitted_effects") or {}).get(effect["effect_key"])
+            if not isinstance(prior, dict) or prior.get("payload_sha256") != effect.get("payload_sha256"):
+                raise MissionError("effect_not_authorized")
             refusal = self._refusal_unlocked(record)
             effect["caller_asserted_write"] = True
             effect["external_bytes_present"] = True
@@ -396,10 +582,12 @@ class Journal:
                 effect["reason"] = refusal
                 effect["external_outcome"] = "unconfirmed"
                 self._atomic(relative, effect)
+                self._remember_effect(record, effect)
                 raise MissionError(refusal)
             effect["external_outcome"] = "local_file_only"
             effect["status"] = "bytes_written"
             self._atomic(relative, effect)
+            self._remember_effect(record, effect)
             effect["replay"] = False
             return effect
 
@@ -409,20 +597,26 @@ class Journal:
             record = self._get_unlocked(mission_id, actor_user_id)
             effect = self._load(relative)
             if effect["status"] == "committed":
+                self._heal_committed(record, effect)
                 effect["replay"] = True
                 return effect
+            prior = (record.get("admitted_effects") or {}).get(effect["effect_key"])
+            if not isinstance(prior, dict) or prior.get("payload_sha256") != effect.get("payload_sha256"):
+                raise MissionError("effect_not_authorized")
             refusal = self._refusal_unlocked(record)
             if refusal:
                 effect["status"] = "not_committed"
                 effect["reason"] = refusal
                 effect["external_outcome"] = "unconfirmed"
                 self._atomic(relative, effect)
+                self._remember_effect(record, effect)
                 raise MissionError(refusal)
-            if effect["status"] not in {"started", "bytes_written"}:
+            if effect["status"] != "bytes_written":
                 raise MissionError("effect_not_ready")
             effect["status"] = "committed"
             effect["external_outcome"] = "local_receipt_only"
             self._atomic(relative, effect)
+            self._remember_effect(record, effect)
             effect["replay"] = False
             return effect
 
@@ -443,6 +637,7 @@ class Journal:
             return self._read_bytes(relative)
 
     def put_memory(self, *, memory_id: str, owner_user_id: str, body: dict, share_with: list[str]) -> dict:
+        """Store owner memory. ``share_with`` is a same-owner label, not a grant."""
         memory_id = _check_id(memory_id, "memory")
         owner_user_id = _check_id(owner_user_id, "owner")
         record = {
@@ -469,10 +664,8 @@ class Journal:
                 record = self._load(relative)
             except FileNotFoundError:
                 raise MissionHidden() from None
-            if actor_user_id == record["owner_user_id"]:
-                return record
-            if mission_id and mission_id in record["share_with"]:
-                mission = self._get_unlocked(mission_id, actor_user_id)
-                if mission["owner_user_id"] == actor_user_id == record["owner_user_id"]:
-                    return record
-            raise MissionHidden()
+            if mission_id is not None:
+                _check_id(mission_id, "mission_id")
+            if actor_user_id != record["owner_user_id"]:
+                raise MissionHidden()
+            return record

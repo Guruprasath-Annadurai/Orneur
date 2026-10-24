@@ -1,9 +1,10 @@
 """Read-only retrieval policy and page extraction.
 
 Name resolution is pinned to one address and checked again before connect.
-A change, a non-public answer, or a proxy is not followed. A permitted GET
-is not a cloud-browser service. Page text is untrusted data and cannot
-grant an action.
+A change, a non-public answer, or a proxy is not followed. Cloud metadata
+addresses and metadata hostnames are refused even when an allowlist names
+them. An allowlist may name only loopback. A permitted GET is not a
+cloud-browser service. Page text is untrusted data and cannot grant an action.
 """
 from __future__ import annotations
 
@@ -15,7 +16,16 @@ import ssl
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
-_BLOCKED_HOSTS = frozenset({"localhost", "metadata", "metadata.google.internal"})
+_BLOCKED_HOSTS = frozenset({"localhost"})
+_METADATA_HOSTS = frozenset({
+    "metadata",
+    "metadata.google.internal",
+    "metadata.goog",
+    "instance-data",
+    "instance-data.ec2.internal",
+})
+_LINK_LOCAL = ipaddress.ip_network("169.254.0.0/16")
+_EC2_IPV6 = ipaddress.ip_address("fd00:ec2::254")
 _CHROMIUM_BINARIES = ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable")
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 _MAX_URL = 2048
@@ -63,13 +73,36 @@ def _ip(text: str):
         return None
 
 
-def _blocked_ip(text: str) -> bool:
+def _unwrap(text: str):
     address = _ip(text)
     if address is None:
-        return False
+        return None
     mapped = getattr(address, "ipv4_mapped", None)
-    if mapped is not None:
-        address = mapped
+    return mapped if mapped is not None else address
+
+
+def _metadata_ip(text: str) -> bool:
+    address = _unwrap(text)
+    if address is None:
+        return False
+    if address.version == 4 and address in _LINK_LOCAL:
+        return True
+    return address == _EC2_IPV6
+
+
+def _loopback_ip(text: str) -> bool:
+    address = _unwrap(text)
+    return bool(address is not None and address.is_loopback)
+
+
+def _permit_refused(allow_hosts: frozenset[str]) -> bool:
+    return any(not _loopback_ip(str(item)) for item in allow_hosts)
+
+
+def _blocked_ip(text: str) -> bool:
+    address = _unwrap(text)
+    if address is None:
+        return False
     site_local = getattr(address, "is_site_local", False)
     return bool(
         address.is_private
@@ -109,9 +142,10 @@ def _pin(addresses: frozenset[str]) -> str:
 def classify_url(url: str, *, allow_hosts: frozenset[str] = frozenset()) -> dict:
     """Return whether a read-only GET of ``url`` is permitted.
 
-    ``allow_hosts`` is an explicit operator permit. It is empty by default,
-    so loopback and private addresses are refused. The returned addresses
-    are the set that a later fetch must still observe before it connects.
+    ``allow_hosts`` may contain only loopback addresses. It does not permit
+    metadata, link-local, or other private targets. An empty allowlist
+    refuses loopback. The returned addresses are the set a later fetch
+    must still observe before it connects.
     """
     if not isinstance(url, str) or len(url) > _MAX_URL:
         return {"allowed": False, "code": "url_refused", "host": "", "addresses": []}
@@ -124,8 +158,14 @@ def classify_url(url: str, *, allow_hosts: frozenset[str] = frozenset()) -> dict
         return {"allowed": False, "code": "credentials_refused", "host": host, "addresses": []}
     if port < 1 or port > 65535:
         return {"allowed": False, "code": "port_refused", "host": host, "addresses": []}
-    if not host or host in _BLOCKED_HOSTS or host.endswith(".local"):
+    if not host:
         return {"allowed": False, "code": "host_refused", "host": host, "addresses": []}
+    if host in _METADATA_HOSTS or _metadata_ip(host):
+        return {"allowed": False, "code": "metadata_refused", "host": host, "addresses": []}
+    if host in _BLOCKED_HOSTS or host.endswith(".local"):
+        return {"allowed": False, "code": "host_refused", "host": host, "addresses": []}
+    if _permit_refused(allow_hosts):
+        return {"allowed": False, "code": "permit_not_loopback", "host": host, "addresses": []}
     permitted = host in {item.lower() for item in allow_hosts}
     if _blocked_ip(host) and not permitted:
         return {"allowed": False, "code": "non_public_address", "host": host, "addresses": []}
@@ -133,6 +173,10 @@ def classify_url(url: str, *, allow_hosts: frozenset[str] = frozenset()) -> dict
         addresses = _resolve(host, port)
     except socket.gaierror:
         return {"allowed": False, "code": "dns_failed", "host": host, "addresses": []}
+    if any(_metadata_ip(address) for address in addresses):
+        return {"allowed": False, "code": "metadata_refused", "host": host, "addresses": sorted(addresses)}
+    if permitted and any(not _loopback_ip(address) for address in addresses):
+        return {"allowed": False, "code": "permit_not_loopback", "host": host, "addresses": sorted(addresses)}
     if any(_blocked_ip(address) for address in addresses) and not permitted:
         return {"allowed": False, "code": "resolved_non_public", "host": host, "addresses": sorted(addresses)}
     return {
@@ -209,7 +253,11 @@ def fetch_readonly(url: str, *, allow_hosts: frozenset[str] = frozenset(), timeo
     pinned_set = frozenset(decision["addresses"])
     if again != pinned_set:
         raise NavigationRefused("dns_rebinding")
-    if any(_blocked_ip(address) for address in again) and not decision["explicit_permit"]:
+    if any(_metadata_ip(address) for address in again):
+        raise NavigationRefused("metadata_refused")
+    if decision.get("explicit_permit") and any(not _loopback_ip(address) for address in again):
+        raise NavigationRefused("permit_not_loopback")
+    if any(_blocked_ip(address) for address in again) and not decision.get("explicit_permit"):
         raise NavigationRefused("resolved_non_public")
     pinned = _pin(again)
     sock = None

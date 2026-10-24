@@ -15,6 +15,19 @@ from typing import Callable
 from orca.train.dryrun.canon import hash_obj
 
 MASK64 = (1 << 64) - 1
+
+
+def _sum_left(values) -> float:
+    """Left-to-right IEEE-754 addition.
+
+    CPython 3.12 ``sum`` of floats uses compensated summation and diverges
+    from the left fold that produced the pinned golden state. The fold is
+    the same operation the golden hash already records.
+    """
+    total = 0.0
+    for value in values:
+        total += value
+    return total
 OPTIMIZERS = ("adam", "sgd_momentum")
 
 
@@ -336,7 +349,7 @@ class ToyEngine:
             for i in range(len(acc)):
                 acc[i] += g[i] / plan.grad_accum
             loss_sum += loss / plan.grad_accum
-        norm = math.sqrt(sum(v * v for v in acc))
+        norm = math.sqrt(_sum_left(v * v for v in acc))
         if norm > plan.grad_clip:
             factor = plan.grad_clip / norm
             acc = [v * factor for v in acc]

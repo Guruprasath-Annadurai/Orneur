@@ -9,8 +9,11 @@ connect.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import socket
+import stat
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,11 +21,12 @@ from pathlib import Path
 
 import pytest
 
-from orca.core_runtime.browser import NavigationRefused, fetch_readonly
-from orca.core_runtime.journal import Journal, MissionError, MissionHidden
+from orca.core_runtime.browser import NavigationRefused, classify_url, fetch_readonly
+from orca.core_runtime.journal import VERIFIER_ID, Journal, MissionError, MissionHidden
 from orca.core_runtime.opportunity import OpportunityError, match
+from orca.core_runtime.principal import PrincipalError, authenticate
 from orca.core_runtime.proof import ProofError, score_attempt, share_record
-from orca.core_runtime.report import JourneyInterrupted, JourneyRefused, recompute, run_business_report
+from orca.core_runtime.report import JourneyInterrupted, JourneyRefused, canonical_records, recompute, run_business_report
 from orca.core_runtime.router import route
 
 _RECORDS = [
@@ -381,7 +385,7 @@ def test_stable_private_and_mapped_answers_do_not_connect(monkeypatch: pytest.Mo
     monkeypatch.setattr(socket, "getaddrinfo", mapped)
     with pytest.raises(NavigationRefused) as mapped_exc:
         fetch_readonly("http://example.com/meta")
-    assert mapped_exc.value.code == "resolved_non_public"
+    assert mapped_exc.value.code == "metadata_refused"
     assert calls["connected"] == 0
 
 
@@ -589,3 +593,218 @@ def test_opportunity_dates_fail_closed():
     with pytest.raises(OpportunityError) as exc:
         match(skills={"arithmetic"}, geo="IN", listings=[good], now=datetime(2026, 10, 24))
     assert exc.value.code == "naive_clock"
+
+
+def test_caller_totals_and_planted_effect_cannot_seal(tmp_path: Path):
+    """d1b2fe0 accepted seal_verified(input_bytes, total_cents) with zero effects."""
+    journal = Journal(tmp_path)
+    _create(journal)
+    journal.transition("m1", "owner-a", "running")
+    journal.bind_input("m1", "owner-a", canonical_records(_RECORDS))
+    artifact = {
+        "calculator": "deterministic.calculator",
+        "effect_key": "write_report",
+        "line_count": len(_RECORDS),
+        "mission_id": "m1",
+        "native_model_used": None,
+        "owner_user_id": "owner-a",
+        "schema": "orneur-business-report/1",
+        "total_cents": 800,
+        "verified": False,
+    }
+    payload = json.dumps(artifact, sort_keys=True, separators=(",", ":")).encode()
+    journal.write_bytes(Path("artifacts") / "m1" / "report.json", payload)
+    journal.transition("m1", "owner-a", "verifying")
+    with pytest.raises(MissionError) as forged:
+        journal.seal_verified("m1", "owner-a", input_bytes=b"forged", total_cents=1)
+    assert forged.value.code == "verifier_rejected"
+    assert journal.get("m1", "owner-a")["state"] == "verifying"
+    assert journal.get("m1", "owner-a")["verification"] is None
+    planted = {
+        "schema": "orneur-local-mission/1",
+        "mission_id": "m1",
+        "effect_key": "write_report",
+        "payload_sha256": hashlib.sha256(payload).hexdigest(),
+        "status": "committed",
+        "writes": 1,
+        "external_bytes_present": True,
+        "external_outcome": "local_receipt_only",
+    }
+    journal.write_bytes(Path("effects") / "m1" / "write_report.json", json.dumps(planted).encode())
+    with pytest.raises(MissionError) as bare:
+        journal.seal_verified("m1", "owner-a")
+    assert bare.value.code == "effect_not_authorized"
+    assert journal.get("m1", "owner-a")["state"] == "verifying"
+    assert journal.effect("m1", "owner-a", "write_report")["status"] == "committed"
+    assert "write_report" not in (journal.get("m1", "owner-a").get("admitted_effects") or {})
+
+
+def test_altered_bound_input_does_not_seal(tmp_path: Path):
+    journal = Journal(tmp_path)
+    with pytest.raises(JourneyInterrupted):
+        run_business_report(
+            journal, mission_id="report1", owner_user_id="owner-a", records=_RECORDS, crash_after="after:verifying",
+        )
+    stored = journal.get("report1", "owner-a")
+    assert stored["state"] == "verifying"
+    assert stored["input_sha256"]
+    changed = [{"sku": "a", "units": 1, "unit_price_cents": 1}]
+    again = run_business_report(journal, mission_id="report1", owner_user_id="owner-a", records=changed)
+    assert again["independently_verified"] is False
+    assert again["current_integrity"] == "input_revision_mismatch"
+    assert journal.get("report1", "owner-a")["state"] == "verifying"
+    assert journal.get("report1", "owner-a")["verification"] is None
+    original = run_business_report(journal, mission_id="report1", owner_user_id="owner-a", records=_RECORDS)
+    assert original["independently_verified"] is True
+    assert journal.get("report1", "owner-a")["verification"]["verifier"] == VERIFIER_ID
+    assert journal.get("report1", "owner-a")["verification"]["input_sha256"] == stored["input_sha256"]
+
+
+def test_direct_commit_without_a_noted_write_is_not_ready(tmp_path: Path):
+    journal = Journal(tmp_path)
+    _create(journal)
+    journal.transition("m1", "owner-a", "running")
+    journal.bind_input("m1", "owner-a", canonical_records(_RECORDS))
+    journal.begin_effect("m1", "owner-a", "write_report", b"{}")
+    with pytest.raises(MissionError) as exc:
+        journal.commit_effect("m1", "owner-a", "write_report")
+    assert exc.value.code == "effect_not_ready"
+    assert journal.effect("m1", "owner-a", "write_report")["status"] == "started"
+    planted = journal.effect("m1", "owner-a", "write_report")
+    other = {
+        "schema": "orneur-local-mission/1",
+        "mission_id": "m1",
+        "effect_key": "other_key",
+        "payload_sha256": planted["payload_sha256"],
+        "status": "committed",
+        "external_outcome": "local_receipt_only",
+        "external_bytes_present": True,
+        "writes": 1,
+    }
+    journal.write_bytes(Path("effects") / "m1" / "other_key.json", json.dumps(other).encode())
+    with pytest.raises(MissionError) as unauthorized:
+        journal.begin_effect("m1", "owner-a", "other_key", b"{}")
+    assert unauthorized.value.code == "effect_not_authorized"
+    assert "other_key" not in journal.get("m1", "owner-a")["admitted_effects"]
+
+
+def test_lock_symlink_and_hard_link_are_refused(tmp_path: Path):
+    root = tmp_path / "journal"
+    root.mkdir()
+    outside = tmp_path / "attacker.lock"
+    outside.write_text("secret", encoding="utf-8")
+    (root / ".lock").symlink_to(outside)
+    journal = Journal(root)
+    with pytest.raises(MissionError) as followed:
+        _create(journal, "m-link")
+    assert followed.value.code == "symlink_refused"
+    assert outside.read_text(encoding="utf-8") == "secret"
+    assert not (root / "missions").exists() or not (root / "missions" / "m-link.json").exists()
+
+    (root / ".lock").unlink()
+    created = _create(journal, "m-real")
+    assert created["mission_id"] == "m-real"
+    lock = root / ".lock"
+    first = lock.stat()
+    assert stat.S_ISREG(first.st_mode)
+    assert first.st_nlink == 1
+    assert first.st_mode & 0o777 == 0o600
+    _create(journal, "m-next")
+    second = lock.stat()
+    assert second.st_ino == first.st_ino
+    assert second.st_dev == first.st_dev
+
+    extra = tmp_path / "hard.lock"
+    os.link(lock, extra)
+    with pytest.raises(MissionError) as linked:
+        journal.get("m-real", "owner-a")
+    assert linked.value.code == "lock_refused"
+    extra.unlink()
+    assert journal.get("m-real", "owner-a")["mission_id"] == "m-real"
+
+    lock.unlink()
+    os.mkfifo(lock)
+    with pytest.raises(MissionError) as fifo:
+        journal.get("m-real", "owner-a")
+    assert fifo.value.code == "lock_refused"
+    lock.unlink()
+    lock.write_text("x", encoding="utf-8")
+    os.chmod(lock, 0o666)
+    assert journal.get("m-real", "owner-a")["state"] == "draft"
+    assert lock.stat().st_mode & 0o777 == 0o600
+
+    lock.rename(tmp_path / "saved.lock")
+    (root / ".lock").symlink_to(outside)
+    with pytest.raises(MissionError) as replaced:
+        journal.get("m-real", "owner-a")
+    assert replaced.value.code == "symlink_refused"
+    assert outside.read_text(encoding="utf-8") == "secret"
+
+
+def test_failed_critical_section_releases_the_lock(tmp_path: Path):
+    journal = Journal(tmp_path)
+    _create(journal, "m1")
+    with pytest.raises(MissionError):
+        _create(journal, "m1")
+    second = _create(journal, "m2")
+    assert second["mission_id"] == "m2"
+    errors = []
+    barrier = threading.Barrier(2)
+
+    def worker(mission_id: str) -> None:
+        try:
+            barrier.wait(timeout=5)
+            journal.create(
+                mission_id=mission_id,
+                owner_user_id="owner-a",
+                objective={"kind": "structured_report"},
+                steps=_STEPS,
+            )
+        except Exception as exc:  # noqa: BLE001 - the assertion reports the worker error
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(name,)) for name in ("m3", "m4")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+    assert errors == []
+    assert journal.get("m3", "owner-a")["mission_id"] == "m3"
+    assert journal.get("m4", "owner-a")["mission_id"] == "m4"
+
+
+def test_metadata_allowlist_never_connects(monkeypatch: pytest.MonkeyPatch):
+    calls = {"n": 0}
+
+    def refuse_connect(*_args, **_kwargs):
+        calls["n"] += 1
+        raise AssertionError("metadata connect")
+
+    monkeypatch.setattr(socket, "create_connection", refuse_connect)
+    cases = (
+        ("http://169.254.169.254/latest/meta-data", frozenset({"169.254.169.254"})),
+        ("http://169.254.169.253/", frozenset({"169.254.169.253"})),
+        ("http://169.254.170.2/", frozenset({"169.254.170.2"})),
+        ("http://[::ffff:169.254.169.254]/latest/meta-data", frozenset({"::ffff:169.254.169.254"})),
+        ("http://metadata.google.internal/computeMetadata/v1/", frozenset({"metadata.google.internal"})),
+        ("http://[fd00:ec2::254]/", frozenset({"fd00:ec2::254"})),
+    )
+    for url, hosts in cases:
+        decision = classify_url(url, allow_hosts=hosts)
+        assert decision["allowed"] is False, url
+        assert decision["code"] == "metadata_refused", url
+        with pytest.raises(NavigationRefused) as exc:
+            fetch_readonly(url, allow_hosts=hosts)
+        assert exc.value.code == "metadata_refused"
+    assert calls["n"] == 0
+    private = classify_url("http://10.1.2.3/", allow_hosts=frozenset({"10.1.2.3"}))
+    assert private["allowed"] is False
+    assert private["code"] == "permit_not_loopback"
+    public = classify_url("http://example.com/", allow_hosts=frozenset({"example.com"}))
+    assert public["code"] == "permit_not_loopback"
+
+
+def test_principal_authentication_is_refused():
+    with pytest.raises(PrincipalError) as exc:
+        authenticate(user_id="owner-a", token="present")
+    assert exc.value.code == "principal_not_authenticated"
