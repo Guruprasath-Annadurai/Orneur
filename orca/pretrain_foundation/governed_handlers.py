@@ -197,16 +197,19 @@ def isolate_memory(payload: dict, _ctx: dict | None = None) -> dict:
     }
 
 
-def select_team(payload: dict, _ctx: dict | None = None) -> dict:
+def select_team(payload: dict, ctx: dict | None = None) -> dict:
     requested = payload.get("tasks")
     if not isinstance(requested, list) or not requested:
-        return {"selected": [], "reason": "no tasks"}
+        return {"selected": [], "reason": "no tasks", "advertisement_trusted": False}
+    graph = ctx.get("capability_graph") if isinstance(ctx, dict) else None
     selected = []
     blocked = []
     for task in requested:
-        role = role_for_task(str(task))
-        if role is None:
-            blocked.append(str(task))
+        task_name = str(task)
+        role = role_for_task(task_name)
+        allowed = graph.allows(task_name) if graph is not None else True
+        if role is None or not allowed:
+            blocked.append(task_name)
             continue
         selected.append(role.agent_id)
     return {
@@ -214,6 +217,7 @@ def select_team(payload: dict, _ctx: dict | None = None) -> dict:
         "blocked_unqualified": blocked,
         "catalog_size": 100,
         "selected_count": len(selected),
+        "advertisement_trusted": False,
     }
 
 

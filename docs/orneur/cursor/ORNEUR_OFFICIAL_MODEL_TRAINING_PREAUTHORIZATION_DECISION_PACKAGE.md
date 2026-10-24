@@ -6,7 +6,7 @@ This document does not assert `PRETRAINING_READINESS_ACCEPTED`, `FOUNDER_AUTHORI
 
 ## 1. SHA and branch
 
-Implementation parent: `origin/cursor/orneur-pretraining-foundation-p0-4e55` at `fc1eb1dd098377e8506485dbcd82d6ed148b52b3`. Agent registry: `cursor/agent-role-registry-a8b0` at `374b49e5ad8b9f744c04780b617cdada6d234480`. Provenance gate: `cursor/synthetic-provenance-steps-a8b0` at `dfc8eb89c6ff39dc82e3b4b9e7fe7dc2678d8bc3`. The measurement update in this copy is on `cursor/measurement-gaps-a8b0`. Gap register: `cursor/pretraining-gap-register-a8b0` at `255d25a404e1c74d6feca0fc5931497ec29b0bf9` (PR #100). Readiness gate: `cursor/pretraining-readiness-gate-a8b0` at `eaa3eaceef79c78924f0b1d5b0eaea48a04f7c4d` (PR #101). Draft PR #99 was inspected at `c395dba09c54f10d626156ed57512dc635f1e9b8` and was not modified.
+Implementation parent: `origin/cursor/orneur-pretraining-foundation-p0-4e55` at `fc1eb1dd098377e8506485dbcd82d6ed148b52b3`. Agent registry: `cursor/agent-role-registry-a8b0` at `374b49e5ad8b9f744c04780b617cdada6d234480`. Provenance gate: `cursor/synthetic-provenance-steps-a8b0` at `dfc8eb89c6ff39dc82e3b4b9e7fe7dc2678d8bc3`. Measurement: `cursor/measurement-gaps-a8b0` at `d39d0662dc260785575da4f0049074e9ec4545cc`. Gap register: `cursor/pretraining-gap-register-a8b0` at `255d25a404e1c74d6feca0fc5931497ec29b0bf9` (PR #100). Readiness gate: `cursor/pretraining-readiness-gate-a8b0` at `eaa3eaceef79c78924f0b1d5b0eaea48a04f7c4d` (PR #101). Readiness report boundary: `cursor/readiness-report-boundary-a8b0` at `4f82a6ee060c0e6a3d0ce78015ba1eae74c17ad2`. Trust boundary: `cursor/agent-trust-boundary-a8b0` at `8b36b2718ae01a422d2decd37fc3da47a9d2df82`. The synthetic evaluation collection in this copy is on `cursor/synthetic-agent-eval-a8b0` and its parent is that trust commit. This file does not name its own commit. Draft PR #99 was inspected at `c395dba09c54f10d626156ed57512dc635f1e9b8` and was not modified.
 
 ## 2. Acceptance numerator and denominator
 
@@ -40,6 +40,8 @@ Status `NOT_AVAILABLE`. No native checkpoint.
 
 12 synthetic handlers. 0 qualified. 0 production authorized. On the unsupported equation, size 2 matches size 3. Sizes 5 and 10 match that verdict and use more calls. Size 16 was not run: only 12 distinct handlers exist.
 
+`synthetic_suite.py` version `synthetic-agent-eval-v1` compares sizes 1, 2, 3, 5, and 10 on eight tasks. The smallest successful plan is size 2 for the unsupported equation and for a two-text dispute, and size 1 for a supported equation, abstention, authority refusal, and an incomplete deadline. Coding and retrieval have no handler that records `tests_passed` or `retrieved`, so no team size is selected. A size 10 plan does not replace size 2. `shadow_tournament` records that selection and sets `qualified` and `production_authorized` false. Latency is `process_perf_counter_seconds` on one machine. `model_inference` is false. These handlers do not show a real-model improvement.
+
 ## 10. Dataset provenance
 
 The parent branch already admits local records, rejects a symlink leaf, and can require a license string. That string is not a training grant. The descendant gate `qualify_synthetic_records` in `orca/genesis/data/provenance_steps.py` runs the twenty named steps on in-memory fixtures. `training_admitted` stays false. Public-web and ordinary license names are rejected. Independent custody and publication rights stay `BLOCKED`. `literature_token_requirement` can state a Hoffmann et al. 2022 illustration and records `tokens_acquired` 0. No protected corpus was generated. Evidence: `docs/orneur/cursor/ORNEUR_DATASET_PROVENANCE_PIPELINE.md`.
@@ -66,7 +68,9 @@ The agent tests are deterministic across five trials on one machine. That does n
 
 ## 16. Security
 
-Handler denials cover the cases in `ORNEUR_AGENT_ADVERSARIAL_SECURITY_REPORT.md`. Same-process tests are not an external trust boundary. Class K recovery stays deferred. Acceptance C27 stays unmet.
+On the readiness-gate parent, `report()` with a cleared synthetic observation and caller ids `EXEC-1` and `FINAL-2` returned `execution_allowed: true` without calling the acceptance engine. `report()` is now a labeled synthetic interface and those three authorization flags stay false. `production_report()` and `report_evaluated()` call `acceptance_engine.evaluate` and do not take a caller acceptance map. The engine file was not edited. The committed ledger was not written.
+
+Caller `authorized=True` cannot mark an evidence span authorized. `decide_authority` denies a caller grant dictionary, including one that is unexpired and unrevoked. Same-tenant memory strings stay unenrolled. `restore_snapshot` refuses a cancellation rewritten as success. Symlink leaves and a changed checkpoint digest are refused. Cross-tenant delegation and depth above 4 are refused. A repeated effect key does not apply twice. Tool text is screened and does not change authority. Same-process tests are not an external trust boundary. No signing key was minted. Class K recovery stays deferred. Acceptance C27 stays unmet. Details: `ORNEUR_AGENT_TRUST_AND_EVAL_HANDOFF.md`.
 
 ## 17. Future training cost
 
@@ -82,6 +86,6 @@ Not done. The handoff file asks a reviewer to re-run the pytest command on the e
 
 ## 20. Next executable work that does not need new authority
 
-Keep the ledger unchanged. The synthetic provenance gate does not admit training. Size 2 is the measured team for the equation fixture; size 16 stays unrun until 16 distinct handlers exist. Collusion, forged signatures, symlink and checkpoint substitution, duplicate irreversible effects, and private-evaluation leakage remain open. Do not start training.
+Keep the ledger unchanged. The synthetic provenance gate does not admit training. Size 2 is the measured team for the unsupported equation and for the contradiction fixture. Size 1 is enough for the supported equation, abstention, authority refusal, and the incomplete deadline. Coding and retrieval stay unselected. Size 16 stays unrun until 16 distinct handlers exist. Collusion beyond a same-id falsifier refusal, forged signatures, private-evaluation leakage beyond a substring scan, and duplicate irreversible effects outside `EffectLedger` remain open. Do not start training.
 
 Closure order: R65 source, G1 review, trust enrollment, DEC-K decision with C27 still open, corpus custody, foundation choice, compute qualification, then FINAL-1 only after every counted row has its own acceptance. FINAL-2 and EXEC-1 stay after that. There is no readiness percentage.
