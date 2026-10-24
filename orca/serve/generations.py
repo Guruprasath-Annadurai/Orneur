@@ -5,14 +5,15 @@ execution attempt so a client can read the terminal state after the
 socket closes, and can ask this process to stop a cancellable stream.
 
 State changes are one read-modify-write under an exclusive file lock.
-`cancelled` and `completed` are written only by `finish`, after the
-worker has stopped or the output is actually done. A cancel request
-sets a flag. It does not itself claim the run has stopped.
+`cancelled` is stored only when an authenticated stop is already recorded
+and the upstream attempt is classified `stopped`. A disconnect does not
+write `cancelled`. A cancel request records the flag. It does not by
+itself claim that a live upstream has stopped.
 
 The owning request holds a live lock and refreshes the heartbeat while
 a chunk is in flight. A gap longer than `STALE_AFTER` is reported as
-`interrupted_unknown` only when that heartbeat has stopped. The stored
-state stays `running` until a real transition.
+`interrupted_unknown` when that heartbeat has stopped. A dead lease is
+stored as `interrupted_unknown`, not as `cancelled`.
 
 Retry eligibility means the client may send a new `/api/stream` request.
 It does not resume, replay, or regenerate the previous attempt.

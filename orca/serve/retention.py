@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 _DAY = 86_400.0
 
@@ -64,9 +65,16 @@ def purge_expired_conversations(now: float | None = None) -> dict:
 
 def reconcile_orphan_uploads(*, now: float | None = None, apply: bool = False) -> dict:
     """Dry-run by default. Applied remediation deletes only old temp files."""
+    import orca.brain.memory as mem
+    import orca.config as orca_config
     from orca.docs.orphan_reconcile import reconcile_orphan_uploads as run
 
-    return run(now=now, apply=apply)
+    return run(
+        now=now,
+        apply=apply,
+        index_dir=orca_config.ORCA_HOME / "authorized_index",
+        temporary_dir=Path(mem.MEMORY_DIR) / "temporary_chats",
+    )
 
 
 if __name__ == "__main__":
