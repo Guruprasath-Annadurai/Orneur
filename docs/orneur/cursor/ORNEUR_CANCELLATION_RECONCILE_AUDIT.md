@@ -6,7 +6,7 @@ This branch starts at PR #111 `6b2d37ad5bee2e381e56246a679d59fffeaad930` (`test/
 
 A browser disconnect does not write `cancelled`. An in-stream authenticated stop closes the attempt and the terminal generation event is written after that stop is stored, so the event state is `cancelled`. A disconnect inside the loop is stored as `interrupted_unknown` with upstream `unconfirmed`. A later POST can confirm `cancelled` only when the stored upstream is already `stopped`. An unconfirmed upstream stays `interrupted_unknown` with `cancel_requested` true and `cancel_accepted` false.
 
-`completed`, `cancelled`, `failed`, and `interrupted_unknown` stay distinct. `finish` does not replace an existing terminal state, so a late completion cannot overwrite a cancellation. A live lock that has been dropped is reconciled to `interrupted_unknown`, not to `cancelled`. The lock is single-host `flock`.
+`completed`, `cancelled`, `failed`, and `interrupted_unknown` stay distinct. `finish` does not replace an existing terminal state, so a late completion cannot overwrite a cancellation. A completion that sees a stored stop before the upstream is proven stopped leaves the record `running`, so the explicit cancel publication can still commit. It does not invent `interrupted_unknown` for that race. A live lock that has been dropped is reconciled to `interrupted_unknown`, not to `cancelled`. The lock is single-host `flock`.
 
 ## Deletion
 

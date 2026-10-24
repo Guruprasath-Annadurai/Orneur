@@ -336,12 +336,17 @@ def finish(generation_id: str, state: str, *, reason: str | None = None) -> dict
         if record.get("state") != "running":
             return None
         if state == "completed" and record.get("cancel_requested"):
-            record["state"] = "cancelled" if record.get("upstream") == "stopped" else "interrupted_unknown"
-            record["reason"] = "cancel_requested" if record["state"] == "cancelled" else "completion_after_cancel"
-            record["upstream"] = record.get("upstream") or "unconfirmed"
-        else:
-            record["state"] = state
-            record["reason"] = reason
+            # A stored stop blocks completion. A proven upstream stop can be
+            # published now. Otherwise leave the record running so an explicit
+            # cancel publication in another process can still commit.
+            if record.get("upstream") == "stopped":
+                record["state"] = "cancelled"
+                record["reason"] = "cancel_requested"
+                record["updated_at"] = time.time()
+                return record
+            return None
+        record["state"] = state
+        record["reason"] = reason
         record["updated_at"] = time.time()
         return record
 
