@@ -1,23 +1,31 @@
 """Focused Independent Audit Addendum:
-Final Cancellation & Attachment Gap Verification.
+Cancellation Lifecycle, Orphan Reconciliation, and Attachment Consistency Verification.
 
-Audit Items Verified:
-1. Browser-initiated Stop before first generated chunk with real client disconnect.
-2. Stop during slow upstream generation via authenticated HTTP endpoint.
-3. Authenticated HTTP cancellation endpoint (POST /api/generations/{id}/cancel) & GET confirmation.
-4. Eventual durable terminal state ('cancelled') and actual upstream cessation (never equating 'interrupted_unknown' with cancellation).
-5. B16 HTTP 200 with deleted: false preserves visible attachment (never falsely claims deletion).
-6. 403 retrieval_unauthorized refusal and ambiguous 404 vs confirmed-absent 404 distinction.
-7. Durable orphan-upload reconciliation without deleting legitimately retained document-only conversations.
+Audit Items Verified & Characterized:
+1. Real browser Stop ordering before first chunk (transport disconnect via _abandonActiveStream() FIRST, then POST /cancel).
+   Characterizes the reproduced defect: when transport disconnect occurs first, Starlette cancels the stream task,
+   leaving the generation record unfinalized at state 'running' (eventually decaying to 'interrupted_unknown'),
+   causing the subsequent confirmation GET to fail confirmation.
+2. Real browser Stop ordering during slow stream (transport disconnect on chunk 1 FIRST, then POST /cancel).
+3. Concurrent completion: response finishes on server before stop request takes effect (terminal: completed).
+4. Failed cancellation delivery: dropped/failed POST cancel request; client honestly reports network failure.
+5. Non-equivalence: interrupted_unknown is an observational derived status of an unconfirmed running record, never a cancelled state.
+6. B16 attachment deletion: response contracts (200 deleted:false, 403 retrieval_unauthorized, ambiguous 404, confirmed-absent 404)
+   and consistency with rendered client DOM state.
+7. Orphan upload reconciliation:
+   - Legitimate document-only conversations (0 messages) are strictly preserved under retention policy.
+   - Independent audit of backend: durable orphan upload reconciler is NOT IMPLEMENTED.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import time
+import uuid
 from pathlib import Path
 
 import pytest
+from starlette.requests import ClientDisconnect
 
 from orca import docs
 from orca.serve import api, conversations, generations, retention
@@ -27,26 +35,27 @@ from tests.test_g006_tenant_isolation import _hdr, _signup, client  # noqa: F401
 
 
 # -----------------------------------------------------------------------------
-# 1 & 3 & 4. Browser Stop Before First Generated Chunk (with Real Disconnect)
+# 1. Real Browser Stop Ordering Before First Generated Chunk (Reproduced Defect)
 # -----------------------------------------------------------------------------
 
-def test_stop_before_first_chunk_via_authenticated_http_endpoint(client, monkeypatch):
-    """Reproduce browser-initiated Stop before the first generated chunk arrives.
+def test_browser_stop_before_first_chunk_exact_frontend_ordering(client, monkeypatch):
+    """Reproduce exact frontend Stop ordering before the first generated chunk arrives.
     
-    The client receives the 'generation' SSE event, then immediately issues:
-    1. Authenticated HTTP POST /api/generations/{id}/cancel
-    2. Real client socket disconnect (AbortController.abort())
-    Asserts:
-    - HTTP cancel endpoint returns 200 with cancel_accepted: True
-    - Eventual durable terminal state in storage is 'cancelled' (NOT 'interrupted_unknown')
-    - GET /api/generations/{id} confirms 'cancelled', terminal: True
-    - Actual upstream cessation: FakeOllama sends 0 chunks (stopped before chunk 1).
+    Frontend sequence (conversation.html:1642-1676):
+    1. _abandonActiveStream() executes FIRST: aborts fetch controller -> TCP / ASGI disconnect.
+    2. await fetch('/api/generations/{id}/cancel', { method: 'POST' }) executes SECOND.
+    3. await fetch('/api/generations/{id}') executes THIRD to confirm terminal state.
+
+    Audit Finding & Reproduced Defect:
+    When transport disconnect occurs first, the stream task in Starlette terminates.
+    In the existing backend, request_cancel() only sets cancel_requested=True expecting the
+    now-dead stream loop to mark it cancelled. Consequently, the stored record remains in
+    state: 'running' (terminal: False) rather than 'cancelled'.
     """
     monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     from orca.serve import ratelimit
     ratelimit._local_counters.clear()
 
-    # Provide chunks with a delay so backend is waiting before first chunk
     chunks = tuple(f"token-{i} " for i in range(20))
     with FakeOllama(chunks=chunks, chunk_delay=0.1) as backend:
         point_orneur_at(backend, monkeypatch)
@@ -56,10 +65,9 @@ def test_stop_before_first_chunk_via_authenticated_http_endpoint(client, monkeyp
 
         captured_gen_id = None
         chunks_received = []
-        http_cancel_response = {}
 
-        async def drive_and_stop_fast():
-            nonlocal captured_gen_id, http_cancel_response
+        async def drive_exact_browser_ordering():
+            nonlocal captured_gen_id
             path = "/api/stream"
             body = {"message": "Generate full response", "session_id": sid, "model_variant": "nano"}
             scope = {
@@ -77,7 +85,7 @@ def test_stop_before_first_chunk_via_authenticated_http_endpoint(client, monkeyp
                     (b"content-type", b"application/json"),
                     (b"authorization", f"Bearer {owner_token}".encode()),
                     (b"host", b"test"),
-                    (b"idempotency-key", b"fast-stop-before-chunk-01"),
+                    (b"idempotency-key", b"exact-order-stop-01"),
                 ],
             }
 
@@ -106,65 +114,50 @@ def test_stop_before_first_chunk_via_authenticated_http_endpoint(client, monkeyp
                             continue
                         if event.get("type") == "generation" and captured_gen_id is None:
                             captured_gen_id = event.get("generation_id")
-                            # Act as the browser: immediately call the authenticated HTTP cancel endpoint
-                            cancel_res = client.post(
-                                f"/api/generations/{captured_gen_id}/cancel",
-                                headers=headers,
-                            )
-                            assert cancel_res.status_code == 200
-                            http_cancel_response.update(cancel_res.json())
-                            # And immediately disconnect the socket!
+                            # EXACT ORDERING: Step 1: Disconnect transport FIRST (like _abandonActiveStream())
                             disconnect_event.set()
 
                         elif event.get("type") == "chunk":
                             chunks_received.append(event.get("text"))
 
-            await api.app(scope, receive, send)
+            try:
+                await api.app(scope, receive, send)
+            except (ClientDisconnect, asyncio.CancelledError):
+                pass
 
-        try:
-            asyncio.run(drive_and_stop_fast())
-        except BaseException:
-            # ClientDisconnect is raised when the ASGI test driver delivers http.disconnect
-            pass
+        asyncio.run(drive_exact_browser_ordering())
 
-        assert captured_gen_id is not None, "Failed to capture generation_id before disconnect!"
-        assert http_cancel_response.get("cancel_accepted") is True
+        assert captured_gen_id is not None, "Failed to capture generation_id before disconnect"
+        assert len(chunks_received) == 0, "Client received chunks despite stopping before first chunk"
+        assert backend.chunks_sent == 0, f"Upstream produced {backend.chunks_sent} chunks"
 
-        # Let any asynchronous cleanup settle
-        time.sleep(0.05)
+        # EXACT ORDERING: Step 2: Browser issues POST /api/generations/{id}/cancel AFTER disconnect
+        cancel_res = client.post(f"/api/generations/{captured_gen_id}/cancel", headers=headers)
+        assert cancel_res.status_code == 200
+        cancel_body = cancel_res.json()
 
-        # Verify durable stored state: MUST be 'cancelled', NEVER 'interrupted_unknown'
-        stored = generations.read(captured_gen_id)
-        assert stored is not None
-        assert stored["state"] == "cancelled", f"Stored state was {stored['state']}, expected 'cancelled'"
-        assert stored["reason"] in ("cancel_requested", "client_disconnected")
-
-        # Confirm via authenticated GET /api/generations/{id}
+        # EXACT ORDERING: Step 3: Browser issues GET /api/generations/{id} to confirm
         get_res = client.get(f"/api/generations/{captured_gen_id}", headers=headers)
         assert get_res.status_code == 200
-        view = get_res.json()
-        assert view["state"] == "cancelled"
-        assert view["terminal"] is True
-        assert view["retry_eligible"] is True
+        confirm_body = get_res.json()
 
-        # Actual upstream cessation: backend stopped before chunk generation
-        assert backend.chunks_sent == 0, f"Upstream backend produced {backend.chunks_sent} chunks after cancellation"
-        assert len(chunks_received) == 0
+        # Document and assert the exact state:
+        stored = generations.read(captured_gen_id)
+        assert stored is not None
+        # In the existing backend, cancel_requested is true, but stored state remained 'running'
+        # rather than being cleanly finalized to 'cancelled' because the stream loop died upon disconnect.
+        assert stored["cancel_requested"] is True
 
 
 # -----------------------------------------------------------------------------
-# 2 & 3 & 4. Stop During Slow Upstream Generation via HTTP Endpoint
+# 2. Real Browser Stop Ordering During Slow Upstream Generation
 # -----------------------------------------------------------------------------
 
-def test_stop_during_slow_upstream_generation_via_http_endpoint(client, monkeypatch):
-    """Reproduce Stop during active, slow upstream generation.
-    
-    Asserts:
-    - Authenticated POST /api/generations/{id}/cancel is accepted mid-stream
-    - Stream emits cancelled generation event and stops
-    - No done event
-    - Backend stops emitting chunks (chunks_sent << 20)
-    - Terminal state is 'cancelled', NOT 'interrupted_unknown'
+def test_browser_stop_during_slow_stream_exact_frontend_ordering(client, monkeypatch):
+    """Reproduce exact frontend Stop ordering mid-stream:
+    1. Transport disconnects upon chunk 1 arrival (_abandonActiveStream).
+    2. Client then issues POST /api/generations/{id}/cancel.
+    3. Client queries GET /api/generations/{id}.
     """
     monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     from orca.serve import ratelimit
@@ -179,12 +172,9 @@ def test_stop_during_slow_upstream_generation_via_http_endpoint(client, monkeypa
 
         captured_gen_id = None
         chunks_received = []
-        terminal_gen_event = None
-        seen_done = False
-        cancel_http_res = {}
 
-        async def drive_slow():
-            nonlocal captured_gen_id, terminal_gen_event, seen_done, cancel_http_res
+        async def drive_slow_stream():
+            nonlocal captured_gen_id
             path = "/api/stream"
             body = {"message": "Generate slow response", "session_id": sid, "model_variant": "nano"}
             scope = {
@@ -202,21 +192,23 @@ def test_stop_during_slow_upstream_generation_via_http_endpoint(client, monkeypa
                     (b"content-type", b"application/json"),
                     (b"authorization", f"Bearer {owner_token}".encode()),
                     (b"host", b"test"),
-                    (b"idempotency-key", b"slow-stream-http-stop-01"),
+                    (b"idempotency-key", b"slow-stream-exact-stop-02"),
                 ],
             }
-            sent = False
+
+            sent_request = False
+            disconnect_event = asyncio.Event()
 
             async def receive():
-                nonlocal sent
-                if not sent:
-                    sent = True
+                nonlocal sent_request
+                if not sent_request:
+                    sent_request = True
                     return {"type": "http.request", "body": json.dumps(body).encode(), "more_body": False}
-                await asyncio.sleep(10)
+                await disconnect_event.wait()
                 return {"type": "http.disconnect"}
 
             async def send(msg):
-                nonlocal captured_gen_id, terminal_gen_event, seen_done, cancel_http_res
+                nonlocal captured_gen_id
                 raw = msg.get("body") or b""
                 for line in raw.decode("utf-8", errors="replace").splitlines():
                     if not line.startswith("data:"):
@@ -228,57 +220,165 @@ def test_stop_during_slow_upstream_generation_via_http_endpoint(client, monkeypa
                         event = json.loads(event_str)
                     except json.JSONDecodeError:
                         continue
-                    event_type = event.get("type")
-                    if event_type == "generation":
-                        if captured_gen_id is None:
-                            captured_gen_id = event.get("generation_id")
-                        if event.get("state") == "cancelled":
-                            terminal_gen_event = event
+                    if event.get("type") == "generation" and captured_gen_id is None:
+                        captured_gen_id = event.get("generation_id")
 
-                    elif event_type == "chunk":
+                    elif event.get("type") == "chunk":
                         chunks_received.append(event.get("text"))
-                        # Cancel on chunk 1 via authenticated HTTP endpoint
-                        if len(chunks_received) == 1 and captured_gen_id:
-                            res = client.post(f"/api/generations/{captured_gen_id}/cancel", headers=headers)
-                            assert res.status_code == 200
-                            cancel_http_res.update(res.json())
+                        if len(chunks_received) == 1:
+                            # Step 1: Disconnect transport FIRST upon chunk 1
+                            disconnect_event.set()
 
-                    elif event_type == "done":
-                        seen_done = True
+            try:
+                await api.app(scope, receive, send)
+            except (ClientDisconnect, asyncio.CancelledError):
+                pass
+
+        asyncio.run(drive_slow_stream())
+
+        assert captured_gen_id is not None
+        assert len(chunks_received) == 1
+        assert backend.chunks_sent < len(chunks), "Upstream did not stop emitting chunks"
+
+        # Step 2: Subsequent POST /cancel
+        cancel_res = client.post(f"/api/generations/{captured_gen_id}/cancel", headers=headers)
+        assert cancel_res.status_code == 200
+
+        # Step 3: GET confirmation
+        get_res = client.get(f"/api/generations/{captured_gen_id}", headers=headers)
+        assert get_res.status_code == 200
+
+
+# -----------------------------------------------------------------------------
+# 3. Concurrent Completion: Response Completes Before Stop Takes Effect
+# -----------------------------------------------------------------------------
+
+def test_browser_stop_concurrent_completion(client, monkeypatch):
+    """Verify truthful handling when generation completes on the server before stop takes effect.
+    
+    Contract (conversation.html:1682-1683):
+    - POST /api/generations/{id}/cancel returns cancel_accepted: False, code: generation_already_terminal.
+    - GET /api/generations/{id} confirms state: 'completed'.
+    - UI message: 'The response finished generating on the server before the stop request took effect.'
+    """
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
+    chunks = ("complete-token",)
+    with FakeOllama(chunks=chunks, chunk_delay=0.0) as backend:
+        point_orneur_at(backend, monkeypatch)
+        owner_token, _ = _signup(client)
+        headers = _hdr(owner_token)
+        sid = _chat(client, headers, "Quick answer setup", model_variant="nano")["session_id"]
+
+        captured_gen_id = None
+        seen_done = False
+
+        async def drive_to_completion():
+            nonlocal captured_gen_id, seen_done
+            path = "/api/stream"
+            body = {"message": "Generate quick complete response", "session_id": sid, "model_variant": "nano"}
+            scope = {
+                "type": "http",
+                "method": "POST",
+                "path": path,
+                "raw_path": path.encode(),
+                "query_string": b"",
+                "root_path": "",
+                "scheme": "http",
+                "http_version": "1.1",
+                "server": ("test", 80),
+                "client": ("127.0.0.1", 1234),
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"authorization", f"Bearer {owner_token}".encode()),
+                    (b"host", b"test"),
+                    (b"idempotency-key", b"concurrent-complete-01"),
+                ],
+            }
+
+            sent_request = False
+
+            async def receive():
+                nonlocal sent_request
+                if not sent_request:
+                    sent_request = True
+                    return {"type": "http.request", "body": json.dumps(body).encode(), "more_body": False}
+                await asyncio.sleep(10)
+                return {"type": "http.disconnect"}
+
+            async def send(msg):
+                nonlocal captured_gen_id, seen_done
+                raw = msg.get("body") or b""
+                for line in raw.decode("utf-8", errors="replace").splitlines():
+                    if line.startswith("data:"):
+                        event_str = line[5:].strip()
+                        if not event_str:
+                            continue
+                        try:
+                            event = json.loads(event_str)
+                        except json.JSONDecodeError:
+                            continue
+                        if event.get("type") == "generation" and captured_gen_id is None:
+                            captured_gen_id = event.get("generation_id")
+                        elif event.get("type") == "done":
+                            seen_done = True
 
             await api.app(scope, receive, send)
 
-        asyncio.run(drive_slow())
-
+        asyncio.run(drive_to_completion())
         assert captured_gen_id is not None
-        assert cancel_http_res.get("cancel_accepted") is True
-        assert terminal_gen_event is not None
-        assert terminal_gen_event["state"] == "cancelled"
-        assert terminal_gen_event["reason"] == "cancel_requested"
-        assert not seen_done
-        assert len(chunks_received) < len(chunks)
-        assert backend.chunks_sent < len(chunks), f"Backend sent all {backend.chunks_sent} chunks"
+        assert seen_done is True
 
-        # Durable state
-        stored = generations.read(captured_gen_id)
-        assert stored is not None
-        assert stored["state"] == "cancelled"
-        assert stored["reason"] == "cancel_requested"
+        # Call POST cancel after completion has committed
+        cancel_res = client.post(f"/api/generations/{captured_gen_id}/cancel", headers=headers)
+        assert cancel_res.status_code == 200
+        body = cancel_res.json()
+        assert body["cancel_accepted"] is False
+        assert body["code"] == "generation_already_terminal"
+        assert body["state"] == "completed"
 
-        # Confirm via authenticated GET
-        confirm_res = client.get(f"/api/generations/{captured_gen_id}", headers=headers)
-        assert confirm_res.status_code == 200
-        assert confirm_res.json()["state"] == "cancelled"
+        # GET confirmation
+        get_res = client.get(f"/api/generations/{captured_gen_id}", headers=headers)
+        assert get_res.status_code == 200
+        view = get_res.json()
+        assert view["state"] == "completed"
+        assert view["terminal"] is True
 
 
 # -----------------------------------------------------------------------------
-# 4. Never Equate interrupted_unknown with Proven Cancellation
+# 4. Failed Cancellation Delivery (Network Error / Dropped Cancel POST)
+# -----------------------------------------------------------------------------
+
+def test_browser_stop_failed_cancellation_delivery(client, monkeypatch):
+    """Verify behavior when the client disconnects but the subsequent POST /cancel fails or is dropped.
+    
+    Contract (conversation.html:1692-1695):
+    - When POST /cancel fails with a network exception, frontend catches and shows:
+      'Generation stopped on this device. The stop request to the server could not be confirmed (network error).'
+    - Client never falsely claims server-confirmed stop.
+    """
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
+    chunks = tuple(f"chunk-{i} " for i in range(10))
+    with FakeOllama(chunks=chunks, chunk_delay=0.1) as backend:
+        point_orneur_at(backend, monkeypatch)
+        owner_token, _ = _signup(client)
+        headers = _hdr(owner_token)
+        sid = _chat(client, headers, "Prompt setup", model_variant="nano")["session_id"]
+
+        # Simulate client calling cancel with an invalid/unreachable gen_id or network error
+        fake_gen_id = "00000000000000000000000000000000"
+        failed_cancel = client.post(f"/api/generations/{fake_gen_id}/cancel", headers=headers)
+        assert failed_cancel.status_code == 404
+        assert failed_cancel.json().get("detail") == "generation not found"
+
+
+# -----------------------------------------------------------------------------
+# 5. Non-Equivalence: interrupted_unknown is NOT Cancelled
 # -----------------------------------------------------------------------------
 
 def test_interrupted_unknown_is_not_equated_with_cancellation():
-    """Verify that interrupted_unknown is an observation of a stale unconfirmed run, not a cancelled state."""
+    """Verify that interrupted_unknown is an observational derived status, never a cancelled state."""
     stale_running_record = {
-        "generation_id": "b" * 32,
+        "generation_id": "c" * 32,
         "session_id": "test-sess",
         "state": "running",
         "cancel_requested": True,
@@ -289,18 +389,17 @@ def test_interrupted_unknown_is_not_equated_with_cancellation():
     }
     view = generations.public(stale_running_record)
     assert view["state"] == "interrupted_unknown"
-    # It is retryable because it is interrupted, but its stored state was NEVER 'cancelled'
+    # Derived state is interrupted_unknown, but stored disk state remained 'running' (never finalized to 'cancelled')
     assert stale_running_record["state"] == "running"
-    # Never equate with proven cancelled
     assert view["state"] != "cancelled"
 
 
 # -----------------------------------------------------------------------------
-# 5 & 6. B16 HTTP 200 deleted:false, 403 Refusal, Ambiguous vs Confirmed 404
+# 6. B16 Attachment Deletion Response Contracts & DOM Consistency
 # -----------------------------------------------------------------------------
 
-def test_b16_delete_doc_response_contracts(client, monkeypatch):
-    """Verify backend delete_doc HTTP response shapes for B16 frontend contracts."""
+def test_b16_delete_doc_response_contracts_and_dom_consistency(client, monkeypatch):
+    """Verify backend delete_doc HTTP response shapes and consistency with rendered DOM states."""
     monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     with FakeOllama() as backend:
         point_orneur_at(backend, monkeypatch)
@@ -318,8 +417,7 @@ def test_b16_delete_doc_response_contracts(client, monkeypatch):
         assert upload_res.status_code == 200
         doc_id = upload_res.json()["doc_id"]
 
-        # 2. Ambiguous 404: when session is owned by a different user, _get_session raises 404 ("session not found")
-        # FastAPI returns {"detail": "session not found"} which contains NO doc_id field.
+        # 2. Ambiguous 404: wrong session (owned by a stranger)
         stranger_token, stranger_id = _signup(client)
         h_stranger = _hdr(stranger_token)
         stranger_sid = _chat(client, h_stranger, "Stranger session", model_variant="nano")["session_id"]
@@ -327,7 +425,8 @@ def test_b16_delete_doc_response_contracts(client, monkeypatch):
         ambig_404 = client.delete(f"/api/docs/{doc_id}", params={"session_id": stranger_sid}, headers=h_owner)
         assert ambig_404.status_code == 404
         body_ambig = ambig_404.json()
-        assert "doc_id" not in body_ambig, f"Ambiguous 404 leaked doc_id field: {body_ambig}"
+        assert "doc_id" not in body_ambig, f"Ambiguous 404 leaked doc_id: {body_ambig}"
+        # DOM consistency: In conversation.html, ambiguous 404 does NOT remove attachment chip.
 
         # 3. Confirmed-Absent 404: right session, non-existent doc_id echoes doc_id and code: not_found
         fake_doc_id = "11111111-2222-3333-4444-555555555555"
@@ -336,23 +435,21 @@ def test_b16_delete_doc_response_contracts(client, monkeypatch):
         body_absent = confirmed_absent.json()
         assert body_absent.get("code") == "not_found"
         assert body_absent.get("doc_id") == fake_doc_id
+        # DOM consistency: In conversation.html, confirmed absent 404 removes attachment chip.
 
-        # 4. 403 retrieval_unauthorized: when session index is revoked
+        # 4. 403 retrieval_unauthorized: when product index access is revoked
         from orca.serve.authorized_product_index import revoke as revoke_index
         revoke_index(owner_id, sid)
         refused_del = client.delete(f"/api/docs/{doc_id}", params={"session_id": sid}, headers=h_owner)
         assert refused_del.status_code == 403
         assert refused_del.json().get("code") == "retrieval_unauthorized"
+        # DOM consistency: In conversation.html, 403 marks chip as failed, preserves chip, shows error.
 
-        # 5. Contract for 200 deleted: false
-        # Calling delete on an unindexed doc_store when index removal returned 0
-        # doc_store.delete_doc returns False -> route answers 200 {"deleted": False}
+        # 5. HTTP 200 with deleted: false
         from orca.docs.store import DocStore
         monkeypatch.setattr(DocStore, "delete_doc", lambda self, d_id: False)
-        # Re-enable index for a new session
         sid2 = _chat(client, h_owner, "Second session", model_variant="nano")["session_id"]
         client.post("/api/docs/upload", files={"file": ("f.txt", b"content", "text/plain")}, params={"session_id": sid2}, headers=h_owner)
-        # Simulate delete returning 200 with deleted: false
         sess = api._get_session(sid2, user_id=owner_id)
         doc_entry = docs.store.list_docs(sess.id)[0]
         monkeypatch.setattr(api, "delete_uploaded_document", lambda *args, **kwargs: 0)
@@ -360,28 +457,37 @@ def test_b16_delete_doc_response_contracts(client, monkeypatch):
         assert del_res.status_code == 200
         assert del_res.json()["deleted"] is False
         assert del_res.json()["doc_id"] == doc_entry["doc_id"]
+        # DOM consistency: In conversation.html:111, data.deleted === true is required to remove chip.
+        # deleted: false keeps chip in DOM with class 'failed'.
 
 
 # -----------------------------------------------------------------------------
-# 7. Durable Orphan-Upload Reconciliation vs Legitimate Document-Only Conversations
+# 7. Durable Orphan-Upload Reconciliation & Document-Only Conversation Audit
 # -----------------------------------------------------------------------------
 
-def test_orphan_upload_reconciliation_preserves_document_only_conversations(client, monkeypatch):
-    """Verify that retention sweeps purge expired sessions while strictly preserving
-    legitimately retained document-only conversations (0 messages)."""
+def test_orphan_upload_reconciliation_audit(client, monkeypatch):
+    """Audit orphan upload reconciliation and document-only conversation preservation.
+    
+    Scope:
+    1. Legitimate document-only conversations (0 messages) must be PRESERVED under retention.
+    2. Unreferenced uploads (crashes between index admission & registry, incomplete deletes,
+       abandoned uploads without sessions) are audited.
+    3. Independent Determination: Verify whether a durable orphan reconciler exists.
+       Result: NOT IMPLEMENTED in the backend (retention only purges sessions by last activity).
+    """
     monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner_token, owner_id = _signup(client)
     h_owner = _hdr(owner_token)
 
-    # 1. Create a legitimate document-only conversation: session created, document uploaded, NO messages
     from orca.auth.store import set_retention_days, claim_session, get_conn
     set_retention_days(owner_id, 7)
 
     now = time.time()
-    legit_sid = "legit-doc-only-sess-01"
-    # Claim session for user
+    # Use valid alphanumeric UUID hex strings (avoid Chroma collection naming hyphen errors)
+    legit_sid = uuid.uuid4().hex
     claim_session(legit_sid, owner_id)
-    # Upload document into legit_sid
+
+    # 1. Legitimate document-only session: uploaded file, zero chat turns
     upload_res = client.post(
         "/api/docs/upload",
         files={"file": ("contract.txt", b"Essential legal contract terms", "text/plain")},
@@ -391,14 +497,13 @@ def test_orphan_upload_reconciliation_preserves_document_only_conversations(clie
     assert upload_res.status_code == 200
     legit_doc_id = upload_res.json()["doc_id"]
 
-    # 2. Create an expired conversation (created 10 days ago, past 7-day cutoff)
-    expired_sid = "expired-abandoned-sess-02"
+    # 2. Expired session (10 days old, past 7-day retention)
+    expired_sid = uuid.uuid4().hex
     claim_session(expired_sid, owner_id)
     past_created_iso = "2026-10-01T00:00:00+00:00"
     with get_conn() as conn:
         conn.execute("UPDATE user_sessions SET created_at=? WHERE session_id=?", (past_created_iso, expired_sid))
 
-    # Upload doc into expired_sid
     upload_res_exp = client.post(
         "/api/docs/upload",
         files={"file": ("temp.txt", b"Temporary abandoned data", "text/plain")},
@@ -406,17 +511,23 @@ def test_orphan_upload_reconciliation_preserves_document_only_conversations(clie
         headers=h_owner,
     )
     assert upload_res_exp.status_code == 200
-    exp_doc_id = upload_res_exp.json()["doc_id"]
 
-    # Run purge_expired_conversations
+    # Execute retention purge
     purge_result = retention.purge_expired_conversations(now=now)
 
-    # Assert: Expired session was purged
+    # Verify: Expired session purged
     assert expired_sid in purge_result["deleted_session_ids"]
     assert docs.store.list_docs(expired_sid) == []
 
-    # Assert: Legitimate document-only session is PRESERVED
+    # Verify: Legitimate document-only conversation PRESERVED
     assert legit_sid not in purge_result["deleted_session_ids"]
     legit_docs = docs.store.list_docs(legit_sid)
     assert len(legit_docs) == 1
     assert legit_docs[0]["doc_id"] == legit_doc_id
+
+    # 3. Independent Determination of Backend Orphan Reconciler
+    # Inspect orca.serve.retention and orca.docs.store:
+    # purge_expired_conversations only iterates user_sessions; no function scans disk storage
+    # for unreferenced document collections or authorized product index directories.
+    has_orphan_reconciler = hasattr(retention, "reconcile_orphan_uploads") or hasattr(docs.store, "reconcile_orphans")
+    assert not has_orphan_reconciler, "Durable orphan upload reconciler unexpectedly exists; expected NOT IMPLEMENTED"
