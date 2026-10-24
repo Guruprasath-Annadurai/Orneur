@@ -531,3 +531,158 @@ test('ADVERSARIAL: a concurrent sibling\'s done event never overwrites a differe
   assert.ok(fnSrc.includes('answerDiv.dataset.messageId = doneMessageId'));
   assert.ok(!fnSrc.includes('document.querySelector') && !fnSrc.includes('getElementById'), '_assignAssistantMessageId() must never look up its own target element -- the caller\'s own done-event closure is the only correct source of which div this id belongs to');
 });
+
+// --- REQUALIFICATION (2026-10-24): the CTO directive's own follow-up
+// named four scenarios to re-examine -- Cancel during an in-flight or
+// uncertain save, closing/reopening after an ambiguous outcome,
+// idempotency keys after retry (already covered above), and a server-
+// error response that may follow a committed write. The last one surfaced
+// a genuinely new, previously-unidentified bug: reading
+// edit_session_message() in orca/serve/api.py directly shows
+// _replace_visible_copy() is called AFTER message_versions.edit() has
+// already durably committed the new version, with NO enclosing
+// try/except of its own -- an exception there produces an unhandled 500
+// to the client for an edit that is ALREADY SAVED server-side.
+// _message_version_error()'s own status-code mapping confirms every
+// genuine pre-commit validation failure maps exclusively to
+// 400/404/409/422, never 500 -- so a 500 from this endpoint can only mean
+// a post-commit crash, and must be treated exactly like a network error:
+// ambiguous, never a definitive "not saved". ---
+
+test('a 500 response is treated as UNCERTAIN, not a definitive failure -- same handling as a network error, because it may follow an already-committed write', async () => {
+  const calls = [];
+  const { sandbox, container } = buildSandbox(async (url, opts) => {
+    calls.push(opts.headers['Idempotency-Key']);
+    return { ok: false, status: 500, json: async () => ({ error: 'Internal Server Error' }) };
+  });
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const errorEl = div._children.find((c) => c.className === 'edit-msg-error');
+  const saveBtn = div.querySelector('[data-action="save"]');
+
+  editBtn._on_click();
+  textarea.value = 'an edit whose commit status is genuinely unknown after a 500';
+  await saveBtn._on_click();
+
+  assert.equal(calls.length, 2, 'a 500 must trigger the same automatic same-key retry as a network error, not an immediate definitive failure');
+  assert.equal(calls[0], calls[1], 'the retry after a 500 must reuse the exact same Idempotency-Key');
+  assert.equal(panel.hidden, false, 'must not close the panel on an uncertain outcome');
+  assert.ok(!errorEl.textContent.includes('could not be saved'), 'a 500 must never be reported as a definitive rejection -- it may have already committed server-side');
+  assert.ok(errorEl.textContent.includes('Could not confirm'), 'must use the same honest "could not confirm" language as a network error');
+});
+
+test('after two 500s, a later manual retry with the SAME key that succeeds is reported as the real success, never as having already failed', async () => {
+  const calls = [];
+  let attempt = 0;
+  const { sandbox, container } = buildSandbox(async (url, opts) => {
+    calls.push(opts.headers['Idempotency-Key']);
+    attempt++;
+    if (attempt <= 2) return { ok: false, status: 500, json: async () => ({ error: 'Internal Server Error' }) };
+    // The idempotency lookup finds whatever _replace_visible_copy() did
+    // or didn't actually commit the first time -- the client cannot and
+    // must not distinguish "it committed, this just confirms it" from
+    // "it never committed, this is the real commit."
+    return { ok: true, status: 200, json: async () => ({ active_content: 'the edit, now confirmed', version_count: 2, created: false }) };
+  });
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const saveBtn = div.querySelector('[data-action="save"]');
+
+  editBtn._on_click();
+  textarea.value = 'the edit, now confirmed';
+  await saveBtn._on_click(); // two 500s -> uncertain, key retained
+  await saveBtn._on_click(); // manual retry, same key, now succeeds
+
+  assert.equal(new Set(calls).size, 1, 'every attempt across both Save clicks must reuse the exact same key -- the 500s never minted a new one');
+  const sampleQ = div._children.find((c) => c.className === 'sample-q');
+  assert.equal(sampleQ.textContent, 'the edit, now confirmed');
+  assert.equal(panel.hidden, true, 'the eventual real success must close the panel like any other success');
+});
+
+test('a genuine definitive rejection (409 idempotency_mismatch) is still reported as a real failure, not folded into the uncertain/retry path reserved for 500s and network errors', async () => {
+  const { sandbox, container } = buildSandbox(async () => ({ ok: false, status: 409, json: async () => ({ error: 'idempotency_mismatch: this key was already used for different content.' }) }));
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const errorEl = div._children.find((c) => c.className === 'edit-msg-error');
+  const saveBtn = div.querySelector('[data-action="save"]');
+
+  editBtn._on_click();
+  textarea.value = 'a rejected edit';
+  await saveBtn._on_click();
+
+  assert.equal(panel.hidden, false, 'a definitive rejection keeps the panel open for a real retry');
+  assert.ok(errorEl.textContent.includes('idempotency_mismatch'), 'must show the real server error for a genuine pre-commit rejection, not the generic uncertain-outcome copy');
+});
+
+test('Cancel is genuinely disabled while a save is in flight, so an in-flight response cannot be silently applied after the user tried to cancel', async () => {
+  let resolveFetch;
+  const { sandbox, container } = buildSandbox(() => new Promise((resolve) => { resolveFetch = resolve; }));
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const saveBtn = div.querySelector('[data-action="save"]');
+  const cancelBtn = div.querySelector('[data-action="cancel"]');
+
+  editBtn._on_click();
+  textarea.value = 'an edit being saved right now';
+  const savePromise = saveBtn._on_click(); // the fetch is now pending, deliberately left unresolved
+
+  assert.equal(cancelBtn.disabled, true, 'Cancel must be disabled the moment a save request is sent, before any response arrives');
+  // A click while disabled must be a genuine no-op in the handler itself
+  // (not merely relying on the browser to block it) -- neither clearing
+  // the pending key nor closing the panel while the request is still in
+  // flight.
+  cancelBtn._on_click();
+  assert.equal(panel.hidden, false, 'a Cancel click while disabled must not close the panel');
+
+  resolveFetch({ ok: true, status: 200, json: async () => ({ active_content: 'the edit being saved right now', version_count: 2, created: true }) });
+  await savePromise;
+
+  assert.equal(panel.hidden, true, 'the in-flight success the user tried (but failed) to cancel must still apply -- Cancel never got the chance to intervene, which is the whole point of disabling it');
+  assert.equal(cancelBtn.disabled, false, 'Cancel must be re-enabled once the attempt has settled, win or lose');
+});
+
+test('reopening the edit panel after an uncertain outcome shows the unresolved pending draft and an explanatory note, not silently the old confirmed text', async () => {
+  const { sandbox, container } = buildSandbox(async () => { throw new TypeError('Failed to fetch'); });
+  loadFns(sandbox);
+  sandbox.appendUserMessage('the original confirmed text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const errorEl = div._children.find((c) => c.className === 'edit-msg-error');
+  const saveBtn = div.querySelector('[data-action="save"]');
+
+  editBtn._on_click();
+  textarea.value = 'an edit stuck in an uncertain state';
+  await saveBtn._on_click(); // two network errors -> uncertain outcome, key retained, panel stays open
+
+  // Simulate the panel having been closed by some path other than Cancel
+  // (the toggle-close branch of editBtn's own handler does not run
+  // closeEdit()/clear the pending key) and the textarea having reverted
+  // to the last confirmed text in the meantime.
+  panel.hidden = true;
+  panel.classList.remove('open');
+  textarea.value = 'the original confirmed text';
+
+  editBtn._on_click(); // reopen
+
+  assert.equal(textarea.value, 'an edit stuck in an uncertain state', 'reopening with an unresolved attempt must show that draft, not the old confirmed text');
+  assert.equal(errorEl.hidden, false, 'must surface that an earlier attempt is unresolved, not silently hide the ambiguity');
+  assert.ok(errorEl.textContent.includes('never got a confirmed result'));
+});
