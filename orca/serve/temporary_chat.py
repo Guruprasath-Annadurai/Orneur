@@ -159,6 +159,9 @@ def activate(session_id: str, user_id: str, ttl_seconds: int, *, now: float | No
             existing is not None and existing.get("state") == "active"
         ):
             raise TemporaryChatDenied("temporary chat cannot adopt an existing transcript", "temporary_not_empty")
+        from orca.serve import organization
+
+        organization.revoke_session(session_id, now=moment)
         record = {
             "version": 1,
             "session_id": session_id,
