@@ -26,10 +26,13 @@ The record is written only after `AuthorizedIndex` has opened that
 directory, under an exclusive lock. A crash before the record exists
 leaves an orphan directory that no conversation opens. Revocation is the
 `revoked: true` flag on that record plus the in-process session revoke.
-A restart or another worker adopts the same index session id; it does
-not mint a broader one. A missing record is `absent` (no document
-grounding). A revoked record is `revoked` (refuse). Neither case falls
-through to the legacy store.
+A cached binding is not authority: every open re-reads the flag under
+the lock, and a search that already started re-reads it again before
+any passage is returned. Another worker's durable revoke therefore
+fails this worker closed. A restart or another worker adopts the same
+index session id; it does not mint a broader one. A missing record is
+`absent` (no document grounding). A revoked record is `revoked`
+(refuse). Neither case falls through to the legacy store.
 
 Prompt contract: a passage enters model context only when this
 conversation's index still replays it and the product registry lists
@@ -189,19 +192,69 @@ def _close_quietly(index: AuthorizedIndex | None) -> None:
         pass
 
 
+def _discard_cached(key: tuple[str, str], *, revoke_local: bool) -> None:
+    existing = _BINDINGS.pop(key, None)
+    if existing is None:
+        return
+    if revoke_local:
+        _AUTHORITY.revoke(existing.trusted)
+    _close_quietly(existing.index)
+
+
+def _binding_still_current(binding: _Binding, record: dict | None) -> bool:
+    if record is None or record["revoked"] or record["index_session_id"] != binding.trusted.session_id:
+        return False
+    if not _AUTHORITY.is_current(binding.trusted):
+        return False
+    try:
+        return bool(binding.index.permits(binding.trusted))
+    except Exception:
+        return False
+
+
+def _refuse_if_durably_revoked(binding: _Binding) -> None:
+    """Drop passages when the durable record changed after the search began.
+
+    The file lock is not held during retrieval, so another process can set
+    `revoked` in that window. The in-process token cannot see that write.
+    """
+    key = (binding.user_id, binding.product_session_id)
+    with _LOCK:
+        with _binding_lock(key[0], key[1]) as record_path:
+            record = _read_record(record_path, key)
+            if _binding_still_current(binding, record):
+                return
+            _AUTHORITY.revoke(binding.trusted)
+            cached = _BINDINGS.get(key)
+            if cached is not None and cached.trusted.session_id == binding.trusted.session_id:
+                _close_quietly(cached.index)
+                _BINDINGS.pop(key, None)
+            if record is not None and record["revoked"]:
+                raise ProductRetrievalDenied("authorized session is revoked", code="revoked")
+            raise ProductRetrievalDenied("authorized session is not current", code="denied")
+
+
 def _load_binding(user_id: str, product_session_id: str, *, create: bool) -> _Binding:
     key = (_safe_component(user_id), _safe_component(product_session_id))
     with _LOCK:
         with _binding_lock(key[0], key[1]) as record_path:
+            record = _read_record(record_path, key)
             existing = _BINDINGS.get(key)
-            if existing is not None and _AUTHORITY.is_current(existing.trusted) and existing.index.permits(existing.trusted):
+            if record is not None and record["revoked"]:
+                _discard_cached(key, revoke_local=True)
+                raise ProductRetrievalDenied("authorized session is revoked", code="revoked")
+            if (
+                existing is not None
+                and record is not None
+                and _binding_still_current(existing, record)
+            ):
                 return existing
             if existing is not None:
-                _close_quietly(existing.index)
-                _BINDINGS.pop(key, None)
-            record = _read_record(record_path, key)
-            if record is not None and record["revoked"]:
-                raise ProductRetrievalDenied("authorized session is revoked", code="revoked")
+                # The durable record is still active. Close the stale object
+                # and adopt that same id below. Do not revoke it: a revoked
+                # in-process record would make the later adopt fail closed
+                # even though the file still grants this conversation.
+                _discard_cached(key, revoke_local=False)
             if record is not None:
                 trusted = _AUTHORITY.adopt(record["index_session_id"], f"user:{key[0]}", key[0])
                 index = AuthorizedIndex(_AUTHORITY, trusted, _root_for_user(key[0]))
@@ -265,33 +318,33 @@ def retrieve_authorized(user_id: str, product_session_id: str, query: str) -> Au
         answer = run_authorized_retrieval(binding.trusted, binding.index, query)
     except AccessDenied as exc:
         raise ProductRetrievalDenied(getattr(exc, "reason", str(exc)), code="denied") from exc
-    if answer.hits or not _DOCUMENT_REFERENCE.search(query or ""):
-        return answer
-    try:
-        passages = binding.index.listed_passages(binding.trusted, limit=5)
-    except AccessDenied as exc:
-        raise ProductRetrievalDenied(getattr(exc, "reason", str(exc)), code="denied") from exc
-    if not passages:
-        return answer
-    conflicts = fact_conflicts([hit.text for hit in passages])
-    return AuthorizedAnswer(
-        query=answer.query,
-        tenant_id=answer.tenant_id,
-        principal_id=answer.principal_id,
-        hits=tuple(passages),
-        evidence=(),
-        sources=(),
-        abstained=bool(conflicts),
-        contradictions=tuple(conflicts),
-        claim_support=None,
-        tool_grant=False,
-        partial_reasons=tuple(answer.partial_reasons) + ("lexical miss; enumerated this conversation's authorized passages",),
-        method="authorized-enumeration",
-        dense_backend=answer.dense_backend,
-        production_neural=False,
-        judge_consulted=False,
-        ignored_claims=answer.ignored_claims,
-    )
+    if not answer.hits and _DOCUMENT_REFERENCE.search(query or ""):
+        try:
+            passages = binding.index.listed_passages(binding.trusted, limit=5)
+        except AccessDenied as exc:
+            raise ProductRetrievalDenied(getattr(exc, "reason", str(exc)), code="denied") from exc
+        if passages:
+            conflicts = fact_conflicts([hit.text for hit in passages])
+            answer = AuthorizedAnswer(
+                query=answer.query,
+                tenant_id=answer.tenant_id,
+                principal_id=answer.principal_id,
+                hits=tuple(passages),
+                evidence=(),
+                sources=(),
+                abstained=bool(conflicts),
+                contradictions=tuple(conflicts),
+                claim_support=None,
+                tool_grant=False,
+                partial_reasons=tuple(answer.partial_reasons) + ("lexical miss; enumerated this conversation's authorized passages",),
+                method="authorized-enumeration",
+                dense_backend=answer.dense_backend,
+                production_neural=False,
+                judge_consulted=False,
+                ignored_claims=answer.ignored_claims,
+            )
+    _refuse_if_durably_revoked(binding)
+    return answer
 
 
 def model_context_from_authorized(user_id: str, product_session_id: str, answer: AuthorizedAnswer | None):
@@ -302,14 +355,15 @@ def model_context_from_authorized(user_id: str, product_session_id: str, answer:
     whose document was never committed to this conversation's registry.
     None means an ordinary ungrounded answer, not a legacy-store fallback.
     """
-    if answer is None or answer.abstained or not answer.hits:
+    if answer is None:
         return None
     from orca.docs.pipeline import RAGResult
     from orca.docs.store import list_docs
 
     binding = _load_binding(user_id, product_session_id, create=False)
-    if not binding.index.permits(binding.trusted):
-        raise ProductRetrievalDenied("authorized session is revoked", code="revoked")
+    if answer.abstained or not answer.hits:
+        _refuse_if_durably_revoked(binding)
+        return None
     registered = {row.get("doc_id") for row in list_docs(product_session_id)}
     dna: dict = {}
     lines: list[str] = []
@@ -332,20 +386,21 @@ def model_context_from_authorized(user_id: str, product_session_id: str, answer:
         lines.append(
             f"[{ref}] filename={filename} chunk={hit.chunk_idx} sha256={hit.content_sha256} doc_id={doc_id}\n{hit.text}"
         )
-    if not dna:
-        return None
-    result = RAGResult(
-        context_block="\n\n".join(lines),
-        citation_dna=dna,
-        sources=names,
-        contradictions=list(answer.contradictions),
-        sufficiency_confidence=0.0,
-        retrieval_rounds=1,
-        used_fallback=False,
-    )
-    result.authorized_method = answer.method
-    result.production_neural = bool(answer.production_neural)
-    result.tool_grant = False
+    result = None
+    if dna:
+        result = RAGResult(
+            context_block="\n\n".join(lines),
+            citation_dna=dna,
+            sources=names,
+            contradictions=list(answer.contradictions),
+            sufficiency_confidence=0.0,
+            retrieval_rounds=1,
+            used_fallback=False,
+        )
+        result.authorized_method = answer.method
+        result.production_neural = bool(answer.production_neural)
+        result.tool_grant = False
+    _refuse_if_durably_revoked(binding)
     return result
 
 

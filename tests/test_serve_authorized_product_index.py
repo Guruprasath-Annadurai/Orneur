@@ -31,7 +31,7 @@ def _reset_bindings():
     reset_for_tests()
 
 
-def test_cross_user_index_search_is_denied(isolated_home, tmp_path, monkeypatch):
+def test_cross_user_index_search_is_denied(tmp_path, monkeypatch):
     monkeypatch.setattr("orca.config.ORCA_HOME", tmp_path / "home")
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     admit_uploaded_document("user-a", "sess-a", filename="notes.txt", text=DOC.decode(), doc_id="doc-a")
@@ -45,7 +45,7 @@ def test_cross_user_index_search_is_denied(isolated_home, tmp_path, monkeypatch)
     assert answer.tool_grant is False
 
 
-def test_revoked_product_session_cannot_retrieve(isolated_home, tmp_path, monkeypatch):
+def test_revoked_product_session_cannot_retrieve(tmp_path, monkeypatch):
     monkeypatch.setattr("orca.config.ORCA_HOME", tmp_path / "home")
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     admit_uploaded_document("user-a", "sess-a", filename="notes.txt", text=DOC.decode(), doc_id="doc-a")
