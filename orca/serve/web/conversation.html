@@ -186,6 +186,8 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .temp-entry:hover,.temp-entry:focus-visible{background:var(--chip);color:var(--ink)}
 .temp-entry-icon{opacity:.75}
 .temp-entry-chevron{font-size:11px;opacity:.6}
+/* INTEGRATION Phase D (2026-10-24): a real active temporary session. */
+.temp-entry.temp-active{border-color:var(--coral);color:var(--coral)}
 .temp-mode-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:95}
 body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
 .temp-mode-panel{position:fixed;top:72px;right:24px;z-index:96;width:min(380px,calc(100vw - 32px));max-height:min(620px,calc(100vh - 96px));overflow:auto;background:var(--compose);border:1px solid var(--border);border-radius:16px;box-shadow:0 24px 60px var(--shadow);padding:20px 22px 18px}
@@ -440,41 +442,56 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
      APPROVED_SOURCE_ARCHIVES/ORNEUR_B13_FINAL_LOCK_AND_HANDOFF.zip (SHA-256
      f0ee3ddc1c44885a8adf3cb88d95cfd9b0a13202bdc8aaeeb78541606a14f9a8,
      verified via the archive's own verification/verify_handoff.py: 32
-     package files + 24 approved source files, zero failures). No backend
-     capability for this exists anywhere in this codebase (grepped for
-     temporary/ephemeral/private_mode/incognito session concepts; none
-     found) -- the B13_IMPLEMENTATION_CONTRACT.md's own explicit guidance
-     for exactly this case ("If unsupported, show a clearly disabled
-     state with a succinct explanation, not a fake toggle") is what this
-     is. The copy below is the real, founder-approved locked content from
-     references/ORNEUR_B13_Unified_Dark.html, not invented for this pass
-     -- that source is itself already an honest "concept review, action
-     disabled until verified implementation" design, so implementing it
-     faithfully IS the honest implementation. -->
+     package files + 24 approved source files, zero failures).
+     INTEGRATION Phase D (2026-10-24): Cursor PR #95-98 adds a real
+     backend (POST /api/sessions/temporary, GET .../temporary,
+     POST .../temporary/close -- docs/orneur/cursor/
+     ORNEUR_B13_TEMPORARY_CHAT_HANDOFF.md on the integration candidate).
+     Reconnected to the same approved dialog shell, not redesigned:
+     #temp-mode-prestart is the original "Before you start" content
+     (copy corrected to match the real, now-verified behavior instead of
+     "proposed"/"not yet verified" placeholder language); #temp-mode-active
+     is new, added for the state the original design never needed to show
+     (a real active session), reusing the exact same visual components
+     (.temp-mode-rule/-sub/-footnote/-actions) rather than inventing a new
+     design system. -->
 <div id="temp-mode-backdrop" class="temp-mode-backdrop" hidden></div>
 <div id="temp-mode-panel" class="temp-mode-panel" role="dialog" aria-modal="true" aria-labelledby="temp-mode-title" hidden tabindex="-1">
   <div class="temp-mode-head">
     <span class="temp-mode-eyebrow">Temporary conversation</span>
     <button type="button" id="temp-mode-close" class="expand-action iconbtn" aria-label="Close">×</button>
   </div>
-  <h2 id="temp-mode-title">Before you start</h2>
-  <p class="temp-mode-sub">Understand what temporary mode is intended to do before using it. These are proposed behaviors, not verified privacy guarantees.</p>
-  <div class="temp-mode-rule">
-    <div class="temp-mode-rule-title">Conversation history</div>
-    <div class="temp-mode-rule-desc">Proposed: temporary chats do not appear in normal history. This must be proven through storage and account-level testing.</div>
+  <div id="temp-mode-prestart">
+    <h2 id="temp-mode-title">Before you start</h2>
+    <p class="temp-mode-sub">What a temporary conversation actually does on this server, not a privacy promise beyond what's listed here.</p>
+    <div class="temp-mode-rule">
+      <div class="temp-mode-rule-title">Conversation history</div>
+      <div class="temp-mode-rule-desc">A temporary chat is excluded from your conversation list, search, and export for as long as it's active.</div>
+    </div>
+    <div class="temp-mode-rule">
+      <div class="temp-mode-rule-title">Data retention</div>
+      <div class="temp-mode-rule-desc">The transcript still exists on the server until you close it or it expires -- this is not zero-persistence. It is not written to long-term memory, and is not kept after close/expiry, but backups, logs outside this conversation, and any process already serving this chat are not covered.</div>
+    </div>
+    <div class="temp-mode-rule">
+      <div class="temp-mode-rule-title">Access and model readiness</div>
+      <div class="temp-mode-rule-desc">Uses the same model availability as a normal conversation -- no separate temporary-only model tier exists.</div>
+    </div>
+    <p class="temp-mode-footnote">Starting creates a real session on the server. It lasts 1 hour by default, or until you close it.</p>
+    <div class="temp-mode-actions">
+      <button type="button" id="temp-mode-back" class="expand-action">Back</button>
+      <button type="button" id="temp-mode-start" class="expand-action primary-disabled" disabled title="Sign in to start a temporary chat">Start temporary chat</button>
+    </div>
+    <div class="edit-msg-error" id="temp-mode-error" hidden></div>
   </div>
-  <div class="temp-mode-rule">
-    <div class="temp-mode-rule-title">Data retention</div>
-    <div class="temp-mode-rule-desc">Not yet verified. Temporary does not guarantee zero retention, automatic erasure, anonymity, or zero logs.</div>
-  </div>
-  <div class="temp-mode-rule">
-    <div class="temp-mode-rule-title">Access and model readiness</div>
-    <div class="temp-mode-rule-desc">Genesis, Novus and Aeternum are the only native families. Model eligibility and temporary-session access are not verified.</div>
-  </div>
-  <p class="temp-mode-footnote">This preview creates no session. Privacy wording must match audited retention, memory, logging, and deletion behavior before release.</p>
-  <div class="temp-mode-actions">
-    <button type="button" id="temp-mode-back" class="expand-action">Back</button>
-    <button type="button" class="expand-action primary-disabled" disabled title="Concept review · action disabled until verified implementation">Start temporary chat</button>
+  <div id="temp-mode-active" hidden>
+    <h2 id="temp-mode-active-title">Temporary conversation active</h2>
+    <p class="temp-mode-sub" id="temp-mode-active-desc">This conversation is hidden from your history and search while active.</p>
+    <p class="temp-mode-footnote" id="temp-mode-expiry"></p>
+    <div class="temp-mode-actions">
+      <button type="button" id="temp-mode-keep-chatting" class="expand-action">Keep chatting</button>
+      <button type="button" id="temp-mode-close-chat" class="expand-action primary-disabled">Close temporary chat</button>
+    </div>
+    <div class="edit-msg-error" id="temp-mode-close-error" hidden></div>
   </div>
 </div>
 
@@ -516,7 +533,7 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
       <div class="conversationtitle" id="conv-title">New conversation</div>
       <div class="topright">
         <button type="button" id="temp-mode-btn" class="temp-entry" aria-label="Temporary conversation details" aria-haspopup="dialog" aria-expanded="false">
-          <span class="temp-entry-icon" aria-hidden="true">◌</span> Temporary <span class="temp-entry-chevron" aria-hidden="true">⌄</span>
+          <span class="temp-entry-icon" aria-hidden="true">◌</span> <span class="temp-entry-label">Temporary</span> <span class="temp-entry-chevron" aria-hidden="true">⌄</span>
         </button>
         <span class="relay" id="relay-badge">Relay · Not connected</span>
         <button class="themebtn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
@@ -678,6 +695,16 @@ let _activeStreamController = null;
 // server-confirmed cancellation in that case.
 let _activeGenerationId = null;
 let _activeGenerationCancellable = false;
+// INTEGRATION Phase D (2026-10-24): real temporary-chat state (PR #95-98).
+// A temp session is excluded from GET /api/sessions and search by the
+// backend itself, so there is no sidebar/Quick Switch entry to ever
+// re-open one -- this flag exists only to drive THIS tab's own header
+// indicator and to gate Export/Remember UI honestly. Reset to false by
+// every real identity/navigation transition (newConversation(),
+// openSession(), logout, account switch) since none of those can ever
+// legitimately target a temporary session.
+let _isTemporarySession = false;
+let _tempSessionExpiresAt = null;
 function _abandonActiveStream() {
   _streamEpoch++;
   if (_activeStreamController) {
@@ -1393,15 +1420,19 @@ document.getElementById('draft-workspace').addEventListener('keydown', (e) => {
   }
 });
 
-/* ── B13 Temporary / Private Chat -- discoverability + honest disabled
-   details dialog. No backend capability exists for this anywhere in this
-   codebase (verified by inspection before writing any code); the
-   contract's own explicit guidance for this exact situation is "show a
-   clearly disabled state with a succinct explanation (not a fake
-   toggle)" -- this dialog opens, explains truthfully that nothing is
-   verified, and its one action (Start temporary chat) stays genuinely
-   disabled, never simulating activation. ───────────────────────────── */
+/* ── B13 Temporary / Private Chat -- INTEGRATION Phase D: real backend
+   (PR #95-98). The dialog shows one of two real states: #temp-mode-prestart
+   (no active temp session) or #temp-mode-active (this tab currently has
+   one). Never a fake toggle -- every action below calls the real route
+   and only updates state/UI from the real response. ─────────────────── */
 let _preTempModeFocusEl = null;
+
+function _updateTempModeIndicator() {
+  const btn = document.getElementById('temp-mode-btn');
+  const label = btn.querySelector('.temp-entry-label');
+  btn.classList.toggle('temp-active', _isTemporarySession);
+  if (label) label.textContent = _isTemporarySession ? 'Temporary · Active' : 'Temporary';
+}
 
 function _tempModeFocusableEls() {
   const panel = document.getElementById('temp-mode-panel');
@@ -1414,6 +1445,24 @@ function openTempModePanel() {
   const backdrop = document.getElementById('temp-mode-backdrop');
   if (!panel.hidden) return; // already open -- idempotent
   _preTempModeFocusEl = document.activeElement;
+  const prestart = document.getElementById('temp-mode-prestart');
+  const active = document.getElementById('temp-mode-active');
+  prestart.hidden = _isTemporarySession;
+  active.hidden = !_isTemporarySession;
+  if (!_isTemporarySession) {
+    const startBtn = document.getElementById('temp-mode-start');
+    startBtn.disabled = !_authToken;
+    startBtn.classList.toggle('primary-disabled', !_authToken);
+    startBtn.title = _authToken ? '' : 'Sign in to start a temporary chat';
+    document.getElementById('temp-mode-error').hidden = true;
+  } else {
+    document.getElementById('temp-mode-expiry').textContent = _tempSessionExpiresAt
+      ? `Expires at ${new Date(_tempSessionExpiresAt * 1000).toLocaleTimeString()} unless you close it first.`
+      : 'Expiry time unavailable.';
+    document.getElementById('temp-mode-close-chat').disabled = false;
+    document.getElementById('temp-mode-close-chat').classList.remove('primary-disabled');
+    document.getElementById('temp-mode-close-error').hidden = true;
+  }
   panel.hidden = false;
   backdrop.hidden = false;
   document.getElementById('temp-mode-btn').setAttribute('aria-expanded', 'true');
@@ -1433,6 +1482,106 @@ function closeTempModePanel() {
   restoreTo.focus();
   _preTempModeFocusEl = null;
 }
+
+// INTEGRATION Phase D: fixed 1-hour default -- the approved dialog design
+// has no TTL picker control. 60-86400s is the real valid range
+// (temporary_rejected otherwise); this default is always inside it.
+const TEMP_CHAT_DEFAULT_TTL_SECONDS = 3600;
+
+document.getElementById('temp-mode-start').addEventListener('click', async () => {
+  const startBtn = document.getElementById('temp-mode-start');
+  const errorEl = document.getElementById('temp-mode-error');
+  if (startBtn.disabled) return;
+  startBtn.disabled = true;
+  startBtn.textContent = 'Starting...';
+  errorEl.hidden = true;
+  const myToken = _authToken;
+  try {
+    const r = await fetch('/api/sessions/temporary', {
+      method: 'POST',
+      headers: _authHeaders(),
+      body: JSON.stringify({ ttl_seconds: TEMP_CHAT_DEFAULT_TTL_SECONDS }),
+    });
+    if (myToken !== _authToken) return; // account changed mid-request
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.state !== 'active') {
+      errorEl.textContent = data.error || `Could not start a temporary chat (status ${r.status}).`;
+      errorEl.hidden = false;
+      return;
+    }
+    // A real, server-confirmed temporary session -- only now treated as one.
+    _abandonActiveStream();
+    sessionId = data.session_id;
+    _isTemporarySession = true;
+    _tempSessionExpiresAt = data.expires_at || null;
+    _draftsByConversation.clear();
+    resetModelSelection();
+    document.getElementById('reading-container').innerHTML = '';
+    showActiveView('Temporary conversation');
+    _updateTempModeIndicator();
+    closeTempModePanel();
+    const input = composerEl && composerEl.querySelector('#msg-input');
+    if (input) input.focus();
+  } catch (e) {
+    if (myToken !== _authToken) return;
+    errorEl.textContent = 'Network error -- the temporary chat was not started.';
+    errorEl.hidden = false;
+  } finally {
+    if (myToken === _authToken) {
+      startBtn.textContent = 'Start temporary chat';
+      startBtn.disabled = _isTemporarySession ? true : !_authToken;
+    }
+  }
+});
+
+document.getElementById('temp-mode-keep-chatting').addEventListener('click', closeTempModePanel);
+
+document.getElementById('temp-mode-close-chat').addEventListener('click', async () => {
+  const closeBtn = document.getElementById('temp-mode-close-chat');
+  const errorEl = document.getElementById('temp-mode-close-error');
+  if (closeBtn.disabled) return;
+  const mySid = sessionId;
+  const myToken = _authToken;
+  closeBtn.disabled = true;
+  closeBtn.textContent = 'Closing...';
+  errorEl.hidden = true;
+  try {
+    const r = await fetch(`/api/session/${encodeURIComponent(mySid)}/temporary/close`, {
+      method: 'POST',
+      headers: _authHeaders(),
+    });
+    if (myToken !== _authToken) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    const data = await r.json().catch(() => ({}));
+    if (data.state === 'closed' || data.state === 'expired') {
+      // Server-confirmed: the transcript is genuinely gone.
+      if (sessionId === mySid) {
+        _isTemporarySession = false;
+        _tempSessionExpiresAt = null;
+        _updateTempModeIndicator();
+        newConversation();
+      }
+      closeTempModePanel();
+      return;
+    }
+    // AUDIT-P13-INTEGRATION: `state: "failed"` (a deletion that leaves the
+    // transcript, per the contract's own explicit warning) -- never
+    // reported as closed. The session stays marked active; the user can
+    // retry, and the real failure reason is shown.
+    errorEl.textContent = data.error || 'This temporary chat could not be fully closed. It is still marked active -- you can try again.';
+    errorEl.hidden = false;
+  } catch (e) {
+    if (myToken !== _authToken) return;
+    errorEl.textContent = 'Network error -- close could not be confirmed. The chat is still marked active.';
+    errorEl.hidden = false;
+  } finally {
+    if (myToken === _authToken && sessionId === mySid) {
+      closeBtn.textContent = 'Close temporary chat';
+      closeBtn.disabled = false;
+    }
+  }
+});
 
 document.getElementById('temp-mode-btn').addEventListener('click', () => {
   const panel = document.getElementById('temp-mode-panel');
@@ -1905,6 +2054,15 @@ function newConversation() {
   // are both idempotent no-ops if neither state is active.
   if (composerEl) collapseComposer();
   closeTempModePanel(); // AUDIT-B13: same reasoning -- a derelict dialog must not survive an account/conversation transition
+  // INTEGRATION Phase D: newConversation() always targets a NEW, non-
+  // temporary conversation (sessionId becomes null below) -- any
+  // temporary-session indicator for the conversation being LEFT must not
+  // linger. This does not close the temporary session server-side (the
+  // user did not ask to); it only stops this tab from mislabeling the
+  // conversation it's about to show.
+  _isTemporarySession = false;
+  _tempSessionExpiresAt = null;
+  _updateTempModeIndicator();
   closeQuickSwitch(); // AUDIT-B14: same reasoning
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: any in-flight response is no longer ours
   // AUDIT-P85C: MESSAGE domain only -- starting a new conversation ends
@@ -2463,9 +2621,26 @@ async function sendMessage() {
     // today if the backend ever does, and distinguishes a genuine session
     // expiry from an undifferentiated "could not be completed" error now.
     if (resp.status === 401) { thinkEl.remove(); _handleSessionExpired(); return; }
+    if (resp.status === 409) {
+      // INTEGRATION Phase D: a temporary chat that expired or was closed
+      // mid-use refuses here BEFORE any SSE stream starts (the backend's
+      // own _temporary_block() returns a plain JSON 409, confirmed by
+      // reading /api/stream's route body directly) -- the model is never
+      // called for this refusal, matching the contract's own statement.
+      thinkEl.remove();
+      const errData = await resp.json().catch(() => ({}));
+      if (errData.code === 'temporary_expired' || errData.code === 'temporary_closed') {
+        if (_isTemporarySession) { _isTemporarySession = false; _tempSessionExpiresAt = null; _updateTempModeIndicator(); }
+        appendUnavailableNote(errData.error || 'This temporary conversation is no longer active.');
+      } else {
+        appendUnavailableNote(errData.error || 'The request could not be completed (status 409).', { retryText: text });
+      }
+      return;
+    }
     if (!resp.ok || !resp.body) {
       thinkEl.remove();
-      appendUnavailableNote('The request could not be completed (status ' + resp.status + '). This is a genuine error state, not a simulated one.', { retryText: text });
+      const errData = await resp.json().catch(() => ({}));
+      appendUnavailableNote(errData.error || ('The request could not be completed (status ' + resp.status + '). This is a genuine error state, not a simulated one.'), { retryText: text });
       return;
     }
     const reader = resp.body.getReader();
@@ -2842,7 +3017,15 @@ async function exportConversation(sid, title, format) {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/export?format=${format}`, { headers: _authHeaders() });
     if (myToken !== _authToken) return;
     if (r.status === 401) { _handleSessionExpired(); return; }
-    if (!r.ok) throw new Error('export failed');
+    if (!r.ok) {
+      // INTEGRATION Phase D: surfaces the real reason (e.g. 409
+      // temporary_not_exportable for an active temporary chat) instead
+      // of a generic failure -- same honesty discipline as every other
+      // call site in this file.
+      const errData = await r.json().catch(() => ({}));
+      appendUnavailableNote(errData.error || 'Export failed. The conversation was not changed.');
+      return;
+    }
     // The server's own Content-Disposition header only matters for a
     // real browser navigation; fetch() never acts on it, so the
     // download is built client-side from the actual response body --
@@ -2980,6 +3163,15 @@ function restoreRecentsFromSearch() {
 
 async function openSession(sid, title) {
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: switching conversations ends this view's claim on any in-flight response
+  // INTEGRATION Phase D: every sid reaching openSession() comes from the
+  // sidebar, search, or Quick Switch -- all backed by GET /api/sessions
+  // or /api/sessions/search, which the backend itself excludes an active
+  // temporary chat from. A conversation opened this way is therefore
+  // never the temporary one; any indicator for the conversation being
+  // left must not linger onto this one.
+  _isTemporarySession = false;
+  _tempSessionExpiresAt = null;
+  _updateTempModeIndicator();
   // AUDIT-P85C: MESSAGE domain only (invariant 2: openSession() may
   // invalidate an older message request, but must never invalidate an
   // unrelated history request). Claims a fresh epoch + the principal +
