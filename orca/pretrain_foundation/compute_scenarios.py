@@ -3,8 +3,48 @@
 No throughput, token price, or latency number in this module was
 measured. The labels only separate classes of work so a workstation
 quote is not read as frontier pretraining capacity.
+
+Published free-tier pages are observations. They are not enrolled
+capacity and they are not a price of zero.
 """
 from __future__ import annotations
+
+QUALIFICATION = "COMPUTE_NOT_QUALIFIED"
+PRICE = "UNKNOWN"
+
+# Retrieved 2026-10-24 from the publisher pages named on each row.
+# Hugging Face's two official pricing URLs disagreed about a free-user
+# credit, so that amount is UNKNOWN rather than either published figure.
+FREE_TIER_OBSERVATIONS = (
+    {
+        "provider": "google_colab",
+        "source": "https://research.google.com/colaboratory/faq.html",
+        "retrieved": "2026-10-24",
+        "published_claim": "free of charge; GPU access heavily restricted; usage limits not published; free notebooks at most 12 hours",
+        "enrolled_for_orneur": False,
+        "qualification": QUALIFICATION,
+        "price": PRICE,
+    },
+    {
+        "provider": "kaggle_notebooks",
+        "source": "https://www.kaggle.com/docs/efficient-gpu-usage",
+        "retrieved": "2026-10-24",
+        "published_claim": "weekly GPU quota of 30 hours or sometimes higher, depending on demand; not enrolled here",
+        "enrolled_for_orneur": False,
+        "qualification": QUALIFICATION,
+        "price": PRICE,
+    },
+    {
+        "provider": "huggingface_inference_providers",
+        "source": "https://huggingface.co/docs/inference-providers/pricing",
+        "conflicting_source": "https://huggingface.co/docs/inference-providers/main/en/pricing",
+        "retrieved": "2026-10-24",
+        "published_claim": "one page listed free users as None and another listed 0.10 USD subject to change",
+        "enrolled_for_orneur": False,
+        "qualification": QUALIFICATION,
+        "price": PRICE,
+    },
+)
 
 SCENARIOS = (
     {
@@ -59,7 +99,12 @@ SCENARIOS = (
 def scenario(scenario_id: str) -> dict:
     for row in SCENARIOS:
         if row["id"] == scenario_id:
-            return dict(row)
+            found = dict(row)
+            found["qualification"] = QUALIFICATION
+            found["price"] = PRICE
+            found["throughput_measured"] = False
+            found["free_tier_enrolled"] = False
+            return found
     raise KeyError(scenario_id)
 
 
