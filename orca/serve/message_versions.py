@@ -253,6 +253,7 @@ def edit(
                 raise MessageVersionMismatch("idempotency key was used for a different edit", existing.get("version_id"))
             view = _public(record)
             view["created"] = False
+            view["reconciled"] = True
             view["version_id"] = existing.get("version_id")
             return view
         committed = [version for version in record["versions"] if version.get("committed")]

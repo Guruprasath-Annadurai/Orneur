@@ -141,12 +141,19 @@ def test_browser_stop_before_first_chunk_exact_frontend_ordering(client, monkeyp
         assert get_res.status_code == 200
         confirm_body = get_res.json()
 
-        # Document and assert the exact state:
         stored = generations.read(captured_gen_id)
         assert stored is not None
-        # In the existing backend, cancel_requested is true, but stored state remained 'running'
-        # rather than being cleanly finalized to 'cancelled' because the stream loop died upon disconnect.
         assert stored["cancel_requested"] is True
+        # Disconnect alone is not cancellation. The POST may confirm cancelled
+        # only after the worker recorded that no upstream attempt remained.
+        assert confirm_body["state"] in {"cancelled", "interrupted_unknown"}
+        assert stored["state"] == confirm_body["state"]
+        if stored["state"] == "cancelled":
+            assert stored["upstream"] == "stopped"
+            assert stored["reason"] == "cancel_requested"
+        else:
+            assert stored["upstream"] == "unconfirmed"
+            assert cancel_body["code"] == "upstream_unconfirmed"
 
 
 # -----------------------------------------------------------------------------
@@ -247,6 +254,8 @@ def test_browser_stop_during_slow_stream_exact_frontend_ordering(client, monkeyp
         # Step 3: GET confirmation
         get_res = client.get(f"/api/generations/{captured_gen_id}", headers=headers)
         assert get_res.status_code == 200
+        assert get_res.json()["state"] in {"cancelled", "interrupted_unknown"}
+        assert get_res.json()["state"] != "running"
 
 
 # -----------------------------------------------------------------------------
@@ -529,5 +538,8 @@ def test_orphan_upload_reconciliation_audit(client, monkeypatch):
     # Inspect orca.serve.retention and orca.docs.store:
     # purge_expired_conversations only iterates user_sessions; no function scans disk storage
     # for unreferenced document collections or authorized product index directories.
-    has_orphan_reconciler = hasattr(retention, "reconcile_orphan_uploads") or hasattr(docs.store, "reconcile_orphans")
-    assert not has_orphan_reconciler, "Durable orphan upload reconciler unexpectedly exists; expected NOT IMPLEMENTED"
+    report = retention.reconcile_orphan_uploads(now=now, apply=True)
+    assert report["dry_run"] is False
+    assert legit_sid not in report["removed"]
+    assert docs.store.list_docs(legit_sid)[0]["doc_id"] == legit_doc_id
+    assert all(not row["path"].endswith("registry.json") for row in report["discrepancies"] if row.get("remediation") == "eligible")

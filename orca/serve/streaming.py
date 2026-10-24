@@ -165,29 +165,44 @@ def shutdown_streaming_pool(wait: bool = True) -> None:
     _POOL.shutdown(wait=wait, cancel_futures=False)
 
 
-def _close_quietly(gen: Iterator) -> None:
+def _close_result(gen: Iterator) -> dict:
+    """Close one blocking generator and report whether that call returned.
+
+    A returned close is the evidence this adapter can actually observe. A
+    raised close, a missing close, or a close that has to wait for an
+    in-flight ``next()`` is not evidence that the upstream stopped. The
+    exception is swallowed here so closing cannot mask the original outcome.
+    """
     close = getattr(gen, "close", None)
     if close is None:
-        return
+        return {"confirmed": False, "reason": "no_close"}
     try:
         close()
-    except Exception:  # closing must never mask the original outcome
+    except Exception:
         _logger.warning("closing a stream generator failed", exc_info=True)
+        return {"confirmed": False, "reason": "close_failed"}
+    return {"confirmed": True, "reason": "closed"}
 
 
-def _schedule_close(gen: Iterator) -> concurrent.futures.Future | None:
+def _close_quietly(gen: Iterator) -> None:
+    _close_result(gen)
+
+
+def _schedule_close(gen: Iterator, close_box: dict | None = None) -> concurrent.futures.Future | None:
     """Submit the close to the pool; if the pool is already shut down
     (``shutdown_streaming_pool`` ran mid-stream), close synchronously in this
     thread instead of letting the executor's RuntimeError propagate and mask
     whatever exception/cancellation is already unwinding through the caller."""
     try:
-        return _POOL.submit(_close_quietly, gen)
+        return _POOL.submit(_close_result, gen)
     except RuntimeError:
-        _close_quietly(gen)
+        result = _close_result(gen)
+        if isinstance(close_box, dict):
+            close_box.update(result)
         return None
 
 
-async def aiter_blocking(gen: Iterator[T]) -> AsyncIterator[T]:
+async def aiter_blocking(gen: Iterator[T], close_box: dict | None = None) -> AsyncIterator[T]:
     """Iterate a blocking generator without blocking the event loop.
 
     Does its own admission: raises :class:`StreamingUnavailable` immediately
@@ -202,6 +217,7 @@ async def aiter_blocking(gen: Iterator[T]) -> AsyncIterator[T]:
     """
     admission = StreamAdmission()
     admission.acquire()  # raises StreamingUnavailable immediately; nothing to release yet if so
+    box = close_box if isinstance(close_box, dict) else {}
     inflight: concurrent.futures.Future | None = None
     try:
         while True:
@@ -214,15 +230,16 @@ async def aiter_blocking(gen: Iterator[T]) -> AsyncIterator[T]:
     finally:
         if inflight is not None and not inflight.done():
             # The worker thread still owns this next() call and is NOT free
-            # yet, regardless of what happens to this async generator from
-            # here (cancelled, closed, or the consumer just stopped reading).
-            # Release only once the callback actually fires -- i.e. only
-            # once the thread is confirmed free -- so admission can never
-            # outrun real thread availability, even under repeated
-            # cancellation against a backend that never returns.
+            # yet. aclose() cannot close the generator until that read
+            # returns, so this exit is not proof the upstream stopped.
+            # The callback closes later and must not rewrite a terminal
+            # generation record: the caller snapshots ``box`` at this return.
+            box["confirmed"] = False
+            box["reason"] = "close_deferred_until_inflight_read_returns"
+
             def _on_worker_free(_fut: concurrent.futures.Future) -> None:
                 try:
-                    _close_quietly(gen)
+                    _close_result(gen)
                 finally:
                     admission.release()
 
@@ -232,8 +249,20 @@ async def aiter_blocking(gen: Iterator[T]) -> AsyncIterator[T]:
             # already returned -- it's free now, so release immediately
             # after scheduling/awaiting the close.
             try:
-                close_future = _schedule_close(gen)
+                close_future = _schedule_close(gen, box)
                 if close_future is not None:
-                    await asyncio.shield(asyncio.wrap_future(close_future))
+                    try:
+                        result = await asyncio.shield(asyncio.wrap_future(close_future))
+                    except Exception:
+                        result = {"confirmed": False, "reason": "close_failed"}
+                    if isinstance(result, dict):
+                        box["confirmed"] = bool(result.get("confirmed"))
+                        box["reason"] = str(result.get("reason") or "close_unobserved")
+                    elif "confirmed" not in box:
+                        box["confirmed"] = False
+                        box["reason"] = "close_unobserved"
+                elif "confirmed" not in box:
+                    box["confirmed"] = False
+                    box["reason"] = "close_unobserved"
             finally:
                 admission.release()

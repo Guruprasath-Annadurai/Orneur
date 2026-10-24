@@ -469,13 +469,14 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
                            viewer_user_id=uid)
 
 
-def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> None:
-    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request.
+def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> dict | None:
+    """Persist the turn, then return ids only after the user line is readable.
 
-    Each new line gets a message id and an immutable original version. The JSONL line is not the editable copy.
+    A failure returns None. The caller must not publish a user message id
+    that the transcript does not contain.
     """
     if not user or not session_id:
-        return
+        return None
     try:
         from orca.serve import conversations, message_versions
 
@@ -484,6 +485,9 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         user_stored = (user_text or "")[:conversations.MAX_MESSAGE_CHARS]
         assistant_stored = (assistant_text or "")[:conversations.MAX_MESSAGE_CHARS]
         conversations.append(session_id, "user", user_stored, meta={"message_id": user_message_id})
+        confirmed = conversations.find_message(session_id, user_message_id)
+        if not confirmed or confirmed.get("content") != user_stored:
+            return None
         meta: dict = {"message_id": assistant_message_id}
         if identity:
             meta["model_identity"] = identity
@@ -493,33 +497,72 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         conversations.append(session_id, "assistant", assistant_stored, meta=meta)
         message_versions.seed(session_id, user.id, user_message_id, "user", user_stored)
         message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_stored)
+        return {"user_message_id": user_message_id, "message_id": assistant_message_id}
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
+        return None
 
 
-def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> None:
+def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> str:
     """Point the live in-memory window at the active version.
 
     Long-term vector memory is not rewritten. An edit does not erase the
-    earlier text from that store or from the version list.
+    earlier text from that store or from the version list. A Redis failure
+    is raised so the caller can say the durable version was saved while the
+    cache sync did not finish. Returns ``absent`` when this process has no
+    live session.
     """
     sess = _sessions.get(session_id)
-    if sess is None or previous == new_text:
-        return
-    agent = sess._agent
-    if agent is not None:
-        for item in agent._history:
-            if item.get("role") == role and item.get("content") == previous:
-                item["content"] = new_text
-                break
-        try:
-            sess.persist_to_redis()
-        except Exception:
-            _logger.debug("session history sync failed", exc_info=True)
-    for msg in sess.memory.short._messages:
-        if msg.role == role and msg.content == previous:
-            msg.content = new_text
+    if sess is None:
+        return "absent"
+    if previous != new_text:
+        agent = getattr(sess, "_agent", None)
+        if agent is not None:
+            for item in getattr(agent, "_history", []) or []:
+                if item.get("role") == role and item.get("content") == previous:
+                    item["content"] = new_text
+                    break
+        short = getattr(getattr(sess, "memory", None), "short", None)
+        messages = getattr(short, "_messages", None)
+        if messages is not None:
+            for msg in messages:
+                if getattr(msg, "role", None) == role and getattr(msg, "content", None) == previous:
+                    msg.content = new_text
+                    break
+    if getattr(sess, "_agent", None) is not None and hasattr(sess, "persist_to_redis"):
+        sess.persist_to_redis()
+    return "updated"
+
+
+def _saved_cache_uncertain(view: dict, *, code: str) -> JSONResponse:
+    body = _version_body(view)
+    body["code"] = code
+    body["authoritative_content"] = view.get("active_content")
+    body["cache_sync"] = "failed"
+    body["created"] = bool(view.get("created"))
+    return JSONResponse(body, status_code=500)
+
+
+def _heal_visible_copy(session_id: str, role: str, view: dict) -> str:
+    """Move a stale live copy onto the committed version.
+
+    The parent text is the only safe match. A replay does not append another
+    version, and it does not replace a different message of the same role.
+    """
+    active = view.get("active_content") or ""
+    parent_id = None
+    parent = None
+    for version in view.get("versions") or []:
+        if version.get("version_id") == view.get("active_version_id"):
+            parent_id = version.get("parent_version_id")
             break
+    for version in view.get("versions") or []:
+        if parent_id is not None and version.get("version_id") == parent_id:
+            parent = version.get("content")
+            break
+    if not isinstance(parent, str):
+        return "unverified"
+    return _replace_visible_copy(session_id, parent, active, role)
 
 
 def _regenerate_text(sess, prompt: str) -> str:
@@ -2019,13 +2062,69 @@ async def stream_chat(
             code = "run_full" if status == 409 else "run_not_found"
             return JSONResponse({"error": exc.reason, "code": code, "generation_id": generation_id}, status_code=status)
 
+    upstream_box = {"status": "not_started"}
+    stream_finished = False
+    closure = {"confirmed": False, "reason": "not_observed"}
+    agent_generator = None
+    agent_close_box = None
+    kernel_request = None
+    kernel_started = False
+
+    def _note_closure(evidence: dict | None) -> None:
+        if not isinstance(evidence, dict) or "confirmed" not in evidence:
+            return
+        closure["confirmed"] = bool(evidence.get("confirmed"))
+        closure["reason"] = str(evidence.get("reason") or "not_observed")
+
+    def _close_unstarted_agent() -> None:
+        if agent_generator is None or not isinstance(agent_close_box, dict):
+            return
+        if "confirmed" in agent_close_box:
+            return
+        try:
+            agent_generator.close()
+        except Exception:
+            agent_close_box["confirmed"] = False
+            agent_close_box["reason"] = "close_failed"
+        else:
+            agent_close_box["confirmed"] = True
+            agent_close_box["reason"] = "closed"
+
+    def _capture_closure() -> None:
+        _close_unstarted_agent()
+        if isinstance(agent_close_box, dict) and "confirmed" in agent_close_box:
+            _note_closure(agent_close_box)
+            return
+        metadata = getattr(kernel_request, "metadata", None)
+        if isinstance(metadata, dict):
+            evidence = metadata.get("upstream_closure")
+            if not kernel_started and not isinstance(evidence, dict):
+                # The gateway iterator was never entered, so no upstream
+                # request was opened and this worker will not open one.
+                evidence = {"confirmed": True, "reason": "upstream_not_started"}
+                metadata["upstream_closure"] = evidence
+            _note_closure(evidence)
+
+    def _settle_worker() -> None:
+        current = generations.read(generation_id)
+        if not current or current.get("state") != "running":
+            return
+        _capture_closure()
+        # A generator that already ran to exhaustion was not stopped. Closing
+        # it afterwards is cleanup, not proof of cancellation.
+        proven = bool(closure.get("confirmed")) and upstream_box.get("status") != "exhausted"
+        upstream = "stopped" if proven else "unconfirmed"
+        generations.end_worker(
+            generation_id,
+            upstream=upstream,
+            closure_reason=str(closure.get("reason") or "not_observed"),
+        )
+
     async def _stop_if_needed() -> str | None:
         generations.touch(generation_id)
         if generations.cancel_requested(generation_id):
-            generations.finish(generation_id, "cancelled", reason="cancel_requested")
             return "cancel_requested"
         if await request.is_disconnected():
-            generations.finish(generation_id, "cancelled", reason="client_disconnected")
             return "client_disconnected"
         return None
 
@@ -2034,6 +2133,7 @@ async def stream_chat(
         return f"data: {json.dumps({'type': 'generation', **generations.public(current)})}\n\n"
 
     async def _event_stream_inner() -> AsyncIterator[str]:
+        nonlocal stream_finished, agent_generator, agent_close_box, kernel_request, kernel_started
         try:
             # Send session_id first
             yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
@@ -2061,23 +2161,37 @@ async def stream_chat(
                     objective, tier, cognitive_result.trace_id
                 )
                 yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                upstream_box["status"] = "open"
+                kernel_request = inference_request
+                stop_reason = None
                 try:
                     async with contextlib.aclosing(
                         gateway.stream(inference_request, allow_experimental=allow_experimental)
                     ) as achunks:
-                        async for piece in achunks:
+                        while True:
+                            reason = await _stop_if_needed()
+                            if reason:
+                                stop_reason = reason
+                                upstream_box["status"] = "closing"
+                                break
+                            try:
+                                kernel_started = True
+                                piece = await achunks.__anext__()
+                            except StopAsyncIteration:
+                                upstream_box["status"] = "exhausted"
+                                break
                             if piece.delta:
                                 full += piece.delta
                                 yield f"data: {json.dumps({'type': 'chunk', 'text': piece.delta})}\n\n"
-                            stop_reason = await _stop_if_needed()
-                            if stop_reason:
-                                audit.log(
-                                    "stream_client_disconnected",
-                                    user_id=user.id if user else None,
-                                    detail={"chars_sent": len(full), "path": "kernel_direct", "reason": stop_reason, "generation_id": generation_id},
-                                )
-                                yield _generation_sse()
-                                return
+                    if stop_reason:
+                        audit.log(
+                            "stream_client_disconnected",
+                            user_id=user.id if user else None,
+                            detail={"chars_sent": len(full), "path": "kernel_direct", "reason": stop_reason, "generation_id": generation_id},
+                        )
+                        _settle_worker()
+                        yield _generation_sse()
+                        return
                 except Exception as e:
                     generations.finish(generation_id, "failed", reason="stream_failed")
                     yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
@@ -2101,6 +2215,10 @@ async def stream_chat(
                         yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
                     # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
                     yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                    upstream_box["status"] = "open"
+                    agent_generator = gen
+                    agent_close_box = {}
+                    stop_reason = None
 
                     # contextlib.aclosing, not a bare `async for`: breaking the
                     # loop below on client disconnect does not by itself call
@@ -2109,16 +2227,29 @@ async def stream_chat(
                     # disconnected client's backend generator is only closed
                     # whenever Python eventually garbage-collects it, leaking
                     # the worker thread and the backend connection until then.
-                    async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
-                        async for chunk in achunks:
+                    # The terminal generation record is written after this
+                    # block exits, so `cancelled` is not published while the
+                    # upstream close is still in progress.
+                    async with contextlib.aclosing(aiter_blocking(gen, agent_close_box)) as achunks:
+                        while True:
+                            reason = await _stop_if_needed()
+                            if reason:
+                                stop_reason = reason
+                                upstream_box["status"] = "closing"
+                                break
+                            try:
+                                chunk = await achunks.__anext__()
+                            except StopAsyncIteration:
+                                upstream_box["status"] = "exhausted"
+                                break
                             full += chunk
                             yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                            stop_reason = await _stop_if_needed()
-                            if stop_reason:
-                                audit.log("stream_client_disconnected", user_id=user.id if user else None,
-                                          detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
-                                yield _generation_sse()
-                                return
+                    if stop_reason:
+                        audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                  detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
+                        _settle_worker()
+                        yield _generation_sse()
+                        return
 
                     tool_names = [tc.tool for tc in trace.tool_calls]
                     plan_action = trace.plan_action
@@ -2140,18 +2271,17 @@ async def stream_chat(
             _retain_turn(sess, req.message, full)
             if user:
                 increment_usage(user.id, "message")
+            stream_finished = True
         finally:
-            # Backend correction: ensure durable terminal state on disconnect / cancellation
-            # even when aborted before the first generated chunk or during slow generation.
-            try:
-                curr = generations.read(generation_id)
-                if curr and curr.get("state") == "running":
-                    if generations.cancel_requested(generation_id):
-                        generations.finish(generation_id, "cancelled", reason="cancel_requested")
-                    elif await request.is_disconnected():
-                        generations.finish(generation_id, "cancelled", reason="client_disconnected")
-            except Exception:
-                pass
+            # A disconnect is not a cancellation. Publish `cancelled` only
+            # when an authenticated stop is already stored and the upstream
+            # close actually returned. A close that failed, or that is still
+            # waiting on an in-flight read, stays `interrupted_unknown`.
+            if not stream_finished:
+                try:
+                    _settle_worker()
+                except Exception:
+                    pass
 
         # Knowledge graph extraction — fire-and-forget, NOT awaited. This is
         # an LLM call (real latency on CPU inference per this project's own
@@ -2202,15 +2332,18 @@ async def stream_chat(
             _ev_state = _ev_cov = _ev_pass = None
         _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
                               evidence_state=_ev_state, citation_coverage=_ev_cov, evidence_passages=_ev_pass)
-        _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
+        persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
         finished = generations.finish(generation_id, "completed")
         if finished is None or finished.get("state") != "completed":
+            _settle_worker()
             yield _generation_sse()
             return
         done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'generation_id': generation_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
+        if persisted and persisted.get("user_message_id"):
+            done_event["user_message_id"] = persisted["user_message_id"]
         _auth_meta = _authorized_metadata(authorized, rag_result)
         if _auth_meta is not None:
             done_event['authorized_retrieval'] = _auth_meta
@@ -2222,7 +2355,12 @@ async def stream_chat(
             async for piece in _event_stream_inner():
                 yield piece
         finally:
-            heartbeat.stop()
+            try:
+                current = generations.read(generation_id)
+                if current and current.get("state") == "running":
+                    _settle_worker()
+            finally:
+                heartbeat.stop()
 
     return StreamingResponse(
         _event_stream(),
@@ -2260,6 +2398,7 @@ async def get_run(run_id: str, user: User | None = Depends(get_current_user_opti
 
 @app.get("/api/generations/{generation_id}")
 async def get_generation(generation_id: str, user: User | None = Depends(get_current_user_optional)):
+    generations.reconcile_owner(generation_id)
     record = generations.read(generation_id)
     if record is None or not generations.allowed(record, user.id if user else None):
         raise HTTPException(status_code=404, detail="generation not found")
@@ -2387,8 +2526,35 @@ async def close_temporary_chat(session_id: str, user: User | None = Depends(get_
         view = temporary_chat.finish(session_id, user.id, "closed")
     except temporary_chat.TemporaryChatDenied as exc:
         return _temporary_error(exc)
-    status = 200 if view.get("state") in {"closed", "expired"} else 500
+    status = 200 if view.get("state") in {"closed", "expired"} and not view.get("remaining") else 409 if view.get("remaining") else 500
     return JSONResponse(view, status_code=status)
+
+
+@app.post("/api/session/{session_id}/temporary/closure/retry")
+async def retry_temporary_closure(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Retry the stored closure for the owning account.
+
+    The response uses the intended state already on the record. A missing
+    intended state is not guessed. ``closed`` and ``expired`` are returned
+    only when the deletion predicates hold. A cleanup that leaves data
+    stays ``failed`` and lists ``remaining``. The same owner can call this
+    again; a second success does not delete twice and does not change the
+    stored terminal state.
+    """
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import temporary_chat
+
+    try:
+        view = temporary_chat.retry_failed_closure(session_id, user.id)
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+    if view.get("remaining"):
+        return JSONResponse(view, status_code=409)
+    if view.get("state") in {"closed", "expired"}:
+        return JSONResponse(view, status_code=200)
+    return JSONResponse(view, status_code=409)
 
 
 @app.get("/api/sessions")
@@ -2737,7 +2903,22 @@ async def edit_session_message(
     except message_versions.MessageVersionDenied as exc:
         return _message_version_error(exc)
     if view.get("created"):
-        _replace_visible_copy(session_id, previous, view.get("active_content") or "", line["role"])
+        try:
+            _replace_visible_copy(session_id, previous, view.get("active_content") or "", line["role"])
+        except Exception:
+            _logger.debug("edit cache sync failed after commit", exc_info=True)
+            return _saved_cache_uncertain(view, code="edit_saved_cache_uncertain")
+        return _version_body(view)
+    if view.get("reconciled"):
+        try:
+            sync = _heal_visible_copy(session_id, line["role"], view)
+        except Exception:
+            _logger.debug("edit cache reconcile failed", exc_info=True)
+            return _saved_cache_uncertain(view, code="edit_saved_cache_uncertain")
+        body = _version_body(view)
+        body["cache_sync"] = sync
+        body["authoritative_content"] = view.get("active_content")
+        return body
     return _version_body(view)
 
 
@@ -2792,6 +2973,11 @@ async def regenerate_session_message(
     if not attempt.get("created"):
         if heartbeat is not None:
             heartbeat.stop()
+        try:
+            _heal_visible_copy(session_id, "assistant", attempt)
+        except Exception:
+            _logger.debug("regeneration replay cache sync failed", exc_info=True)
+            return _saved_cache_uncertain(attempt, code="regeneration_saved_cache_uncertain")
         return _version_body(attempt)
     generation_id = attempt.get("generation_id")
     version_id = attempt.get("version_id")
@@ -2817,8 +3003,18 @@ async def regenerate_session_message(
         finished = generations.finish(generation_id, "completed") if generation_id else None
         view["generation_state"] = None if finished is None else finished.get("state")
         if view.get("created"):
-            _replace_visible_copy(session_id, previous, view.get("active_content") or "", "assistant")
+            try:
+                _replace_visible_copy(session_id, previous, view.get("active_content") or "", "assistant")
+            except Exception:
+                _logger.debug("regeneration cache sync failed after commit", exc_info=True)
+                return _saved_cache_uncertain(view, code="regeneration_saved_cache_uncertain")
             increment_usage(user.id, "message")
+        elif view.get("reconciled"):
+            try:
+                _heal_visible_copy(session_id, "assistant", view)
+            except Exception:
+                _logger.debug("regeneration cache reconcile failed", exc_info=True)
+                return _saved_cache_uncertain(view, code="regeneration_saved_cache_uncertain")
         return _version_body(view)
     finally:
         if heartbeat is not None:
@@ -3473,8 +3669,16 @@ async def delete_doc(
     session_id: str | None = None,
     user: User | None = Depends(get_current_user_optional),
 ):
-    """Remove a document and all its chunks from the session store."""
+    """Remove a document from the authorized index and the legacy stores.
+
+    The stores are not one transaction. A partial result keeps the registry
+    and does not re-admit a revoked copy. `deleted: false` stays HTTP 200 so
+    the client can leave the attachment visible.
+    """
     sess = _get_session(session_id, user_id=user.id if user else None)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
     listed = list_docs(sess.id)
     meta = next((d for d in listed if d.get("doc_id") == doc_id), None)
     if meta is None:
@@ -3502,18 +3706,31 @@ async def delete_doc(
         # Do not re-admit it to make the legacy store match.
         err = public_error(exc, route="/api/docs/delete", user_id=user.id if user else None)
         return JSONResponse(err.as_json(), status_code=500)
-    if user and index_removed > 0 and not ok:
-        return JSONResponse(
-            {
-                "error": "The authorized copy was removed, but the legacy copy could not be.",
-                "code": "document_store_disagreement",
-                "doc_id": doc_id,
-            },
-            status_code=500,
-        )
+    state = getattr(sess.doc_store, "last_delete_state", None) or {}
+    if not ok:
+        body = {
+            "deleted": False,
+            "doc_id": doc_id,
+            "session_id": sess.id,
+            "atomic": False,
+            "index_removed": index_removed,
+            "collection": state.get("collection"),
+            "fallback": state.get("fallback"),
+        }
+        if user and index_removed > 0:
+            body["error"] = "The authorized copy was removed, but the legacy copy could not be."
+            body["code"] = "document_store_disagreement"
+            return JSONResponse(body, status_code=500)
+        return body
     unregister_doc(sess.id, doc_id)
-    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
-    return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}
+    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id, "atomic": False})
+    return {
+        "deleted": True,
+        "doc_id": doc_id,
+        "session_id": sess.id,
+        "atomic": False,
+        "index_removed": index_removed,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
