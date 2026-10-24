@@ -226,28 +226,61 @@ class DocStore:
         return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"]}
                 for _, e in scored[:top_k]]
 
+    def _fallback_has_doc(self, doc_id: str) -> bool:
+        if not self._fallback_file.exists():
+            return False
+        with open(self._fallback_file) as handle:
+            for line in handle:
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                if entry.get("doc_id") == doc_id:
+                    return True
+        return False
+
+    def _purge_fallback(self, doc_id: str) -> bool:
+        """Drop fallback lines for one document. Return false if any remain."""
+        path = self._fallback_file
+        if not path.exists():
+            return True
+        kept = []
+        with open(path) as handle:
+            for line in handle:
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    kept.append(line if line.endswith("\n") else line + "\n")
+                    continue
+                if entry.get("doc_id") == doc_id:
+                    continue
+                kept.append(line if line.endswith("\n") else line + "\n")
+        tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+        with open(tmp, "w") as handle:
+            handle.writelines(kept)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        return not self._fallback_has_doc(doc_id)
+
     def delete_doc(self, doc_id: str) -> bool:
-        """Remove all chunks for a document."""
+        """Remove chunks from the vector collection and the keyword fallback.
+
+        A collection delete that returned without error used to skip the
+        fallback file, so a later query failure still retrieved the deleted
+        text. A collection error used to fall through, delete the fallback,
+        and still report success while the collection copy remained. Both
+        copies have to be gone before this returns true. A collection error
+        leaves the fallback in place so the caller can retry.
+        """
+        if not doc_id:
+            return False
         if self._collection is not None:
             try:
                 self._collection.delete(where={"doc_id": doc_id})
-                return True
             except Exception:
-                pass
-        # Keyword fallback: rewrite file excluding this doc
-        if self._fallback_file.exists():
-            lines = []
-            with open(self._fallback_file) as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        if entry.get("doc_id") != doc_id:
-                            lines.append(line)
-                    except Exception:
-                        lines.append(line)
-            with open(self._fallback_file, "w") as f:
-                f.writelines(lines)
-        return True
+                return False
+        return self._purge_fallback(doc_id)
 
     def count(self) -> int:
         if self._collection is not None:
