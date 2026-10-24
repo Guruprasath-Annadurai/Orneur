@@ -242,10 +242,15 @@ class Orchestrator:
         }
 
     def restore_snapshot(self, snapshot: dict) -> None:
-        """Restore statuses without inventing a success or undoing a cancellation."""
+        """Restore statuses without inventing a success or undoing a cancellation.
+
+        Every record is checked before any task is changed. A later rejection
+        leaves the earlier tasks as they were.
+        """
         tasks = snapshot.get("tasks") if isinstance(snapshot, dict) else None
         if not isinstance(tasks, dict):
             raise ResultRejected("snapshot tasks missing")
+        planned: list[tuple[TaskState, str, object, object]] = []
         for task_id, row in tasks.items():
             current = self.tasks.get(task_id)
             if current is None or not isinstance(row, dict):
@@ -257,12 +262,17 @@ class Orchestrator:
                 raise ResultRejected("restart refused a success without a stored result")
             if current.status == "CANCELLED" and status == "SUCCEEDED":
                 raise ResultRejected("restart refused to rewrite a cancellation as success")
-            current.status = status
-            current.error = row.get("error")
             if status == "SUCCEEDED":
-                current.result = row.get("result")
-            elif status != "SUCCEEDED":
-                current.result = None if status in {"QUEUED", "RUNNING", "DEFERRED", "CANCELLED"} else current.result
+                result = row.get("result")
+            elif status in {"QUEUED", "RUNNING", "DEFERRED", "CANCELLED"}:
+                result = None
+            else:
+                result = current.result
+            planned.append((current, status, row.get("error"), result))
+        for current, status, error, result in planned:
+            current.status = status
+            current.error = error
+            current.result = result
 
     def _require_acyclic(self, spec: TaskSpec) -> None:
         visiting: set[str] = set()
