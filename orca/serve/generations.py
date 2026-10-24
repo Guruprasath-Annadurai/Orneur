@@ -149,6 +149,7 @@ def public(record: dict, *, now: float | None = None, stale_after: float = STALE
         "cancel_requested": bool(record.get("cancel_requested")),
         "delivery": record.get("delivery"),
         "cancellable": bool(record.get("cancellable")),
+        "run_id": record.get("run_id"),
         "retry_eligible": state in _RETRYABLE,
         "terminal": state != "running",
         "reason": record.get("reason"),
@@ -195,6 +196,7 @@ def _blank_record(
     cancellable: bool,
     idempotency_key: str | None,
     request_hash: str | None,
+    run_id: str | None = None,
 ) -> dict:
     now = time.time()
     return {
@@ -208,6 +210,7 @@ def _blank_record(
         "cancel_requested": False,
         "idempotency_key": idempotency_key,
         "request_hash": request_hash,
+        "run_id": run_id,
         "created_at": now,
         "updated_at": now,
         "reason": None,
@@ -222,7 +225,10 @@ def begin(
     cancellable: bool,
     idempotency_key: str | None = None,
     request_hash: str | None = None,
+    run_id: str | None = None,
 ) -> tuple[dict, bool]:
+    if run_id is not None and not re.fullmatch(r"^[0-9a-f]{32}$", run_id):
+        raise GenerationDenied("run id is not valid")
     if idempotency_key is not None and _KEY.fullmatch(idempotency_key) is None:
         raise GenerationDenied("idempotency key is not valid")
     if idempotency_key is None:
@@ -234,6 +240,7 @@ def begin(
             cancellable=cancellable,
             idempotency_key=None,
             request_hash=None,
+            run_id=run_id,
         )
         with _record_lock(record["generation_id"]):
             _write(_path(record["generation_id"]), record)
@@ -263,6 +270,7 @@ def begin(
                 cancellable=cancellable,
                 idempotency_key=idempotency_key,
                 request_hash=request_hash,
+                run_id=run_id,
             )
             with _record_lock(record["generation_id"]):
                 already = _read_path(_path(record["generation_id"]))
@@ -282,6 +290,7 @@ def begin(
             cancellable=cancellable,
             idempotency_key=idempotency_key,
             request_hash=request_hash,
+            run_id=run_id,
         )
         with _record_lock(generation_id):
             _write(_path(generation_id), record)

@@ -1904,6 +1904,18 @@ async def stream_chat(
         request_hash = generations.fingerprint(
             message=req.message, session_id=sess.id, model_variant=req.model_variant,
         )
+    from orca.serve import runs
+    run_header = request.headers.get("x-run-id") or None
+    run_id = None
+    if run_header:
+        if user is None:
+            e = coded_error("auth_required")
+            return JSONResponse(e.as_json(), status_code=e.status)
+        try:
+            runs.require_owner(run_header, user.id)
+        except runs.RunDenied:
+            return JSONResponse({"error": "run was not found", "code": "run_not_found"}, status_code=404)
+        run_id = run_header
     cancellable_generation = not (use_kernel_direct and not cognitive_result.pending_direct_generation)
     try:
         generation, generation_created = generations.begin(
@@ -1913,6 +1925,7 @@ async def stream_chat(
             cancellable=cancellable_generation,
             idempotency_key=idempotency_key,
             request_hash=request_hash,
+            run_id=run_id,
         )
     except generations.GenerationMismatch as exc:
         return JSONResponse(
@@ -1922,9 +1935,22 @@ async def stream_chat(
     except generations.GenerationDenied as exc:
         return JSONResponse({"error": exc.reason, "code": "generation_rejected"}, status_code=400)
     if not generation_created:
+        if generation.get("run_id") != run_id:
+            return JSONResponse(
+                {"error": "idempotency key is already bound to a different run", "code": "run_mismatch", "generation_id": generation.get("generation_id")},
+                status_code=409,
+            )
         status_code, body = generations.existing_http(generation)
         return JSONResponse(body, status_code=status_code)
     generation_id = generation["generation_id"]
+    if run_id is not None:
+        try:
+            runs.attach(run_id, user.id, generation_id, sess.id)
+        except runs.RunDenied as exc:
+            generations.finish(generation_id, "failed", reason="run_rejected")
+            status = 409 if exc.reason == "run is full" else 404
+            code = "run_full" if status == 409 else "run_not_found"
+            return JSONResponse({"error": exc.reason, "code": code, "generation_id": generation_id}, status_code=status)
 
     async def _stop_if_needed() -> str | None:
         generations.touch(generation_id)
@@ -2117,6 +2143,30 @@ async def stream_chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/runs")
+async def create_run(user: User | None = Depends(get_current_user_optional)):
+    """A correlation id for later streams. It does not grant access to any conversation."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import runs
+
+    return runs.create(user.id)
+
+
+@app.get("/api/runs/{run_id}")
+async def get_run(run_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import runs
+
+    try:
+        return runs.read(run_id, user.id)
+    except runs.RunDenied:
+        return JSONResponse({"error": "run was not found", "code": "run_not_found"}, status_code=404)
 
 
 @app.get("/api/generations/{generation_id}")
