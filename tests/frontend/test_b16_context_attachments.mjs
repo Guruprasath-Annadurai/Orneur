@@ -461,7 +461,7 @@ test('_deleteOrphanedUpload(): a 200 response is treated as success, with no war
   assert.equal(warnings.length, 0);
 });
 
-test('_deleteOrphanedUpload(): a 404 that echoes the requested doc_id (genuinely already-gone) is treated as a non-failure, with no warning logged', async () => {
+test('_deleteOrphanedUpload(): a 404 that echoes the requested doc_id (no longer listed) is treated as a non-failure, with no warning logged', async () => {
   const warnings = [];
   const sandbox = { fetch: async () => ({ ok: false, status: 404, json: async () => ({ error: 'No such document in this conversation.', code: 'not_found', doc_id: 'doc-1' }) }), console: { warn: (...a) => warnings.push(a) } };
   const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
@@ -551,9 +551,9 @@ test('removeAttachment(): 403 retrieval_unauthorized is shown honestly, chip pre
   assert.ok(stateEl && stateEl.textContent.includes('refused'));
 });
 
-test('removeAttachment(): a 404 echoing the requested doc_id (genuinely absent) removes the chip', async () => {
+test('removeAttachment(): a 404 echoing the requested doc_id (no longer listed in this conversation) removes the chip', async () => {
   const { chip } = await removeWithResponse({ ok: false, status: 404, json: async () => ({ error: 'No such document in this conversation.', code: 'not_found', doc_id: 'doc-1' }) });
-  assert.equal(chip._removed, true, 'this 404 shape genuinely confirms the document is already gone from this conversation');
+  assert.equal(chip._removed, true, 'this 404 shape confirms the document is no longer listed (a registry-level signal, orca/docs/store.py) -- correct to stop showing it, though not itself proof every physical storage location is clear');
 });
 
 test('removeAttachment(): an AMBIGUOUS 404 (session-ownership failing, no doc_id) preserves the chip -- unconfirmed, not assumed deleted', async () => {
