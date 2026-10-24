@@ -158,7 +158,7 @@ test('Regenerate is deliberately not built -- no code path calls the real regene
 // removing the guess entirely. ---
 
 test('the assistant message_id is assigned directly from the real done event, never inferred by re-fetching and guessing "the last one"', () => {
-  const sendSrc = extractBalancedFunction(source, 'async function sendMessage() {').text;
+  const sendSrc = extractBalancedFunction(source, 'async function sendMessage(runId) {').text;
   assert.ok(sendSrc.includes('_assignAssistantMessageId(finalAnswerDiv, ev.message_id)'), 'must use the exact, already-known id from this specific done event -- zero fetch, zero race, zero ambiguity');
   assert.ok(!sendSrc.includes('_backfillMessageIds'), 'the position-guessing function must be fully removed, not left as dead/unused code that could be accidentally re-wired');
 });

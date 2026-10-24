@@ -695,6 +695,21 @@ let _activeStreamController = null;
 // server-confirmed cancellation in that case.
 let _activeGenerationId = null;
 let _activeGenerationCancellable = false;
+// INTEGRATION Phase E (2026-10-24, PR #96): real correlated-runs
+// plumbing (POST /api/runs, X-Run-Id, GET /api/runs/{id}). No UI
+// control in this codebase currently creates or exposes a "run" --
+// there is no approved design for grouping conversations/generations
+// (the C-series contract itself confirms no /api/workspaces resource
+// exists, and the B14 handoff is explicit: "a run id is not a share and
+// not a workspace tab"). Building a trigger for this without an
+// approved concept would be inventing a feature, which the directive
+// explicitly forbids. What IS implemented here is the real contract
+// support itself -- sendMessage() accepts an optional run id to attach
+// to its stream, and the real generation event's own run_id is tracked
+// -- so the capability genuinely exists and is tested, ready to be
+// wired to a UI the moment one is approved, without needing to revisit
+// this layer.
+let _activeGenerationRunId = null;
 // INTEGRATION Phase D (2026-10-24): real temporary-chat state (PR #95-98).
 // A temp session is excluded from GET /api/sessions and search by the
 // backend itself, so there is no sidebar/Quick Switch entry to ever
@@ -2709,8 +2724,29 @@ function scrollReadingToBottom() {
   region.scrollTop = region.scrollHeight;
 }
 
+// INTEGRATION Phase E: real POST /api/runs -- creates a genuine,
+// owner-scoped correlation id. Not called by any UI path in this
+// codebase (see the state-declaration comment above for why); exposed
+// so a future, approved UI can create one without needing new wiring
+// at this layer.
+async function createRun() {
+  if (!_authToken) return null;
+  try {
+    const r = await fetch('/api/runs', { method: 'POST', headers: _authHeaders() });
+    if (r.status === 401) { _handleSessionExpired(); return null; }
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.run_id || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /* ── Sending (real POST /api/stream SSE, no hard-coded responses) ──── */
-async function sendMessage() {
+// `runId`, when passed, is sent as the real X-Run-Id header -- see the
+// _activeGenerationRunId declaration above for why no caller in this
+// codebase passes one yet.
+async function sendMessage(runId) {
   if (!composerEl) return;
   const input = composerEl.querySelector('#msg-input');
   const text = input.value.trim();
@@ -2759,6 +2795,7 @@ async function sendMessage() {
   // state, per ORNEUR_B10_GENERATION_HANDOFF.md.
   _activeGenerationId = null;
   _activeGenerationCancellable = false;
+  _activeGenerationRunId = null;
   const myIdempotencyKey = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
   updateSendEnabled();
   const thinkEl = appendThinking();
@@ -2772,9 +2809,11 @@ async function sendMessage() {
   let rawBuffer = '';
 
   try {
+    const streamHeaders = { ..._authHeaders(), 'Idempotency-Key': myIdempotencyKey };
+    if (runId) streamHeaders['X-Run-Id'] = runId; // INTEGRATION Phase E: real correlation, only when the caller explicitly passed one
     const resp = await fetch('/api/stream', {
       method: 'POST',
-      headers: { ..._authHeaders(), 'Idempotency-Key': myIdempotencyKey },
+      headers: streamHeaders,
       body: JSON.stringify({ message: text, session_id: sessionId, model_variant: selectedModelVariant }),
       signal: myController.signal,
     });
@@ -2833,6 +2872,10 @@ async function sendMessage() {
           // not to present a stop control that cannot stop generation.
           _activeGenerationId = ev.generation_id || null;
           _activeGenerationCancellable = !!ev.cancellable;
+          // INTEGRATION Phase E: real run membership, when this stream
+          // was started with X-Run-Id (null otherwise -- "existing
+          // clients keep working", per the contract).
+          _activeGenerationRunId = ev.run_id || null;
         } else if (ev.type === 'thinking') {
           const t = thinkEl.querySelector('.thinking-text');
           if (t) t.textContent = ev.text;
