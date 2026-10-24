@@ -104,10 +104,29 @@ test('Regenerate is deliberately not built -- no code path calls the real regene
   assert.ok(!fnSrc.includes('/regenerate'), 'extending B11 to a Regenerate control on assistant messages is out of this phase\'s scope -- the originally-approved design never included it, and the addendum requires founder approval before adding it');
 });
 
-test('_backfillMessageIds() is wired into sendMessage() only for signed-in turns, matching _persist_turn()\'s own real persistence gate', () => {
+// --- CORRECTNESS HARDENING (2026-10-24): the original _backfillMessageIds()
+// inferred BOTH message ids by re-fetching the list and grabbing "the
+// last user/assistant entry" -- a real, reproduced race under
+// concurrent requests on the same session (two browser tabs): a third
+// request's pair persisting in the window between this request's own
+// persist and the fetch resolving means "last in the list" no longer
+// refers to this request's own turn. The CTO directive is explicit:
+// "Do not guess message identity from text or position." Fixed by
+// removing the guess entirely. ---
+
+test('the assistant message_id is assigned directly from the real done event, never inferred by re-fetching and guessing "the last one"', () => {
   const sendSrc = extractBalancedFunction(source, 'async function sendMessage() {').text;
-  assert.ok(sendSrc.includes('_backfillMessageIds(userDiv, finalAnswerDiv, sessionId, _authToken)'));
-  assert.ok(sendSrc.includes('if (_authToken && sessionId)'), 'must not attempt to backfill for an anonymous turn -- _persist_turn() never assigns a message_id for one, so the fetch would be pointless and misleading');
+  assert.ok(sendSrc.includes('_assignAssistantMessageId(finalAnswerDiv, ev.message_id)'), 'must use the exact, already-known id from this specific done event -- zero fetch, zero race, zero ambiguity');
+  assert.ok(!sendSrc.includes('_backfillMessageIds'), 'the position-guessing function must be fully removed, not left as dead/unused code that could be accidentally re-wired');
+});
+
+test('the user message_id is never assigned by client-side inference anywhere in this file', () => {
+  assert.ok(!source.includes('.reverse().find((m) => m.role ==='), 'no code path may guess "the last message of role X" to assign an id -- this is exactly the position-based guess the directive forbids');
+});
+
+test('_assignAssistantMessageId() is a pure, synchronous assignment -- no fetch, so no window for a race to land in', () => {
+  const fnSrc = extractBalancedFunction(source, 'function _assignAssistantMessageId(answerDiv, doneMessageId) {').text;
+  assert.ok(!fnSrc.includes('fetch('), 'must not re-fetch anything -- the id is already known with certainty from the event that was just received');
 });
 
 test('openSession() passes the real message_id/version_count/edited fields from GET .../messages -- no backfill needed for a reloaded conversation', () => {
@@ -302,4 +321,126 @@ test('a 401 during save routes through the real session-expiry handler', async (
   editBtn._on_click();
   await saveBtn._on_click();
   assert.equal(sandbox._sessionExpiredCalled, true);
+});
+
+// --- ADVERSARIAL: two concurrent requests on the SAME session, modeling
+// two browser tabs sending near-simultaneously. The real backend attack
+// surface this test proves is closed: a completed request's bubble must
+// receive ONLY its own, genuinely-known assistant message_id, never a
+// sibling concurrent request's id -- even when their `done` events
+// arrive interleaved. ---
+
+test('ADVERSARIAL: two concurrent sendMessage()-shaped done events never cross-assign each other\'s assistant message_id', () => {
+  const fnSrc = extractBalancedFunction(source, 'function _assignAssistantMessageId(answerDiv, doneMessageId) {').text;
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(fnSrc, sandbox);
+
+  // Two independent "requests" -- each has its OWN answer div and its
+  // OWN done event, arriving in whatever order a real race could produce.
+  const answerDivAlpha = makeFakeNode('div');
+  const doneEventAlpha = { message_id: 'assistant-id-ALPHA' };
+  const answerDivBeta = makeFakeNode('div');
+  const doneEventBeta = { message_id: 'assistant-id-BETA' };
+
+  // Beta's done event arrives FIRST (it was the faster model response),
+  // even though alpha's request started first -- the exact interleaving
+  // that broke the old "last in the list" approach.
+  sandbox._assignAssistantMessageId(answerDivBeta, doneEventBeta.message_id);
+  sandbox._assignAssistantMessageId(answerDivAlpha, doneEventAlpha.message_id);
+
+  assert.equal(answerDivAlpha.dataset.messageId, 'assistant-id-ALPHA', 'alpha\'s bubble must carry ALPHA\'s own id, never beta\'s, regardless of arrival order');
+  assert.equal(answerDivBeta.dataset.messageId, 'assistant-id-BETA', 'beta\'s bubble must carry BETA\'s own id, never alpha\'s');
+});
+
+// --- CORRECTNESS HARDENING: ambiguous save outcome (a thrown network
+// error during the edit POST does not prove the server never committed
+// it). Reconciles via the real versions endpoint before saying anything
+// definitive, and never retries (which would mint a duplicate version)
+// when reconciliation already shows the edit landed. ---
+
+test('a network error during save reconciles with the real server state before claiming failure, and reflects success if it actually landed', async () => {
+  const calls = [];
+  const { sandbox, container } = buildSandbox(async (url, opts) => {
+    calls.push(url);
+    if (opts && opts.method === 'POST') throw new TypeError('Failed to fetch'); // connection dropped
+    // The reconciliation GET: the server DID commit it.
+    return { ok: true, status: 200, json: async () => ({ active_content: 'the edit that actually landed', version_count: 2 }) };
+  });
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const saveBtn = div.querySelector('[data-action="save"]');
+
+  editBtn._on_click();
+  textarea.value = 'the edit that actually landed';
+  await saveBtn._on_click();
+
+  assert.equal(calls.length, 2, 'must attempt the edit, then reconcile with a real GET -- not just give up');
+  assert.ok(calls[1].includes('/versions'), 'the reconciliation call must be to the real versions endpoint');
+  const sampleQ = div._children.find((c) => c.className === 'sample-q');
+  assert.equal(sampleQ.textContent, 'the edit that actually landed', 'once reconciliation proves it landed, the UI must reflect the real success, not a stale failure claim');
+  assert.equal(panel.hidden, true, 'a reconciled success closes the panel exactly like a direct success');
+});
+
+test('a network error during save, reconciled as genuinely NOT committed, is reported honestly and allows a real retry', async () => {
+  const { sandbox, container } = buildSandbox(async (url, opts) => {
+    if (opts && opts.method === 'POST') throw new TypeError('Failed to fetch');
+    return { ok: true, status: 200, json: async () => ({ active_content: 'original text', version_count: 1 }) }; // unchanged -- never landed
+  });
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const errorEl = div._children.find((c) => c.className === 'edit-msg-error');
+  const saveBtn = div.querySelector('[data-action="save"]');
+
+  editBtn._on_click();
+  textarea.value = 'a genuinely new edit attempt';
+  await saveBtn._on_click();
+
+  assert.equal(panel.hidden, false, 'genuinely unconfirmed/failed must keep the panel open for retry');
+  assert.ok(errorEl.textContent.includes('was not saved'), 'only reconciliation proving it did NOT land may say this definitively');
+  assert.equal(textarea.value, 'a genuinely new edit attempt', 'the draft must survive so the user can retry without retyping');
+});
+
+test('when the reconciliation check itself also fails, the message stays genuinely uncertain -- never guesses either way', async () => {
+  const { sandbox, container } = buildSandbox(async () => { throw new TypeError('Failed to fetch'); }); // both the edit POST and the reconciliation GET fail
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const errorEl = div._children.find((c) => c.className === 'edit-msg-error');
+  const saveBtn = div.querySelector('[data-action="save"]');
+
+  editBtn._on_click();
+  textarea.value = 'an attempt with total connection loss';
+  await saveBtn._on_click();
+
+  assert.ok(!errorEl.textContent.includes('was not saved'), 'must not claim definite failure when reconciliation itself could not be attempted');
+  assert.ok(errorEl.textContent.includes('Could not confirm'), 'must honestly state the outcome is unknown');
+  assert.ok(errorEl.textContent.includes('duplicate'), 'must warn that retrying now carries a real risk of creating a duplicate version, since the first attempt\'s true outcome is unknown');
+});
+
+test('ADVERSARIAL: a concurrent sibling\'s done event never overwrites a different bubble\'s already-assigned id', () => {
+  const fnSrc = extractBalancedFunction(source, 'function _assignAssistantMessageId(answerDiv, doneMessageId) {').text;
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(fnSrc, sandbox);
+  const answerDivAlpha = makeFakeNode('div');
+  sandbox._assignAssistantMessageId(answerDivAlpha, 'assistant-id-ALPHA');
+  // A sibling request's done event, if it were EVER (incorrectly) routed
+  // at the SAME div, must not happen in the real code (each done handler
+  // closure owns its own `finalAnswerDiv`) -- proven here by confirming
+  // the function takes the div as an explicit argument, never looks one
+  // up globally (e.g. "the last .answer in the DOM"), which is what
+  // would make cross-assignment possible in the first place.
+  assert.ok(fnSrc.includes('answerDiv.dataset.messageId = doneMessageId'));
+  assert.ok(!fnSrc.includes('document.querySelector') && !fnSrc.includes('getElementById'), '_assignAssistantMessageId() must never look up its own target element -- the caller\'s own done-event closure is the only correct source of which div this id belongs to');
 });

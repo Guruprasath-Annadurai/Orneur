@@ -499,7 +499,7 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
   <aside class="sidebar" aria-label="Primary navigation">
     <div class="branding"><img src="/static/b01_approved_assets/orneur_logo_horizontal.png" alt="ORNEUR"/></div>
     <nav class="primary">
-      <button type="button" class="navrow navnew" onclick="newConversation()">
+      <button type="button" class="navrow navnew" onclick="_withTempChatGuard(() => newConversation())">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5h7v7M19 5l-9 9"/><path d="M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"/></svg>
         <span>New conversation</span>
       </button>
@@ -1144,7 +1144,7 @@ async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {
     // deletion -- only a literal `deleted === true` does (see
     // removeAttachment()'s identical, more detailed comment).
     if (r.ok && data.deleted === true) return; // genuinely confirmed deleted by the server
-    if (r.status === 404 && data.code === 'not_found' && data.doc_id === docId) return; // genuinely confirmed already absent from this conversation
+    if (r.status === 404 && data.code === 'not_found' && data.doc_id === docId) return; // no longer listed in this conversation (see removeAttachment()'s fuller comment: this is a registry-level signal, orca/docs/store.py, not a direct check of every physical storage location)
     // Everything else is treated as unconfirmed, including: a 200 with
     // deleted:false, an AMBIGUOUS 404 (session-ownership failing tells
     // us nothing about whether the document still exists -- see
@@ -1292,20 +1292,36 @@ async function removeAttachment(chip) {
       return;
     }
     if (r.status === 404) {
-      // AUDIT-P0-B16: a DELETE 404 on this backend is AMBIGUOUS, not a
-      // confirmed non-existence. delete_doc() returns 404 in two
-      // genuinely different cases with two different body shapes:
+      // AUDIT-P0-B16, corrected by CORRECTNESS HARDENING (2026-10-24): a
+      // DELETE 404 on this backend is AMBIGUOUS, not a confirmed non-
+      // existence. delete_doc() returns 404 in two genuinely different
+      // cases with two different body shapes:
       // (a) "No such document in this conversation" -- code:"not_found"
-      //     WITH doc_id echoing the one requested -- this document is
-      //     genuinely already absent from this conversation's list, so
-      //     it is safe to treat as effectively deleted.
+      //     WITH doc_id echoing the one requested.
       // (b) the session-ownership check failing ("session not found")
       //     via _get_session -- code:"not_found" but NO doc_id field,
       //     an error_id instead -- this tells us nothing about whether
       //     the document still exists; it only means THIS request
       //     couldn't reach it. Treated as unconfirmed, not success.
+      //
+      // IMPORTANT CORRECTION, confirmed by reading orca/docs/store.py
+      // directly: case (a)'s check (list_docs()/the "No such document"
+      // test) is backed by a SEPARATE JSON registry file
+      // (register_doc()/unregister_doc()), not a live query of the
+      // actual doc_store or authorized-index storage. A 404 here proves
+      // the document is no longer LISTED -- it does not, by itself,
+      // prove every physical storage location is actually clear (a
+      // registry/storage desync -- e.g. a registry write that failed
+      // silently at upload time -- is a plausible root cause of a real
+      // orphan that this signal alone cannot detect). Removing the chip
+      // is still the right UI behavior (nothing in this conversation's
+      // visible document list references it any more), but this is NOT
+      // the same claim as "confirmed physically deleted everywhere" --
+      // see ORNEUR_INTEGRATION_PHASE_E_CORRECTNESS_HARDENING.md's B16
+      // section for the full finding, restated as part of the durable
+      // orphan-reconciliation dependency already assigned to Cursor.
       if (data.code === 'not_found' && data.doc_id === docId) {
-        chip.remove(); // genuinely confirmed absent from this conversation
+        chip.remove(); // no longer listed in this conversation -- correct to stop showing it, not a claim about every storage location
       }
       // else: ambiguous -- leave the chip exactly as it is, unconfirmed.
       return;
@@ -1426,6 +1442,24 @@ document.getElementById('draft-workspace').addEventListener('keydown', (e) => {
    one). Never a fake toggle -- every action below calls the real route
    and only updates state/UI from the real response. ─────────────────── */
 let _preTempModeFocusEl = null;
+// CORRECTNESS HARDENING (2026-10-24): reproduced live -- starting a
+// temporary chat, then clicking "New conversation" or opening a
+// different conversation, silently left the temp session active
+// server-side with NO way back to it (the backend itself excludes an
+// active temp chat from GET /api/sessions/search, so no sidebar/Quick
+// Switch entry can ever reach it again) and no prompt to close it --
+// effectively orphaned until TTL expiry, with the user never told.
+// Never silently deleted either (the user may genuinely want it to
+// keep running). _pendingTempNavAction holds the navigation the user
+// was trying to make, paused until they explicitly choose to either
+// close the temp chat first or knowingly leave it running.
+let _pendingTempNavAction = null;
+
+function _withTempChatGuard(action) {
+  if (!_isTemporarySession) { action(); return; }
+  _pendingTempNavAction = action;
+  openTempModePanel();
+}
 
 function _updateTempModeIndicator() {
   const btn = document.getElementById('temp-mode-btn');
@@ -1459,9 +1493,19 @@ function openTempModePanel() {
     document.getElementById('temp-mode-expiry').textContent = _tempSessionExpiresAt
       ? `Expires at ${new Date(_tempSessionExpiresAt * 1000).toLocaleTimeString()} unless you close it first.`
       : 'Expiry time unavailable.';
-    document.getElementById('temp-mode-close-chat').disabled = false;
-    document.getElementById('temp-mode-close-chat').classList.remove('primary-disabled');
+    const closeChatBtnEl = document.getElementById('temp-mode-close-chat');
+    closeChatBtnEl.disabled = closeChatBtnEl.dataset.permanentlyFailed === '1';
+    closeChatBtnEl.classList.remove('primary-disabled');
     document.getElementById('temp-mode-close-error').hidden = true;
+    const keepChattingBtn = document.getElementById('temp-mode-keep-chatting');
+    const activeDesc = document.getElementById('temp-mode-active-desc');
+    if (_pendingTempNavAction) {
+      keepChattingBtn.textContent = 'Continue without closing';
+      activeDesc.textContent = 'This conversation is hidden from your history and search while active. Continuing will leave it running in the background until you close it or it expires -- there is no way to return to it from the sidebar.';
+    } else {
+      keepChattingBtn.textContent = 'Keep chatting';
+      activeDesc.textContent = 'This conversation is hidden from your history and search while active.';
+    }
   }
   panel.hidden = false;
   backdrop.hidden = false;
@@ -1481,6 +1525,11 @@ function closeTempModePanel() {
     : document.getElementById('temp-mode-btn');
   restoreTo.focus();
   _preTempModeFocusEl = null;
+  // Any dismissal that is NOT an explicit "Continue without closing" or
+  // a successful "Close temporary chat" (both clear this themselves
+  // before calling closeTempModePanel()) must cancel the pending
+  // navigation -- Escape/backdrop/X means "let me think," not "proceed."
+  _pendingTempNavAction = null;
 }
 
 // INTEGRATION Phase D: fixed 1-hour default -- the approved dialog design
@@ -1515,6 +1564,7 @@ document.getElementById('temp-mode-start').addEventListener('click', async () =>
     sessionId = data.session_id;
     _isTemporarySession = true;
     _tempSessionExpiresAt = data.expires_at || null;
+    delete document.getElementById('temp-mode-close-chat').dataset.permanentlyFailed; // a fresh session's own Close button starts clean
     _draftsByConversation.clear();
     resetModelSelection();
     document.getElementById('reading-container').innerHTML = '';
@@ -1535,7 +1585,16 @@ document.getElementById('temp-mode-start').addEventListener('click', async () =>
   }
 });
 
-document.getElementById('temp-mode-keep-chatting').addEventListener('click', closeTempModePanel);
+document.getElementById('temp-mode-keep-chatting').addEventListener('click', () => {
+  // When reached via _withTempChatGuard() the button reads "Continue
+  // without closing" -- an explicit, informed choice to proceed with
+  // the paused navigation, leaving the temp chat running. Otherwise
+  // (opened directly from the header pill) it means "stay here."
+  const pending = _pendingTempNavAction;
+  _pendingTempNavAction = null;
+  closeTempModePanel();
+  if (pending) pending();
+});
 
 document.getElementById('temp-mode-close-chat').addEventListener('click', async () => {
   const closeBtn = document.getElementById('temp-mode-close-chat');
@@ -1556,20 +1615,39 @@ document.getElementById('temp-mode-close-chat').addEventListener('click', async 
     const data = await r.json().catch(() => ({}));
     if (data.state === 'closed' || data.state === 'expired') {
       // Server-confirmed: the transcript is genuinely gone.
+      const pending = _pendingTempNavAction;
+      _pendingTempNavAction = null; // closeTempModePanel() below would also clear it, but clear it here BEFORE newConversation() might reset other state
       if (sessionId === mySid) {
         _isTemporarySession = false;
         _tempSessionExpiresAt = null;
         _updateTempModeIndicator();
-        newConversation();
+        // Proceed with whatever navigation the user originally wanted
+        // (now that the temp chat is genuinely closed first); falls
+        // back to a plain new conversation when the dialog was opened
+        // directly from the header pill, not via a paused navigation.
+        if (pending) pending(); else newConversation();
       }
       closeTempModePanel();
       return;
     }
     // AUDIT-P13-INTEGRATION: `state: "failed"` (a deletion that leaves the
     // transcript, per the contract's own explicit warning) -- never
-    // reported as closed. The session stays marked active; the user can
-    // retry, and the real failure reason is shown.
-    errorEl.textContent = data.error || 'This temporary chat could not be fully closed. It is still marked active -- you can try again.';
+    // reported as closed. CORRECTNESS HARDENING: confirmed by reading
+    // temporary_chat.finish() directly -- "failed" is itself a TERMINAL
+    // state (_TERMINAL = {"expired","closed","failed"}). A second close
+    // attempt short-circuits on that terminal check and returns the SAME
+    // stale "failed" record WITHOUT ever retrying deletion. Clicking
+    // Close again cannot help once this state is reached -- the prior
+    // copy ("you can try again") was itself inaccurate and is corrected.
+    if (data.state === 'failed') {
+      closeBtn.dataset.permanentlyFailed = '1';
+      closeBtn.title = 'This session could not be deleted and will not retry automatically from this button.';
+      errorEl.textContent = (data.error || 'This temporary chat could not be fully deleted.') + ' This will not resolve by clicking Close again -- the session remains on the server.';
+    } else {
+      // An unexpected/unknown state shape -- genuinely don't know if a
+      // retry would help, so don't claim either way.
+      errorEl.textContent = data.error || `Close could not be confirmed (unexpected state "${data.state || 'unknown'}").`;
+    }
     errorEl.hidden = false;
   } catch (e) {
     if (myToken !== _authToken) return;
@@ -1578,7 +1656,9 @@ document.getElementById('temp-mode-close-chat').addEventListener('click', async 
   } finally {
     if (myToken === _authToken && sessionId === mySid) {
       closeBtn.textContent = 'Close temporary chat';
-      closeBtn.disabled = false;
+      // A confirmed-terminal "failed" state stays disabled -- clicking
+      // again cannot help (see the state:"failed" branch above).
+      closeBtn.disabled = closeBtn.dataset.permanentlyFailed === '1';
     }
   }
 });
@@ -1670,7 +1750,7 @@ async function openQuickSwitch() {
       row.innerHTML = `<span class="qs-title">${esc(title)}</span>` + (s.id === sessionId ? '<span class="qs-current">Current</span>' : '');
       row.addEventListener('click', () => {
         closeQuickSwitch();
-        if (s.id !== sessionId) openSession(s.id, title);
+        if (s.id !== sessionId) _withTempChatGuard(() => openSession(s.id, title));
       });
       list.appendChild(row);
     });
@@ -2120,9 +2200,14 @@ function appendUserMessage(text, meta) {
   // (ORNEUR_B11_MESSAGE_VERSIONS_HANDOFF.md: "A line with no message_id
   // cannot be edited"), and /api/stream's `done` event does not include
   // the USER side's id (confirmed by reading _persist_turn() directly --
-  // only assistant_message_id is echoed back). sendMessage() backfills
-  // it via _backfillMessageIds() after a successful exchange. Until
-  // then, dataset.messageId is empty and Save stays honestly disabled.
+  // only assistant_message_id is echoed back). CORRECTNESS HARDENING
+  // (2026-10-24): a freshly-sent user message's id is deliberately NOT
+  // inferred client-side (the prior "re-fetch and grab the last one"
+  // approach was a real, reproduced race under concurrent requests on
+  // the same session -- see _assignAssistantMessageId()'s comment).
+  // dataset.messageId stays empty and Save stays honestly disabled until
+  // the conversation reloads via openSession(), which gets every
+  // message's real id directly, never inferred.
   div.dataset.messageId = (meta && meta.messageId) || '';
   div.dataset.editedCount = String((meta && meta.versionCount) || 1);
   const editedBadge = (meta && meta.edited) ? ` <button type="button" class="edited-badge" data-action="history">Edited</button>` : '';
@@ -2176,6 +2261,25 @@ function appendUserMessage(text, meta) {
     }
   });
   cancelBtn.addEventListener('click', closeEdit);
+  // Shared by the direct-success path and the network-error reconciliation
+  // path below -- both need to apply the exact same real, server-confirmed
+  // state once it's known, not two different ad-hoc copies of this logic.
+  function applyEditSuccess(data) {
+    // Real success: active_content is the server's own confirmed
+    // active version text -- not merely an echo of what was typed.
+    currentText = data.active_content != null ? data.active_content : textarea.value;
+    div.querySelector('.sample-q').textContent = currentText;
+    div.dataset.editedCount = String(data.version_count || 1);
+    if (!div.querySelector('.edited-badge')) {
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = 'edited-badge';
+      badge.dataset.action = 'history';
+      badge.textContent = 'Edited';
+      badge.addEventListener('click', () => toggleEditHistory());
+      editBtn.insertAdjacentElement('afterend', badge);
+    }
+  }
   saveBtn.addEventListener('click', async () => {
     const messageId = div.dataset.messageId;
     if (!messageId || saveBtn.disabled) return; // real disabled attribute already prevents this, defense-in-depth
@@ -2204,25 +2308,49 @@ function appendUserMessage(text, meta) {
         errorEl.hidden = false;
         return;
       }
-      // Real success: active_content is the server's own confirmed
-      // active version text -- not merely an echo of what was typed.
-      currentText = data.active_content != null ? data.active_content : newContent;
-      div.querySelector('.sample-q').textContent = currentText;
-      div.dataset.editedCount = String(data.version_count || 1);
-      if (!div.querySelector('.edited-badge')) {
-        const badge = document.createElement('button');
-        badge.type = 'button';
-        badge.className = 'edited-badge';
-        badge.dataset.action = 'history';
-        badge.textContent = 'Edited';
-        badge.addEventListener('click', () => toggleEditHistory());
-        editBtn.insertAdjacentElement('afterend', badge);
-      }
+      applyEditSuccess(data);
       closeEdit();
     } catch (e) {
       if (myToken !== _authToken || sessionId !== mySid) return;
-      errorEl.textContent = 'Network error -- the edit was not saved. Your draft is still in the box above.';
+      // CORRECTNESS HARDENING (2026-10-24): a thrown fetch error means
+      // the REQUEST failed somewhere in transit -- it does NOT mean the
+      // server never received or never committed it. The connection can
+      // drop after the server has already written the new version and
+      // before the response reaches this tab. Claiming "the edit was
+      // not saved" here would be a real lie exactly as often as it's
+      // true. Reconcile with the server's own authoritative state
+      // before saying anything definitive, rather than guessing.
+      errorEl.textContent = 'Connection lost while saving -- checking whether it went through...';
       errorEl.hidden = false;
+      try {
+        const checkR = await fetch(`/api/session/${encodeURIComponent(mySid)}/messages/${encodeURIComponent(messageId)}/versions`, { headers: _authHeaders() });
+        if (myToken !== _authToken || sessionId !== mySid) return;
+        if (checkR.ok) {
+          const checkData = await checkR.json();
+          if (myToken !== _authToken || sessionId !== mySid) return;
+          if (checkData.active_content === newContent) {
+            // The server DID commit it -- reflect the real success state.
+            // Never retry here: resubmitting the same content under a
+            // NEW Idempotency-Key would mint a genuine duplicate edit
+            // version, which the directive explicitly says to avoid.
+            applyEditSuccess(checkData);
+            errorEl.hidden = true;
+            closeEdit();
+            return;
+          }
+          // Confirmed NOT committed (the active version is still
+          // something else) -- now it's honest to say so, and a retry
+          // is genuinely safe (a fresh attempt, not a duplicate).
+          errorEl.textContent = 'The edit was not saved. Your draft is still in the box above -- try Save again.';
+          return;
+        }
+      } catch (e2) {
+        // The reconciliation check itself failed too -- fall through to
+        // the genuinely-uncertain message below rather than a second
+        // silent failure.
+      }
+      if (myToken !== _authToken || sessionId !== mySid) return;
+      errorEl.textContent = 'Could not confirm whether this edit was saved (connection problem). Check "Edited" history before retrying, to avoid creating a duplicate version.';
     } finally {
       if (myToken === _authToken && sessionId === mySid) {
         saveBtn.textContent = 'Save edit';
@@ -2280,45 +2408,37 @@ function appendUserMessage(text, meta) {
   return div;
 }
 
-// INTEGRATION Phase C (2026-10-24): backfills the real message_id onto
-// the just-rendered user/assistant bubbles for the turn that just
-// completed. /api/stream's `done` event only echoes the ASSISTANT's
-// message_id (confirmed by reading _persist_turn() -- the user side's
-// id is a separate, freshly-generated UUID never sent back); a user
-// message cannot be edited until this runs. Fetches only the real
-// message list already used by openSession() -- never fabricates ids.
-async function _backfillMessageIds(userDiv, answerDiv, mySid, myToken) {
-  if (!userDiv) return;
-  try {
-    // No "last N" pagination exists on this route (confirmed: limit/offset
-    // only page from the start) -- fetches the same bounded list
-    // openSession() already uses and takes the real tail from it.
-    const r = await fetch(`/api/session/${encodeURIComponent(mySid)}/messages`, { headers: _authHeaders() });
-    if (myToken !== _authToken || sessionId !== mySid) return;
-    if (!r.ok) return;
-    const data = await r.json();
-    if (myToken !== _authToken || sessionId !== mySid) return;
-    const msgs = data.messages || [];
-    const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
-    const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
-    if (lastUser && lastUser.message_id) {
-      userDiv.dataset.messageId = lastUser.message_id;
-      userDiv.dataset.editedCount = String(lastUser.version_count || 1);
-      const saveBtn = userDiv.querySelector('[data-action="save"]');
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.classList.remove('primary-disabled');
-        saveBtn.title = '';
-      }
-    }
-    if (lastAssistant && lastAssistant.message_id && answerDiv) {
-      answerDiv.dataset.messageId = lastAssistant.message_id;
-    }
-  } catch (e) {
-    // Non-fatal: editing just stays disabled for this turn until the
-    // conversation is next reloaded (openSession() backfills it
-    // directly from the real message list at that point).
-  }
+// INTEGRATION correctness hardening (2026-10-24): the original
+// _backfillMessageIds() inferred BOTH ids by re-fetching the message
+// list and grabbing "the last user/assistant entry". Reproduced as a
+// genuine race (two concurrent requests on the SAME session -- e.g. two
+// browser tabs on one conversation): if a THIRD request's pair gets
+// persisted in the window between THIS request's own persist and this
+// fetch resolving, "last in the list" no longer refers to this
+// request's own turn -- a completed request could silently adopt a
+// DIFFERENT request's message id. The CTO directive is explicit: "Do
+// not guess message identity from text or position." Fixed by removing
+// the guess entirely, not by making it safer:
+//
+// - The ASSISTANT bubble's message_id is assigned directly from the
+//   real `done` event's own `message_id` (see the `done` handler below)
+//   -- already correct, unique, and known with zero ambiguity. No
+//   fetch, no race, no function needed for it anymore.
+// - The USER bubble's message_id has NO reliable source anywhere in
+//   this API: confirmed by reading _persist_turn() -- user_message_id
+//   IS generated server-side but is never returned on `done` or
+//   anywhere else. Editing a message in the SAME turn it was sent stays
+//   honestly disabled until the conversation reloads via openSession(),
+//   which reads every message's real id directly from
+//   GET .../messages, never inferred.
+//
+// ESCALATED to Cursor, not silently worked around: /api/stream's `done`
+// event should also return `user_message_id` (the value already exists
+// in _persist_turn() -- returning it is a small, additive change,
+// mirroring how `message_id` is already returned for the assistant
+// side). See ORNEUR_INTEGRATION_PHASE_E_CORRECTNESS_HARDENING.md.
+function _assignAssistantMessageId(answerDiv, doneMessageId) {
+  if (answerDiv && doneMessageId) answerDiv.dataset.messageId = doneMessageId;
 }
 
 function appendThinking() {
@@ -2696,14 +2816,13 @@ async function sendMessage() {
             finalizeStreamingMessage(answerEl, rawBuffer, doneSources);
             finalAnswerDiv = answerEl;
           }
-          // INTEGRATION Phase C: backfill the real message_id onto this
-          // turn's user/assistant bubbles so Edit becomes usable without
-          // requiring a conversation reload. Only signed-in turns are
-          // persisted at all (_persist_turn() returns immediately for
-          // anonymous callers), so there is nothing to backfill for one.
-          if (_authToken && sessionId) {
-            _backfillMessageIds(userDiv, finalAnswerDiv, sessionId, _authToken);
-          }
+          // INTEGRATION correctness hardening: assign the assistant's
+          // REAL, already-known message_id directly from this exact
+          // done event -- never inferred, never fetched, never racy.
+          // The user bubble's message_id is NOT assigned here (see
+          // _assignAssistantMessageId()'s comment for why) -- it stays
+          // honestly disabled until the conversation next reloads.
+          _assignAssistantMessageId(finalAnswerDiv, ev.message_id);
         } else if (ev.type === 'error') {
           terminalState = 'error';
           if (answerEl) {
@@ -2833,7 +2952,7 @@ function renderRecentRow(list, sid, title, snippet) {
   } else {
     btn.textContent = title;
   }
-  btn.addEventListener('click', () => openSession(sid, row.dataset.title));
+  btn.addEventListener('click', () => _withTempChatGuard(() => openSession(sid, row.dataset.title)));
   row.appendChild(btn);
 
   const moreBtn = document.createElement('button');

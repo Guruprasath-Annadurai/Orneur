@@ -63,10 +63,10 @@ test('Start temporary chat sends a real POST to /api/sessions/temporary and only
 
 test('Close temporary chat only treats real "closed" or "expired" as success -- "failed" is never silently treated as closed', () => {
   const idx = source.indexOf("document.getElementById('temp-mode-close-chat').addEventListener");
-  const fnSrc = source.slice(idx, idx + 2500);
+  const fnSrc = source.slice(idx, idx + 3500);
   assert.ok(fnSrc.includes("/temporary/close"));
   assert.ok(fnSrc.includes("data.state === 'closed' || data.state === 'expired'"));
-  assert.ok(fnSrc.includes('could not be fully closed'), 'a real "failed" cleanup state must show an honest failure message, not claim success');
+  assert.ok(fnSrc.includes("data.state === 'failed'") && fnSrc.includes('could not be fully deleted'), 'a real "failed" cleanup state must show an honest failure message, not claim success');
 });
 
 test('honest copy: the transcript genuinely exists until close/expiry -- never claims zero-persistence', () => {
@@ -86,6 +86,59 @@ test('sendMessage() handles a real 409 temporary_expired/temporary_closed refusa
 test('exportConversation() surfaces the real server error (covers 409 temporary_not_exportable honestly) instead of a generic failure', () => {
   const fnSrc = extractBalancedFunction(source, 'async function exportConversation(sid, title, format) {').text;
   assert.ok(fnSrc.includes('errData.error ||'), 'must show the real reason when available, not only the generic fallback');
+});
+
+// --- CORRECTNESS HARDENING (2026-10-24): navigation away from an active
+// temporary chat used to silently proceed, leaving the session active
+// server-side with NO way to ever return to it (excluded from the
+// sidebar/search by the backend itself) and no prompt to close it --
+// reproduced live as a real orphaning bug. Never silently deletes it
+// either. Fixed with _withTempChatGuard(): pauses the navigation and
+// asks, rather than guessing either way. ---
+
+test('_withTempChatGuard() runs the action immediately when no temp chat is active', () => {
+  const fnSrc = extractBalancedFunction(source, 'function _withTempChatGuard(action) {').text;
+  assert.ok(fnSrc.includes('if (!_isTemporarySession) { action(); return; }'));
+});
+
+test('_withTempChatGuard() pauses the action and opens the dialog instead of silently proceeding when a temp chat is active', () => {
+  const fnSrc = extractBalancedFunction(source, 'function _withTempChatGuard(action) {').text;
+  assert.ok(fnSrc.includes('_pendingTempNavAction = action;'));
+  assert.ok(fnSrc.includes('openTempModePanel();'));
+});
+
+test('the "New conversation" button, sidebar rows, and Quick Switch rows all route through the guard -- no direct unguarded navigation remains', () => {
+  assert.ok(source.includes('onclick="_withTempChatGuard(() => newConversation())"'), '"New conversation" must be guarded');
+  assert.ok(source.includes('_withTempChatGuard(() => openSession(s.id, title))'), 'Quick Switch rows must be guarded');
+  assert.ok(source.includes('_withTempChatGuard(() => openSession(sid, row.dataset.title))'), 'sidebar recent-conversation rows must be guarded');
+});
+
+test('identity/security transitions (sign-in, anonymous, logout/session-expiry) call newConversation() directly, UNGUARDED -- they must never be blocked by a temp-chat prompt', () => {
+  for (const marker of ['function onAuthSuccess(data) {', 'function continueAnonymous() {', 'function _clearAuthStateAndShowSignIn(message) {']) {
+    const fnSrc = extractBalancedFunction(source, marker).text;
+    assert.ok(fnSrc.includes('newConversation();') && !fnSrc.includes('_withTempChatGuard'), `${marker} must call newConversation() directly -- a security transition must always win, never pause on a dialog the user could leave unanswered`);
+  }
+});
+
+test('dismissing the dialog without an explicit choice (Escape/backdrop/X) cancels the pending navigation -- it does not silently proceed', () => {
+  const closeSrc = extractBalancedFunction(source, 'function closeTempModePanel() {').text;
+  assert.ok(closeSrc.includes('_pendingTempNavAction = null;'), 'an un-answered dismissal must cancel the paused navigation, not leave it to fire later unexpectedly');
+});
+
+test('"Continue without closing" runs the paused navigation; "Close temporary chat" success also runs it, after the real close', () => {
+  const idx = source.indexOf("document.getElementById('temp-mode-keep-chatting').addEventListener");
+  const keepSrc = source.slice(idx, idx + 600);
+  assert.ok(keepSrc.includes('if (pending) pending();'));
+  const closeIdx = source.indexOf("document.getElementById('temp-mode-close-chat').addEventListener");
+  const closeSrc = source.slice(closeIdx, closeIdx + 3500);
+  assert.ok(closeSrc.includes('if (pending) pending(); else newConversation();'), 'a real close success must proceed with the ORIGINAL intended navigation, not just always start a blank new conversation');
+});
+
+test('a terminal "failed" close state disables the Close button permanently (confirmed by reading temporary_chat.finish(): "failed" is itself in _TERMINAL, so a retry would just return the same stale record without ever retrying deletion)', () => {
+  const closeIdx = source.indexOf("document.getElementById('temp-mode-close-chat').addEventListener");
+  const closeSrc = source.slice(closeIdx, closeIdx + 3500);
+  assert.ok(closeSrc.includes("closeBtn.dataset.permanentlyFailed = '1'"));
+  assert.ok(closeSrc.includes('will not resolve by clicking Close again'), 'must not imply a retry could help once the backend\'s own terminal-state check makes retrying a no-op');
 });
 
 test('newConversation() and openSession() reset the temporary-session indicator -- it must never linger onto an unrelated conversation', () => {
@@ -117,6 +170,7 @@ function makeFakeNode(id) {
     _attrs: {},
     _children: [],
     disabled: false,
+    dataset: {},
     classList: { _set: new Set(), add(c) { el.classList._set.add(c); }, remove(c) { el.classList._set.delete(c); }, toggle(c, f) { if (f) el.classList._set.add(c); else el.classList._set.delete(c); }, contains(c) { return el.classList._set.has(c); } },
     textContent: '',
     title: '',
@@ -145,11 +199,14 @@ function makeSandbox() {
   const expiry = makeFakeNode('temp-mode-expiry');
   const closeChatBtn = makeFakeNode('temp-mode-close-chat');
   const closeChatError = makeFakeNode('temp-mode-close-error');
+  const keepChattingBtn = makeFakeNode('temp-mode-keep-chatting');
+  const activeDesc = makeFakeNode('temp-mode-active-desc');
   panel._children = [closeBtn];
   const registry = {
     'temp-mode-btn': btn, 'temp-mode-panel': panel, 'temp-mode-backdrop': backdrop, 'temp-mode-close': closeBtn,
     'temp-mode-prestart': prestart, 'temp-mode-active': active, 'temp-mode-start': startBtn,
     'temp-mode-error': tempError, 'temp-mode-expiry': expiry, 'temp-mode-close-chat': closeChatBtn, 'temp-mode-close-error': closeChatError,
+    'temp-mode-keep-chatting': keepChattingBtn, 'temp-mode-active-desc': activeDesc,
   };
   fakeDoc = {
     activeElement: btn,
@@ -162,6 +219,7 @@ function makeSandbox() {
     _isTemporarySession: false,
     _tempSessionExpiresAt: null,
     _authToken: 'tok-1',
+    _pendingTempNavAction: null,
   };
   vm.createContext(sandbox);
   const openSrc = extractBalancedFunction(source, 'function openTempModePanel() {').text;
