@@ -209,7 +209,7 @@ def test_metrics_stays_open_on_a_private_install(client, monkeypatch):
 
 # ── structural invariant ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-INFERENCE_NAMES = {"complete", "stream", "_run_cognitive_kernel", "_generate_via_frontier_backend", "OrcaUltra", "_run_async", "run_deep_rag"}
+INFERENCE_NAMES = {"complete", "stream", "_run_cognitive_kernel", "_generate_via_frontier_backend", "OrcaUltra", "_run_async", "run_deep_rag", "_regenerate_text"}
 REQUIRED = {"check_quota", "check_input"}
 # routes whose inference authorization is inline and reviewed (plan gate is inside the Kernel's entitlement policy for the cognitive route)
 INLINE_REVIEWED = {"/api/chat": REQUIRED | {"model_access_allowed"}, "/api/stream": REQUIRED | {"model_access_allowed"}, "/api/cognitive/execute": REQUIRED}
