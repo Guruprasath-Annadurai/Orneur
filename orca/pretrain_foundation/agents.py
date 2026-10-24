@@ -59,6 +59,7 @@ class ShutdownError(OrchestratorError):
 
 
 _MAX_RESULT_BYTES = 16 * 1024
+MAX_DELEGATION_DEPTH = 4
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ class AgentIdentity:
     parent_id: str | None
     permissions: frozenset[str]
     budget_units: int
+    tenant_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,8 @@ class Orchestrator:
                 raise UnknownTask(f"dependency {dep} is not a known task")
         if spec.parent_task_id is not None and spec.parent_task_id not in self.tasks:
             raise UnknownTask(f"parent task {spec.parent_task_id} is not known")
+        self._require_same_tenant(spec, agent)
+        self._require_delegation_depth(spec)
         if spec.task_id in self.tasks:
             raise TaskIdentityConflict("task id is already registered")
         self.tasks[spec.task_id] = TaskState(spec=spec, status="QUEUED")
@@ -195,6 +199,70 @@ class Orchestrator:
         if permission not in agent.permissions:
             raise PermissionDenied(f"agent {agent.agent_id} lacks permission {permission}")
         return binding.task_id
+
+    def _require_same_tenant(self, spec: TaskSpec, agent: AgentIdentity) -> None:
+        if spec.parent_task_id is None:
+            return
+        parent_state = self.tasks.get(spec.parent_task_id)
+        if parent_state is None:
+            return
+        parent_agent = self.agents.get(parent_state.spec.agent_id)
+        if parent_agent is None or parent_agent.tenant_id != agent.tenant_id:
+            raise PermissionDenied("cross-tenant delegation")
+
+    def _require_delegation_depth(self, spec: TaskSpec) -> None:
+        depth = 0
+        parent = spec.parent_task_id
+        seen: set[str] = set()
+        while parent:
+            if parent in seen:
+                raise DependencyCycle(f"cycle detected at {parent}")
+            seen.add(parent)
+            depth += 1
+            if depth > MAX_DELEGATION_DEPTH:
+                raise PermissionDenied(f"delegation depth exceeds {MAX_DELEGATION_DEPTH}")
+            state = self.tasks.get(parent)
+            if state is None:
+                break
+            parent = state.spec.parent_task_id
+
+    def snapshot(self) -> dict:
+        """Copy task status. This is not a durable store and not a signature."""
+        return {
+            "closed": self.closed,
+            "tasks": {
+                task_id: {
+                    "status": state.status,
+                    "error": state.error,
+                    "result": state.result,
+                    "attempts": state.attempts,
+                }
+                for task_id, state in self.tasks.items()
+            },
+        }
+
+    def restore_snapshot(self, snapshot: dict) -> None:
+        """Restore statuses without inventing a success or undoing a cancellation."""
+        tasks = snapshot.get("tasks") if isinstance(snapshot, dict) else None
+        if not isinstance(tasks, dict):
+            raise ResultRejected("snapshot tasks missing")
+        for task_id, row in tasks.items():
+            current = self.tasks.get(task_id)
+            if current is None or not isinstance(row, dict):
+                raise UnknownTask(str(task_id))
+            status = row.get("status")
+            if status not in {"QUEUED", "RUNNING", "DEFERRED", "SUCCEEDED", "FAILED", "CANCELLED"}:
+                raise ResultRejected("unknown snapshot status")
+            if status == "SUCCEEDED" and not isinstance(row.get("result"), dict):
+                raise ResultRejected("restart refused a success without a stored result")
+            if current.status == "CANCELLED" and status == "SUCCEEDED":
+                raise ResultRejected("restart refused to rewrite a cancellation as success")
+            current.status = status
+            current.error = row.get("error")
+            if status == "SUCCEEDED":
+                current.result = row.get("result")
+            elif status != "SUCCEEDED":
+                current.result = None if status in {"QUEUED", "RUNNING", "DEFERRED", "CANCELLED"} else current.result
 
     def _require_acyclic(self, spec: TaskSpec) -> None:
         visiting: set[str] = set()

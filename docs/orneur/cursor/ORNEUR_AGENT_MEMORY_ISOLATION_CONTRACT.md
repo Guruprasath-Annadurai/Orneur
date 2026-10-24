@@ -1,6 +1,6 @@
 # Memory isolation
 
-`isolate_memory` allows a read only when `actor_tenant` and `record_tenant` are both present and equal. A cross-tenant payload returns `allowed: false`.
+`isolate_memory` returns `allowed: false` for every caller payload. Differing tenant strings are `cross-tenant memory read`. Equal tenant strings are `tenant strings are not an enrolled identity`. No memory authority is enrolled.
 
 This is one handler, not a full memory store. It does not delete durable files, does not cover export, and does not prove that another module is isolated. Roles `memory-admission`, `memory-writer`, `retention-enforcer`, and `deletion-verifier` remain declared and unimplemented.
 
