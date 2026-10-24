@@ -276,7 +276,11 @@ def test_restart_reopens_the_same_conversation_and_not_its_sibling(client, monke
     assert denied.json()["code"] == "retrieval_unauthorized"
 
 
-def test_stale_trusted_session_cannot_search_after_revoke(isolated_home, tmp_path, monkeypatch):
+# These tests redirect ORCA_HOME with monkeypatch. They must not also use
+# isolated_home: that fixture's temporary directory is deleted on teardown,
+# and monkeypatch then writes that deleted path back onto orca.config.ORCA_HOME.
+# The next first import of orca.train.cloud then fails with FileNotFoundError.
+def test_stale_trusted_session_cannot_search_after_revoke(tmp_path, monkeypatch):
     monkeypatch.setattr("orca.config.ORCA_HOME", tmp_path / "home")
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     admit_uploaded_document("user-a", "sess-a", filename="notes.txt", text=AUTHORIZED, doc_id="doc-a")
@@ -305,7 +309,7 @@ def test_adopt_refuses_revoked_and_foreign_sessions():
     assert authority.is_current(again)
 
 
-def test_concurrent_admits_stay_inside_their_conversations(isolated_home, tmp_path, monkeypatch):
+def test_concurrent_admits_stay_inside_their_conversations(tmp_path, monkeypatch):
     monkeypatch.setattr("orca.config.ORCA_HOME", tmp_path / "home")
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     errors = []
@@ -331,7 +335,7 @@ def test_concurrent_admits_stay_inside_their_conversations(isolated_home, tmp_pa
     assert "saffron" in two.hits[0].text and all("cobalt" not in hit.text for hit in two.hits)
 
 
-def test_a_second_process_reads_only_the_bound_directory(isolated_home, tmp_path, monkeypatch):
+def test_a_second_process_reads_only_the_bound_directory(tmp_path, monkeypatch):
     home = tmp_path / "proc-home"
     home.mkdir()
     monkeypatch.setattr("orca.config.ORCA_HOME", home)
@@ -449,7 +453,7 @@ def test_legacy_delete_failure_after_index_delete_is_not_prompt_visible(client, 
     assert chat.json()["sources"] == []
 
 
-def test_same_user_directory_is_not_scanned_for_another_conversation(isolated_home, tmp_path, monkeypatch):
+def test_same_user_directory_is_not_scanned_for_another_conversation(tmp_path, monkeypatch):
     monkeypatch.setattr("orca.config.ORCA_HOME", tmp_path / "home")
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     admit_uploaded_document("user-a", "sess-one", filename="a.txt", text="alpha uses cobalt", doc_id="doc-one")
@@ -461,7 +465,7 @@ def test_same_user_directory_is_not_scanned_for_another_conversation(isolated_ho
         retrieve_authorized("user-a", "sess-missing", "cobalt")
 
 
-def test_delete_after_restart_removes_the_authorized_passage(isolated_home, tmp_path, monkeypatch):
+def test_delete_after_restart_removes_the_authorized_passage(tmp_path, monkeypatch):
     monkeypatch.setattr("orca.config.ORCA_HOME", tmp_path / "home")
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     admit_uploaded_document("user-a", "sess-a", filename="notes.txt", text=AUTHORIZED, doc_id="doc-a")
