@@ -43,7 +43,7 @@ These are named gaps. The UI must keep its disabled or honest-limitation states 
 
 ## C-series
 
-Claude's matrix, reconfirmed against the later design archives, marks C01–C11 blocked on missing authentic design source and C12–C14 blocked on backend or authority. Projects, onboarding completion, library, plugins, connectors, scheduled tasks, notifications, and skills are not implemented here. No enterprise, billing, or third-party connector is invented to fill that gap. Designer Chat visual specifications are still required before those screens are built.
+Claude's matrix, reconfirmed against the later design archives, marks C01–C11 blocked on missing authentic design source and C12–C14 blocked on backend or authority. The contract for what a backend can promise without those approvals is `docs/orneur/cursor/ORNEUR_C_SERIES_API_CONTRACTS.md`. Library, connectors, schedules, and notifications are proposed shapes there and are not mounted. `GET` and `POST` on those paths return HTTP 404. No enterprise, billing extension, or third-party connector is invented. Designer Chat visual specifications are still required before those screens are built.
 
 ## When qualification permits
 
