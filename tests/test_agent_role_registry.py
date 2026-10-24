@@ -24,16 +24,18 @@ def test_registry_has_one_hundred_declared_roles_and_twelve_handlers():
 
 
 def test_producer_cannot_verify_its_own_claim_and_falsifier_must_differ():
-    span = evidence_span("fixture", "2+2=4", authorized=True)
+    with pytest.raises(EvidenceContractError, match="caller boolean"):
+        evidence_span("fixture", "2+2=4", authorized=True)
+    span = evidence_span("fixture", "2+2=4", authorized=False)
+    assert span.authorized is False
     contradicted = Claim("eq", "2+2=5", "OBSERVED", "producer", (span,))
     with pytest.raises(EvidenceContractError, match="does not support"):
         transition(contradicted, "VERIFIED", actor_id="falsifier", outcome="passed", evidence=(span,))
     claim = Claim("eq", "2+2=4", "OBSERVED", "producer", (span,))
     with pytest.raises(EvidenceContractError, match="producer"):
         transition(claim, "VERIFIED", actor_id="producer", outcome="passed")
-    verified = transition(claim, "VERIFIED", actor_id="falsifier", outcome="passed", evidence=(span,))
-    assert verified.state == "VERIFIED"
-    assert verified.verifier_id == "falsifier"
+    with pytest.raises(EvidenceContractError, match="no external evidence authority"):
+        transition(claim, "VERIFIED", actor_id="falsifier", outcome="passed", evidence=(span,))
     with pytest.raises(EvidenceContractError, match="different"):
         HANDLERS["claim.falsify"]({"producer_id": "producer", "falsifier_id": "producer", "text": "2+2=5", "span": "2+2=4", "source_id": "s", "authorized": True}, {})
 

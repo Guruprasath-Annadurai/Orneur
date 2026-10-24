@@ -36,9 +36,9 @@ def classify_claim(payload: dict, _ctx: dict | None = None) -> dict:
     if not isinstance(span_text, str) or not payload.get("source_id"):
         claim = Claim(claim_id=str(payload.get("claim_id") or "claim"), text=text, state="UNKNOWN", producer_id=producer)
         return {"state": claim.state, "verified": False, "producer_id": producer}
-    span = evidence_span(str(payload["source_id"]), span_text, authorized=bool(payload.get("authorized")))
-    if not span.matches() or not span.authorized:
-        return {"state": "UNKNOWN", "verified": False, "reason": "evidence not authorized"}
+    span = evidence_span(str(payload["source_id"]), span_text, authorized=False)
+    if not span.matches():
+        return {"state": "UNKNOWN", "verified": False, "evidence_authorized": False, "reason": "evidence digest mismatch"}
     claim = Claim(
         claim_id=str(payload.get("claim_id") or "claim"),
         text=text,
@@ -50,8 +50,22 @@ def classify_claim(payload: dict, _ctx: dict | None = None) -> dict:
         try:
             transition(claim, "VERIFIED", actor_id=producer, outcome="passed")
         except EvidenceContractError as exc:
-            return {"state": "OBSERVED", "verified": False, "reason": str(exc)}
-    return {"state": claim.state, "verified": False, "producer_id": producer, "evidence_digest": span.digest}
+            return {
+                "state": "OBSERVED",
+                "verified": False,
+                "evidence_authorized": False,
+                "production_authorization": False,
+                "reason": str(exc),
+            }
+    return {
+        "state": claim.state,
+        "verified": False,
+        "evidence_authorized": False,
+        "production_authorization": False,
+        "caller_authorized_ignored": "authorized" in payload,
+        "producer_id": producer,
+        "evidence_digest": span.digest,
+    }
 
 
 def falsify_claim(payload: dict, _ctx: dict | None = None) -> dict:
@@ -64,17 +78,32 @@ def falsify_claim(payload: dict, _ctx: dict | None = None) -> dict:
     text = str(payload.get("text") or "")
     if not span_text or not payload.get("source_id"):
         return {"state": "UNKNOWN", "outcome": "unsupported", "falsifier_id": falsifier}
-    span = evidence_span(str(payload["source_id"]), span_text, authorized=bool(payload.get("authorized")))
-    if not span.authorized or not span.matches():
-        return {"state": "DISPUTED", "outcome": "evidence-mismatch", "falsifier_id": falsifier}
+    span = evidence_span(str(payload["source_id"]), span_text, authorized=False)
+    if not span.matches():
+        return {
+            "state": "DISPUTED",
+            "outcome": "evidence-mismatch",
+            "falsifier_id": falsifier,
+            "evidence_authorized": False,
+            "production_authorization": False,
+        }
     if "=" in text and "=" in span_text and text.strip() != span_text.strip():
         return {
             "state": "REFUTED",
             "outcome": "contradicts-evidence",
             "falsifier_id": falsifier,
             "evidence_digest": span.digest,
+            "evidence_authorized": False,
+            "production_authorization": False,
         }
-    return {"state": "OBSERVED", "outcome": "not-refuted", "falsifier_id": falsifier, "evidence_digest": span.digest}
+    return {
+        "state": "OBSERVED",
+        "outcome": "not-refuted",
+        "falsifier_id": falsifier,
+        "evidence_digest": span.digest,
+        "evidence_authorized": False,
+        "production_authorization": False,
+    }
 
 
 def arbitrate_claims(payload: dict, _ctx: dict | None = None) -> dict:
@@ -92,21 +121,18 @@ def arbitrate_claims(payload: dict, _ctx: dict | None = None) -> dict:
 
 
 def decide_authority(payload: dict, _ctx: dict | None = None) -> dict:
-    """A permit is a decision. This handler does not execute the requested action."""
+    """Caller grant dictionaries are not enrolled authority. This path denies them."""
     grant = payload.get("grant") if isinstance(payload.get("grant"), dict) else {}
     action = str(payload.get("action") or "")
     tenant = str(payload.get("tenant_id") or "")
-    reason = None
     if not grant:
         reason = "grant missing"
-    elif grant.get("tenant_id") != tenant:
-        reason = "tenant mismatch"
     elif grant.get("expired") is True or grant.get("revoked") is True:
         reason = "grant not active"
-    elif action not in set(grant.get("capabilities") or []):
-        reason = "capability missing"
-    if reason is None:
-        return {"decision": "PERMITTED", "executed": False, "action": action, "tenant_id": tenant}
+    elif grant.get("tenant_id") != tenant:
+        reason = "tenant mismatch"
+    else:
+        reason = "caller-supplied grant is not enrolled authority"
     receipt = DenialReceipt(
         requested_action=action or "(none)",
         decision="DENIED",
@@ -162,8 +188,13 @@ def isolate_memory(payload: dict, _ctx: dict | None = None) -> dict:
     actor = str(payload.get("actor_tenant") or "")
     record = str(payload.get("record_tenant") or "")
     if not actor or actor != record:
-        return {"allowed": False, "reason": "cross-tenant memory read"}
-    return {"allowed": True, "tenant_id": actor, "record_id": payload.get("record_id")}
+        return {"allowed": False, "enrolled": False, "reason": "cross-tenant memory read"}
+    return {
+        "allowed": False,
+        "enrolled": False,
+        "reason": "tenant strings are not an enrolled identity",
+        "record_id": payload.get("record_id"),
+    }
 
 
 def select_team(payload: dict, _ctx: dict | None = None) -> dict:
@@ -217,7 +248,14 @@ def watch_training_locks(payload: dict, _ctx: dict | None = None) -> dict:
     }
     if any(requested.values()):
         return {"decision": "DENIED", "locks_changed": False, "requested": requested, "executed": False}
-    return {"decision": "PERMITTED", "locks_changed": False, "training_lock": False, "gpu_lock": False, "spend_lock": False, "executed": False}
+    return {
+        "decision": "NOT_REQUESTED",
+        "locks_changed": False,
+        "training_lock": False,
+        "gpu_lock": False,
+        "spend_lock": False,
+        "executed": False,
+    }
 
 
 HANDLERS: dict[str, Any] = {

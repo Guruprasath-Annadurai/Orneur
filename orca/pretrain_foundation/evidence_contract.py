@@ -36,9 +36,18 @@ class EvidenceSpan:
         return actual == self.digest and bool(self.source_id)
 
 
-def evidence_span(source_id: str, span: str, *, authorized: bool) -> EvidenceSpan:
+def evidence_span(source_id: str, span: str, *, authorized: bool = False) -> EvidenceSpan:
+    """Build a span. A caller boolean cannot mark it authorized.
+
+    `authorized=True` is refused. No external evidence authority is enrolled,
+    so every span from this function has `authorized` false.
+    """
+    if authorized:
+        raise EvidenceContractError("a caller boolean cannot authorize evidence")
+    if not source_id or not isinstance(span, str):
+        raise EvidenceContractError("source_id and span are required")
     digest = hashlib.sha256(span.encode("utf-8")).hexdigest()
-    return EvidenceSpan(source_id=source_id, span=span, digest=digest, authorized=authorized)
+    return EvidenceSpan(source_id=source_id, span=span, digest=digest, authorized=False)
 
 
 @dataclass(frozen=True)
@@ -75,10 +84,12 @@ def transition(
             raise EvidenceContractError("producer cannot verify its own claim")
         if outcome != "passed":
             raise EvidenceContractError("verification outcome is not passed")
-        if not spans or any(not span.authorized or not span.matches() for span in spans):
+        if not spans or any(not span.matches() for span in spans):
             raise EvidenceContractError("verification evidence is missing or does not match")
         if any(span.span != claim.text for span in spans):
             raise EvidenceContractError("evidence span does not support the claim text")
+        if any(not span.authorized for span in spans):
+            raise EvidenceContractError("no external evidence authority is enrolled")
     return Claim(
         claim_id=claim.claim_id,
         text=claim.text,
