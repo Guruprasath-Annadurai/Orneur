@@ -34,7 +34,7 @@ STALE_AFTER = 30.0
 _HEARTBEAT_INTERVAL = 5.0
 _ID = re.compile(r"^[0-9a-f]{32}$")
 _KEY = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
-_TERMINAL = {"completed", "cancelled", "failed"}
+_TERMINAL = {"completed", "cancelled", "failed", "interrupted_unknown"}
 _RETRYABLE = {"cancelled", "failed", "interrupted_unknown"}
 
 # Test seam. Production leaves this None. "after-idempotency-reserve"
@@ -147,6 +147,7 @@ def public(record: dict, *, now: float | None = None, stale_after: float = STALE
         "session_id": record.get("session_id"),
         "state": state,
         "cancel_requested": bool(record.get("cancel_requested")),
+        "upstream": record.get("upstream"),
         "delivery": record.get("delivery"),
         "cancellable": bool(record.get("cancellable")),
         "run_id": record.get("run_id"),
@@ -208,6 +209,8 @@ def _blank_record(
         "delivery": delivery,
         "cancellable": bool(cancellable),
         "cancel_requested": False,
+        "upstream": None,
+        "worker_pid": None,
         "idempotency_key": idempotency_key,
         "request_hash": request_hash,
         "run_id": run_id,
@@ -331,8 +334,63 @@ def finish(generation_id: str, state: str, *, reason: str | None = None) -> dict
     def apply(record: dict):
         if record.get("state") != "running":
             return None
-        record["state"] = state
-        record["reason"] = reason
+        if state == "completed" and record.get("cancel_requested"):
+            record["state"] = "cancelled" if record.get("upstream") == "stopped" else "interrupted_unknown"
+            record["reason"] = "cancel_requested" if record["state"] == "cancelled" else "completion_after_cancel"
+            record["upstream"] = record.get("upstream") or "unconfirmed"
+        else:
+            record["state"] = state
+            record["reason"] = reason
+        record["updated_at"] = time.time()
+        return record
+
+    return _mutate(generation_id, apply)
+
+
+def end_worker(generation_id: str, *, upstream: str) -> dict | None:
+    """Publish the worker's end without treating a disconnect as cancellation.
+
+    `cancelled` is written only when an authenticated stop is already recorded
+    and this call proved the upstream attempt is stopped. Anything else stays
+    `interrupted_unknown`.
+    """
+    if upstream not in {"stopped", "unconfirmed"}:
+        raise GenerationDenied("upstream classification is not valid")
+
+    def apply(record: dict):
+        if record.get("state") != "running":
+            return None
+        record["upstream"] = upstream
+        record["updated_at"] = time.time()
+        if record.get("cancel_requested") and upstream == "stopped":
+            record["state"] = "cancelled"
+            record["reason"] = "cancel_requested"
+        else:
+            record["state"] = "interrupted_unknown"
+            record["reason"] = "upstream_unconfirmed" if upstream == "unconfirmed" else "worker_ended"
+        return record
+
+    return _mutate(generation_id, apply)
+
+
+def reconcile_owner(generation_id: str) -> dict | None:
+    """A dead lease becomes `interrupted_unknown`. It does not become `cancelled`."""
+    try:
+        _path(generation_id)
+    except GenerationDenied:
+        return None
+    live = _dir() / f"{generation_id}.live"
+
+    def apply(record: dict):
+        if record.get("state") != "running":
+            return None
+        alive = worker_alive(generation_id)
+        stale = time.time() - float(record.get("updated_at") or 0) > STALE_AFTER
+        if alive or (not live.exists() and not stale):
+            return None
+        record["state"] = "interrupted_unknown"
+        record["upstream"] = record.get("upstream") or "unconfirmed"
+        record["reason"] = "stale_lease" if stale else "worker_lost"
         record["updated_at"] = time.time()
         return record
 
@@ -340,15 +398,28 @@ def finish(generation_id: str, state: str, *, reason: str | None = None) -> dict
 
 
 def request_cancel(generation_id: str) -> dict:
-    found = {"record": None}
+    reconcile_owner(generation_id)
+    found = {"record": None, "previous": None}
 
     def apply(record: dict):
+        found["previous"] = record.get("state")
         found["record"] = record
-        if not record.get("cancellable") or record.get("state") != "running" or record.get("cancel_requested"):
-            return None
-        record["cancel_requested"] = True
-        record["updated_at"] = time.time()
-        return record
+        changed = False
+        if record.get("cancellable") and not record.get("cancel_requested"):
+            record["cancel_requested"] = True
+            record["updated_at"] = time.time()
+            changed = True
+        if (
+            record.get("cancellable")
+            and record.get("cancel_requested")
+            and record.get("state") == "interrupted_unknown"
+            and record.get("upstream") == "stopped"
+        ):
+            record["state"] = "cancelled"
+            record["reason"] = "cancel_requested"
+            record["updated_at"] = time.time()
+            changed = True
+        return record if changed else None
 
     updated = _mutate(generation_id, apply)
     record = updated if updated is not None else found["record"]
@@ -359,12 +430,20 @@ def request_cancel(generation_id: str) -> dict:
         view["cancel_accepted"] = False
         view["code"] = "generation_not_cancellable"
         return view
-    if record.get("state") != "running":
-        view["cancel_accepted"] = False
-        view["code"] = "generation_already_terminal"
+    if record.get("state") == "running":
+        view["cancel_accepted"] = True
+        view["code"] = "cancel_requested"
         return view
-    view["cancel_accepted"] = True
-    view["code"] = "cancel_requested"
+    if found["previous"] == "interrupted_unknown" and record.get("state") == "cancelled":
+        view["cancel_accepted"] = True
+        view["code"] = "cancel_confirmed"
+        return view
+    if record.get("state") == "interrupted_unknown":
+        view["cancel_accepted"] = False
+        view["code"] = "upstream_unconfirmed"
+        return view
+    view["cancel_accepted"] = False
+    view["code"] = "generation_already_terminal"
     return view
 
 
@@ -418,6 +497,15 @@ def start_heartbeat(generation_id: str, *, interval: float = _HEARTBEAT_INTERVAL
 
     thread = threading.Thread(target=beat, name=f"generation-{generation_id[:8]}", daemon=True)
     thread.start()
+
+    def claim(record: dict):
+        if record.get("state") != "running":
+            return None
+        record["worker_pid"] = os.getpid()
+        record["updated_at"] = time.time()
+        return record
+
+    _mutate(generation_id, claim)
     return _Heartbeat(fd, thread, stop)
 
 

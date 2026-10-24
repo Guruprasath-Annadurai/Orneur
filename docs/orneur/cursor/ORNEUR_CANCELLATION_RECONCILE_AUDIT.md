@@ -1,0 +1,31 @@
+# Cancellation, deletion, and orphan reconciliation
+
+This branch starts at PR #111 `6b2d37ad5bee2e381e56246a679d59fffeaad930` (`test/combined-candidate-fresh`). PRs #108–#113 are unchanged.
+
+## Cancellation
+
+A browser disconnect does not write `cancelled`. The worker publishes `interrupted_unknown` unless an authenticated stop is already stored and the upstream attempt is classified `stopped`. A later POST can confirm `cancelled` only in that proven case. An unconfirmed upstream stays `interrupted_unknown` with `cancel_requested` true and `cancel_accepted` false.
+
+`completed`, `cancelled`, `failed`, and `interrupted_unknown` stay distinct. `finish` does not replace an existing terminal state, so a late completion cannot overwrite a cancellation. A live lock that has been dropped is reconciled to `interrupted_unknown`, not to `cancelled`. The lock is single-host `flock`.
+
+## Deletion
+
+`delete_uploaded_document()` remains. The keyword fallback is purged only after the collection delete succeeds. Partial state is reported with `atomic: false`. The registry stays when a store still holds the document, and the authorized copy is not re-admitted. HTTP 200 `deleted: false` is preserved when the index was not removed, matching the client chip contract. An index removal plus a failed legacy delete stays HTTP 500 `document_store_disagreement`.
+
+## Orphan uploads
+
+`retention.reconcile_orphan_uploads()` inventories files and classifies them. Dry-run is the default. The only applied deletion is a regular temp file older than 60 seconds. Keyword fallback files are report-only because the 8-character session prefix does not identify one owner. Document-only conversations are not deleted.
+
+## Other contracts
+
+`user_message_id` is added to the stream `done` event only after the user line is readable in the transcript. An edit replay with the same idempotency key returns `reconciled: true` and does not create another version. `retry_failed_closure()` retries a `failed` temporary chat for the same owner and only writes `closed` or `expired` when the transcript is gone and that intended state was stored.
+
+## Local tests
+
+`tests/test_cancellation_lifecycle.py`: 6 passed, including disconnect-without-cancel, unconfirmed stop, proven stop, dead lease, failed temporary closure, and temp-file reconciliation. The generation, audit, and temporary-chat suites that were run with the first five of those tests: 36 passed.
+
+`tests/test_p0_authorized_context.py`, `tests/test_b2_conversation_documents.py`, `tests/test_doc_session_no_model_runtime.py`, `tests/test_b11_message_versions.py`, and `tests/test_g006_tenant_isolation.py`: 85 passed, 2 xfailed.
+
+Production authorization remains DENIED. No model was loaded. The acceptance ledger was not modified.
+
+Verdict: `ENGINEERING PARTIAL — SPECIFIC BLOCKERS`.

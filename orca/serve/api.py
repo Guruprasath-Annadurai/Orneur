@@ -469,13 +469,14 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
                            viewer_user_id=uid)
 
 
-def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> None:
-    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request.
+def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> dict | None:
+    """Persist the turn, then return ids only after the user line is readable.
 
-    Each new line gets a message id and an immutable original version. The JSONL line is not the editable copy.
+    A failure returns None. The caller must not publish a user message id
+    that the transcript does not contain.
     """
     if not user or not session_id:
-        return
+        return None
     try:
         from orca.serve import conversations, message_versions
 
@@ -484,6 +485,9 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         user_stored = (user_text or "")[:conversations.MAX_MESSAGE_CHARS]
         assistant_stored = (assistant_text or "")[:conversations.MAX_MESSAGE_CHARS]
         conversations.append(session_id, "user", user_stored, meta={"message_id": user_message_id})
+        confirmed = conversations.find_message(session_id, user_message_id)
+        if not confirmed or confirmed.get("content") != user_stored:
+            return None
         meta: dict = {"message_id": assistant_message_id}
         if identity:
             meta["model_identity"] = identity
@@ -493,8 +497,10 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         conversations.append(session_id, "assistant", assistant_stored, meta=meta)
         message_versions.seed(session_id, user.id, user_message_id, "user", user_stored)
         message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_stored)
+        return {"user_message_id": user_message_id, "message_id": assistant_message_id}
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
+        return None
 
 
 def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> None:
@@ -2019,13 +2025,14 @@ async def stream_chat(
             code = "run_full" if status == 409 else "run_not_found"
             return JSONResponse({"error": exc.reason, "code": code, "generation_id": generation_id}, status_code=status)
 
+    upstream_box = {"status": "not_started"}
+    stream_finished = False
+
     async def _stop_if_needed() -> str | None:
         generations.touch(generation_id)
         if generations.cancel_requested(generation_id):
-            generations.finish(generation_id, "cancelled", reason="cancel_requested")
             return "cancel_requested"
         if await request.is_disconnected():
-            generations.finish(generation_id, "cancelled", reason="client_disconnected")
             return "client_disconnected"
         return None
 
@@ -2034,6 +2041,7 @@ async def stream_chat(
         return f"data: {json.dumps({'type': 'generation', **generations.public(current)})}\n\n"
 
     async def _event_stream_inner() -> AsyncIterator[str]:
+        nonlocal stream_finished
         try:
             # Send session_id first
             yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
@@ -2061,6 +2069,7 @@ async def stream_chat(
                     objective, tier, cognitive_result.trace_id
                 )
                 yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                upstream_box["status"] = "open"
                 try:
                     async with contextlib.aclosing(
                         gateway.stream(inference_request, allow_experimental=allow_experimental)
@@ -2071,6 +2080,7 @@ async def stream_chat(
                                 yield f"data: {json.dumps({'type': 'chunk', 'text': piece.delta})}\n\n"
                             stop_reason = await _stop_if_needed()
                             if stop_reason:
+                                upstream_box["status"] = "closing"
                                 audit.log(
                                     "stream_client_disconnected",
                                     user_id=user.id if user else None,
@@ -2101,6 +2111,7 @@ async def stream_chat(
                         yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
                     # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
                     yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                    upstream_box["status"] = "open"
 
                     # contextlib.aclosing, not a bare `async for`: breaking the
                     # loop below on client disconnect does not by itself call
@@ -2115,6 +2126,7 @@ async def stream_chat(
                             yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
                             stop_reason = await _stop_if_needed()
                             if stop_reason:
+                                upstream_box["status"] = "closing"
                                 audit.log("stream_client_disconnected", user_id=user.id if user else None,
                                           detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
                                 yield _generation_sse()
@@ -2140,18 +2152,18 @@ async def stream_chat(
             _retain_turn(sess, req.message, full)
             if user:
                 increment_usage(user.id, "message")
+            stream_finished = True
         finally:
-            # Backend correction: ensure durable terminal state on disconnect / cancellation
-            # even when aborted before the first generated chunk or during slow generation.
-            try:
-                curr = generations.read(generation_id)
-                if curr and curr.get("state") == "running":
-                    if generations.cancel_requested(generation_id):
-                        generations.finish(generation_id, "cancelled", reason="cancel_requested")
-                    elif await request.is_disconnected():
-                        generations.finish(generation_id, "cancelled", reason="client_disconnected")
-            except Exception:
-                pass
+            # A disconnect is not a cancellation. Publish unknown unless an
+            # authenticated stop was already stored and the upstream attempt
+            # was closed or had not started.
+            if not stream_finished:
+                status = upstream_box["status"]
+                upstream = "stopped" if status in {"not_started", "closing", "exhausted"} else "unconfirmed"
+                try:
+                    generations.end_worker(generation_id, upstream=upstream)
+                except Exception:
+                    pass
 
         # Knowledge graph extraction — fire-and-forget, NOT awaited. This is
         # an LLM call (real latency on CPU inference per this project's own
@@ -2202,7 +2214,7 @@ async def stream_chat(
             _ev_state = _ev_cov = _ev_pass = None
         _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
                               evidence_state=_ev_state, citation_coverage=_ev_cov, evidence_passages=_ev_pass)
-        _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
+        persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
@@ -2211,6 +2223,8 @@ async def stream_chat(
             yield _generation_sse()
             return
         done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'generation_id': generation_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
+        if persisted and persisted.get("user_message_id"):
+            done_event["user_message_id"] = persisted["user_message_id"]
         _auth_meta = _authorized_metadata(authorized, rag_result)
         if _auth_meta is not None:
             done_event['authorized_retrieval'] = _auth_meta
@@ -2222,7 +2236,14 @@ async def stream_chat(
             async for piece in _event_stream_inner():
                 yield piece
         finally:
-            heartbeat.stop()
+            try:
+                current = generations.read(generation_id)
+                if current and current.get("state") == "running":
+                    status = upstream_box["status"]
+                    upstream = "stopped" if status in {"not_started", "closing", "exhausted"} else "unconfirmed"
+                    generations.end_worker(generation_id, upstream=upstream)
+            finally:
+                heartbeat.stop()
 
     return StreamingResponse(
         _event_stream(),
@@ -2260,6 +2281,7 @@ async def get_run(run_id: str, user: User | None = Depends(get_current_user_opti
 
 @app.get("/api/generations/{generation_id}")
 async def get_generation(generation_id: str, user: User | None = Depends(get_current_user_optional)):
+    generations.reconcile_owner(generation_id)
     record = generations.read(generation_id)
     if record is None or not generations.allowed(record, user.id if user else None):
         raise HTTPException(status_code=404, detail="generation not found")
@@ -3473,8 +3495,16 @@ async def delete_doc(
     session_id: str | None = None,
     user: User | None = Depends(get_current_user_optional),
 ):
-    """Remove a document and all its chunks from the session store."""
+    """Remove a document from the authorized index and the legacy stores.
+
+    The stores are not one transaction. A partial result keeps the registry
+    and does not re-admit a revoked copy. `deleted: false` stays HTTP 200 so
+    the client can leave the attachment visible.
+    """
     sess = _get_session(session_id, user_id=user.id if user else None)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
     listed = list_docs(sess.id)
     meta = next((d for d in listed if d.get("doc_id") == doc_id), None)
     if meta is None:
@@ -3502,18 +3532,31 @@ async def delete_doc(
         # Do not re-admit it to make the legacy store match.
         err = public_error(exc, route="/api/docs/delete", user_id=user.id if user else None)
         return JSONResponse(err.as_json(), status_code=500)
-    if user and index_removed > 0 and not ok:
-        return JSONResponse(
-            {
-                "error": "The authorized copy was removed, but the legacy copy could not be.",
-                "code": "document_store_disagreement",
-                "doc_id": doc_id,
-            },
-            status_code=500,
-        )
+    state = getattr(sess.doc_store, "last_delete_state", None) or {}
+    if not ok:
+        body = {
+            "deleted": False,
+            "doc_id": doc_id,
+            "session_id": sess.id,
+            "atomic": False,
+            "index_removed": index_removed,
+            "collection": state.get("collection"),
+            "fallback": state.get("fallback"),
+        }
+        if user and index_removed > 0:
+            body["error"] = "The authorized copy was removed, but the legacy copy could not be."
+            body["code"] = "document_store_disagreement"
+            return JSONResponse(body, status_code=500)
+        return body
     unregister_doc(sess.id, doc_id)
-    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
-    return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}
+    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id, "atomic": False})
+    return {
+        "deleted": True,
+        "doc_id": doc_id,
+        "session_id": sess.id,
+        "atomic": False,
+        "index_removed": index_removed,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

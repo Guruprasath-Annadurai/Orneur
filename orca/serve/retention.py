@@ -62,6 +62,13 @@ def purge_expired_conversations(now: float | None = None) -> dict:
     }
 
 
+def reconcile_orphan_uploads(*, now: float | None = None, apply: bool = False) -> dict:
+    """Dry-run by default. Applied remediation deletes only old temp files."""
+    from orca.docs.orphan_reconcile import reconcile_orphan_uploads as run
+
+    return run(now=now, apply=apply)
+
+
 if __name__ == "__main__":
     import json
 
