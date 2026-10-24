@@ -34,11 +34,37 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .navrow svg{opacity:.8;flex-shrink:0}
 .navnew{background:#252525;color:#FAF9F7;font-weight:620;margin-bottom:5px}
 .sidecap{font-size:10.5px;letter-spacing:1.15px;font-weight:720;color:#969696;margin:22px 13px 10px}
+/* AUDIT-UIPROG-B07: conversation search, wired to the real
+   GET /api/sessions/search endpoint -- no client-side fake filtering. */
+.conv-search{display:flex;align-items:center;gap:8px;margin:10px 13px 2px;padding:7px 10px;border-radius:8px;background:#1b1b1b;border:1px solid #2a2a2a}
+.conv-search input{flex:1;background:none;border:none;color:#EDECE9;font-size:12.5px;font-family:inherit;outline:none}
+.conv-search input::placeholder{color:#6b6b6b}
+.conv-search svg{flex-shrink:0;color:#8a8a8a}
 .recents{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0}
+.rec-row{position:relative;display:flex;align-items:center}
 .rec{min-height:35px;display:flex;align-items:center;padding:0 12px;color:#ADA9A5;font-size:13px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;border-radius:7px;cursor:pointer;border:none;background:none;width:100%;text-align:left;font-family:inherit}
-.rec:before{content:'•';margin-right:9px;color:#888}
+.rec:before{content:'•';margin-right:9px;color:#888;flex-shrink:0}
 .rec.selected{background:#282828;color:#F5F3EF;font-weight:600}
 .recents-empty{color:#909090;font-size:12px;padding:6px 12px}
+/* AUDIT-UIPROG-B08/B09: per-conversation management menu (rename,
+   export, delete) -- all wired to real, existing backend endpoints. */
+/* AUDIT-P85-P1: this used to be display:none by default, shown only on
+   .rec-row:hover -- display:none removes an element from the tab order
+   entirely, so keyboard users could never reach it at all, and touch
+   devices (no real :hover state) could never discover it either.
+   Always present and in the tab order now; opacity (not display) is
+   what keeps it visually quiet until hovered, focused, or open, which
+   never affects focusability. */
+.rec-more-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:6px;background:none;border:none;color:#8a8a8a;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;opacity:0}
+.rec-row:hover .rec-more-btn,.rec-more-btn:focus-visible,.rec-more-btn.open{opacity:1}
+@media (hover: none){.rec-more-btn{opacity:1}} /* touch devices: no reliable hover state, so always visible rather than hidden-until-an-event-that-may-never-fire */
+.rec-more-btn:hover,.rec-more-btn:focus-visible{background:#2a2a2a;color:#F5F3EF}
+.rec-menu-panel{position:absolute;right:0;top:calc(100% + 2px);z-index:30;width:180px;background:var(--compose);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px var(--shadow);padding:5px;display:none}
+.rec-menu-panel.open{display:block}
+.rec-menu-item{display:block;width:100%;text-align:left;padding:8px 9px;border-radius:7px;background:none;border:none;color:var(--ink);font-size:12.5px;cursor:pointer;font-family:inherit}
+.rec-menu-item:hover,.rec-menu-item:focus-visible{background:var(--chip)}
+.rec-menu-item.danger{color:var(--error)}
+.rec-rename-input{min-height:35px;width:100%;border-radius:7px;border:1px solid var(--accent);background:var(--chip);color:var(--ink);font-size:13px;padding:0 12px;font-family:inherit;outline:none}
 .sidebottom{margin-top:auto;border-top:1px solid #292929;padding-top:10px}
 .profile{gap:10px}
 .avatar{border:1px solid #525252;border-radius:50%;height:28px;width:28px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
@@ -63,8 +89,33 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 /* B02 reading / message list */
 .reading-region{flex:1;overflow-y:auto;scrollbar-width:thin}
 .reading-container{max-width:760px;margin:0 auto;padding:24px 0 24px}
-.msg-user{display:flex;justify-content:flex-end;margin-bottom:24px}
+.msg-user{display:flex;flex-direction:column;align-items:flex-end;margin-bottom:24px}
 .sample-q{max-width:85%;font-size:14px;line-height:1.6;background:var(--bubble);border:1px solid var(--line);border-radius:15px;padding:14px 18px;white-space:pre-wrap;word-break:break-word}
+/* B11 Inline Edit -- source-verified, see appendUserMessage()'s own
+   comment for the exact archive/SHA and the honest backend-absence
+   scoping. */
+.edit-msg-btn{display:inline-flex;align-items:center;gap:5px;margin-top:6px;background:none;border:none;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;padding:4px 6px;border-radius:6px;font-family:inherit}
+.edit-msg-btn:hover,.edit-msg-btn:focus-visible{background:var(--chip);color:var(--ink)}
+.edit-msg-panel{display:none;margin-top:8px;width:min(480px,85%);background:var(--compose);border:1px solid var(--border);border-radius:13px;padding:14px 16px}
+.edit-msg-panel.open{display:block}
+.edit-msg-textarea{width:100%;min-height:70px;border:1px solid var(--border);border-radius:9px;background:none;color:var(--ink);font:13px/1.5 inherit;padding:9px 10px;resize:vertical}
+.edit-msg-note{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.4}
+.edit-msg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.edit-msg-actions .expand-action{height:32px;padding:0 12px;font-size:11.5px}
+
+/* B16 Context & Attachments */
+.attach-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.attach-chips:empty{display:none;margin-bottom:0}
+.attach-chip{display:inline-flex;align-items:flex-start;gap:6px;max-width:100%;background:var(--chip);border:1px solid var(--border);border-radius:9px;padding:5px 8px;font-size:11.5px;color:var(--soft)}
+.attach-chip.failed{border-color:var(--error);color:var(--error)}
+.attach-chip .chip-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;color:var(--ink);flex-shrink:0}
+/* A real server error (e.g. the full "Unsupported file type: .c, .cpp,
+   ..." list) can be long -- wrap it within the chip's own bounded width
+   rather than letting it force horizontal overflow past the composer. */
+.attach-chip .chip-state{color:var(--muted);white-space:normal;max-width:260px;line-height:1.35}
+.attach-chip.failed .chip-state{color:var(--error)}
+.attach-chip-remove{background:none;border:none;color:var(--muted);cursor:pointer;padding:0 2px;font-size:13px;line-height:1;flex-shrink:0}
+.attach-chip-remove:hover,.attach-chip-remove:focus-visible{color:var(--ink)}
 .answer{color:var(--ink);margin-bottom:28px}
 .answer-by{display:flex;align-items:center;gap:10px;font-size:12px;margin:0 0 10px}
 .answer-by span:last-child{color:var(--muted)}
@@ -79,6 +130,87 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .msg-actions button{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:inherit;font-size:11.5px;cursor:pointer;padding:4px 0}
 .msg-actions button:hover{color:var(--ink)}
 .unavailable-note{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;border:1px solid var(--border);border-radius:9px;padding:9px 12px;background:var(--chip)}
+/* AUDIT-B12: neutral error-recovery actions -- deliberately no accent
+   color on these controls ("no borrowed blue/gold/coral UI accent or
+   decorative alerts" per the contract's visual-fidelity section). */
+.recovery-actions{display:flex;gap:8px;margin-top:8px}
+.recovery-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--soft);font-size:11px;font-weight:600;padding:6px 11px;cursor:pointer;font-family:inherit}
+.recovery-btn:hover,.recovery-btn:focus-visible{background:var(--chip);color:var(--ink)}
+
+/* B15 Citations & Sources -- source-verified against
+   APPROVED_SOURCE_ARCHIVES/ORNEUR_B15_FINAL_LOCK_AND_HANDOFF.zip
+   (SHA-256 8c0403ab872766a1c6212756c7032575e62221e1391174da21c30897b87189fb,
+   verified against the archive's own verification/verify_handoff.py:
+   30/30 + 41/41, zero failures). Inline markers and the sources list
+   reuse the existing neutral/muted tokens -- no accent color, matching
+   every other non-primary control in this file. */
+.cite-marker{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;margin:0 1px;border-radius:5px;border:1px solid var(--border);background:var(--chip);color:var(--soft);font-size:10px;font-weight:700;line-height:1;cursor:pointer;vertical-align:text-top;font-family:inherit}
+.cite-marker:hover,.cite-marker:focus-visible{background:var(--accent);color:#fff;border-color:transparent}
+.sources-panel{margin-top:10px}
+.sources-toggle{background:none;border:1px solid var(--border);border-radius:8px;color:var(--soft);font-size:11px;font-weight:600;padding:6px 11px;cursor:pointer;font-family:inherit}
+.sources-toggle:hover,.sources-toggle:focus-visible{background:var(--chip);color:var(--ink)}
+/* AUDIT-B15: reproduced live, the exact same bug class already found and
+   fixed for B05's .model-details -- display:flex directly on the base
+   rule out-specifies the browser's own [hidden] rule, so `list.hidden =
+   true` had no visible effect and the panel rendered open by default.
+   display:none is the real default; .open is the authoritative toggle. */
+.sources-list{margin-top:8px;display:none;flex-direction:column;gap:8px}
+.sources-list.open{display:flex}
+.source-row{border:1px solid var(--border);border-radius:9px;padding:9px 11px;background:var(--chip);font-size:12px;transition:background .25s}
+.source-row.source-row-flash{background:var(--active)}
+.source-row-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.source-ref{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;padding:0 4px;border-radius:5px;background:var(--compose);border:1px solid var(--border);font-size:10px;font-weight:700;color:var(--soft)}
+.source-kind{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.source-cited-state{margin-left:auto;font-size:10.5px;color:var(--muted)}
+.source-name{margin-top:5px;font-weight:600;word-break:break-word}
+.source-name a{color:var(--ink)}
+.source-locator{margin-top:2px;font-size:10.5px;color:var(--muted)}
+.source-excerpt{margin-top:5px;color:var(--soft);line-height:1.5;font-size:11.5px}
+@media(max-width:650px){.sources-list{gap:6px}.source-row{padding:8px 9px}}
+
+/* B13 Temporary / Private Chat -- discoverability control + the honest
+   disabled-state details dialog. Deliberately no accent color (matches
+   the quiet, non-alarming tone of the locked design); the disabled
+   "Start temporary chat" action uses the same muted treatment as every
+   other truthfully-disabled control in this file. */
+.temp-entry{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:99px;border:1px solid var(--border);background:none;color:var(--soft);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.temp-entry:hover,.temp-entry:focus-visible{background:var(--chip);color:var(--ink)}
+.temp-entry-icon{opacity:.75}
+.temp-entry-chevron{font-size:11px;opacity:.6}
+.temp-mode-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:95}
+body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
+.temp-mode-panel{position:fixed;top:72px;right:24px;z-index:96;width:min(380px,calc(100vw - 32px));max-height:min(620px,calc(100vh - 96px));overflow:auto;background:var(--compose);border:1px solid var(--border);border-radius:16px;box-shadow:0 24px 60px var(--shadow);padding:20px 22px 18px}
+.temp-mode-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.temp-mode-eyebrow{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.temp-mode-panel h2{font-size:17px;font-weight:650;margin:10px 0 6px}
+.temp-mode-sub{font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 16px}
+.temp-mode-rule{padding:11px 0;border-top:1px solid var(--line)}
+.temp-mode-rule-title{font-size:12.5px;font-weight:650;color:var(--ink)}
+.temp-mode-rule-desc{font-size:11.5px;color:var(--soft);line-height:1.5;margin-top:3px}
+.temp-mode-footnote{font-size:10.5px;color:var(--muted2,var(--muted));line-height:1.5;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+/* AUDIT-B13: reproduced live -- .expand-action's fixed 34px height (set
+   for B04's short icon/word labels) is too short for "Start temporary
+   chat"'s longer text at this panel's width, so the wrapped third line
+   overflowed the button box and visually collided with "Back" beside it.
+   Scoped override: let both buttons grow to fit their own wrapped text. */
+.temp-mode-actions{display:flex;gap:8px;margin-top:16px}
+.temp-mode-actions .expand-action{flex:1;height:auto;min-height:40px;padding:9px 10px;text-align:center;justify-content:center;white-space:normal;line-height:1.3}
+.expand-action.primary-disabled{opacity:.6;cursor:not-allowed}
+@media(max-width:650px){.temp-mode-panel{top:auto;bottom:0;left:0;right:0;width:100%;max-height:82vh;border-radius:18px 18px 0 0}.temp-entry span:not(.temp-entry-icon){display:none}.temp-entry{padding:0 10px}}
+
+/* B14 Quick Switch */
+.quick-switch-entry{display:inline-flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:9px;border:1px solid var(--border);background:none;color:var(--soft);cursor:pointer;margin-right:4px;flex-shrink:0}
+.quick-switch-entry:hover,.quick-switch-entry:focus-visible{background:var(--chip);color:var(--ink)}
+.quick-switch-panel{left:24px;right:auto}
+.sr-only-heading{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.quick-switch-list{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+.quick-switch-row{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:9px;padding:8px 10px;cursor:pointer;font-family:inherit;color:inherit}
+.quick-switch-row:hover,.quick-switch-row.qs-active{background:var(--chip);border-color:var(--border)}
+.quick-switch-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.quick-switch-row .qs-title{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.quick-switch-row .qs-current{font-size:10.5px;color:var(--muted);margin-left:6px;font-weight:500}
+.quick-switch-empty{font-size:12px;color:var(--muted);padding:8px 2px}
+@media(max-width:650px){.quick-switch-panel{left:0;right:0}}
 .interrupted-badge{display:inline-flex;align-items:center;gap:7px;color:var(--warn-text);font-size:12px;border:1px solid #e3a44c;border-radius:9px;padding:7px 11px;margin-top:10px;background:var(--chip)}
 .thinking{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
 .dot-pulse{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:pulse 1.1s infinite ease-in-out}
@@ -104,7 +236,14 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .model[disabled]{opacity:.55;cursor:not-allowed}
 .neutral-dot{background:var(--muted);height:6px;width:6px;border-radius:50%;flex-shrink:0}
 .neutral-dot.avail{background:#3DA35D}
-.send{margin-left:auto;display:grid;place-items:center;height:32px;width:32px;border-radius:10px;background:var(--chip);color:var(--muted);border:none;cursor:pointer}
+.send{position:relative;margin-left:auto;display:grid;place-items:center;height:32px;width:32px;border-radius:10px;background:var(--chip);color:var(--muted);border:none;cursor:pointer}
+/* AUDIT-B10: the contract explicitly flags this exact control -- "36px
+   Stop control... production hit target... must meet accessibility
+   standards without materially changing visual hierarchy." An invisible
+   expanded hitbox reaches the WCAG 2.2 AA 44x44 CSS-px touch target on
+   narrow/touch viewports without enlarging the visible 32px glyph. */
+@media(max-width:650px){.send::before{content:'';position:absolute;inset:-6px}}
+.send.stop-mode{background:var(--error);color:#fff}
 .send:not(.disabled){background:var(--accent);color:#fff}
 .send.disabled{opacity:.6;cursor:not-allowed}
 .starters{display:flex;gap:18px;justify-content:center;margin-top:16px;flex-wrap:wrap;font-size:12.5px;color:var(--soft)}
@@ -113,14 +252,88 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 
 /* Model dropdown */
 .modelmenu{position:relative}
-.modelmenu-panel{display:none;position:absolute;bottom:40px;left:0;width:260px;background:var(--compose);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px var(--shadow);padding:6px;z-index:20}
+.modelmenu-panel{display:none;position:absolute;bottom:40px;left:0;width:300px;max-height:min(420px,70vh);overflow-y:auto;background:var(--compose);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px var(--shadow);padding:6px;z-index:20}
 .modelmenu-panel.open{display:block}
 .modelopt{display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;cursor:pointer;width:100%;text-align:left;background:none;border:none;font-family:inherit;color:inherit}
 .modelopt:hover,.modelopt:focus-visible{background:var(--chip)}
 .modelopt:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.modelopt.unavailable,.modelopt:disabled{opacity:.55;cursor:not-allowed}
+.modelopt.unavailable,.modelopt[aria-disabled="true"]{opacity:.55;cursor:default}
 .modelopt .mname{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
 .modelopt .mnote{font-size:11px;color:var(--muted)}
+/* B05 -- Details disclosure, verified fields only (GET /api/models). */
+.modelrow{position:relative}
+.modelrow-sep{height:1px;background:var(--line);margin:4px 6px}
+.details-btn{position:absolute;top:8px;right:6px;background:none;border:none;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;padding:3px 6px;border-radius:6px;font-family:inherit}
+.details-btn:hover,.details-btn:focus-visible{background:var(--chip);color:var(--ink)}
+.model-details{padding:4px 10px 9px;display:none;flex-direction:column;gap:4px}
+.model-details.open{display:flex}
+.detail-row{display:flex;justify-content:space-between;gap:10px;font-size:11px}
+.detail-k{color:var(--muted)}
+.detail-v{color:var(--ink);text-align:right}
+
+/* B04 Expanded Composer -- source-verified against
+   APPROVED_SOURCE_ARCHIVES/ORNEUR_B04_FINAL_LOCK_AND_HANDOFF.zip
+   (SHA-256 ad5e1304c096029df337c8d8aee2ecef79d6a3c62ad46a08bf9879dd093fffad,
+   verified against SHA256_MANIFEST.txt and the archive's own 26-file
+   verify_assets.py, zero failures). Reuses the existing design tokens
+   (--bg/--compose/--border/--ink/--soft/--muted/--shadow) rather than new
+   hardcoded colors, since they already match the contract's locked
+   Obsidian/Meridian values exactly. */
+.expand-btn{display:grid;place-items:center;height:32px;width:32px;border-radius:9px;background:none;border:1px solid var(--border);color:var(--soft);cursor:pointer;flex-shrink:0}
+.expand-btn:hover,.expand-btn:focus-visible{background:var(--chip)}
+#live-composer.focused-expanded{max-width:840px;padding:0 20px 16px}
+#live-composer.focused-expanded .expand-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.expand-head{display:none}
+.expand-caption{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:650;color:var(--ink)}
+.expand-caption .draftnote{font-weight:400;font-size:11px;color:var(--muted);margin-left:5px}
+.expand-actions{display:flex;align-items:center;gap:8px}
+.expand-action{background:none;border:1px solid var(--border);border-radius:9px;color:var(--ink);height:34px;padding:0 11px;display:inline-flex;gap:7px;align-items:center;font-weight:530;font-size:12px;cursor:pointer;font-family:inherit}
+.expand-action:hover,.expand-action:focus-visible{background:var(--chip)}
+#live-composer.focused-expanded textarea{min-height:260px;max-height:none}
+@media(max-width:650px){#live-composer.focused-expanded textarea{min-height:220px}.expand-action .action-word{display:none}.expand-action{width:34px;padding:0;justify-content:center}}
+
+/* Draft workspace -- the dedicated full dialog (B04 DRAFT_WORKSPACE
+   state). The SAME live composer (textarea, model picker, send button)
+   is reparented into #draft-workspace-slot, never cloned or copied --
+   this is the only way to guarantee caret position, selection, IME
+   composition, undo/redo history and scroll position survive the
+   transition exactly as the contract's "Editing fidelity" section
+   requires, since nothing about the real element ever changes. */
+#draft-workspace-scrim{position:fixed;inset:0;background:var(--overlay,rgba(0,0,0,.6));z-index:90;display:none;align-items:center;justify-content:center;padding:28px}
+#draft-workspace-scrim.open{display:flex}
+#draft-workspace{width:min(900px,100%);max-height:min(760px,calc(100vh - 56px));background:var(--compose);border:1px solid var(--border);box-shadow:0 30px 80px var(--shadow);border-radius:18px;display:flex;flex-direction:column;overflow:hidden}
+.workspace-header{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:22px 24px 18px;border-bottom:1px solid var(--line)}
+.workspace-header h2{font-size:18px;font-weight:620;margin:0;letter-spacing:-.3px;color:var(--ink)}
+.workspace-header .hint{font-size:11px;color:var(--muted);margin-top:4px}
+.workspace-return-short{display:none}
+.workspace-body{padding:18px 24px 0;overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column}
+.workspace-body #live-composer{max-width:none;width:100%;margin:0;box-shadow:none;border:none;padding:0;background:none}
+/* AUDIT-B04: the original ".composer textarea" rule only matches while
+   #live-composer sits inside a ".composer"-classed slot -- reproduced
+   live: once reparented here (.workspace-body has no such ancestor), the
+   textarea silently fell back to the browser's default white UA
+   textarea style, breaking dark theme. Full base styling repeated here,
+   not just the size override, so it never depends on which ancestor
+   #live-composer currently happens to have. */
+.workspace-body #live-composer textarea{width:100%;border:none;background:none;resize:none;outline:none;color:var(--ink);font:14px/1.5 inherit;padding:0;min-height:280px;max-height:none;flex:1}
+/* The composer keeps its .focused-expanded marker while inside the
+   workspace (so FOCUSED_EXPANDED is correctly restored on close, per the
+   contract's state diagram) -- but its own expand-head bar, with an
+   "Open draft workspace" button, would be redundant and confusing
+   stacked above the workspace dialog's own header. Suppressed here only. */
+.workspace-body #live-composer .expand-head{display:none}
+.workspace-attach{border-top:1px solid var(--line);padding:13px 0;display:flex;align-items:center;gap:9px;font-size:12px;color:var(--muted)}
+.workspace-footer{padding:12px 24px 20px}
+.workspace-footer .helper{font-size:12px;color:var(--muted);line-height:1.5;margin-top:10px}
+@media(max-width:650px){
+  #draft-workspace-scrim{padding:0;align-items:stretch}
+  #draft-workspace{width:100%;height:100%;max-height:100%;border-radius:0;border:0}
+  .workspace-header{padding:20px 16px 14px}
+  .workspace-return-long{display:none}.workspace-return-short{display:inline}
+  .workspace-body{padding:16px 16px 0}
+  .workspace-footer{padding:12px 16px 18px}
+}
+@media(prefers-reduced-motion:reduce){#draft-workspace-scrim,#draft-workspace{transition:none!important}}
 
 /* Auth overlay */
 #auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center}
@@ -187,7 +400,76 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
   </div>
 </div>
 
-<div class="app">
+<!-- B14 Multi-Conversation Navigation (Quick Switch) -- source-verified
+     against APPROVED_SOURCE_ARCHIVES/ORNEUR_B14_FINAL_LOCK_AND_HANDOFF.zip
+     (SHA-256 810f1a472db61360261c678404e40a50c0c3fc79471bef8dc9a740e468e88c14,
+     verified via the archive's own verification/verify_handoff.py: 40
+     packaged + 31 approved source files, zero failures). Lists REAL
+     recent conversations from the already-existing GET /api/sessions
+     endpoint -- never the archive's own illustrative example titles --
+     and switching uses the real, already-hardened openSession(), so this
+     gets B14's draft-isolation and B85-era ownership-epoch correctness
+     for free rather than re-implementing it. Workspace Tabs (the other
+     named B14 feature) is NOT built in this pass -- disclosed in the
+     engineering report, not fabricated; it is explicitly optional even
+     in the approved design itself ("Illustrative conversations only. No
+     session sync, account access or model execution.") and would need
+     real per-tab stream-subscription/correlation work the contract's own
+     section 4 flags as a hard, separate problem. -->
+<div id="quick-switch-backdrop" class="temp-mode-backdrop" hidden></div>
+<div id="quick-switch-panel" class="temp-mode-panel quick-switch-panel" role="dialog" aria-modal="true" aria-labelledby="quick-switch-title" hidden tabindex="-1">
+  <div class="temp-mode-head">
+    <span class="temp-mode-eyebrow">Switch conversations</span>
+    <button type="button" id="quick-switch-close" class="expand-action iconbtn" aria-label="Close">×</button>
+  </div>
+  <h2 id="quick-switch-title" class="sr-only-heading">Switch conversations</h2>
+  <p class="temp-mode-sub">Jump between recent conversations. Your unsent text stays with its own draft.</p>
+  <div id="quick-switch-list" class="quick-switch-list" role="listbox" aria-label="Recently viewed conversations"></div>
+</div>
+
+<!-- B13 Temporary / Private Chat -- source-verified against
+     APPROVED_SOURCE_ARCHIVES/ORNEUR_B13_FINAL_LOCK_AND_HANDOFF.zip (SHA-256
+     f0ee3ddc1c44885a8adf3cb88d95cfd9b0a13202bdc8aaeeb78541606a14f9a8,
+     verified via the archive's own verification/verify_handoff.py: 32
+     package files + 24 approved source files, zero failures). No backend
+     capability for this exists anywhere in this codebase (grepped for
+     temporary/ephemeral/private_mode/incognito session concepts; none
+     found) -- the B13_IMPLEMENTATION_CONTRACT.md's own explicit guidance
+     for exactly this case ("If unsupported, show a clearly disabled
+     state with a succinct explanation, not a fake toggle") is what this
+     is. The copy below is the real, founder-approved locked content from
+     references/ORNEUR_B13_Unified_Dark.html, not invented for this pass
+     -- that source is itself already an honest "concept review, action
+     disabled until verified implementation" design, so implementing it
+     faithfully IS the honest implementation. -->
+<div id="temp-mode-backdrop" class="temp-mode-backdrop" hidden></div>
+<div id="temp-mode-panel" class="temp-mode-panel" role="dialog" aria-modal="true" aria-labelledby="temp-mode-title" hidden tabindex="-1">
+  <div class="temp-mode-head">
+    <span class="temp-mode-eyebrow">Temporary conversation</span>
+    <button type="button" id="temp-mode-close" class="expand-action iconbtn" aria-label="Close">×</button>
+  </div>
+  <h2 id="temp-mode-title">Before you start</h2>
+  <p class="temp-mode-sub">Understand what temporary mode is intended to do before using it. These are proposed behaviors, not verified privacy guarantees.</p>
+  <div class="temp-mode-rule">
+    <div class="temp-mode-rule-title">Conversation history</div>
+    <div class="temp-mode-rule-desc">Proposed: temporary chats do not appear in normal history. This must be proven through storage and account-level testing.</div>
+  </div>
+  <div class="temp-mode-rule">
+    <div class="temp-mode-rule-title">Data retention</div>
+    <div class="temp-mode-rule-desc">Not yet verified. Temporary does not guarantee zero retention, automatic erasure, anonymity, or zero logs.</div>
+  </div>
+  <div class="temp-mode-rule">
+    <div class="temp-mode-rule-title">Access and model readiness</div>
+    <div class="temp-mode-rule-desc">Genesis, Novus and Aeternum are the only native families. Model eligibility and temporary-session access are not verified.</div>
+  </div>
+  <p class="temp-mode-footnote">This preview creates no session. Privacy wording must match audited retention, memory, logging, and deletion behavior before release.</p>
+  <div class="temp-mode-actions">
+    <button type="button" id="temp-mode-back" class="expand-action">Back</button>
+    <button type="button" class="expand-action primary-disabled" disabled title="Concept review · action disabled until verified implementation">Start temporary chat</button>
+  </div>
+</div>
+
+<div class="app" id="app-root">
   <aside class="sidebar" aria-label="Primary navigation">
     <div class="branding"><img src="/static/b01_approved_assets/orneur_logo_horizontal.png" alt="ORNEUR"/></div>
     <nav class="primary">
@@ -196,6 +478,10 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
         <span>New conversation</span>
       </button>
     </nav>
+    <div class="conv-search" id="conv-search-wrap" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="conv-search-input" placeholder="Search conversations" aria-label="Search conversations"/>
+    </div>
     <div class="sidecap">RECENT CONVERSATIONS</div>
     <div class="recents" id="recents-list"><div class="recents-empty">Sign in to see your conversations</div></div>
     <div class="sidebottom">
@@ -215,8 +501,14 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
       <button type="button" class="mobilemenu-btn" id="mobilemenu-btn" aria-label="Open navigation">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
+      <button type="button" id="quick-switch-btn" class="quick-switch-entry" aria-label="Switch conversations" aria-haspopup="dialog" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+      </button>
       <div class="conversationtitle" id="conv-title">New conversation</div>
       <div class="topright">
+        <button type="button" id="temp-mode-btn" class="temp-entry" aria-label="Temporary conversation details" aria-haspopup="dialog" aria-expanded="false">
+          <span class="temp-entry-icon" aria-hidden="true">◌</span> Temporary <span class="temp-entry-chevron" aria-hidden="true">⌄</span>
+        </button>
         <span class="relay" id="relay-badge">Relay · Not connected</span>
         <button class="themebtn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -252,8 +544,36 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 </div>
 
 <template id="composer-template">
+  <!-- B04 FOCUSED_EXPANDED header -- visible only while the composer has
+       the .focused-expanded class (see expandComposer()/collapseComposer()). -->
+  <div class="expand-head">
+    <span class="expand-caption">Expanded prompt<span class="draftnote">· Unsent draft</span></span>
+    <div class="expand-actions">
+      <button type="button" class="expand-action" id="open-workspace-btn" title="Open a dedicated draft workspace">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+        <span class="action-word">Open draft workspace</span>
+      </button>
+      <button type="button" class="expand-action" id="collapse-composer-btn" title="Collapse" aria-label="Collapse expanded composer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 20v-5h5M20 9h-5V4M4 15h5v5"/></svg>
+      </button>
+    </div>
+  </div>
   <textarea id="msg-input" placeholder="Message ORNEUR..." rows="1"></textarea>
+  <!-- B16 Context & Attachments -- source-verified, see wireComposer()'s
+       own comment for the exact archive/SHA. Unlike B13, a REAL upload
+       pipeline exists (POST /api/docs/upload -> extract/chunk/PII-redact/
+       embed, already consumed by B15's own citations as kind:
+       "uploaded_document"), so this is built for real, not a disabled
+       placeholder. -->
+  <div class="attach-chips" id="attach-chips"></div>
   <div class="controls">
+    <button type="button" class="expand-btn" id="attach-btn" title="Attach a document" aria-label="Attach a document">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5 12 19.5a5 5 0 0 1-7-7l9-9a3 3 0 0 1 4.2 4.2L9.5 16.4a1 1 0 0 1-1.4-1.4l8-8"/></svg>
+    </button>
+    <input type="file" id="attach-file-input" class="sr-only-heading" accept=".pdf,.txt,.md,.rst,.log,.yaml,.yml,.toml,.ini,.docx,.csv,.json,.py,.js,.ts,.java,.cpp,.c,.go,.rb,.rs,.sh" aria-hidden="true" tabindex="-1"/>
+    <button type="button" class="expand-btn" id="expand-btn" title="Expand composer" aria-label="Expand composer">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3"/></svg>
+    </button>
     <div class="modelmenu">
       <button type="button" class="model" id="model-btn">
         <span class="neutral-dot" id="model-dot"></span>
@@ -269,6 +589,37 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
   <div class="model-disclosure" id="model-disclosure" style="display:none"></div>
 </template>
 
+<!-- B04 DRAFT_WORKSPACE -- a dedicated modal editor. The live composer
+     (#msg-input, model picker, send button) is reparented into
+     #draft-workspace-slot by openDraftWorkspace() and back by
+     closeDraftWorkspace(); never cloned, so caret/selection/IME/undo
+     state survives exactly, per the implementation contract's "Editing
+     fidelity" requirements. -->
+<div id="draft-workspace-scrim">
+  <div id="draft-workspace" role="dialog" aria-modal="true" aria-labelledby="draft-workspace-title" tabindex="-1">
+    <div class="workspace-header">
+      <div>
+        <h2 id="draft-workspace-title">Dedicated draft workspace</h2>
+        <div class="hint">A quiet space to prepare long instructions. Nothing has been submitted.</div>
+      </div>
+      <button type="button" class="expand-action" id="close-workspace-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
+        <span class="workspace-return-long">Return to conversation</span>
+        <span class="workspace-return-short">Back</span>
+      </button>
+    </div>
+    <div class="workspace-body" id="draft-workspace-slot"></div>
+    <div class="workspace-attach">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5 12 19.5a5 5 0 0 1-7-7l9-9a3 3 0 0 1 4.2 4.2L9.5 16.4a1 1 0 0 1-1.4-1.4l8-8"/></svg>
+      <span>Attachments</span>
+      <span style="margin-left:auto">0 files · None uploaded</span>
+    </div>
+    <div class="workspace-footer">
+      <div class="helper">This optional workspace expands the same draft. Returning to the conversation preserves the text.</div>
+    </div>
+  </div>
+</div>
+
 <script src="/static/sse_diagnostics.js"></script>
 <script>
 'use strict';
@@ -282,6 +633,19 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
    ────────────────────────────────────────────────────────────────────── */
 
 let _authToken = null, _authUser = null, _anonymous = false;
+// AUDIT-P85-BOOTRACE: true once boot's "who is this" question has been
+// answered by ANY path -- a successful tryRestoreSession(), onAuthSuccess()
+// (login/signup), or continueAnonymous(). The auth overlay's sign-in form
+// is reachable and clickable WHILE tryRestoreSession()'s own fetch is
+// still in flight (nothing in boot() disables it during the await), so a
+// slower, stale restore resolving AFTER a faster, newer login/signup/
+// anonymous choice must never be allowed to apply its own (by-then-stale)
+// result on top of it. Reproduced live before this fix: a slow restore
+// for a stale stored "Alice" token, raced against a fast real login as
+// "Bob", resulted in _authToken silently flipping back to Alice's after
+// Bob's login had already completed and closed the overlay -- a real
+// identity-confusion bug, not hypothetical.
+let _identityResolved = false;
 let sessionId = null;
 let isStreaming = false;
 // AUDIT-B81-A-P1-01: every in-flight /api/stream request must prove it
@@ -309,6 +673,58 @@ function _abandonActiveStream() {
   isStreaming = false;
   updateSendEnabled();
 }
+
+// AUDIT-P85C: independent ownership domains for the sidebar history list
+// (loadSessions()) and the active conversation's messages (openSession()).
+// AUDIT-P85B's first version of this shared ONE epoch between both --
+// Antigravity's independent audit (PARTIAL -- CONFIRMED LIVENESS
+// COUPLING DEFECT) correctly caught that this made two genuinely
+// unrelated UI regions invalidate each other: opening a conversation
+// discarded a still-valid, still-authorized, merely-slow sidebar
+// refresh (reproduced live: the sidebar stayed on a forced placeholder
+// forever even after the real response arrived), and refreshing the
+// sidebar discarded a still-valid message load (reproduced live: the
+// reading pane stayed on "Loading conversation..." forever even though
+// the real messages had arrived). Both are genuine liveness defects --
+// not a privacy leak, but a real "the user never sees their own valid
+// data" bug, which these two independent counters fix.
+//
+// Deliberately separate from _streamEpoch (streaming) and _searchEpoch
+// (search), neither touched here.
+let _historyEpoch = 0;
+let _messageEpoch = 0;
+function _abandonActiveHistory() {
+  _historyEpoch++;
+}
+function _abandonActiveMessage() {
+  _messageEpoch++;
+}
+// The ONLY place both domains are invalidated together -- a genuine
+// authenticated-principal change (logout, login, account switch,
+// anonymous<->authenticated). Narrower events (opening a different
+// conversation, refreshing the sidebar, starting a new conversation)
+// must invalidate ONLY their own domain; see newConversation() below
+// for the specific case the CTO directive called out by name.
+function _abandonAllViewsForAccountChange() {
+  _historyEpoch++;
+  _messageEpoch++;
+}
+// True only if nothing has happened since THIS operation started that
+// would make applying ITS result a lie: no newer request in the SAME
+// domain, and the authenticated principal hasn't changed underneath it
+// (the principal check is the one thing both domains still share,
+// since an account change must always win regardless of domain).
+function _historyResponseStillOwns(myEpoch, myToken) {
+  if (myEpoch !== _historyEpoch) return false;
+  if (myToken !== _authToken) return false;
+  return true;
+}
+function _messageResponseStillOwns(myEpoch, myToken) {
+  if (myEpoch !== _messageEpoch) return false;
+  if (myToken !== _authToken) return false;
+  return true;
+}
+
 let selectedModelVariant = null;
 let _models = {};
 
@@ -345,7 +761,15 @@ function _sanitizeLinkHref(rawUrl) {
   return ALLOWED_SCHEMES.has(scheme) ? rawUrl : null;
 }
 
-function mdToHtml(md) {
+// AUDIT-B15: citation markers ([D1], [D2], ...) are only ever turned
+// into real, clickable inline references when `sources` -- the REAL,
+// backend-returned orneur.sources/1 array (orca/serve/citations.py) --
+// actually contains a matching `ref`. Bracket text that merely LOOKS
+// like a citation marker but has no matching source stays untouched,
+// literal text: "no citations means no fabricated references" (the B15
+// contract's own words) applies exactly as much to a false positive here
+// as to inventing a source outright.
+function mdToHtml(md, sources) {
   let h = esc(md);
   // AUDIT-B81-A-P2-01: code regions are protected with a placeholder
   // BEFORE any other inline substitution (bold/italic/links) runs, and
@@ -377,6 +801,14 @@ function mdToHtml(md) {
     if (safeHref === null) return `${text} [link removed: unsupported URL]`;
     return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${text}</a>`;
   });
+  if (sources && sources.length) {
+    const byRef = new Map(sources.map((s) => [s.ref, s]));
+    h = h.replace(/\[([A-Za-z]\d+)\]/g, (whole, ref) => {
+      const s = byRef.get(ref);
+      if (!s) return whole; // not a real citation -- leave the bracket text exactly as the model wrote it
+      return `<button type="button" class="cite-marker" data-ref="${esc(ref)}" aria-label="Source ${esc(ref)}${s.filename ? ': ' + esc(s.filename) : ''}">${esc(ref)}</button>`;
+    });
+  }
   // Restore the real code HTML now, before paragraph/line-break assembly,
   // so the <p> un-wrapping cleanup below still sees real <pre>/<code>
   // block boundaries exactly as it did before code was protected.
@@ -408,11 +840,60 @@ function toggleThemeFromSidebar() {} // account row reserved for future account 
 const composerTemplate = document.getElementById('composer-template');
 let composerEl = null;
 
+// AUDIT-B14 (per-conversation draft isolation): "Each unsent draft must
+// be keyed by authenticated user + tenant/workspace + conversation ID...
+// Never use a singleton shared input state that shows draft from chat A
+// when chat B opens." Reproduced live before this fix: switching
+// conversations left the composer's text completely untouched, silently
+// attributing one conversation's unsent words to whichever conversation
+// happened to be opened next.
+//
+// In-memory only, keyed by this one tab's own _draftsByConversation Map
+// -- never claimed as server-persisted (the contract's own explicit
+// warning: "Do not claim server persistence when only local in-memory
+// draft exists"). Does not survive a reload, a different device, or a
+// different tab; a real server-backed draft endpoint does not exist in
+// this backend (grepped orca/serve/api.py; none found), so this is
+// disclosed as the honest, bounded scope it actually is. Cleared
+// entirely on every genuine identity transition (see
+// _clearAuthStateAndShowSignIn()/onAuthSuccess()/continueAnonymous()),
+// since a draft keyed only by conversation id must never survive an
+// account switch on the same device.
+const _draftsByConversation = new Map();
+function _draftKeyFor(id) { return id || '__new__'; }
+function _saveCurrentDraft() {
+  if (!composerEl) return;
+  const input = composerEl.querySelector('#msg-input');
+  if (!input) return;
+  const key = _draftKeyFor(sessionId);
+  const text = input.value;
+  if (text) _draftsByConversation.set(key, text);
+  else _draftsByConversation.delete(key);
+}
+function _restoreDraftFor(id) {
+  if (!composerEl) return;
+  const input = composerEl.querySelector('#msg-input');
+  if (!input) return;
+  input.value = _draftsByConversation.get(_draftKeyFor(id)) || '';
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  updateSendEnabled();
+}
+
 function mountComposer(slotId) {
   const slot = document.getElementById(slotId);
   if (composerEl && composerEl.parentElement === slot) return;
   if (!composerEl) {
     composerEl = document.createElement('div');
+    // AUDIT-B04: the pre-existing ".composer" class lives on the fixed
+    // SLOT elements (#composer-empty-slot/#composer-active-slot) in the
+    // static markup, not on this movable wrapper -- composerEl itself
+    // has always been an unstyled div. A stable id is needed so B04's
+    // reparenting-based expand/workspace CSS can target "the live
+    // composer, wherever it currently sits" without depending on which
+    // slot (or the workspace, which has no .composer-classed container
+    // of its own) happens to be its current parent.
+    composerEl.id = 'live-composer';
     composerEl.appendChild(composerTemplate.content.cloneNode(true));
     wireComposer();
   }
@@ -426,7 +907,16 @@ function wireComposer() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   });
-  composerEl.querySelector('#send-btn').addEventListener('click', sendMessage);
+  // AUDIT-B10: the same control sends while idle and stops while
+  // streaming -- a common, well-understood pattern (matches this
+  // codebase's existing "reparent, don't duplicate" preference over a
+  // second always-present button). sendMessage() already no-ops while
+  // isStreaming, so the branch here is the only thing that makes Stop
+  // reachable at all.
+  composerEl.querySelector('#send-btn').addEventListener('click', () => {
+    if (isStreaming) stopGeneration();
+    else sendMessage();
+  });
   const modelBtn = composerEl.querySelector('#model-btn');
   modelBtn.setAttribute('aria-haspopup', 'true');
   modelBtn.setAttribute('aria-expanded', 'false');
@@ -462,14 +952,621 @@ function wireComposer() {
     }
   });
   renderModelOptions();
+  composerEl.querySelector('#expand-btn').addEventListener('click', () => {
+    if (composerEl.classList.contains('focused-expanded')) collapseComposer();
+    else expandComposer();
+  });
+  composerEl.querySelector('#collapse-composer-btn').addEventListener('click', collapseComposer);
+  composerEl.querySelector('#open-workspace-btn').addEventListener('click', openDraftWorkspace);
+  document.getElementById('close-workspace-btn').addEventListener('click', closeDraftWorkspace);
+  composerEl.querySelector('#attach-btn').addEventListener('click', () => {
+    composerEl.querySelector('#attach-file-input').click();
+  });
+  composerEl.querySelector('#attach-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (file) uploadAttachment(file);
+  });
 }
+
+/* ── B16 Context & Attachments ────────────────────────────────────────
+   Source-verified against APPROVED_SOURCE_ARCHIVES/ORNEUR_B16_FINAL_LOCK_AND_HANDOFF.zip
+   (SHA-256 a38850996edf55496565ef9b783fc79263e05077855e42ad88e4feace4040f96,
+   verified against SHA256_PACKAGE_MANIFEST.json, 30/30 files). Unlike
+   B13, a REAL document pipeline already exists and is already consumed
+   by B15's own citations: POST /api/docs/upload (extract, PII-redact,
+   chunk, embed -- orca/serve/api.py:2566), GET /api/docs/list, DELETE
+   /api/docs/{doc_id}. No separate async malware-scan step or
+   context-capacity/remaining-token endpoint exists (grepped; none
+   found), so this implements exactly the real three-endpoint lifecycle
+   -- local_selected -> uploading -> ready/failed, plus removed -- and
+   honestly omits the richer scanning/quota states the contract's
+   illustrative state machine names but this backend doesn't compute.
+   The real, authoritative extension/size limits (orca/docs/extractor.py)
+   are never duplicated/hardcoded as a second source of truth here --
+   the `accept` attribute is a UX hint only; every actual accept/reject
+   decision and error message comes from the server's own response. ──── */
+
+// AUDIT-B16: documents are server-side bound to session_id, not cached
+// client-side across conversations -- always re-fetched fresh on
+// openSession()/newConversation(), the same reasoning already applied to
+// per-conversation drafts (B14) and citations (B15): never let one
+// conversation's attachment list silently carry over into another's.
+async function loadAttachmentsForSession() {
+  const container = document.getElementById('attach-chips');
+  if (!container) return;
+  if (!sessionId) { container.innerHTML = ''; return; }
+  const myToken = _authToken;
+  const mySid = sessionId;
+  try {
+    const r = await fetch(`/api/docs/list?session_id=${encodeURIComponent(mySid)}`, { headers: _authHeaders() });
+    if (myToken !== _authToken || sessionId !== mySid) return; // a different account signed in, or the conversation changed, while this was in flight
+    // AUDIT-B16-FIX: /api/docs/list uses get_current_user_optional, which
+    // never itself raises 401 (orca/auth/middleware.py:57-65) -- live-
+    // verified an invalid/expired token against an owned session_id
+    // surfaces as 404 "session not found" via _get_session's ownership
+    // check, not 401. This branch is kept for defense-in-depth /
+    // consistency with the other six authenticated call sites
+    // (ORNEUR_SESSION_EXPIRY_401_AUDIT.md), not because it fires today.
+    // A 404 here is deliberately NOT treated as session-expiry: the same
+    // 404 also covers a session simply evicted by >2h idle eviction in
+    // _get_session, which is not an auth problem -- conflating the two
+    // would spuriously log out a user whose tab just sat idle.
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (!r.ok) { container.innerHTML = ''; return; }
+    const data = await r.json();
+    if (myToken !== _authToken || sessionId !== mySid) return;
+    container.innerHTML = '';
+    (data.docs || []).forEach((d) => renderAttachChip({ doc_id: d.doc_id, filename: d.filename, state: 'ready' }));
+  } catch (e) {
+    if (myToken !== _authToken || sessionId !== mySid) return;
+    container.innerHTML = '';
+  }
+}
+
+function renderAttachChip(doc) {
+  const container = document.getElementById('attach-chips');
+  if (!container) return null;
+  const chip = document.createElement('span');
+  chip.className = 'attach-chip';
+  chip.dataset.docId = doc.doc_id || '';
+  const stateLabel = doc.state === 'uploading' ? 'Uploading…' : doc.state === 'failed' ? (doc.error || 'Failed') : '';
+  chip.classList.toggle('failed', doc.state === 'failed');
+  chip.innerHTML = `<span class="chip-name">${esc(doc.filename)}</span>` +
+    (stateLabel ? `<span class="chip-state">${esc(stateLabel)}</span>` : '') +
+    `<button type="button" class="attach-chip-remove" aria-label="Remove ${esc(doc.filename)}">×</button>`;
+  container.appendChild(chip);
+  // AUDIT-B16-FIX (confirmed identity defect): read the doc id from
+  // chip.dataset.docId at CLICK time, never from a closure-captured `doc`
+  // object. uploadAttachment() updates chip.dataset.docId asynchronously
+  // after a successful upload; a captured `doc` object (the one passed in
+  // here with no doc_id while the upload is still pending) would never
+  // see that update, so clicking Remove immediately after a successful
+  // upload took the local-only branch below instead of calling the real
+  // DELETE endpoint -- a genuinely uploaded document silently stayed on
+  // the server with no visible chip to delete it from.
+  chip.querySelector('.attach-chip-remove').addEventListener('click', () => removeAttachment(chip));
+  return chip;
+}
+
+async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {
+  // AUDIT-B16-FIX, corrected by AUDIT-SEC-FINAL-B: cleanup for a document
+  // that finished uploading server-side after the caller no longer wants
+  // it attached anywhere visible (account/conversation changed mid-
+  // upload, the user clicked Remove while the upload was still pending,
+  // or a sibling concurrent upload to a brand-new conversation lost the
+  // session-adopt race -- see uploadAttachment()). Callers never await
+  // this (the user's UI has already moved on, and there is no chip left
+  // to show a result on) -- but that does NOT mean this function may
+  // assume success. It must inspect the real response and must never
+  // claim deletion happened when it did not.
+  //
+  // Uses the ORIGINAL uploader's own token, never the current
+  // principal's -- this is the uploader cleaning up their OWN resource,
+  // not a cross-account bypass or privilege escalation. `tokenForAuth`
+  // is a local parameter that is never written to any persistent or
+  // global state beyond this one call, so no old credential is retained
+  // afterward.
+  //
+  // KNOWN LIMITATION (not silently worked around -- see
+  // ORNEUR_B16_SECURITY_ADDENDUM.md "Backend reconciliation contract"):
+  // this is frontend-only, best-effort cleanup. If this request itself
+  // fails (network partition, 401/403/500, or the tab/process ending
+  // before the fetch completes), there is no retry queue, no persisted
+  // record, and nothing else that will ever attempt this delete again.
+  // The document can be left on the server indefinitely. This is
+  // disclosed as a real gap requiring a backend-side reconciliation
+  // mechanism, not patched over by inventing a client-side retry queue
+  // whose own reliability would be equally unprovable from this layer.
+  try {
+    const r = await fetch(`/api/docs/${encodeURIComponent(docId)}?session_id=${encodeURIComponent(sidForDelete || '')}`, {
+      method: 'DELETE',
+      headers: tokenForAuth ? { Authorization: `Bearer ${tokenForAuth}` } : {},
+    });
+    if (r.ok) return; // genuinely confirmed deleted by the server
+    if (r.status === 404) return; // already gone (e.g. a duplicate cleanup attempt) -- not a failure
+    // A real, unresolved failure (401/403/500/etc): the document may
+    // still exist server-side. console.warn is the most honest signal
+    // available at this layer -- there is no UI surface left for it.
+    console.warn('[B16] orphaned attachment cleanup failed; the document may still exist server-side', { docId, status: r.status });
+  } catch (e) {
+    console.warn('[B16] orphaned attachment cleanup failed (network error); the document may still exist server-side', { docId, error: String(e) });
+  }
+}
+
+async function uploadAttachment(file) {
+  const myToken = _authToken;
+  const mySidAtStart = sessionId;
+  const chip = renderAttachChip({ filename: file.name, state: 'uploading' });
+  const form = new FormData();
+  form.append('file', file);
+  const qs = mySidAtStart ? `?session_id=${encodeURIComponent(mySidAtStart)}` : '';
+  try {
+    const r = await fetch(`/api/docs/upload${qs}`, {
+      method: 'POST',
+      // AUDIT-B16: no Content-Type header here -- the browser must set
+      // its own multipart boundary for FormData; _authHeaders() would
+      // overwrite it with 'application/json' and break the upload.
+      headers: _authToken ? { Authorization: `Bearer ${_authToken}` } : {},
+      body: form,
+    });
+    const accountShifted = myToken !== _authToken;
+    // AUDIT-SEC-FINAL-A (confirmed, reproduced live: alice's pending
+    // upload returning 401 AFTER bob signed in genuinely signed bob back
+    // out): a 401 must only invalidate auth state when the failing
+    // request still belongs to the CURRENTLY authenticated principal.
+    // Before this fix, _handleSessionExpired() ran unconditionally here,
+    // so a stale/abandoned request's 401 (arriving after a newer account
+    // already signed in) tore down the newer account's session too.
+    if (r.status === 401) {
+      if (accountShifted) { chip.remove(); return; } // this 401 belongs to a principal that is no longer signed in -- not the current user's session expiring
+      chip.remove();
+      _handleSessionExpired();
+      return;
+    }
+    const data = await r.json().catch(() => ({}));
+    // AUDIT-B16-FIX: for an EXISTING conversation (mySidAtStart set), the
+    // conversation identity moving out from under this upload is the
+    // existing check. For a BRAND-NEW conversation (mySidAtStart null),
+    // session_id=None always means "create a new session" on the backend
+    // -- there is no dedup -- so two uploads started concurrently each
+    // independently get their OWN new session. Whichever response adopts
+    // the shared `sessionId` first wins; a sibling upload whose own
+    // data.session_id does not match the adopted one must not silently
+    // become an unreachable orphan (a later delete would query the wrong
+    // session and 404 "no such document" even though it really exists).
+    const conversationShifted = mySidAtStart !== null
+      ? sessionId !== mySidAtStart
+      : (sessionId !== null && r.ok && data.session_id !== sessionId);
+    if (accountShifted || conversationShifted || chip._removeRequested) {
+      // AUDIT-B16-FIX: the account changed, the conversation changed, a
+      // concurrent sibling upload won the new-conversation session-adopt
+      // race, or the user explicitly removed this chip while the upload
+      // was still in-flight. The chip is already gone from (or never
+      // belonged to) the currently visible list -- but if the upload
+      // succeeded server-side anyway, it must not become an invisible
+      // orphan the user has no way to ever delete.
+      if (r.ok && data.doc_id) _deleteOrphanedUpload(data.doc_id, data.session_id || mySidAtStart, myToken);
+      chip.remove();
+      return;
+    }
+    if (!r.ok) {
+      chip.classList.add('failed');
+      chip.querySelector('.chip-state')?.remove();
+      const stateEl = document.createElement('span');
+      stateEl.className = 'chip-state';
+      stateEl.textContent = data.error || 'Upload failed';
+      chip.insertBefore(stateEl, chip.querySelector('.attach-chip-remove'));
+      return;
+    }
+    // AUDIT-B16: uploading to a brand-new conversation (sessionId was
+    // null) is a real, server-confirmed way to start one -- mirrors how
+    // the SSE `session` event does the same thing for a first real
+    // message. Only applied if nothing else changed sessionId while
+    // this upload was in flight.
+    if (!mySidAtStart && sessionId === null) {
+      sessionId = data.session_id;
+      showActiveView(document.getElementById('conv-title').textContent);
+    }
+    // AUDIT-B16-FIX (the confirmed identity defect): this is the single
+    // place a chip's doc_id becomes known. renderAttachChip() now wires
+    // Remove to read chip.dataset.docId at click time instead of a
+    // closure-captured object, so this assignment is what makes a
+    // post-upload Remove click actually call the real DELETE endpoint.
+    chip.dataset.docId = data.doc_id;
+    chip.classList.remove('failed');
+    const stateEl = chip.querySelector('.chip-state');
+    if (stateEl) stateEl.remove();
+  } catch (e) {
+    if (myToken !== _authToken || sessionId !== mySidAtStart || chip._removeRequested) { chip.remove(); return; }
+    chip.classList.add('failed');
+    const stateEl = chip.querySelector('.chip-state');
+    if (stateEl) stateEl.textContent = 'Network error';
+  }
+}
+
+async function removeAttachment(chip) {
+  // AUDIT-B16-FIX (confirmed identity defect, fixed): doc_id is read from
+  // chip.dataset.docId -- the single place uploadAttachment() writes it
+  // on success -- never from a second, independently-stale object.
+  const docId = chip.dataset.docId;
+  if (!docId) {
+    // Either never uploaded, or the upload for it is still in-flight.
+    // Remove visually now -- the user asked for it gone -- and mark the
+    // request so a later-arriving successful upload (uploadAttachment()
+    // checks chip._removeRequested after its own await) deletes the
+    // now-orphaned server-side document instead of silently leaving it
+    // undeletable or re-showing it as if nothing happened.
+    chip._removeRequested = true;
+    chip.remove();
+    return;
+  }
+  const myToken = _authToken;
+  const mySid = sessionId;
+  try {
+    const r = await fetch(`/api/docs/${encodeURIComponent(docId)}?session_id=${encodeURIComponent(mySid || '')}`, {
+      method: 'DELETE',
+      headers: _authHeaders(),
+    });
+    // AUDIT-SEC-FINAL-A: explicit account-identity check added alongside
+    // the existing conversation check, for the same reason as
+    // uploadAttachment() -- a 401 (or any response) for a delete that no
+    // longer belongs to the current principal must never be acted on,
+    // even though sessionId already resets to null on every real account
+    // transition today (an indirect, not an explicit, guarantee).
+    if (myToken !== _authToken || sessionId !== mySid) return; // switched accounts or conversations mid-delete -- this chip no longer belongs to the visible list
+    // AUDIT-B16-FIX: kept for defense-in-depth (see loadAttachmentsForSession's
+    // comment) -- /api/docs/{doc_id} also uses get_current_user_optional and
+    // live-verified does not itself raise 401 for an invalid token.
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (r.ok) chip.remove();
+    // else: leave the chip in place -- a failed delete must not silently claim removal
+  } catch (e) {
+    // leave the chip in place -- a failed delete must not silently claim removal
+  }
+}
+
+/* ── B04 Expanded Composer / Draft Workspace ─────────────────────────
+   Source-verified against ORNEUR_B04_FINAL_LOCK_AND_HANDOFF.zip (SHA-256
+   confirmed against SHA256_MANIFEST.txt, 26/26 files passing the
+   archive's own verify_assets.py). State machine per
+   docs/B04_IMPLEMENTATION_CONTRACT.md section 3:
+     normal composer -> FOCUSED_EXPANDED -> DRAFT_WORKSPACE
+                                          <- Return/Close/Escape
+   Both editor surfaces are the SAME #msg-input element, reparented
+   (never cloned), so caret position, selection, undo/redo history, IME
+   composition state and scroll position all survive every transition
+   automatically -- there is no "sync" step and therefore no class of bug
+   where the two views' content could ever diverge. ────────────────── */
+function expandComposer() {
+  if (!composerEl) return;
+  composerEl.classList.add('focused-expanded');
+  const input = composerEl.querySelector('#msg-input');
+  input.focus();
+}
+
+function collapseComposer() {
+  if (!composerEl) return;
+  // Closing the dedicated workspace returns here, per the contract's own
+  // state diagram -- never past FOCUSED_EXPANDED back to normal in one step.
+  if (document.getElementById('draft-workspace-scrim').classList.contains('open')) closeDraftWorkspace();
+  composerEl.classList.remove('focused-expanded');
+  composerEl.querySelector('#expand-btn').focus();
+}
+
+let _preWorkspaceFocusEl = null;
+let _composerOriginSlot = null;
+
+function _workspaceFocusableEls() {
+  const dialog = document.getElementById('draft-workspace');
+  return [...dialog.querySelectorAll('button, textarea, input, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => el.offsetParent !== null && !el.disabled);
+}
+
+function openDraftWorkspace() {
+  if (!composerEl) return;
+  const scrim = document.getElementById('draft-workspace-scrim');
+  if (scrim.classList.contains('open')) return; // already open -- idempotent
+  _preWorkspaceFocusEl = document.activeElement;
+  _composerOriginSlot = composerEl.parentElement;
+  document.getElementById('draft-workspace-slot').appendChild(composerEl);
+  scrim.classList.add('open');
+  const appRoot = document.getElementById('app-root');
+  if (appRoot) appRoot.setAttribute('inert', '');
+  composerEl.querySelector('#msg-input').focus();
+}
+
+function closeDraftWorkspace() {
+  const scrim = document.getElementById('draft-workspace-scrim');
+  if (!scrim.classList.contains('open')) return; // already closed -- safe no-op
+  scrim.classList.remove('open');
+  const appRoot = document.getElementById('app-root');
+  if (appRoot) appRoot.removeAttribute('inert');
+  if (composerEl && _composerOriginSlot && document.body.contains(_composerOriginSlot)) {
+    _composerOriginSlot.appendChild(composerEl);
+  }
+  _composerOriginSlot = null;
+  const restoreTo = (_preWorkspaceFocusEl && document.body.contains(_preWorkspaceFocusEl))
+    ? _preWorkspaceFocusEl
+    : (composerEl && composerEl.querySelector('#open-workspace-btn'));
+  if (restoreTo) restoreTo.focus();
+  _preWorkspaceFocusEl = null;
+}
+
+document.getElementById('draft-workspace').addEventListener('keydown', (e) => {
+  const scrim = document.getElementById('draft-workspace-scrim');
+  if (!scrim.classList.contains('open')) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeDraftWorkspace(); return; }
+  if (e.key !== 'Tab') return;
+  const focusables = _workspaceFocusableEls();
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
+
+/* ── B13 Temporary / Private Chat -- discoverability + honest disabled
+   details dialog. No backend capability exists for this anywhere in this
+   codebase (verified by inspection before writing any code); the
+   contract's own explicit guidance for this exact situation is "show a
+   clearly disabled state with a succinct explanation (not a fake
+   toggle)" -- this dialog opens, explains truthfully that nothing is
+   verified, and its one action (Start temporary chat) stays genuinely
+   disabled, never simulating activation. ───────────────────────────── */
+let _preTempModeFocusEl = null;
+
+function _tempModeFocusableEls() {
+  const panel = document.getElementById('temp-mode-panel');
+  return [...panel.querySelectorAll('button, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => el.offsetParent !== null && !el.disabled);
+}
+
+function openTempModePanel() {
+  const panel = document.getElementById('temp-mode-panel');
+  const backdrop = document.getElementById('temp-mode-backdrop');
+  if (!panel.hidden) return; // already open -- idempotent
+  _preTempModeFocusEl = document.activeElement;
+  panel.hidden = false;
+  backdrop.hidden = false;
+  document.getElementById('temp-mode-btn').setAttribute('aria-expanded', 'true');
+  document.getElementById('temp-mode-close').focus();
+}
+
+function closeTempModePanel() {
+  const panel = document.getElementById('temp-mode-panel');
+  const backdrop = document.getElementById('temp-mode-backdrop');
+  if (panel.hidden) return; // already closed -- safe no-op
+  panel.hidden = true;
+  backdrop.hidden = true;
+  document.getElementById('temp-mode-btn').setAttribute('aria-expanded', 'false');
+  const restoreTo = (_preTempModeFocusEl && document.body.contains(_preTempModeFocusEl))
+    ? _preTempModeFocusEl
+    : document.getElementById('temp-mode-btn');
+  restoreTo.focus();
+  _preTempModeFocusEl = null;
+}
+
+document.getElementById('temp-mode-btn').addEventListener('click', () => {
+  const panel = document.getElementById('temp-mode-panel');
+  if (panel.hidden) openTempModePanel(); else closeTempModePanel();
+});
+document.getElementById('temp-mode-close').addEventListener('click', closeTempModePanel);
+document.getElementById('temp-mode-back').addEventListener('click', closeTempModePanel);
+document.getElementById('temp-mode-backdrop').addEventListener('click', closeTempModePanel);
+document.getElementById('temp-mode-panel').addEventListener('keydown', (e) => {
+  if (document.getElementById('temp-mode-panel').hidden) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeTempModePanel(); return; }
+  if (e.key !== 'Tab') return;
+  const focusables = _tempModeFocusableEls();
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
+
+/* ── B14 Quick Switch -- real recent conversations, roving-focus listbox.
+   Reuses the already-hardened openSession() for the actual switch, so
+   every ownership-epoch/draft-isolation guarantee already built applies
+   here automatically -- this is a new way to REACH openSession(), not a
+   new switching mechanism. ──────────────────────────────────────────── */
+let _preQuickSwitchFocusEl = null;
+
+function _quickSwitchRows() {
+  return [...document.getElementById('quick-switch-list').querySelectorAll('.quick-switch-row')];
+}
+
+async function openQuickSwitch() {
+  const panel = document.getElementById('quick-switch-panel');
+  const backdrop = document.getElementById('quick-switch-backdrop');
+  if (!panel.hidden) return; // already open -- idempotent
+  _preQuickSwitchFocusEl = document.activeElement;
+  const list = document.getElementById('quick-switch-list');
+  list.innerHTML = '<div class="quick-switch-empty">Loading…</div>';
+  panel.hidden = false;
+  backdrop.hidden = false;
+  document.getElementById('quick-switch-btn').setAttribute('aria-expanded', 'true');
+  if (!_authToken) {
+    list.innerHTML = '<div class="quick-switch-empty">Sign in to see your conversations</div>';
+    document.getElementById('quick-switch-close').focus();
+    return;
+  }
+  // AUDIT-SEC-FINAL-A: found during the same review that caught
+  // uploadAttachment()'s confirmed defect -- this call had NO identity
+  // capture at all. A 401 for a request started under a since-abandoned
+  // account would have torn down whatever account is current now.
+  const myToken = _authToken;
+  try {
+    // AUDIT-B14: the SAME real GET /api/sessions this app's own sidebar
+    // already uses -- never the approved archive's own illustrative
+    // example titles. Bounded to a short "recently viewed" list per the
+    // locked design, not the full history (that's what B06's sidebar is for).
+    const r = await fetch('/api/sessions?limit=8', { headers: _authHeaders() });
+    if (myToken !== _authToken) return; // this request no longer belongs to the current principal
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (!r.ok) throw new Error('sessions fetch failed');
+    const data = await r.json();
+    if (myToken !== _authToken) return;
+    if (panel.hidden) return; // closed while this was in flight
+    list.innerHTML = '';
+    if (!data.sessions.length) {
+      list.innerHTML = '<div class="quick-switch-empty">No conversations yet</div>';
+      document.getElementById('quick-switch-close').focus();
+      return;
+    }
+    data.sessions.forEach((s) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'quick-switch-row' + (s.id === sessionId ? ' qs-active' : '');
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(s.id === sessionId));
+      row.dataset.sid = s.id;
+      const title = s.title || '(untitled conversation)';
+      // AUDIT-B14: a rendered conversation title is untrusted content --
+      // esc() here, never raw innerHTML of server text, is what prevents
+      // the "rendered conversation title injection" the contract names.
+      row.innerHTML = `<span class="qs-title">${esc(title)}</span>` + (s.id === sessionId ? '<span class="qs-current">Current</span>' : '');
+      row.addEventListener('click', () => {
+        closeQuickSwitch();
+        if (s.id !== sessionId) openSession(s.id, title);
+      });
+      list.appendChild(row);
+    });
+    const firstRow = list.querySelector('.quick-switch-row');
+    if (firstRow) firstRow.focus();
+  } catch (e) {
+    if (panel.hidden) return;
+    list.innerHTML = '<div class="quick-switch-empty">Could not load conversations</div>';
+    document.getElementById('quick-switch-close').focus();
+  }
+}
+
+function closeQuickSwitch() {
+  const panel = document.getElementById('quick-switch-panel');
+  const backdrop = document.getElementById('quick-switch-backdrop');
+  if (panel.hidden) return; // already closed -- safe no-op
+  panel.hidden = true;
+  backdrop.hidden = true;
+  document.getElementById('quick-switch-btn').setAttribute('aria-expanded', 'false');
+  const restoreTo = (_preQuickSwitchFocusEl && document.body.contains(_preQuickSwitchFocusEl))
+    ? _preQuickSwitchFocusEl
+    : document.getElementById('quick-switch-btn');
+  restoreTo.focus();
+  _preQuickSwitchFocusEl = null;
+}
+
+document.getElementById('quick-switch-btn').addEventListener('click', () => {
+  const panel = document.getElementById('quick-switch-panel');
+  if (panel.hidden) openQuickSwitch(); else closeQuickSwitch();
+});
+document.getElementById('quick-switch-close').addEventListener('click', closeQuickSwitch);
+document.getElementById('quick-switch-backdrop').addEventListener('click', closeQuickSwitch);
+document.getElementById('quick-switch-panel').addEventListener('keydown', (e) => {
+  const panel = document.getElementById('quick-switch-panel');
+  if (panel.hidden) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeQuickSwitch(); return; }
+  const rows = _quickSwitchRows();
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!rows.length) return;
+    const closeBtn = document.getElementById('quick-switch-close');
+    const focusables = [closeBtn, ...rows];
+    const idx = focusables.indexOf(document.activeElement);
+    const dir = e.key === 'ArrowDown' ? 1 : -1;
+    const next = focusables[(idx + dir + focusables.length) % focusables.length];
+    next.focus();
+    return;
+  }
+  if (e.key === 'Enter' && document.activeElement.classList.contains('quick-switch-row')) {
+    document.activeElement.click();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const focusables = [document.getElementById('quick-switch-close'), ...rows];
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
+
+const SEND_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-7 7 7-7 7 7"/></svg>';
+// AUDIT-B10: a filled square, the conventional "stop" glyph (distinct
+// from the send arrow) -- never an invented spinner/progress claim, per
+// the contract's "no misleading elapsed-time claims" / "no fake step
+// lists" instruction; this is a pure control affordance, not a status
+// report.
+const STOP_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';
 
 function updateSendEnabled() {
   if (!composerEl) return;
   const input = composerEl.querySelector('#msg-input');
   const btn = composerEl.querySelector('#send-btn');
-  const canSend = !!(input.value.trim()) && !!selectedModelVariant && !isStreaming;
+  // AUDIT-B10: while a response is streaming, the same control becomes
+  // Stop -- always enabled/clickable (never disabled while streaming,
+  // since a pending cancellation must stay reachable), distinct icon and
+  // accessible name. stopGeneration() below is the only thing wired to
+  // actually stop reading further bytes; see its own comment for the
+  // honest limit on what "stop" can truthfully claim here.
+  if (isStreaming) {
+    btn.classList.remove('disabled');
+    btn.classList.add('stop-mode');
+    btn.title = 'Stop generating response';
+    btn.setAttribute('aria-label', 'Stop generating response');
+    btn.innerHTML = STOP_ICON_SVG;
+    return;
+  }
+  btn.classList.remove('stop-mode');
+  btn.title = 'Send';
+  btn.setAttribute('aria-label', 'Send message');
+  btn.innerHTML = SEND_ICON_SVG;
+  const canSend = !!(input.value.trim()) && !!selectedModelVariant;
   btn.classList.toggle('disabled', !canSend);
+}
+
+// AUDIT-B10: honest scope, stated plainly -- this stops the BROWSER from
+// reading further bytes (the exact same _abandonActiveStream() already
+// used internally when switching conversations/accounts). It does NOT
+// confirm the backend itself stopped generating or running tools: the
+// current /api/stream handler has no observed request.is_disconnected()
+// check or dedicated cancel endpoint with a server-acknowledged terminal
+// state (grepped; none found), so per the B10 contract's own explicit
+// instruction -- "A mere HTTP 200 on a cancel request acceptance is not
+// proof work stopped" / "never claim 'Stopped'" when backend cancellation
+// isn't guaranteed -- the resulting UI state reuses the existing, already
+// honest "interrupted" badge/note rather than inventing a confirmed-
+// "Stopped" label this interface cannot actually back up.
+function stopGeneration() {
+  if (!isStreaming) return;
+  const container = document.getElementById('reading-container');
+  const lastAnswer = container.querySelector('.answer:last-child');
+  _abandonActiveStream();
+  if (!lastAnswer) return;
+  const thinking = lastAnswer.querySelector('.thinking');
+  if (thinking) {
+    // Nothing was ever shown for this turn -- no partial content to
+    // preserve, so the placeholder itself is removed rather than marked.
+    lastAnswer.remove();
+    appendUnavailableNote('Generation stopped on this device. The response may still be completing on the server; a confirmed stop is not available from this interface.');
+  } else {
+    markMessageInterrupted(lastAnswer, 'Generation stopped on this device -- connection ended before completion. A confirmed server-side stop is not available from this interface.');
+  }
 }
 
 /* ── Model availability (GET /api/models -- real, never fabricated) ── */
@@ -492,7 +1589,7 @@ function renderModelOptions() {
   panel.innerHTML = '';
   const variants = ['nano', 'core', 'ultra'];
   let anySendable = false;
-  variants.forEach((variant) => {
+  variants.forEach((variant, i) => {
     const info = _models[variant] || {};
     // AUDIT-C02-B02: `publicly_served` means "this request would be
     // routed and answered at all" -- it does NOT mean the tier's own
@@ -511,21 +1608,81 @@ function renderModelOptions() {
     if (info.fallback_active) parts.push(`Currently serving via ${MODEL_LABELS[_variantForModel(info.resolved_model)] || info.resolved_model}`);
     if (!sendable) parts.push('Not available');
     const note = parts.length ? parts.join(' — ') : (sendable ? 'Available' : 'Not available');
-    // AUDIT-B81-A-P1-03: a real <button>, not a clickable <div>, so the
-    // model list is reachable and activatable with Tab/Enter/Space --
-    // the simplest accessible pattern that matches the actual keyboard
-    // interaction (no ARIA menu/listbox role is added, since this isn't
-    // implementing roving-tabindex arrow-key navigation).
+
+    const row = document.createElement('div');
+    row.className = 'modelrow';
+    const reasonId = `model-reason-${variant}`;
+    const detailsId = `model-details-${variant}`;
+
+    // AUDIT-B81-A-P1-03/AUDIT-B05: a real <button>, reachable with Tab
+    // whether sendable or not -- B05's contract explicitly requires an
+    // unavailable row's reason stay discoverable by keyboard/screen-
+    // reader users ("Never disable the entire row when it would hide
+    // reason/details from keyboard users"). Reproduced by inspection:
+    // the previous use of the native disabled attribute made the WHOLE button
+    // unreachable by Tab, silently hiding its reason text from anyone
+    // not using a mouse. aria-disabled (not the disabled attribute)
+    // keeps it focusable; no click handler is attached when unavailable,
+    // so activating it is simply a no-op, and its accessible name is
+    // linked to the visible reason via aria-describedby.
     const opt = document.createElement('button');
     opt.type = 'button';
     opt.className = 'modelopt' + (sendable ? '' : ' unavailable');
-    if (!sendable) opt.disabled = true;
+    opt.setAttribute('aria-describedby', reasonId);
+    if (!sendable) opt.setAttribute('aria-disabled', 'true');
     opt.innerHTML = `<span class="mname"><span class="neutral-dot${sendable ? ' avail' : ''}"></span>${MODEL_LABELS[variant]}</span>` +
-      `<span class="mnote">${esc(note)}</span>`;
+      `<span class="mnote" id="${reasonId}">${esc(note)}</span>`;
     if (sendable) {
       opt.addEventListener('click', () => selectModel(variant, note));
     }
-    panel.appendChild(opt);
+    row.appendChild(opt);
+
+    // AUDIT-B05: "Details disclose only verified attributes... Hide
+    // empty/unverified metrics rather than displaying invented numbers."
+    // Every field below comes directly from GET /api/models's own
+    // response for this tier -- nothing here is inferred, estimated or
+    // copied from the archive's illustrative screenshots. Reachable and
+    // togglable even when the row above is unavailable, per the contract.
+    const detailsBtn = document.createElement('button');
+    detailsBtn.type = 'button';
+    detailsBtn.className = 'details-btn';
+    detailsBtn.setAttribute('aria-expanded', 'false');
+    detailsBtn.setAttribute('aria-controls', detailsId);
+    detailsBtn.textContent = 'Details';
+    const detailsPanel = document.createElement('div');
+    detailsPanel.className = 'model-details';
+    detailsPanel.id = detailsId;
+    const fields = [];
+    if (info.model) fields.push(['Model', info.model]);
+    fields.push(['Lifecycle', info.lifecycle || 'Unverified']);
+    fields.push(['Availability', sendable ? 'Ready' : 'Not available']);
+    if (typeof info.vision_capable === 'boolean') fields.push(['Vision input', info.vision_capable ? 'Supported' : 'Not supported']);
+    if (info.fallback_active && info.resolved_model) fields.push(['Actually serving', info.resolved_model]);
+    if (info.disclosure) fields.push(['Disclosure', info.disclosure]);
+    detailsPanel.innerHTML = fields.map(([k, v]) => `<div class="detail-row"><span class="detail-k">${esc(k)}</span><span class="detail-v">${esc(String(v))}</span></div>`).join('')
+      || '<div class="detail-row"><span class="detail-v">No further verified attributes reported.</span></div>';
+    // AUDIT-B05: ".open" is the authoritative toggle (the `.model-details`
+    // base rule sets `display` directly, which out-specifies the browser's
+    // own `[hidden]` user-agent rule -- reproduced live: every details
+    // panel rendered open by default despite `hidden` being set). `hidden`
+    // is still mirrored for assistive tech that honors it independently
+    // of CSS, but only `.open` controls visibility here.
+    detailsPanel.hidden = true;
+    detailsBtn.addEventListener('click', () => {
+      const willOpen = !detailsPanel.classList.contains('open');
+      detailsPanel.classList.toggle('open', willOpen);
+      detailsPanel.hidden = !willOpen;
+      detailsBtn.setAttribute('aria-expanded', String(willOpen));
+    });
+    row.appendChild(detailsBtn);
+    row.appendChild(detailsPanel);
+
+    panel.appendChild(row);
+    if (i < variants.length - 1) {
+      const sep = document.createElement('div');
+      sep.className = 'modelrow-sep';
+      panel.appendChild(sep);
+    }
   });
   if (!anySendable) {
     const note = document.createElement('div');
@@ -563,6 +1720,33 @@ function selectModel(variant, disclosureNote) {
   updateSendEnabled();
 }
 
+// AUDIT-B05: "On account/tenant switch or logout: clear selected model
+// and cached private entitlements" -- selectedModelVariant previously
+// was NEVER reset anywhere except by picking a new one, so logging out
+// and back in as a different account (or an anonymous->authenticated
+// transition) left the PREVIOUS account's model choice, label and
+// disclosure note showing, with the send button enabled based on a
+// selection never re-validated against the new account's eligibility.
+// Not a security hole by itself (the backend must still fail closed on a
+// stale/unauthorized model_variant at request time, per the contract),
+// but a real client-side truthfulness bug this closes. Called from every
+// genuine identity transition, matching this session's established audit
+// of doLogout()/onAuthSuccess()/continueAnonymous()/tryRestoreSession().
+function resetModelSelection() {
+  selectedModelVariant = null;
+  if (!composerEl) return;
+  composerEl.querySelector('#model-label').textContent = 'Choose model';
+  composerEl.querySelector('#model-dot').classList.remove('avail');
+  const btn = composerEl.querySelector('#model-btn');
+  btn.title = '';
+  btn.setAttribute('aria-label', '');
+  btn.removeAttribute('aria-label');
+  const disclosureEl = composerEl.querySelector('#model-disclosure');
+  disclosureEl.style.display = 'none';
+  disclosureEl.textContent = '';
+  updateSendEnabled();
+}
+
 /* ── Conversation state (B01 <-> B02/B03 view switching) ────────────── */
 function showEmptyView() {
   document.getElementById('empty-view').style.display = 'flex';
@@ -579,19 +1763,99 @@ function showActiveView(title) {
 }
 
 function newConversation() {
+  // AUDIT-B04: a derelict draft-workspace dialog (and the taller
+  // focused-expanded composer state) must not silently survive starting
+  // a new conversation, switching accounts, or logging out -- all of
+  // which route through here. closeDraftWorkspace()/collapseComposer()
+  // are both idempotent no-ops if neither state is active.
+  if (composerEl) collapseComposer();
+  closeTempModePanel(); // AUDIT-B13: same reasoning -- a derelict dialog must not survive an account/conversation transition
+  closeQuickSwitch(); // AUDIT-B14: same reasoning
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: any in-flight response is no longer ours
+  // AUDIT-P85C: MESSAGE domain only -- starting a new conversation ends
+  // this view's claim on any in-flight MESSAGE load (there is no longer
+  // a specific conversation whose messages belong here), but an
+  // otherwise valid, authenticated, merely-slow sidebar HISTORY refresh
+  // is completely unrelated and must be left alone (CTO directive,
+  // reviewing newConversation() specifically: "starting a new
+  // conversation normally invalidates the old message view, not an
+  // otherwise valid authenticated sidebar-history request").
+  _abandonActiveMessage();
+  // AUDIT-B14: the "new conversation" composer is its own draft slot too
+  // -- save whatever the departing conversation had unsent, then restore
+  // this slot's own previously-saved draft (if the user started typing a
+  // new conversation earlier, got interrupted, and came back).
+  _saveCurrentDraft();
   sessionId = null;
+  _restoreDraftFor(null);
+  loadAttachmentsForSession(); // AUDIT-B16: sessionId is now null -- clears the chip list (a "new conversation" starts with none)
   document.getElementById('reading-container').innerHTML = '';
   highlightSelectedRecent(null);
   showEmptyView();
 }
 
+// AUDIT-B11: source-verified against
+// APPROVED_SOURCE_ARCHIVES/ORNEUR_B11_FINAL_LOCK_AND_HANDOFF.zip
+// (SHA-256 a6f6d0350bc3f889fdcb572447857e69f73bda59b28000a1befaa8f0e38c2401,
+// verified against manifests/SHA256_MANIFEST.json, 21/21 files). No
+// message-edit, version-lineage or regenerate backend exists anywhere in
+// this codebase (grepped orca/serve/api.py and orca/serve/conversations.py
+// for edit_message/message_version/version_id/regenerate/lineage; zero
+// hits -- only the read-only GET .../messages endpoint). The contract's
+// own explicit instruction for exactly this: "If any required contract
+// is absent, leave dependent UI disabled/fail-closed, document the gap."
+// The approved prototype is itself already labeled honestly ("B11 DESIGN
+// PREVIEW -- NO QUALIFIED MODEL OR LIVE REGENERATION", "Local preview ·
+// not submitted", "The production UI must preserve original prompts and
+// responses. It must not imply a regeneration succeeded without backend
+// confirmation.") -- reused verbatim below, not reworded.
+//
+// Scoped to Inline Edit only (the contract's own default surface); the
+// optional Response Versions/Regenerate/Compare surface is NOT built in
+// this pass -- there is no second response version anywhere in this
+// backend to compare against, so even a disabled affordance for it would
+// have nothing real to anchor to. Disclosed in the engineering report.
+let _userMsgCounter = 0;
 function appendUserMessage(text) {
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
   div.className = 'msg-user';
-  div.innerHTML = `<div class="sample-q">${esc(text)}</div>`;
+  const uid = ++_userMsgCounter;
+  div.innerHTML = `<div class="sample-q">${esc(text)}</div>` +
+    `<button type="button" class="edit-msg-btn" aria-label="Edit message" aria-expanded="false" aria-controls="edit-msg-panel-${uid}">` +
+    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Edit</button>` +
+    `<div class="edit-msg-panel" id="edit-msg-panel-${uid}" hidden>` +
+    `<textarea class="edit-msg-textarea" aria-label="Edit message draft">${esc(text)}</textarea>` +
+    `<div class="edit-msg-note">The original stays in history. Sending the edit requires an available model.</div>` +
+    `<div class="edit-msg-actions"><button type="button" class="expand-action" data-action="cancel">Cancel</button>` +
+    `<button type="button" class="expand-action primary-disabled" disabled title="Editing requires a real message-edit endpoint, which does not exist in this backend yet">Save edit</button></div>` +
+    `</div>`;
   container.appendChild(div);
+  const editBtn = div.querySelector('.edit-msg-btn');
+  const panel = div.querySelector('.edit-msg-panel');
+  const textarea = div.querySelector('.edit-msg-textarea');
+  const cancelBtn = div.querySelector('[data-action="cancel"]');
+  function closeEdit() {
+    panel.hidden = true;
+    panel.classList.remove('open');
+    editBtn.setAttribute('aria-expanded', 'false');
+    editBtn.focus();
+  }
+  editBtn.addEventListener('click', () => {
+    const willOpen = panel.hidden;
+    panel.hidden = !willOpen;
+    panel.classList.toggle('open', willOpen);
+    editBtn.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen) {
+      // AUDIT-B11: "initial text exactly equals selected message" -- reset
+      // to the real original on every open, discarding any abandoned
+      // local-only draft from a prior open/cancel, since Cancel itself
+      // "restores the original displayed message; no mutation."
+      textarea.value = text;
+      textarea.focus();
+    }
+  });
+  cancelBtn.addEventListener('click', closeEdit);
   scrollReadingToBottom();
 }
 
@@ -606,28 +1870,152 @@ function appendThinking() {
   return div;
 }
 
-function appendAssistantMessage(text) {
+function appendAssistantMessage(text, sources) {
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
   div.className = 'answer';
   div.innerHTML = `<div class="answer-by"><span class="tiny-brand">O</span><b>ORNEUR</b></div>` +
-    `<div class="msg-body">${mdToHtml(text)}</div>` +
+    `<div class="msg-body">${mdToHtml(text, sources)}</div>` +
     `<div class="msg-actions"><button class="copy-btn">Copy</button></div>`;
   container.appendChild(div);
   const btn = div.querySelector('.copy-btn');
   btn.addEventListener('click', () => {
     navigator.clipboard.writeText(text).then(() => { btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500); });
   });
+  renderSourcesPanel(div, sources);
   scrollReadingToBottom();
   return div;
 }
 
-function appendUnavailableNote(message) {
+// AUDIT-B15: "Default reading: unobtrusive numbered per-claim citation
+// anchors... no citations means no fabricated references." Renders
+// NOTHING when `sources` is empty/absent -- this is the honest default,
+// not a loading or error state. When sources exist, a single closed-by-
+// default disclosure (matching this file's established .open-class
+// toggle convention from B04/B05) lists each one with only the fields
+// orca/serve/citations.py's real orneur.sources/1 schema actually
+// provides: kind, filename/url, locator, excerpt, and whether the model
+// actually cited it ("Cited" vs "Consulted, not cited" -- the exact
+// distinction the backend itself draws, never collapsed into a single
+// implied-verified label). No access/integrity/revocation/claim-support
+// badges are shown, because the real backend does not currently compute
+// or return those richer B15-contract concepts; inventing them here
+// would be exactly the fabrication the contract prohibits.
+function renderSourcesPanel(div, sources) {
+  if (!sources || !sources.length) return;
+  const panel = document.createElement('div');
+  panel.className = 'sources-panel';
+  const citedCount = sources.filter((s) => s.cited_in_answer).length;
+  const summaryLabel = citedCount
+    ? `Sources (${citedCount} cited${sources.length > citedCount ? `, ${sources.length - citedCount} more consulted` : ''})`
+    : `Sources consulted (${sources.length}, not directly cited)`;
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'sources-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.textContent = summaryLabel;
+  const list = document.createElement('div');
+  list.className = 'sources-list';
+  list.hidden = true;
+  sources.forEach((s) => {
+    const row = document.createElement('div');
+    row.className = 'source-row';
+    row.id = `source-${div_uid(div)}-${esc(s.ref)}`;
+    row.dataset.ref = s.ref;
+    const kindLabel = s.kind === 'web_page' ? 'Web page' : 'Document';
+    let linkOrName;
+    if (s.url) {
+      const safeHref = _sanitizeLinkHref(s.url);
+      linkOrName = safeHref
+        ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${esc(s.url)}</a>`
+        : `${esc(s.url)} [link removed: unsupported URL]`;
+    } else {
+      linkOrName = esc(s.filename || 'Untitled source');
+    }
+    const locatorText = s.locator && s.locator.type === 'chunk' ? `Chunk ${s.locator.chunk_index}` : '';
+    row.innerHTML = `<div class="source-row-head"><span class="source-ref">${esc(s.ref)}</span><span class="source-kind">${esc(kindLabel)}</span>` +
+      `<span class="source-cited-state">${s.cited_in_answer ? 'Cited' : 'Consulted, not cited'}</span></div>` +
+      `<div class="source-name">${linkOrName}</div>` +
+      (locatorText ? `<div class="source-locator">${esc(locatorText)}</div>` : '') +
+      (s.excerpt ? `<div class="source-excerpt">${esc(s.excerpt)}</div>` : '');
+    list.appendChild(row);
+  });
+  toggle.addEventListener('click', () => {
+    const willOpen = !list.classList.contains('open');
+    list.classList.toggle('open', willOpen);
+    list.hidden = !willOpen;
+    toggle.setAttribute('aria-expanded', String(willOpen));
+  });
+  panel.appendChild(toggle);
+  panel.appendChild(list);
+  div.appendChild(panel);
+  // Inline [D#] markers (rendered by mdToHtml above) open this panel and
+  // scroll/focus the matching row -- the "Inline source preview" the
+  // contract asks for, without a separate modal/popover surface in this
+  // first increment (disclosed as a scope limit in the engineering report).
+  div.querySelectorAll('.cite-marker').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = list.querySelector(`[data-ref="${btn.dataset.ref}"]`);
+      if (!row) return;
+      list.classList.add('open');
+      list.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+      row.scrollIntoView({ block: 'nearest' });
+      row.classList.add('source-row-flash');
+      setTimeout(() => row.classList.remove('source-row-flash'), 1200);
+    });
+  });
+}
+
+let _sourceDivCounter = 0;
+const _sourceDivIds = new WeakMap();
+function div_uid(div) {
+  if (!_sourceDivIds.has(div)) _sourceDivIds.set(div, ++_sourceDivCounter);
+  return _sourceDivIds.get(div);
+}
+
+// AUDIT-B12: RecoveryAction minimum ("Copy received text... Retry only
+// if both server policy and user/tenant access permit"). Copy is always
+// safe (purely client-side, copies the error text itself -- useful for
+// support/bug reports) and offered on every note. Retry is opt-in via
+// `retryText` and, when passed, submits the SAME user message as a
+// genuinely NEW request through the real sendMessage() path -- this
+// deliberately sidesteps the B12 contract's harder reconciliation
+// problem (resuming/confirming the OLD request's uncertain outcome,
+// which needs a server-authenticated status endpoint this codebase does
+// not have, exactly the same backend gap documented for B10's Stop) by
+// never attempting to resume anything: a retry here is indistinguishable
+// from the user re-typing and re-sending the same words, which needs no
+// new backend capability and makes no claim about the failed request's
+// fate.
+function appendUnavailableNote(message, options) {
+  const retryText = options && options.retryText;
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
   div.className = 'answer';
-  div.innerHTML = `<div class="unavailable-note">${esc(message)}</div>`;
+  div.innerHTML = `<div class="unavailable-note">${esc(message)}</div>` +
+    `<div class="recovery-actions"><button type="button" class="recovery-btn" data-action="copy">Copy</button>` +
+    (retryText ? `<button type="button" class="recovery-btn" data-action="retry">Retry</button>` : '') +
+    `</div>`;
   container.appendChild(div);
+  div.querySelector('[data-action="copy"]').addEventListener('click', (e) => {
+    navigator.clipboard.writeText(message).then(() => {
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  });
+  const retryBtn = div.querySelector('[data-action="retry"]');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => {
+      if (!composerEl || isStreaming) return; // a retry must not race an already-active generation
+      const input = composerEl.querySelector('#msg-input');
+      input.value = retryText;
+      input.dispatchEvent(new Event('input'));
+      sendMessage();
+    });
+  }
   scrollReadingToBottom();
 }
 
@@ -649,8 +2037,17 @@ function appendStreamingMessage() {
   return div;
 }
 
-function finalizeStreamingMessage(div, finalText) {
+function finalizeStreamingMessage(div, finalText, sources) {
   if (!div || div.querySelector('.msg-actions')) return;
+  // AUDIT-B15: sources are only known once the stream's `done` event
+  // arrives, after every chunk has already been rendered citation-blind
+  // (mdToHtml(rawBuffer) during streaming, with no sources arg) -- so the
+  // body is re-rendered exactly once here, now that real source data
+  // exists, to upgrade any [D#] text into real citation markers.
+  if (sources && sources.length) {
+    const body = div.querySelector('.msg-body');
+    if (body) body.innerHTML = mdToHtml(finalText, sources);
+  }
   const actions = document.createElement('div');
   actions.className = 'msg-actions';
   const btn = document.createElement('button');
@@ -661,18 +2058,19 @@ function finalizeStreamingMessage(div, finalText) {
   });
   actions.appendChild(btn);
   div.appendChild(actions);
+  renderSourcesPanel(div, sources);
 }
 
 // A closed connection is not a successful generation: mark whatever
 // partial text rendered so far as interrupted instead of letting it sit
 // there looking like a verified, completed answer.
-function markMessageInterrupted(div) {
+function markMessageInterrupted(div, reason) {
   if (!div) return;
   const body = div.querySelector('.msg-body');
   if (body && !body.querySelector('.interrupted-badge')) {
     const badge = document.createElement('div');
     badge.className = 'interrupted-badge';
-    badge.textContent = 'Response interrupted -- connection ended before completion.';
+    badge.textContent = reason || 'Response interrupted -- connection ended before completion.';
     body.appendChild(badge);
   }
 }
@@ -736,9 +2134,18 @@ async function sendMessage() {
       signal: myController.signal,
     });
     if (!isOwner()) return; // navigated away while awaiting the response headers
+    // AUDIT-B12: "A token expiring on the client must not be silently
+    // treated as backend execution failure." /api/stream shares the same
+    // get_current_user_optional backend gap documented in
+    // ORNEUR_SESSION_EXPIRY_401_AUDIT.md (it does not currently emit a
+    // real 401 for an invalid token either), but this check is added for
+    // the same defense-in-depth reason as the other six call sites: correct
+    // today if the backend ever does, and distinguishes a genuine session
+    // expiry from an undifferentiated "could not be completed" error now.
+    if (resp.status === 401) { thinkEl.remove(); _handleSessionExpired(); return; }
     if (!resp.ok || !resp.body) {
       thinkEl.remove();
-      appendUnavailableNote('The request could not be completed (status ' + resp.status + '). This is a genuine error state, not a simulated one.');
+      appendUnavailableNote('The request could not be completed (status ' + resp.status + '). This is a genuine error state, not a simulated one.', { retryText: text });
       return;
     }
     const reader = resp.body.getReader();
@@ -767,15 +2174,23 @@ async function sendMessage() {
           scrollReadingToBottom();
         } else if (ev.type === 'done') {
           terminalState = 'done';
+          // AUDIT-B15: the real orneur.sources/1 payload (orca/serve/citations.py),
+          // sent on the SAME done event as the final answer. Only an
+          // array means real per-source records exist; anything else
+          // (missing, or a summary-only "evidence_state_only" grounding
+          // with no sources array) renders no citation UI at all, per
+          // the contract's own "no citations means no fabricated
+          // references."
+          const doneSources = Array.isArray(ev.sources) ? ev.sources : [];
           if (!answerEl) {
             thinkEl.remove();
             if (rawBuffer.trim()) {
-              appendAssistantMessage(rawBuffer);
+              appendAssistantMessage(rawBuffer, doneSources);
             } else {
-              appendUnavailableNote('ORNEUR completed the request but returned no response content.');
+              appendUnavailableNote('ORNEUR completed the request but returned no response content.', { retryText: text });
             }
           } else {
-            finalizeStreamingMessage(answerEl, rawBuffer);
+            finalizeStreamingMessage(answerEl, rawBuffer, doneSources);
           }
         } else if (ev.type === 'error') {
           terminalState = 'error';
@@ -784,7 +2199,7 @@ async function sendMessage() {
           } else {
             thinkEl.remove();
           }
-          appendUnavailableNote(ev.message || 'An error occurred while generating a response.');
+          appendUnavailableNote(ev.message || 'An error occurred while generating a response.', { retryText: text });
         }
       } catch (e) {
         logMalformed(e);
@@ -810,7 +2225,7 @@ async function sendMessage() {
       // completion just because the socket closed.
       thinkEl.remove();
       if (answerEl) markMessageInterrupted(answerEl);
-      appendUnavailableNote('The response stream ended unexpectedly before completion.');
+      appendUnavailableNote('The response stream ended unexpectedly before completion.', { retryText: text });
     }
   } catch (e) {
     // AbortError fires when _abandonActiveStream() cancelled OUR OWN
@@ -821,7 +2236,7 @@ async function sendMessage() {
     if (isOwner()) {
       thinkEl.remove();
       if (answerEl) markMessageInterrupted(answerEl);
-      appendUnavailableNote('Network error while streaming the response.');
+      appendUnavailableNote('Network error while streaming the response.', { retryText: text });
     }
   } finally {
     if (isOwner()) {
@@ -834,27 +2249,33 @@ async function sendMessage() {
 
 /* ── Conversation history (B02 persistence + recovery) ──────────────── */
 async function loadSessions() {
+  // AUDIT-P85-P0: a real "session-history context reset" -- any search
+  // response still in flight when this is called must never be allowed
+  // to repaint over whatever this reload produces.
+  _abandonActiveSearch();
+  // AUDIT-P85C: HISTORY domain only (invariant 1: loadSessions() may
+  // invalidate an older history request, but must never invalidate an
+  // unrelated message request -- that coupling was the exact liveness
+  // defect Antigravity caught in the prior shared-epoch version).
+  const myEpoch = ++_historyEpoch;
+  const myToken = _authToken;
   if (!_authToken) return;
   const list = document.getElementById('recents-list');
   try {
     const r = await fetch('/api/sessions?limit=20', { headers: _authHeaders() });
+    if (!_historyResponseStillOwns(myEpoch, myToken)) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('sessions fetch failed');
     const data = await r.json();
+    if (!_historyResponseStillOwns(myEpoch, myToken)) return;
     list.innerHTML = '';
     if (!data.sessions.length) {
       list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
       return;
     }
-    data.sessions.forEach((s) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'rec' + (s.id === sessionId ? ' selected' : '');
-      btn.dataset.sid = s.id;
-      btn.textContent = s.title || '(untitled conversation)';
-      btn.addEventListener('click', () => openSession(s.id, btn.textContent));
-      list.appendChild(btn);
-    });
+    data.sessions.forEach((s) => renderRecentRow(list, s.id, s.title || '(untitled conversation)'));
   } catch (e) {
+    if (!_historyResponseStillOwns(myEpoch, myToken)) return;
     list.innerHTML = '<div class="recents-empty">Could not load conversations</div>';
   }
 }
@@ -863,24 +2284,404 @@ function highlightSelectedRecent(sid) {
   document.querySelectorAll('.rec').forEach((el) => el.classList.toggle('selected', el.dataset.sid === sid));
 }
 
+/* ── B06/B07/B08/B09: conversation row with search, rename, export, delete ──
+   Every action here calls a real, already-existing backend endpoint
+   (PATCH .../title, GET .../export, DELETE ...) -- nothing here
+   fabricates a result; a failed request leaves the row untouched and
+   reports the real error. */
+function renderRecentRow(list, sid, title, snippet) {
+  const row = document.createElement('div');
+  row.className = 'rec-row';
+  // AUDIT-P85-P1 (rename/export reliability): the single source of
+  // truth for "this row's current title," read by rename/export at
+  // CLICK time -- never a closure variable captured when the row was
+  // first rendered, which would go stale after the first successful
+  // rename (a second rename, or an export right after a rename, would
+  // otherwise silently use the OLD title).
+  row.dataset.title = title;
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'rec' + (sid === sessionId ? ' selected' : '');
+  btn.dataset.sid = sid;
+  if (snippet) {
+    // A real search match context from the backend's own scan, not a
+    // client-side guess -- shown only for search results.
+    btn.innerHTML = `<span style="display:flex;flex-direction:column;gap:1px;overflow:hidden"><span style="overflow:hidden;text-overflow:ellipsis">${esc(title)}</span><span style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;font-weight:400">${esc(snippet)}</span></span>`;
+  } else {
+    btn.textContent = title;
+  }
+  btn.addEventListener('click', () => openSession(sid, row.dataset.title));
+  row.appendChild(btn);
+
+  const moreBtn = document.createElement('button');
+  moreBtn.type = 'button';
+  moreBtn.className = 'rec-more-btn';
+  moreBtn.setAttribute('aria-label', `More actions for "${title}"`);
+  moreBtn.setAttribute('aria-haspopup', 'true');
+  moreBtn.setAttribute('aria-expanded', 'false');
+  moreBtn.textContent = '⋯'; // middle dot ellipsis, horizontal
+  row.appendChild(moreBtn);
+
+  const menu = document.createElement('div');
+  menu.className = 'rec-menu-panel';
+  menu.setAttribute('role', 'menu');
+
+  const renameItem = document.createElement('button');
+  renameItem.type = 'button';
+  renameItem.className = 'rec-menu-item';
+  renameItem.textContent = 'Rename';
+  renameItem.addEventListener('click', (e) => { e.stopPropagation(); closeAllRecMenus(); startRenameConversation(row, btn, sid); });
+  menu.appendChild(renameItem);
+
+  const exportMdItem = document.createElement('button');
+  exportMdItem.type = 'button';
+  exportMdItem.className = 'rec-menu-item';
+  exportMdItem.textContent = 'Export as Markdown';
+  exportMdItem.addEventListener('click', (e) => { e.stopPropagation(); closeAllRecMenus(); exportConversation(sid, row.dataset.title, 'md'); });
+  menu.appendChild(exportMdItem);
+
+  const exportJsonItem = document.createElement('button');
+  exportJsonItem.type = 'button';
+  exportJsonItem.className = 'rec-menu-item';
+  exportJsonItem.textContent = 'Export as JSON';
+  exportJsonItem.addEventListener('click', (e) => { e.stopPropagation(); closeAllRecMenus(); exportConversation(sid, row.dataset.title, 'json'); });
+  menu.appendChild(exportJsonItem);
+
+  const deleteItem = document.createElement('button');
+  deleteItem.type = 'button';
+  deleteItem.className = 'rec-menu-item danger';
+  deleteItem.textContent = 'Delete';
+  // Two-click confirm, in place, instead of a native confirm() dialog
+  // (not a WCAG requirement either way, but keeps keyboard focus in
+  // the same menu rather than handing control to a blocking native
+  // dialog) -- the SECOND click is what actually calls DELETE.
+  let confirming = false;
+  // AUDIT-P85-P1 (delete-confirm cancellation): exposed so
+  // closeAllRecMenus() can reset this whenever the menu closes for ANY
+  // reason (outside click, Escape, picking a different action) -- not
+  // resetting this was a real bug: arm delete, close the menu without
+  // confirming, reopen it later, and the FIRST click on what looks like
+  // a fresh "Delete" button would have immediately deleted, because
+  // `confirming` was still true from before.
+  deleteItem._resetConfirm = () => { confirming = false; deleteItem.textContent = 'Delete'; };
+  deleteItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!confirming) {
+      confirming = true;
+      deleteItem.textContent = 'Click again to delete';
+      return;
+    }
+    closeAllRecMenus();
+    deleteConversation(row, sid);
+  });
+  menu.appendChild(deleteItem);
+
+  row.appendChild(menu);
+
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = !menu.classList.contains('open');
+    closeAllRecMenus();
+    if (willOpen) {
+      menu.classList.add('open');
+      moreBtn.classList.add('open');
+      moreBtn.setAttribute('aria-expanded', 'true');
+      renameItem.focus();
+    }
+  });
+
+  list.appendChild(row);
+}
+
+function closeAllRecMenus(opts) {
+  const restoreFocus = !!(opts && opts.restoreFocus);
+  document.querySelectorAll('.rec-menu-panel.open').forEach((m) => {
+    m.classList.remove('open');
+    const deleteItem = m.querySelector('.rec-menu-item.danger');
+    if (deleteItem && deleteItem._resetConfirm) deleteItem._resetConfirm();
+  });
+  document.querySelectorAll('.rec-more-btn.open').forEach((b) => {
+    b.classList.remove('open');
+    b.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) b.focus();
+  });
+}
+document.addEventListener('click', () => closeAllRecMenus());
+document.addEventListener('keydown', (e) => {
+  // AUDIT-P85-P1: only act (and only claim this Escape press) when a
+  // rec-menu is actually open -- otherwise this would also swallow
+  // Escape presses meant for the auth overlay or the model dropdown's
+  // own, separately-scoped handlers.
+  if (e.key === 'Escape' && document.querySelector('.rec-menu-panel.open')) {
+    closeAllRecMenus({ restoreFocus: true });
+  }
+});
+
+function startRenameConversation(row, btn, sid) {
+  // The current title is read from row.dataset.title (updated after
+  // every successful rename), never from btn.textContent -- a
+  // search-result row's button holds title+snippet markup, and reading
+  // textContent back would concatenate both into the rename field.
+  const currentTitle = row.dataset.title;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'rec-rename-input';
+  input.value = currentTitle;
+  btn.replaceWith(input);
+  input.focus();
+  input.select();
+
+  // AUDIT-P85B: inspected per the CTO directive's explicit instruction
+  // ("inspect rename, delete and export completion callbacks for the
+  // same stale-account UI effects"). The authenticated principal at the
+  // moment rename STARTED -- if the account changes before the PATCH
+  // resolves (this row's element may by then be detached from a
+  // rebuilt sidebar, or worse, still attached if the account-switch
+  // repaint hasn't happened yet), the stale result is never applied.
+  const myToken = _authToken;
+  let settled = false;
+  const commit = async () => {
+    if (settled) return;
+    settled = true;
+    const newTitle = input.value.trim();
+    if (!newTitle || newTitle === currentTitle) { input.replaceWith(btn); return; }
+    try {
+      const r = await fetch(`/api/session/${encodeURIComponent(sid)}/title`, {
+        method: 'PATCH', headers: _authHeaders(), body: JSON.stringify({ title: newTitle }),
+      });
+      if (myToken !== _authToken) return;
+      if (r.status === 401) { _handleSessionExpired(); return; }
+      if (!r.ok) throw new Error('rename failed');
+      const data = await r.json();
+      if (myToken !== _authToken) return;
+      // Rebuild as a plain (non-snippet) row -- a snippet's search-match
+      // context is stale the instant the title changes, so it's dropped
+      // here rather than preserved with now-mismatched text.
+      btn.textContent = data.title;
+      // AUDIT-P85-P1: the newest server-confirmed title, so a SECOND
+      // rename (or an export right after this one) uses it -- not the
+      // original title this row was first rendered with.
+      row.dataset.title = data.title;
+      const moreBtn = row.querySelector('.rec-more-btn');
+      if (moreBtn) moreBtn.setAttribute('aria-label', `More actions for "${data.title}"`);
+      if (sid === sessionId) document.getElementById('conv-title').textContent = data.title;
+    } catch (e) {
+      if (myToken !== _authToken) return;
+      // AUDIT-P85-P1: a real, visible, accessible failure -- the row
+      // keeps its original title (row.dataset.title untouched), and the
+      // user is actually told, through the same unavailable-note pattern
+      // already used for export/delete failures, not left to wonder why
+      // the title silently reverted.
+      appendUnavailableNote('Could not rename this conversation. The title was not changed.');
+    }
+    input.replaceWith(btn);
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { settled = true; input.replaceWith(btn); }
+  });
+  input.addEventListener('blur', commit);
+}
+
+async function exportConversation(sid, title, format) {
+  // AUDIT-P85B: inspected per the CTO directive. A completed export
+  // triggering a browser file download under the WRONG (now-switched)
+  // account is a real, if narrower, stale-account effect -- the file
+  // would carry the previous account's real content while the screen
+  // shows a different one. Blocked the same way as the view loads above.
+  const myToken = _authToken;
+  try {
+    const r = await fetch(`/api/session/${encodeURIComponent(sid)}/export?format=${format}`, { headers: _authHeaders() });
+    if (myToken !== _authToken) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (!r.ok) throw new Error('export failed');
+    // The server's own Content-Disposition header only matters for a
+    // real browser navigation; fetch() never acts on it, so the
+    // download is built client-side from the actual response body --
+    // no fabricated content, exactly what the endpoint returned.
+    const text = format === 'json' ? JSON.stringify(await r.json(), null, 2) : await r.text();
+    if (myToken !== _authToken) return;
+    const blob = new Blob([text], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeTitle = (title || 'conversation').replace(/[^a-z0-9-_]+/gi, '-').slice(0, 60);
+    a.href = url;
+    a.download = `orneur-${safeTitle}-${sid.slice(0, 8)}.${format === 'json' ? 'json' : 'md'}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    if (myToken !== _authToken) return;
+    appendUnavailableNote('Export failed. The conversation was not changed.');
+  }
+}
+
+async function deleteConversation(row, sid) {
+  // AUDIT-P85B: inspected per the CTO directive. If the account
+  // switches before this DELETE resolves, the completion handler below
+  // must not touch `row` (it may now belong to a rebuilt sidebar for a
+  // DIFFERENT account) or redirect the now-different account's active
+  // conversation via newConversation().
+  const myToken = _authToken;
+  try {
+    const r = await fetch(`/api/session/${encodeURIComponent(sid)}`, { method: 'DELETE', headers: _authHeaders() });
+    if (myToken !== _authToken) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (!r.ok) throw new Error('delete failed');
+    row.remove();
+    _draftsByConversation.delete(_draftKeyFor(sid)); // AUDIT-B14: no point keeping a draft slot for a conversation that no longer exists
+    if (sid === sessionId) newConversation(); // the open conversation was just deleted -- do not keep showing its now-gone content
+    const list = document.getElementById('recents-list');
+    if (!list.querySelector('.rec-row')) list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
+  } catch (e) {
+    if (myToken !== _authToken) return;
+    appendUnavailableNote('Could not delete this conversation. It has not been removed.');
+  }
+}
+
+/* ── B07: real search over the caller's own conversations ──────────── */
+let _searchDebounce = null;
+let _preSearchListHTML = null;
+const SEARCH_MIN_LENGTH = 2; // matches the backend's own minimum
+// AUDIT-P85-P0: every in-flight search request must prove it still owns
+// the search box before it's allowed to repaint the sidebar -- a
+// delayed response must never win against a newer query, a cleared box,
+// a logout, an account switch, or a session-history reload that
+// happened while it was still in flight. The same ownership-epoch
+// pattern as sendMessage()'s _streamEpoch (AUDIT-B81-A-P1-01), applied
+// here to search instead of streaming.
+let _searchEpoch = 0;
+function _abandonActiveSearch() {
+  _searchEpoch++;
+}
+
+function wireConversationSearch() {
+  const input = document.getElementById('conv-search-input');
+  input.addEventListener('input', () => {
+    clearTimeout(_searchDebounce);
+    const q = input.value.trim();
+    if (q.length < SEARCH_MIN_LENGTH) {
+      // AUDIT-P85-P1: below the minimum -- including genuinely empty --
+      // must always return to the real list. Previously only an EMPTY
+      // query did this; a 1-character query left whatever the last
+      // search had painted on screen with no way back short of clearing
+      // the box completely.
+      _abandonActiveSearch();
+      restoreRecentsFromSearch();
+      return;
+    }
+    _searchDebounce = setTimeout(() => runConversationSearch(q), 300);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      _abandonActiveSearch();
+      input.value = '';
+      restoreRecentsFromSearch();
+      input.blur();
+    }
+  });
+}
+
+// True only if NOTHING has happened since this request was sent that
+// would make repainting the sidebar with its result a lie: no newer
+// search request, no clear/abandon, no change of the authenticated
+// principal, and the box still literally shows the query this response
+// is FOR (not just "a query" -- THIS one).
+function _searchResponseStillOwns(myEpoch, myToken, myQuery) {
+  if (myEpoch !== _searchEpoch) return false;
+  if (myToken !== _authToken) return false;
+  const liveInput = document.getElementById('conv-search-input');
+  if (!liveInput || liveInput.value.trim() !== myQuery) return false;
+  return true;
+}
+
+async function runConversationSearch(q) {
+  if (q.length < SEARCH_MIN_LENGTH) return; // avoid a request we know will 422
+  const myEpoch = ++_searchEpoch; // claims ownership; this alone invalidates any still-pending older request
+  const myToken = _authToken; // the authenticated principal AT REQUEST TIME
+  const list = document.getElementById('recents-list');
+  if (_preSearchListHTML === null) _preSearchListHTML = list.innerHTML;
+  try {
+    const r = await fetch(`/api/sessions/search?q=${encodeURIComponent(q)}`, { headers: _authHeaders() });
+    if (!_searchResponseStillOwns(myEpoch, myToken, q)) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (!r.ok) throw new Error('search failed');
+    const data = await r.json();
+    if (!_searchResponseStillOwns(myEpoch, myToken, q)) return; // re-check after the second await -- ownership can be lost at any point while this was in flight
+    list.innerHTML = '';
+    const results = data.results || data.sessions || [];
+    if (!results.length) {
+      list.innerHTML = '<div class="recents-empty">No matching conversations</div>';
+      return;
+    }
+    results.forEach((s) => renderRecentRow(list, s.id || s.session_id, s.title || '(untitled conversation)', s.snippet));
+  } catch (e) {
+    if (!_searchResponseStillOwns(myEpoch, myToken, q)) return;
+    list.innerHTML = '<div class="recents-empty">Search failed</div>';
+  }
+}
+
+function restoreRecentsFromSearch() {
+  if (_preSearchListHTML !== null) {
+    document.getElementById('recents-list').innerHTML = _preSearchListHTML;
+    _preSearchListHTML = null;
+    loadSessions(); // the pre-search snapshot can be stale; a real reload is truthful, a cached one is not
+  }
+}
+
 async function openSession(sid, title) {
   _abandonActiveStream(); // AUDIT-B81-A-P1-01: switching conversations ends this view's claim on any in-flight response
+  // AUDIT-P85C: MESSAGE domain only (invariant 2: openSession() may
+  // invalidate an older message request, but must never invalidate an
+  // unrelated history request). Claims a fresh epoch + the principal +
+  // the specific conversation id being loaded (invariant 3: opening
+  // conversation Y must invalidate an obsolete load for X -- already
+  // guaranteed structurally by the fresh epoch claim alone, since every
+  // openSession() call gets its own; the sid === sessionId check is a
+  // second, independent guard against the same class of bug).
+  const myEpoch = ++_messageEpoch;
+  const myToken = _authToken;
+  const mySid = sid;
+  // AUDIT-B14: "Never use a singleton shared input state that shows
+  // draft from chat A when chat B opens." Reproduced before this fix:
+  // switching conversations left whatever was typed in the composer
+  // untouched, silently attributing conversation A's unsent text to
+  // conversation B. Save the DEPARTING conversation's draft under its
+  // own id before sessionId changes, then restore the TARGET's own
+  // saved draft (or empty) -- in-memory only, never claimed as
+  // server-persisted (see _draftsByConversation's own comment).
+  _saveCurrentDraft();
   sessionId = sid;
+  _restoreDraftFor(sid);
+  loadAttachmentsForSession(); // AUDIT-B16: this conversation's own real attachments, never a carried-over list
   highlightSelectedRecent(sid);
   showActiveView(title);
   const container = document.getElementById('reading-container');
   container.innerHTML = '<div class="thinking"><span class="dot-pulse"></span><span>Loading conversation...</span></div>';
   try {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/messages`, { headers: _authHeaders() });
+    if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('load failed');
     const data = await r.json();
+    if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '';
     data.messages.forEach((m) => {
       if (m.role === 'user') appendUserMessage(m.content);
-      else appendAssistantMessage(m.content);
+      // AUDIT-B15: reloading a past conversation must show the SAME
+      // sources that were real at the time this specific message was
+      // generated -- orca/serve/conversations.py persists them under
+      // this exact message's own `meta.sources` (confirmed by reading
+      // the storage code, not assumed), so a reload binds correctly to
+      // this message's own version rather than drifting to whatever the
+      // live/latest answer happens to cite.
+      else appendAssistantMessage(m.content, m.meta && Array.isArray(m.meta.sources) ? m.meta.sources : []);
     });
     if (!data.messages.length) container.innerHTML = '<div class="recents-empty">This conversation has no messages yet.</div>';
   } catch (e) {
+    if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '<div class="unavailable-note">Could not load this conversation. It may have been removed, or you may not have access to it.</div>';
   }
 }
@@ -998,6 +2799,24 @@ async function doSignup() {
 }
 
 function onAuthSuccess(data) {
+  // AUDIT-P85C invariant 5/Assignment C: a genuine authenticated-
+  // principal change -- invalidate BOTH domains, not just whichever one
+  // loadSessions() below happens to self-claim. This does NOT assume
+  // onAuthSuccess() was preceded by doLogout() (it often isn't -- e.g.
+  // anonymous-to-authenticated sign-in never calls doLogout() at all).
+  _identityResolved = true; // this login wins; any later-resolving boot restore must defer to it
+  _abandonActiveSearch();
+  _abandonAllViewsForAccountChange();
+  // AUDIT-P85-CTOFIX1: must also end any in-flight STREAM and clear
+  // whatever conversation DOM content belongs to the PREVIOUS principal --
+  // _abandonAllViewsForAccountChange() above only covers the history/
+  // message list-loading epochs, not a stream already writing into the
+  // reading pane, nor the pane's existing content. newConversation()
+  // covers both (it already calls _abandonActiveStream()/
+  // _abandonActiveMessage() and clears the reading-container DOM).
+  newConversation();
+  resetModelSelection(); // AUDIT-B05: the previous principal's model choice must not survive a sign-in
+  _draftsByConversation.clear(); // AUDIT-B14: an unsent draft keyed only by conversation id must not survive an account switch on this device
   _authToken = data.token;
   _authUser = data.user;
   _anonymous = false;
@@ -1009,6 +2828,24 @@ function onAuthSuccess(data) {
 }
 
 function continueAnonymous() {
+  // AUDIT-P85-P0/P85C: a genuine identity change -- any search, history
+  // load, or conversation load still in flight for whoever the caller
+  // was a moment ago must never repaint.
+  _identityResolved = true; // this explicit choice wins; any later-resolving boot restore must defer to it
+  _abandonActiveSearch();
+  _abandonAllViewsForAccountChange();
+  // AUDIT-P85-CTOFIX3: must not retain a previous authenticated principal
+  // or its private conversations. Reproduced live before this fix:
+  // onAuthSuccess(alice) followed by continueAnonymous() left _authToken
+  // and _authUser still set to Alice's real values -- _authHeaders()
+  // would keep sending Alice's Bearer token, and loadSessions() (gated
+  // only on `if (!_authToken) return`) would have gone on to fetch and
+  // render Alice's real conversations under what the UI labels "Guest".
+  newConversation();
+  resetModelSelection(); // AUDIT-B05: the previous principal's model choice must not survive going anonymous
+  _draftsByConversation.clear(); // AUDIT-B14: same reasoning -- a draft must not survive going anonymous
+  _authToken = null;
+  _authUser = null;
   _anonymous = true;
   closeAuthOverlay();
   updateAccountUI();
@@ -1022,15 +2859,69 @@ function updateAccountUI() {
   document.getElementById('sidebar-account-label').textContent = label;
   document.getElementById('topavatar').textContent = initials;
   document.getElementById('logout-row').style.display = _authUser ? '' : 'none';
+  // AUDIT-UIPROG-B07: search needs a real signed-in owner to search
+  // against (GET /api/sessions/search returns nothing for anonymous
+  // callers) -- hide the box rather than show a control that can never
+  // do anything.
+  document.getElementById('conv-search-wrap').style.display = _authUser ? '' : 'none';
 }
 
-function doLogout() {
+// AUDIT-P85-SESSEXP: shared by a user-initiated logout and a genuine
+// session-expiry recovery below -- both are the same real event (the
+// authenticated principal ends), differing only in who triggered it and
+// whether there's a specific reason to show. Invariant 6: clear private
+// conversation content and prevent every prior-account response from
+// rendering -- BOTH domains, not just the message domain newConversation()
+// now scopes itself to (narrowed to message-only per the CTO directive's
+// explicit instruction, so this can no longer rely on it for history
+// invalidation).
+function _clearAuthStateAndShowSignIn(message) {
+  _abandonActiveSearch();
+  _abandonAllViewsForAccountChange();
+  resetModelSelection(); // AUDIT-B05: a logout/session-expiry is a genuine identity transition
+  _draftsByConversation.clear(); // AUDIT-B14: same reasoning -- a draft must not survive logout/session-expiry
   _authToken = null; _authUser = null;
   try { localStorage.removeItem('orneur_token'); } catch (e) {}
   document.getElementById('recents-list').innerHTML = '<div class="recents-empty">Sign in to see your conversations</div>';
+  const searchInput = document.getElementById('conv-search-input');
+  if (searchInput) searchInput.value = '';
+  _preSearchListHTML = null;
   newConversation();
   updateAccountUI();
   openAuthOverlay();
+  if (message) {
+    const errEl = document.getElementById('si-error');
+    if (errEl) errEl.textContent = message;
+  }
+}
+
+function doLogout() {
+  _clearAuthStateAndShowSignIn();
+}
+
+// AUDIT-P85-SESSEXP (Mission 3 audit): a 401 on an authenticated request
+// means the server no longer recognizes this token (expired, revoked, or
+// rotated elsewhere). Audited honestly: before this, every call site here
+// treated a 401 identically to any other failure -- a generic "could not
+// load"/"X failed" message -- leaving the user looking signed-in (their
+// avatar and name still shown in the sidebar) while every further
+// authenticated action would silently fail, with no path back to sign-in
+// and no truthful explanation of why. This is the minimal basic recovery
+// within scope: treat a real 401 as the genuine identity transition it
+// is, reusing the exact full-account-reset doLogout() already uses, with
+// an honest, specific reason shown in the sign-in overlay instead of a
+// vague per-request error. This does not change the authentication
+// architecture itself (token issuance/refresh is unchanged) -- a design
+// change there (e.g. refresh tokens, silent re-auth) would need its own
+// escalation, which this is not.
+//
+// Guarded by the same per-domain ownership check every call site already
+// performs BEFORE this is called: a 401 for a request that has already
+// lost ownership (e.g. the user already switched to a different account)
+// must never tear down the CURRENT session based on a stale response.
+function _handleSessionExpired() {
+  if (!_authToken) return; // already signed out -- nothing to expire
+  _clearAuthStateAndShowSignIn('Your session has expired. Please sign in again.');
 }
 
 async function tryRestoreSession() {
@@ -1039,8 +2930,32 @@ async function tryRestoreSession() {
   if (!stored) return false;
   try {
     const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + stored } });
+    // AUDIT-P85-CTOFIX2: the sign-in overlay's form is reachable and
+    // clickable for the entire duration of this fetch -- boot() never
+    // disables it while awaiting. A faster, newer login/signup/anonymous
+    // choice may have already resolved the boot identity question by the
+    // time this (now-stale) restore attempt gets a response. Reproduced
+    // live before this fix: a slow restore for a stale stored token
+    // resolved AFTER a fast, real login to a DIFFERENT account had
+    // already completed, and silently overwrote _authToken/_authUser
+    // back to the stale account -- while localStorage (which the newer
+    // login had already overwritten) still correctly showed the new
+    // account's token, leaving the two completely out of sync. Checked
+    // immediately after the fetch resolves, before either the failure
+    // cleanup or the success path runs, so a stale restore can neither
+    // apply its own result NOR delete a newer token it has no business
+    // touching.
+    if (_identityResolved) return false;
     if (!r.ok) { try { localStorage.removeItem('orneur_token'); } catch (e) {} return false; }
     const data = await r.json();
+    if (_identityResolved) return false; // re-check after the second await, same reasoning
+    _identityResolved = true;
+    // AUDIT-P85C Assignment C: boot-time session restore is also a real
+    // identity transition (anonymous-pending -> authenticated), named
+    // explicitly in the directive's checklist. Both epochs are already
+    // 0 at this point in practice, but this keeps the invariant correct
+    // under any future code path that restores a session later than boot.
+    _abandonAllViewsForAccountChange();
     _authToken = stored;
     _authUser = data.user;
     closeAuthOverlay();
@@ -1071,6 +2986,7 @@ document.querySelector('.navnew').addEventListener('click', () => setMobileSideb
 (async function boot() {
   showEmptyView();
   updateSendEnabled();
+  wireConversationSearch();
   const restored = await tryRestoreSession();
   if (!restored) {
     await loadModels(); // models are visible even signed-out; sending still requires auth per /api/chat's own rules

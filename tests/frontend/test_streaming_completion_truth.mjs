@@ -58,6 +58,8 @@ const markers = [
   'function mdToHtml(',
   'function appendThinking() {',
   'function appendAssistantMessage(',
+  'function renderSourcesPanel(',
+  'function div_uid(',
   'function appendUnavailableNote(',
   'function appendStreamingMessage() {',
   'function finalizeStreamingMessage(',
@@ -88,16 +90,27 @@ function makeElement(tag) {
     get innerHTML() { return this._html; },
     set innerHTML(v) {
       this._html = v;
-      // Parse out a plausible child for class-based querySelector support
-      // on nodes built purely via innerHTML (mirrors the real functions,
-      // which build their initial structure via innerHTML then later
-      // query into it by class name).
+      // Parse out a plausible child per tag for class- and
+      // data-action-based querySelector support on nodes built purely
+      // via innerHTML (mirrors the real functions, which build their
+      // initial structure via innerHTML then later query into it).
       this._children = [];
-      const classMatches = [...v.matchAll(/class="([^"]+)"/g)];
-      for (const m of classMatches) {
-        for (const cls of m[1].split(/\s+/)) {
+      const tagMatches = [...v.matchAll(/<[a-zA-Z][^>]*>/g)];
+      for (const m of tagMatches) {
+        const tagStr = m[0];
+        const classMatch = tagStr.match(/class="([^"]+)"/);
+        const dataActionMatch = tagStr.match(/data-action="([^"]+)"/);
+        if (!classMatch && !dataActionMatch) continue;
+        if (classMatch) {
+          for (const cls of classMatch[1].split(/\s+/)) {
+            const frag = makeElement('div');
+            frag.className = cls;
+            frag._dataAction = dataActionMatch ? dataActionMatch[1] : null;
+            this._children.push(frag);
+          }
+        } else {
           const frag = makeElement('div');
-          frag.className = cls;
+          frag._dataAction = dataActionMatch[1];
           this._children.push(frag);
         }
       }
@@ -105,12 +118,21 @@ function makeElement(tag) {
     appendChild(child) { this._children.push(child); return child; },
     remove() { this._removed = true; },
     querySelector(sel) {
+      const dataActionMatch = sel.match(/^\[data-action="([^"]+)"\]$/);
+      if (dataActionMatch) {
+        return this._children.find((c) => c._dataAction === dataActionMatch[1]) || null;
+      }
       const cls = sel.replace(/^\./, '');
       const direct = this._children.find((c) => (c.className || '').split(/\s+/).includes(cls));
       if (direct) return direct;
       return null;
     },
+    querySelectorAll(sel) {
+      const cls = sel.replace(/^\./, '');
+      return this._children.filter((c) => (c.className || '').split(/\s+/).includes(cls));
+    },
     addEventListener() {},
+    dataset: {},
   };
   return el;
 }
@@ -136,7 +158,7 @@ const sandbox = {
   setTimeout: () => {},
 };
 vm.createContext(sandbox);
-vm.runInContext(extracted.join('\n'), sandbox);
+vm.runInContext(`var _sourceDivCounter = 0;\nvar _sourceDivIds = new WeakMap();\n${extracted.join('\n')}`, sandbox);
 const { appendThinking, appendAssistantMessage, appendUnavailableNote, appendStreamingMessage, finalizeStreamingMessage, markMessageInterrupted } = sandbox;
 
 function reset() {
@@ -185,12 +207,28 @@ test('markMessageInterrupted is a safe no-op when there is no answer bubble at a
   assert.doesNotThrow(() => markMessageInterrupted(null));
 });
 
-test('appendUnavailableNote renders a distinct, non-answer note with no Copy action', () => {
+test('appendUnavailableNote renders a distinct, non-answer note (never the finished-answer .msg-actions Copy)', () => {
   reset();
   appendUnavailableNote('The response stream ended unexpectedly before completion.');
   const added = readingContainer._children[readingContainer._children.length - 1];
   assert.ok(added.querySelector('.unavailable-note'));
+  // AUDIT-B12: a note now DOES get its own neutral Copy/Retry recovery
+  // actions -- but never the finished-answer .msg-actions treatment,
+  // which would incorrectly imply this is a confirmed-complete response.
   assert.ok(!added.querySelector('.msg-actions'));
+  assert.ok(added.querySelector('[data-action="copy"]'), 'B12 RecoveryAction minimum: Copy must always be offered');
+});
+
+test('appendUnavailableNote only offers Retry when retryText is explicitly passed', () => {
+  reset();
+  appendUnavailableNote('Network error while streaming the response.');
+  const noRetry = readingContainer._children[readingContainer._children.length - 1];
+  assert.equal(noRetry.querySelector('[data-action="retry"]'), null, 'no retryText means no Retry action -- never implied where resending has no defined meaning');
+
+  reset();
+  appendUnavailableNote('Network error while streaming the response.', { retryText: 'the original message' });
+  const withRetry = readingContainer._children[readingContainer._children.length - 1];
+  assert.ok(withRetry.querySelector('[data-action="retry"]'), 'retryText passed must produce a visible Retry action');
 });
 
 test('appendThinking renders a thinking indicator distinct from any answer state', () => {
