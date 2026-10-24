@@ -77,7 +77,7 @@ test('honest copy: the transcript genuinely exists until close/expiry -- never c
 });
 
 test('sendMessage() handles a real 409 temporary_expired/temporary_closed refusal honestly, distinct from a generic failure, and resets the active indicator', () => {
-  const fnSrc = extractBalancedFunction(source, 'async function sendMessage() {').text;
+  const fnSrc = extractBalancedFunction(source, 'async function sendMessage(runId) {').text;
   assert.ok(fnSrc.includes("resp.status === 409"));
   assert.ok(fnSrc.includes("errData.code === 'temporary_expired' || errData.code === 'temporary_closed'"));
   assert.ok(fnSrc.includes('_isTemporarySession = false'), 'the header indicator must not keep claiming an active temporary session the server has already refused to continue');
