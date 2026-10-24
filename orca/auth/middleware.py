@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from orca.auth.crypto import verify_token
@@ -54,12 +54,36 @@ async def get_current_user(
     return user
 
 
-async def get_current_user_optional(
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
-) -> Optional[User]:
-    if not creds:
+def _credentials_from_authorization_header(value: str) -> HTTPAuthorizationCredentials:
+    """A present Authorization header is never a guest credential.
+
+    `HTTPBearer(auto_error=False)` returns no credentials for a missing
+    header and also for a malformed or unsupported scheme. Those two cases
+    are different: only a genuinely absent header is anonymous.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    scheme, separator, token = value.partition(" ")
+    if (
+        separator != " "
+        or scheme.lower() != "bearer"
+        or not token
+        or token != token.strip()
+        or any(character.isspace() for character in token)
+    ):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+
+async def get_current_user_optional(request: Request) -> Optional[User]:
+    """Guest only when the caller sent no Authorization header.
+
+    A bearer token that is expired, revoked, forged, the wrong token type,
+    or attached to a malformed scheme is HTTP 401. The exception is not
+    swallowed: an authentication failure must not become an anonymous
+    upload or an empty private history.
+    """
+    header = request.headers.get("authorization")
+    if header is None:
         return None
-    try:
-        return await get_current_user(creds)
-    except HTTPException:
-        return None
+    return await get_current_user(_credentials_from_authorization_header(header))

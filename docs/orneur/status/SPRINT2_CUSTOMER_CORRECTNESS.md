@@ -34,11 +34,8 @@ user's documents are unreachable (tested both ways).
 
 ## G-026 — stream delivery
 `stream` event: `{delivery: "upstream"|"replayed", cancellable: bool}`; `done.delivery` repeats it.
-* `upstream` — chunks are forwarded as the backend produces them; closing the connection cancels generation (already tested).
-* `replayed` — the answer was complete before the first byte (Kernel `ModelGateway.generate` and frontier `Backend.generate` are non-streaming). It is sent as **one**
-  chunk with `replayed: true`. The word-by-word `sleep(0)` re-emission was removed. A client must not show a "stop generating" control for it.
-**Not done (frozen contract, design proposal):** genuine upstream streaming for Kernel direct answers needs a streaming method on `ModelGateway`/`ModelRuntime`.
-Strict xfail `test_simple_answers_are_generated_with_streaming_upstream` still pins it.
+* `upstream` — Kernel-direct `/api/stream` and AgentLoop forward `ModelGateway.stream()` / backend chunks; closing the connection cancels generation.
+* `replayed` — the answer was already complete (Truth Fabric citation verification, frontier `generate()`). One chunk with `replayed: true`. Do not offer stop.
 
 ## G-027 — `orneur.sources/1`
 `sources[]` = passages really supplied to the model (`ref` `[D#]`, `kind`, `filename`/`url`, `doc_id` when unambiguous, `locator`, `excerpt`, `excerpt_sha256`,

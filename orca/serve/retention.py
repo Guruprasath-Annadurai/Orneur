@@ -29,6 +29,9 @@ def purge_expired_conversations(now: float | None = None) -> dict:
     from orca.serve.account_delete import _delete_session_data, _remove_session_title
 
     now = time.time() if now is None else now
+    from orca.serve import temporary_chat
+
+    temporary_result = temporary_chat.expire_due(now=now)
     deleted, errors, scanned = [], 0, 0
     for user_id, days in users_with_retention():
         cutoff = now - days * _DAY
@@ -49,7 +52,14 @@ def purge_expired_conversations(now: float | None = None) -> dict:
                 deleted.append(sid)
             except Exception:
                 errors += 1
-    return {"scanned": scanned, "deleted": len(deleted), "errors": errors, "deleted_session_ids": deleted}
+    return {
+        "scanned": scanned,
+        "deleted": len(deleted),
+        "errors": errors,
+        "deleted_session_ids": deleted,
+        "temporary_expired": temporary_result["expired"],
+        "temporary_failed": temporary_result["failed"],
+    }
 
 
 if __name__ == "__main__":
