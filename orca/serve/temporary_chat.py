@@ -224,6 +224,7 @@ def finish(session_id: str, user_id: str, final_state: str, *, now: float | None
             raise TemporaryChatDenied("temporary chat was not found", "temporary_not_found")
         if record.get("state") in _TERMINAL:
             return _public(record)
+        record["intended_state"] = final_state
         record["transitions"] = list(record.get("transitions") or []) + [{"state": "closing", "at": moment}]
         _write(path, record)
         try:
@@ -249,6 +250,49 @@ def finish(session_id: str, user_id: str, final_state: str, *, now: float | None
         record["transitions"].append({"state": final_state, "at": time.time()})
         _write(path, record)
         view = _public(record)
+        view["deleted"] = True
+        return view
+
+
+def retry_failed_closure(session_id: str, user_id: str) -> dict:
+    """Retry a failed temporary-chat deletion for the same owner.
+
+    A missing intended state is not guessed. The chat is not reopened.
+    """
+    with _lock(session_id):
+        path = _path(session_id)
+        record = _read(path)
+        if record is None or record.get("user_id") != user_id:
+            raise TemporaryChatDenied("temporary chat was not found", "temporary_not_found")
+        if record.get("state") != "failed":
+            view = _public(record)
+            view["retried"] = False
+            return view
+        intended = record.get("intended_state")
+        if intended not in {"closed", "expired"}:
+            view = _public(record)
+            view["retried"] = False
+            view["deleted"] = False
+            view["reason"] = "intended closure was not recorded"
+            return view
+        try:
+            _delete_contents(session_id, user_id)
+        except Exception:
+            view = _public(record)
+            view["retried"] = True
+            view["deleted"] = False
+            return view
+        if not _transcript_gone(session_id):
+            view = _public(record)
+            view["retried"] = True
+            view["deleted"] = False
+            return view
+        record["state"] = intended
+        record["reason"] = intended
+        record["transitions"] = list(record.get("transitions") or []) + [{"state": intended, "at": time.time()}]
+        _write(path, record)
+        view = _public(record)
+        view["retried"] = True
         view["deleted"] = True
         return view
 

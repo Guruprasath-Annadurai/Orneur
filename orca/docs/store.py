@@ -11,6 +11,7 @@ Embedding strategy:
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import hashlib
 import json
 import math
@@ -226,28 +227,106 @@ class DocStore:
         return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"]}
                 for _, e in scored[:top_k]]
 
-    def delete_doc(self, doc_id: str) -> bool:
-        """Remove all chunks for a document."""
-        if self._collection is not None:
+    @contextlib.contextmanager
+    def _fallback_txn(self):
+        """Serialize fallback rewrites on this host. This is not a cross-store transaction."""
+        lock = getattr(self, "_fallback_thread_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._fallback_thread_lock = lock
+        with lock:
+            fd = None
             try:
-                self._collection.delete(where={"doc_id": doc_id})
-                return True
+                self._fallback_file.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(str(self._fallback_file) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            except OSError:
+                fd = None
+            try:
+                yield
+            finally:
+                if fd is not None:
+                    os.close(fd)
+
+    def _fallback_has_doc(self, doc_id: str) -> bool:
+        if not self._fallback_file.exists():
+            return False
+        with open(self._fallback_file) as handle:
+            for line in handle:
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                if entry.get("doc_id") == doc_id:
+                    return True
+        return False
+
+    def _purge_fallback(self, doc_id: str) -> bool:
+        path = self._fallback_file
+        if not path.exists():
+            return True
+        kept = []
+        with open(path) as handle:
+            for line in handle:
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    kept.append(line if line.endswith("\n") else line + "\n")
+                    continue
+                if entry.get("doc_id") == doc_id:
+                    continue
+                kept.append(line if line.endswith("\n") else line + "\n")
+        tmp = path.with_name(path.name + f".{os.getpid()}.{threading.get_ident()}.tmp")
+        with open(tmp, "w") as handle:
+            handle.writelines(kept)
+            handle.flush()
+            os.fsync(handle.fileno())
+        hook = getattr(self, "_before_fallback_replace", None)
+        if callable(hook):
+            hook(tmp, path)
+        os.replace(tmp, path)
+        return not self._fallback_has_doc(doc_id)
+
+    def delete_doc(self, doc_id: str) -> bool:
+        """Remove one document from the collection and the keyword fallback.
+
+        A collection error leaves the fallback unchanged. `last_delete_state`
+        names the stores that changed. This is not an atomic commit with the
+        authorized index.
+        """
+        state = {
+            "complete": False,
+            "atomic": False,
+            "collection": "absent",
+            "fallback": "absent",
+            "fallback_contains": False,
+        }
+        self.last_delete_state = state
+        if not doc_id:
+            state["collection"] = "rejected"
+            state["fallback"] = "rejected"
+            return False
+        with self._fallback_txn():
+            if self._collection is not None:
+                try:
+                    self._collection.delete(where={"doc_id": doc_id})
+                    state["collection"] = "removed"
+                except Exception:
+                    state["collection"] = "failed"
+                    state["fallback"] = "unchanged"
+                    state["fallback_contains"] = self._fallback_has_doc(doc_id)
+                    return False
+            try:
+                purged = self._purge_fallback(doc_id)
             except Exception:
-                pass
-        # Keyword fallback: rewrite file excluding this doc
-        if self._fallback_file.exists():
-            lines = []
-            with open(self._fallback_file) as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        if entry.get("doc_id") != doc_id:
-                            lines.append(line)
-                    except Exception:
-                        lines.append(line)
-            with open(self._fallback_file, "w") as f:
-                f.writelines(lines)
-        return True
+                state["fallback"] = "failed"
+                state["fallback_contains"] = self._fallback_has_doc(doc_id)
+                return False
+            remains = self._fallback_has_doc(doc_id)
+            state["fallback"] = "removed" if not remains else "remains"
+            state["fallback_contains"] = remains
+            state["complete"] = bool(purged and not remains)
+            return state["complete"]
 
     def count(self) -> int:
         if self._collection is not None:
