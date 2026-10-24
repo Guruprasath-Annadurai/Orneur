@@ -429,24 +429,61 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
 
 
 def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> None:
-    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request."""
+    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request.
+
+    Each new line gets a message id and an immutable original version. The JSONL line is not the editable copy.
+    """
     if not user or not session_id:
         return
     try:
-        from orca.serve import conversations
+        from orca.serve import conversations, message_versions
 
-        conversations.append(session_id, "user", user_text)
-        meta: dict = {}
+        user_message_id = str(uuid.uuid4())
+        assistant_message_id = message_id or str(uuid.uuid4())
+        user_stored = (user_text or "")[:conversations.MAX_MESSAGE_CHARS]
+        assistant_stored = (assistant_text or "")[:conversations.MAX_MESSAGE_CHARS]
+        conversations.append(session_id, "user", user_stored, meta={"message_id": user_message_id})
+        meta: dict = {"message_id": assistant_message_id}
         if identity:
             meta["model_identity"] = identity
         if src:
             meta["source_summary"] = src["summary"]
             meta["sources"] = [{k: s.get(k) for k in ("ref", "kind", "filename", "url", "locator", "cited_in_answer")} for s in src["sources"]]
-        if message_id:
-            meta["message_id"] = message_id
-        conversations.append(session_id, "assistant", assistant_text, meta=meta or None)
+        conversations.append(session_id, "assistant", assistant_stored, meta=meta)
+        message_versions.seed(session_id, user.id, user_message_id, "user", user_stored)
+        message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_stored)
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
+
+
+def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> None:
+    """Point the live in-memory window at the active version.
+
+    Long-term vector memory is not rewritten. An edit does not erase the
+    earlier text from that store or from the version list.
+    """
+    sess = _sessions.get(session_id)
+    if sess is None or previous == new_text:
+        return
+    agent = sess._agent
+    if agent is not None:
+        for item in agent._history:
+            if item.get("role") == role and item.get("content") == previous:
+                item["content"] = new_text
+                break
+        try:
+            sess.persist_to_redis()
+        except Exception:
+            _logger.debug("session history sync failed", exc_info=True)
+    for msg in sess.memory.short._messages:
+        if msg.role == role and msg.content == previous:
+            msg.content = new_text
+            break
+
+
+def _regenerate_text(sess, prompt: str) -> str:
+    """One real model completion for a new assistant version. Not a replay of the previous answer."""
+    return sess.brain.complete([{"role": "user", "content": prompt}], system=get_persona_system(sess.model_variant))
 
 
 def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
@@ -952,6 +989,10 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     model_variant: str | None = None  # 'nano' | 'core' | 'ultra'
+
+
+class MessageEditRequest(BaseModel):
+    content: str
 
 
 class MemoryRequest(BaseModel):
@@ -2207,6 +2248,173 @@ async def session_messages(session_id: str, limit: int = 200, offset: int = 0, u
     from orca.serve import conversations
 
     return conversations.transcript(session_id, limit=limit, offset=offset)
+
+
+def _message_version_error(exc) -> JSONResponse:
+    from orca.serve import message_versions
+
+    if isinstance(exc, message_versions.MessageVersionMismatch):
+        return JSONResponse(
+            {"error": exc.reason, "code": "idempotency_mismatch", "version_id": exc.version_id},
+            status_code=422,
+        )
+    if isinstance(exc, message_versions.MessageVersionInProgress):
+        return JSONResponse(
+            {"error": exc.reason, "code": "regeneration_in_progress", "version_id": exc.version_id, "generation_id": exc.generation_id},
+            status_code=409,
+        )
+    mapping = {
+        "message version was not found": (404, "message_not_found"),
+        "regeneration version was not found": (404, "message_not_found"),
+        "version history is full": (409, "version_history_full"),
+        "only an assistant message can be regenerated": (400, "message_not_regenerable"),
+    }
+    status, code = mapping.get(exc.reason, (400, "message_version_rejected"))
+    return JSONResponse({"error": exc.reason, "code": code}, status_code=status)
+
+
+def _version_body(view: dict) -> dict:
+    return {key: value for key, value in view.items() if not str(key).startswith("_")}
+
+
+@app.get("/api/session/{session_id}/messages/{message_id}/versions")
+async def message_version_history(session_id: str, message_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Every immutable version of one owned message, oldest first. The JSONL line is not rewritten."""
+    _owned_session_or_404(session_id, user)
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations, message_versions
+
+    line = conversations.find_message(session_id, message_id)
+    if line is None or line.get("role") not in ("user", "assistant"):
+        return JSONResponse({"error": "message was not found", "code": "message_not_found"}, status_code=404)
+    try:
+        message_versions.seed(session_id, user.id, message_id, line["role"], line.get("content") or "")
+        return message_versions.read(session_id, message_id, user.id)
+    except message_versions.MessageVersionDenied as exc:
+        return _message_version_error(exc)
+
+
+@app.post("/api/session/{session_id}/messages/{message_id}/edits")
+async def edit_session_message(
+    session_id: str,
+    message_id: str,
+    req: MessageEditRequest,
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    """Append an immutable edit and make it active. The original version stays in the history."""
+    _owned_session_or_404(session_id, user)
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="message-edit")
+    from orca.serve import conversations, message_versions
+
+    line = conversations.find_message(session_id, message_id)
+    if line is None or line.get("role") not in ("user", "assistant"):
+        return JSONResponse({"error": "message was not found", "code": "message_not_found"}, status_code=404)
+    try:
+        message_versions.seed(session_id, user.id, message_id, line["role"], line.get("content") or "")
+        current = message_versions.active_view(session_id, message_id)
+        previous = current["content"] if current else (line.get("content") or "")
+        view = message_versions.edit(
+            session_id,
+            user.id,
+            message_id,
+            req.content,
+            idempotency_key=request.headers.get("idempotency-key") or None,
+        )
+    except message_versions.MessageVersionDenied as exc:
+        return _message_version_error(exc)
+    if view.get("created"):
+        _replace_visible_copy(session_id, previous, view.get("active_content") or "", line["role"])
+    return _version_body(view)
+
+
+@app.post("/api/session/{session_id}/messages/{message_id}/regenerate")
+async def regenerate_session_message(
+    session_id: str,
+    message_id: str,
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    """Create a new assistant version from one model completion.
+
+    The previous version stays in the history. A model failure aborts the
+    uncommitted reservation and leaves the active version unchanged.
+    This call does not re-run authorized document retrieval, and it is not
+    a stream: the cancel route does not stop it.
+    """
+    _owned_session_or_404(session_id, user)
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="message-regenerate")
+    from orca.serve import conversations, message_versions
+
+    line = conversations.find_message(session_id, message_id)
+    if line is None:
+        return JSONResponse({"error": "message was not found", "code": "message_not_found"}, status_code=404)
+    if line.get("role") != "assistant":
+        return JSONResponse({"error": "only an assistant message can be regenerated", "code": "message_not_regenerable"}, status_code=400)
+    preceding = conversations.preceding_user_message(session_id, message_id)
+    if preceding is None:
+        return JSONResponse({"error": "only an assistant message can be regenerated", "code": "message_not_regenerable"}, status_code=400)
+    prompt, _extra = conversations._shown(session_id, preceding)
+    sess = _get_session(session_id, user_id=user.id)
+    refusal = _authorize_inference(user, sess.model_variant, prompt, route="/api/session/messages/regenerate")
+    if refusal is not None:
+        return JSONResponse(refusal.as_json(), status_code=refusal.status)
+    heartbeat = None
+    generation_id = None
+    version_id = None
+    try:
+        message_versions.seed(session_id, user.id, message_id, "assistant", line.get("content") or "")
+        attempt = message_versions.begin_regeneration(
+            session_id,
+            user.id,
+            message_id,
+            idempotency_key=request.headers.get("idempotency-key") or None,
+        )
+    except message_versions.MessageVersionDenied as exc:
+        return _message_version_error(exc)
+    heartbeat = attempt.pop("_heartbeat", None)
+    if not attempt.get("created"):
+        if heartbeat is not None:
+            heartbeat.stop()
+        return _version_body(attempt)
+    generation_id = attempt.get("generation_id")
+    version_id = attempt.get("version_id")
+    current = message_versions.active_view(session_id, message_id)
+    previous = current["content"] if current else (line.get("content") or "")
+    try:
+        text = await asyncio.to_thread(_regenerate_text, sess, prompt)
+        view = message_versions.commit_regeneration(session_id, user.id, message_id, version_id, text)
+    except message_versions.MessageVersionDenied as exc:
+        message_versions.abort_regeneration(session_id, user.id, message_id, version_id)
+        if generation_id:
+            generations.finish(generation_id, "failed", reason="regeneration_failed")
+        return _message_version_error(exc)
+    except Exception as exc:
+        message_versions.abort_regeneration(session_id, user.id, message_id, version_id)
+        if generation_id:
+            generations.finish(generation_id, "failed", reason="regeneration_failed")
+        err = public_error(exc, route="/api/session/messages/regenerate", user_id=user.id)
+        body = err.as_json()
+        body["generation_id"] = generation_id
+        return JSONResponse(body, status_code=err.status)
+    else:
+        finished = generations.finish(generation_id, "completed") if generation_id else None
+        view["generation_state"] = None if finished is None else finished.get("state")
+        if view.get("created"):
+            _replace_visible_copy(session_id, previous, view.get("active_content") or "", "assistant")
+            increment_usage(user.id, "message")
+        return _version_body(view)
+    finally:
+        if heartbeat is not None:
+            heartbeat.stop()
 
 
 @app.get("/api/sessions/search")
