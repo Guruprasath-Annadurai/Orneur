@@ -81,7 +81,7 @@ from orca.docs.pii_redact import redact_pii
 from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
-from orca.serve import session_store, ratelimit, metrics, dlp
+from orca.serve import session_store, ratelimit, metrics, dlp, generations
 from orca.serve.errors import public_error, coded_error, default_code_for_status
 from orca.serve.model_identity import model_identity as _model_identity
 from orca.serve.citations import build_sources as _build_sources
@@ -1801,10 +1801,41 @@ async def stream_chat(
             f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
         )
     message_id = str(uuid.uuid4())
+    idempotency_key = request.headers.get("idempotency-key") or None
+    cancellable_generation = not (use_kernel_direct and not cognitive_result.pending_direct_generation)
+    try:
+        generation, generation_created = generations.begin(
+            session_id=sess.id,
+            user_id=user.id if user else None,
+            delivery="upstream" if cancellable_generation else "replayed",
+            cancellable=cancellable_generation,
+            idempotency_key=idempotency_key,
+        )
+    except generations.GenerationDenied as exc:
+        return JSONResponse({"error": exc.reason, "code": "generation_rejected"}, status_code=400)
+    if not generation_created:
+        status_code, body = generations.existing_http(generation)
+        return JSONResponse(body, status_code=status_code)
+    generation_id = generation["generation_id"]
+
+    async def _stop_if_needed() -> str | None:
+        generations.touch(generation_id)
+        if generations.cancel_requested(generation_id):
+            generations.finish(generation_id, "cancelled", reason="cancel_requested")
+            return "cancel_requested"
+        if await request.is_disconnected():
+            generations.finish(generation_id, "cancelled", reason="client_disconnected")
+            return "client_disconnected"
+        return None
+
+    def _generation_sse() -> str:
+        current = generations.read(generation_id) or generation
+        return f"data: {json.dumps({'type': 'generation', **generations.public(current)})}\n\n"
 
     async def _event_stream() -> AsyncIterator[str]:
         # Send session_id first
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
+        yield _generation_sse()
         identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
         yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
         if rag_result and rag_result.sources:
@@ -1836,14 +1867,17 @@ async def stream_chat(
                         if piece.delta:
                             full += piece.delta
                             yield f"data: {json.dumps({'type': 'chunk', 'text': piece.delta})}\n\n"
-                        if await request.is_disconnected():
+                        stop_reason = await _stop_if_needed()
+                        if stop_reason:
                             audit.log(
                                 "stream_client_disconnected",
                                 user_id=user.id if user else None,
-                                detail={"chars_sent": len(full), "path": "kernel_direct"},
+                                detail={"chars_sent": len(full), "path": "kernel_direct", "reason": stop_reason, "generation_id": generation_id},
                             )
+                            yield _generation_sse()
                             return
             except Exception as e:
+                generations.finish(generation_id, "failed", reason="stream_failed")
                 yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
         elif use_kernel_direct:
@@ -1877,20 +1911,24 @@ async def stream_chat(
                     async for chunk in achunks:
                         full += chunk
                         yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                        if await request.is_disconnected():
+                        stop_reason = await _stop_if_needed()
+                        if stop_reason:
                             audit.log("stream_client_disconnected", user_id=user.id if user else None,
-                                      detail={"chars_sent": len(full)})
+                                      detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
+                            yield _generation_sse()
                             return
 
                 tool_names = [tc.tool for tc in trace.tool_calls]
                 plan_action = trace.plan_action
 
             except streaming.StreamingUnavailable as e:
+                generations.finish(generation_id, "failed", reason="server_busy")
                 err = public_error(e, route="/api/stream", user_id=user.id if user else None,
                                    code="server_busy", message="The server is at capacity. Please retry shortly.")
                 yield f"data: {json.dumps(err.as_sse())}\n\n"
                 return
             except Exception as e:
+                generations.finish(generation_id, "failed", reason="stream_failed")
                 yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
 
@@ -1945,7 +1983,11 @@ async def stream_chat(
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
+        finished = generations.finish(generation_id, "completed")
+        if finished is not None and finished.get("state") != "completed":
+            yield _generation_sse()
+            return
+        done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'generation_id': generation_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
         _auth_meta = _authorized_metadata(authorized, rag_result)
         if _auth_meta is not None:
             done_event['authorized_retrieval'] = _auth_meta
@@ -1959,6 +2001,25 @@ async def stream_chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.get("/api/generations/{generation_id}")
+async def get_generation(generation_id: str, user: User | None = Depends(get_current_user_optional)):
+    record = generations.read(generation_id)
+    if record is None or not generations.allowed(record, user.id if user else None):
+        raise HTTPException(status_code=404, detail="generation not found")
+    return generations.public(record)
+
+
+@app.post("/api/generations/{generation_id}/cancel")
+async def cancel_generation(generation_id: str, user: User | None = Depends(get_current_user_optional)):
+    record = generations.read(generation_id)
+    if record is None or not generations.allowed(record, user.id if user else None):
+        raise HTTPException(status_code=404, detail="generation not found")
+    try:
+        return generations.request_cancel(generation_id)
+    except generations.GenerationDenied:
+        raise HTTPException(status_code=404, detail="generation not found")
 
 
 @app.post("/api/memory/recall")

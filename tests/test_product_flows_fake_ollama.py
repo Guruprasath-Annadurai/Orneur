@@ -50,14 +50,14 @@ def test_stream_emits_session_chunk_done_with_a_message_id(client, fake):
     t, _ = _signup(client)
     evs = _events(client, _hdr(t), {"message": "hello again", "model_variant": "core"})
     types = [e["type"] for e in evs]
-    assert types[0] == "session" and types[1] == "model" and "stream" in types and types[-1] == "done"
+    assert types[0] == "session" and types[1] == "generation" and types[2] == "model" and "stream" in types and types[-1] == "done"
     chunks = [e for e in evs if e["type"] == "chunk"]
     assert "".join(e["text"] for e in chunks) == "FAKE-REPLY"
     assert not any(e.get("replayed") for e in chunks)
     stream = next(e for e in evs if e["type"] == "stream")
     assert stream == {"type": "stream", "delivery": "upstream", "cancellable": True}
     done = evs[-1]
-    assert done["message_id"] and "citation_compliance" in done and done["delivery"] == "upstream"
+    assert done["message_id"] and done["generation_id"] and "citation_compliance" in done and done["delivery"] == "upstream"
 
 
 def test_response_discloses_which_model_served(client, fake):

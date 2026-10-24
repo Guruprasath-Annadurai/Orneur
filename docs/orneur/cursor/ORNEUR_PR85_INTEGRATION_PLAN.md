@@ -35,7 +35,7 @@ Do not treat a green isolated PR as proof of the combination.
 
 These are named gaps. The UI must keep its disabled or honest-limitation states until the backend below exists. None of them is claimed complete.
 
-- **B10 / B12.** Disconnect stops the upstream generator. There is still no generation id, no stored terminal state, and no authenticated cancel/status route. A client cannot tell `stopped_confirmed` from `completed_confirmed` after the socket closes. Retry that resubmits the same words as a new request is what the UI does today. Server-side retry eligibility is not implemented.
+- **B10 / B12.** The cancellable `/api/stream` path now returns a `generation` event and `done.generation_id`. `GET /api/generations/{id}` reports `running`, `completed`, `cancelled`, `failed`, or a stale `interrupted_unknown`. `POST /api/generations/{id}/cancel` asks a cancellable run to stop; the stream records `cancelled` before any further chunk. `retry_eligible` is true only for `cancelled`, `failed`, and `interrupted_unknown`, and it means the client may send a new request. It does not regenerate. A repeated `Idempotency-Key` on the same session does not open a second stream. Replayed frontier responses still have no generation id. The UI Stop control is still a browser abort until it calls the cancel route and reads the terminal state.
 - **B11.** No message edit, immutable version, or idempotent regenerate route. `GET /api/session/{id}/messages` is read-only.
 - **B13.** No temporary-chat mode, retention clock, or deletion sweep. A disabled control is the truthful UI.
 - **B14.** One HTTP stream is owned by one session. There is no server run id correlating several live streams across conversations.
