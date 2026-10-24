@@ -2086,6 +2086,10 @@ async def stream_chat(
                                     user_id=user.id if user else None,
                                     detail={"chars_sent": len(full), "path": "kernel_direct", "reason": stop_reason, "generation_id": generation_id},
                                 )
+                                generations.end_worker(
+                                    generation_id,
+                                    upstream="stopped" if stop_reason == "cancel_requested" else "unconfirmed",
+                                )
                                 yield _generation_sse()
                                 return
                 except Exception as e:
@@ -2129,6 +2133,10 @@ async def stream_chat(
                                 upstream_box["status"] = "closing"
                                 audit.log("stream_client_disconnected", user_id=user.id if user else None,
                                           detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
+                                generations.end_worker(
+                                    generation_id,
+                                    upstream="stopped" if stop_reason == "cancel_requested" else "unconfirmed",
+                                )
                                 yield _generation_sse()
                                 return
 
