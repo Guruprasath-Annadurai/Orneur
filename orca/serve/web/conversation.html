@@ -2269,13 +2269,29 @@ function appendUserMessage(text, meta) {
       // discarding any abandoned local-only draft from a prior
       // open/cancel, since Cancel itself "restores the original
       // displayed message; no mutation."
-      textarea.value = currentText;
-      errorEl.hidden = true;
+      //
+      // REQUALIFICATION (2026-10-24): if an earlier attempt is still
+      // genuinely unresolved (_pendingEditKey set -- a network error or
+      // a 500 that may or may not have committed, per _attemptEditSave's
+      // retry contract above), show THAT unresolved draft instead of
+      // silently falling back to the last known-good text. The content-
+      // keyed reuse logic already makes retrying safe regardless of what
+      // the textarea shows; this only makes the ambiguity visible to the
+      // user instead of hiding it.
+      if (_pendingEditKey) {
+        textarea.value = _pendingEditContent;
+        errorEl.textContent = 'An earlier save attempt for this edit never got a confirmed result. Click Save to try again -- it is safe and will not create a duplicate.';
+        errorEl.hidden = false;
+      } else {
+        textarea.value = currentText;
+        errorEl.hidden = true;
+      }
       refreshSaveEnabled();
       textarea.focus();
     }
   });
   cancelBtn.addEventListener('click', () => {
+    if (cancelBtn.disabled) return; // a save is in flight -- see saveBtn's listener, which re-enables this in `finally`
     // Abandoning this attempt -- a later re-open starts a genuinely new
     // edit with its own fresh key, not a reuse of a now-abandoned one.
     // (If an uncertain save actually DID land server-side before this
@@ -2363,6 +2379,16 @@ function appendUserMessage(text, meta) {
     // second request for the same edit.
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
+    // REQUALIFICATION (2026-10-24): Cancel must not be clickable while a
+    // save is in flight. Without this, a user could Cancel mid-request
+    // (clearing _pendingEditKey and closing the panel) while the fetch
+    // promise is still running; if it later resolves as a real success,
+    // applyEditSuccess() would still fire and mutate the displayed
+    // bubble even though the user explicitly tried to cancel -- a real
+    // violation of Cancel's "no mutation" guarantee. Re-enabled in
+    // `finally` below once the attempt (success, definitive failure, or
+    // uncertain) has actually settled.
+    cancelBtn.disabled = true;
     errorEl.hidden = true;
     try {
       // One automatic retry with the SAME key before surfacing an
@@ -2378,10 +2404,28 @@ function appendUserMessage(text, meta) {
           if (r.status === 401) { _handleSessionExpired(); return; }
           const data = await r.json().catch(() => ({}));
           if (!r.ok) {
-            // A real, definitive rejection (empty content, too long, a
-            // genuine idempotency_mismatch) -- not ambiguous. Clear the
-            // pending key: this attempt is resolved (as a failure), and
-            // any further Save click is a genuinely new attempt.
+            // REQUALIFICATION (2026-10-24): not every non-ok status is a
+            // definitive rejection. Confirmed by reading
+            // edit_session_message() and _replace_visible_copy()
+            // directly: every genuine, pre-commit validation failure
+            // (empty/too-long content, message_not_found, a real
+            // idempotency_mismatch, regeneration_in_progress, version
+            // history full) maps to 400/404/409/422 -- never 500.
+            // _replace_visible_copy(), called AFTER message_versions.edit()
+            // has already durably written the new version, has NO
+            // enclosing try/except of its own (only one inner
+            // sess.persist_to_redis() call is guarded) -- an unexpected
+            // exception there surfaces as a 500 to the client with the
+            // edit ALREADY COMMITTED server-side. A 500 (or any other
+            // unexpected status) is therefore treated exactly like a
+            // network error: ambiguous, not a proof of failure.
+            if (r.status >= 500 || r.status === 0) {
+              networkErrorCount++;
+              continue; // falls through to the automatic same-key retry, same as a thrown network error
+            }
+            // A genuine, definitive pre-commit rejection (400/404/409/422).
+            // Clear the pending key: this attempt is resolved (as a real
+            // failure), and any further Save click is a genuinely new attempt.
             _pendingEditKey = null;
             _pendingEditContent = null;
             errorEl.textContent = data.error || `The edit could not be saved (status ${r.status}).`;
@@ -2406,17 +2450,19 @@ function appendUserMessage(text, meta) {
         }
       }
       // Both the original attempt and the automatic same-key retry
-      // failed at the network level -- genuinely uncertain, not guessed
-      // either way. The pending key is deliberately NOT cleared: the
-      // next Save click (user-initiated) must reuse it, never mint a
-      // fresh one, so the idempotency lookup stays able to find this
-      // exact attempt no matter how many times it's retried.
+      // ended ambiguously (a network error, a 500, or both) -- genuinely
+      // uncertain, not guessed either way. The pending key is
+      // deliberately NOT cleared: the next Save click (user-initiated)
+      // must reuse it, never mint a fresh one, so the idempotency lookup
+      // stays able to find this exact attempt no matter how many times
+      // it's retried.
       errorEl.textContent = 'Could not confirm whether this edit was saved (connection problem, tried twice). Click Save again to check -- retrying is safe and will never create a duplicate version, because it reuses the same request identity.';
       errorEl.hidden = false;
     } finally {
       if (myToken === _authToken && sessionId === mySid) {
         saveBtn.textContent = 'Save edit';
         refreshSaveEnabled();
+        cancelBtn.disabled = false; // REQUALIFICATION: re-enable now that the save attempt (successful, failed, or uncertain) has settled
       }
     }
   });
