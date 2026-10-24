@@ -1,5 +1,18 @@
 # ORNEUR — Mission 6 Consolidated Engineering Handoff
 
+> **STATUS UPDATE (superseding this document's B11/B16 rows, current head `92b6f15` + this addendum's commit):**
+> This report was written at head `ab3109a`, before B11 and B16 existed. Both have since been implemented:
+> B11 (`ORNEUR_B11_INLINE_EDIT.md`) is an honest disabled-state Inline Edit (confirmed: no message-edit backend
+> exists). B16 (`ORNEUR_B16_CONTEXT_AND_ATTACHMENTS.md`, `ORNEUR_B16_CORRECTION_AND_AUDIT.md`,
+> `ORNEUR_B16_SECURITY_ADDENDUM.md`) is a real document upload/list/delete integration, since corrected for a
+> confirmed attachment-identity defect, real in-flight-race bugs, and a confirmed stale-401 account-isolation
+> defect (affecting both B16's `uploadAttachment()` and B14's `openQuickSwitch()`) — all reproduced live and
+> re-verified, including against a real PR #90 candidate backend. The B-series (B01–B16) is now fully addressed:
+> every screen is implemented, partially implemented with a disclosed backend blocker, or an honest disabled
+> state. `ORNEUR_30_SCREEN_IMPLEMENTATION_MATRIX_UPDATED.md` is the current source of truth for per-screen
+> status; this document's historical sections below (written at `ab3109a`) are preserved as the record of that
+> point in the session, not updated line-by-line.
+
 **CTO directive:** "ORNEUR — CLAUDE MASSIVE FRONTEND ENGINEERING EXECUTION" (continuous, no per-batch stopping)
 **Branch:** `claude/b04-b09-implementation-2026-10-23` · **PR:** #85 (draft, stacked on PR #81)
 **This report's exact head:** `ab3109abc99a3e2a4236a20ddc52fff443bb0b81`

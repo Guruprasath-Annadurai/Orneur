@@ -1049,20 +1049,49 @@ function renderAttachChip(doc) {
   return chip;
 }
 
-function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {
-  // AUDIT-B16-FIX: fire-and-forget cleanup for a document that finished
-  // uploading server-side after the caller no longer wants it attached
-  // anywhere visible (account/conversation changed mid-upload, the user
-  // clicked Remove while the upload was still pending, or a sibling
-  // concurrent upload to a brand-new conversation won the session-adopt
-  // race -- see uploadAttachment()). Never awaited: the user's UI has
-  // already moved on, and a failure here just leaves an unreachable
-  // document the user never sees a chip for, which is the state that
-  // already existed before this fix, not a regression.
-  fetch(`/api/docs/${encodeURIComponent(docId)}?session_id=${encodeURIComponent(sidForDelete || '')}`, {
-    method: 'DELETE',
-    headers: tokenForAuth ? { Authorization: `Bearer ${tokenForAuth}` } : {},
-  }).catch(() => {});
+async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {
+  // AUDIT-B16-FIX, corrected by AUDIT-SEC-FINAL-B: cleanup for a document
+  // that finished uploading server-side after the caller no longer wants
+  // it attached anywhere visible (account/conversation changed mid-
+  // upload, the user clicked Remove while the upload was still pending,
+  // or a sibling concurrent upload to a brand-new conversation lost the
+  // session-adopt race -- see uploadAttachment()). Callers never await
+  // this (the user's UI has already moved on, and there is no chip left
+  // to show a result on) -- but that does NOT mean this function may
+  // assume success. It must inspect the real response and must never
+  // claim deletion happened when it did not.
+  //
+  // Uses the ORIGINAL uploader's own token, never the current
+  // principal's -- this is the uploader cleaning up their OWN resource,
+  // not a cross-account bypass or privilege escalation. `tokenForAuth`
+  // is a local parameter that is never written to any persistent or
+  // global state beyond this one call, so no old credential is retained
+  // afterward.
+  //
+  // KNOWN LIMITATION (not silently worked around -- see
+  // ORNEUR_B16_SECURITY_ADDENDUM.md "Backend reconciliation contract"):
+  // this is frontend-only, best-effort cleanup. If this request itself
+  // fails (network partition, 401/403/500, or the tab/process ending
+  // before the fetch completes), there is no retry queue, no persisted
+  // record, and nothing else that will ever attempt this delete again.
+  // The document can be left on the server indefinitely. This is
+  // disclosed as a real gap requiring a backend-side reconciliation
+  // mechanism, not patched over by inventing a client-side retry queue
+  // whose own reliability would be equally unprovable from this layer.
+  try {
+    const r = await fetch(`/api/docs/${encodeURIComponent(docId)}?session_id=${encodeURIComponent(sidForDelete || '')}`, {
+      method: 'DELETE',
+      headers: tokenForAuth ? { Authorization: `Bearer ${tokenForAuth}` } : {},
+    });
+    if (r.ok) return; // genuinely confirmed deleted by the server
+    if (r.status === 404) return; // already gone (e.g. a duplicate cleanup attempt) -- not a failure
+    // A real, unresolved failure (401/403/500/etc): the document may
+    // still exist server-side. console.warn is the most honest signal
+    // available at this layer -- there is no UI surface left for it.
+    console.warn('[B16] orphaned attachment cleanup failed; the document may still exist server-side', { docId, status: r.status });
+  } catch (e) {
+    console.warn('[B16] orphaned attachment cleanup failed (network error); the document may still exist server-side', { docId, error: String(e) });
+  }
 }
 
 async function uploadAttachment(file) {
@@ -1082,7 +1111,19 @@ async function uploadAttachment(file) {
       body: form,
     });
     const accountShifted = myToken !== _authToken;
-    if (r.status === 401) { if (!accountShifted) chip.remove(); _handleSessionExpired(); return; }
+    // AUDIT-SEC-FINAL-A (confirmed, reproduced live: alice's pending
+    // upload returning 401 AFTER bob signed in genuinely signed bob back
+    // out): a 401 must only invalidate auth state when the failing
+    // request still belongs to the CURRENTLY authenticated principal.
+    // Before this fix, _handleSessionExpired() ran unconditionally here,
+    // so a stale/abandoned request's 401 (arriving after a newer account
+    // already signed in) tore down the newer account's session too.
+    if (r.status === 401) {
+      if (accountShifted) { chip.remove(); return; } // this 401 belongs to a principal that is no longer signed in -- not the current user's session expiring
+      chip.remove();
+      _handleSessionExpired();
+      return;
+    }
     const data = await r.json().catch(() => ({}));
     // AUDIT-B16-FIX: for an EXISTING conversation (mySidAtStart set), the
     // conversation identity moving out from under this upload is the
@@ -1160,13 +1201,20 @@ async function removeAttachment(chip) {
     chip.remove();
     return;
   }
+  const myToken = _authToken;
   const mySid = sessionId;
   try {
     const r = await fetch(`/api/docs/${encodeURIComponent(docId)}?session_id=${encodeURIComponent(mySid || '')}`, {
       method: 'DELETE',
       headers: _authHeaders(),
     });
-    if (sessionId !== mySid) return; // switched conversations mid-delete -- this chip no longer belongs to the visible list
+    // AUDIT-SEC-FINAL-A: explicit account-identity check added alongside
+    // the existing conversation check, for the same reason as
+    // uploadAttachment() -- a 401 (or any response) for a delete that no
+    // longer belongs to the current principal must never be acted on,
+    // even though sessionId already resets to null on every real account
+    // transition today (an indirect, not an explicit, guarantee).
+    if (myToken !== _authToken || sessionId !== mySid) return; // switched accounts or conversations mid-delete -- this chip no longer belongs to the visible list
     // AUDIT-B16-FIX: kept for defense-in-depth (see loadAttachmentsForSession's
     // comment) -- /api/docs/{doc_id} also uses get_current_user_optional and
     // live-verified does not itself raise 401 for an invalid token.
@@ -1354,15 +1402,22 @@ async function openQuickSwitch() {
     document.getElementById('quick-switch-close').focus();
     return;
   }
+  // AUDIT-SEC-FINAL-A: found during the same review that caught
+  // uploadAttachment()'s confirmed defect -- this call had NO identity
+  // capture at all. A 401 for a request started under a since-abandoned
+  // account would have torn down whatever account is current now.
+  const myToken = _authToken;
   try {
     // AUDIT-B14: the SAME real GET /api/sessions this app's own sidebar
     // already uses -- never the approved archive's own illustrative
     // example titles. Bounded to a short "recently viewed" list per the
     // locked design, not the full history (that's what B06's sidebar is for).
     const r = await fetch('/api/sessions?limit=8', { headers: _authHeaders() });
+    if (myToken !== _authToken) return; // this request no longer belongs to the current principal
     if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('sessions fetch failed');
     const data = await r.json();
+    if (myToken !== _authToken) return;
     if (panel.hidden) return; // closed while this was in flight
     list.innerHTML = '';
     if (!data.sessions.length) {

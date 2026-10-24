@@ -181,6 +181,7 @@ function buildSandbox({ fetchImpl }) {
     _authHeaders: () => ({ Authorization: 'Bearer tok-1' }),
     _handleSessionExpired: () => { sandbox._sessionExpiredCalled = true; },
     showActiveView: () => {},
+    console,
   };
   return { sandbox, container };
 }
@@ -188,7 +189,7 @@ function buildSandbox({ fetchImpl }) {
 function loadFns(sandbox) {
   const escSrc = extractBalancedFunction(source, 'function esc(t) {').text;
   const renderSrc = extractBalancedFunction(source, 'function renderAttachChip(doc) {').text;
-  const deleteOrphanSrc = extractBalancedFunction(source, 'function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+  const deleteOrphanSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
   const uploadSrc = extractBalancedFunction(source, 'async function uploadAttachment(file) {').text;
   const removeSrc = extractBalancedFunction(source, 'async function removeAttachment(chip) {').text;
   vm.createContext(sandbox);
@@ -393,4 +394,100 @@ test('loadAttachmentsForSession() discards a stale response after a different ac
   await sandbox.loadAttachmentsForSession();
   assert.equal(container._children.length, 0, 'a response that arrives after a different account signed in must never repaint the view with the prior account\'s documents');
   assert.notEqual(sandbox._sessionExpiredCalled, true, 'this is an ownership-staleness guard, not a session-expiry event');
+});
+
+// --- CTO security addendum: confirmed "stale 401 signs out a newer
+// account" defect (reproduced live: alice's pending upload, resolving
+// 401 AFTER bob signed in, genuinely signed bob back out), plus honest
+// orphan-cleanup response handling ---
+
+test('FIXED (confirmed, reproduced live): a stale 401 from an abandoned request never signs out the account that is current now', async () => {
+  const calls = [];
+  let resolveUpload;
+  const pendingUpload = new Promise((r) => { resolveUpload = r; });
+  const { sandbox, container } = buildSandbox({
+    fetchImpl: async (url, opts) => {
+      calls.push({ url, opts });
+      if (url.includes('/api/docs/upload')) {
+        await pendingUpload; // resolves AFTER bob signs in below
+        return { ok: false, status: 401, json: async () => ({ error: 'Invalid or expired token' }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    },
+  });
+  sandbox.sessionId = 'sid-alice';
+  sandbox._authToken = 'tok-alice';
+  loadFns(sandbox);
+
+  const uploadPromise = sandbox.uploadAttachment({ name: 'alice-doc.txt' }); // captures myToken = 'tok-alice'
+  sandbox._authToken = 'tok-bob'; // bob signs in while alice's upload is still pending -- a genuine account change
+  resolveUpload();
+  await uploadPromise;
+
+  assert.equal(sandbox._authToken, 'tok-bob', 'alice\'s abandoned request\'s 401 must not clear bob\'s current token');
+  assert.notEqual(sandbox._sessionExpiredCalled, true, 'before the fix, _handleSessionExpired() ran unconditionally on 401 here, genuinely signing bob back out for a 401 that belonged to alice\'s already-abandoned request');
+});
+
+test('removeAttachment() also checks account identity (myToken), not only sessionId, before acting on the DELETE response', () => {
+  const fnSrc = extractBalancedFunction(source, 'async function removeAttachment(chip) {').text;
+  assert.ok(fnSrc.includes('myToken !== _authToken'), 'an explicit account-identity check must guard the DELETE response, not rely only on sessionId resetting to null on an account change as an indirect guarantee');
+});
+
+test('openQuickSwitch() captures and checks account identity before acting on its response (confirmed gap: this call site had NO identity check at all)', () => {
+  const fnSrc = extractBalancedFunction(source, 'async function openQuickSwitch() {').text;
+  assert.ok(fnSrc.includes('const myToken = _authToken;'), 'must capture the principal at request start');
+  const fetchIdx = fnSrc.indexOf("fetch('/api/sessions?limit=8'");
+  const check401Idx = fnSrc.indexOf('r.status === 401');
+  const identityCheckIdx = fnSrc.indexOf('myToken !== _authToken');
+  assert.ok(fetchIdx !== -1 && check401Idx !== -1 && identityCheckIdx !== -1);
+  assert.ok(fetchIdx < identityCheckIdx && identityCheckIdx < check401Idx, 'the identity check must run between the fetch resolving and the 401 branch, exactly where the confirmed defect was: a stale request\'s 401 reaching _handleSessionExpired() unconditionally');
+});
+
+test('_deleteOrphanedUpload() inspects the real DELETE response instead of assuming success', async () => {
+  const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+  assert.ok(fnSrc.includes('if (r.ok) return;'), 'must check the real response ok flag before treating the deletion as confirmed');
+  assert.ok(fnSrc.includes("r.status === 404"), 'an already-gone document (404) is a legitimate non-failure outcome, not an error to report');
+  assert.ok(fnSrc.includes('console.warn'), 'a genuine failure (401/403/500/network) must be surfaced somehow -- there is no UI surface left, so silently discarding it would hide a real orphaned document from ever being found');
+});
+
+test('_deleteOrphanedUpload(): a 200 response is treated as success, with no warning logged', async () => {
+  const warnings = [];
+  const sandbox = { fetch: async () => ({ ok: true, status: 200, json: async () => ({ deleted: true }) }), console: { warn: (...a) => warnings.push(a) } };
+  const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+  vm.createContext(sandbox);
+  vm.runInContext(fnSrc, sandbox);
+  await sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1');
+  assert.equal(warnings.length, 0);
+});
+
+test('_deleteOrphanedUpload(): a 404 (already gone) is treated as a non-failure, with no warning logged', async () => {
+  const warnings = [];
+  const sandbox = { fetch: async () => ({ ok: false, status: 404, json: async () => ({ error: 'not_found' }) }), console: { warn: (...a) => warnings.push(a) } };
+  const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+  vm.createContext(sandbox);
+  vm.runInContext(fnSrc, sandbox);
+  await sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1');
+  assert.equal(warnings.length, 0);
+});
+
+for (const status of [401, 403, 500]) {
+  test(`_deleteOrphanedUpload(): a real ${status} failure is logged, never silently discarded as success`, async () => {
+    const warnings = [];
+    const sandbox = { fetch: async () => ({ ok: false, status, json: async () => ({ error: 'failed' }) }), console: { warn: (...a) => warnings.push(a) } };
+    const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+    vm.createContext(sandbox);
+    vm.runInContext(fnSrc, sandbox);
+    await sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1');
+    assert.equal(warnings.length, 1, `a ${status} must be logged as a real, unresolved cleanup failure`);
+  });
+}
+
+test('_deleteOrphanedUpload(): a network failure (connection drop / cancellation surfaced as a rejected fetch) is logged, never silently discarded', async () => {
+  const warnings = [];
+  const sandbox = { fetch: async () => { throw new TypeError('Failed to fetch'); }, console: { warn: (...a) => warnings.push(a) } };
+  const fnSrc = extractBalancedFunction(source, 'async function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {').text;
+  vm.createContext(sandbox);
+  vm.runInContext(fnSrc, sandbox);
+  await assert.doesNotReject(() => sandbox._deleteOrphanedUpload('doc-1', 'sid-1', 'tok-1'));
+  assert.equal(warnings.length, 1, 'a network-level failure must also be logged, not swallowed as if cleanup succeeded');
 });
