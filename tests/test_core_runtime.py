@@ -130,6 +130,7 @@ def test_router_refuses_budget_and_language():
 
 def test_memory_is_owner_scoped(tmp_path: Path):
     journal = Journal(tmp_path)
+    journal.create(mission_id="mission-a", owner_user_id="owner-a", objective={"kind": "structured_report"}, steps=["select_tool"])
     journal.put_memory(memory_id="mem1", owner_user_id="owner-a", body={"note": "private"}, share_with=["mission-a"])
     assert journal.read_memory(memory_id="mem1", owner_user_id="owner-a", actor_user_id="owner-a", mission_id=None)["body"]["note"] == "private"
     with pytest.raises(MissionHidden):
@@ -159,11 +160,20 @@ def test_browser_refuses_private_targets_and_actions():
         "http://user:pass@example.com/a",
         "http://localhost/admin",
         "http://metadata.google.internal/",
+        "http://[::1]/",
+        "http://[fe80::1]/",
+        "http://[::ffff:169.254.169.254]/latest/meta-data",
+        "http://[fd00:ec2::254]/",
+        "ftp://example.com/a",
     ):
         decision = classify_url(url)
         assert decision["allowed"] is False, url
     assert perform_action("download", grant_actions=frozenset({"browse_read"}))["code"] == "browser_action_refused"
-    assert perform_action("browse_read", grant_actions=frozenset({"browse_read"}))["performed"] is True
+    granted = perform_action("browse_read", grant_actions=frozenset({"browse_read"}))
+    assert granted["performed"] is False
+    assert granted["authorized"] is True
+    assert granted["external_action"] is False
+    assert granted["code"] == "authorized_not_performed"
     status = chromium_status()
     assert status["cloud_browser_service"] is False
     assert "chrome" in status["unsupported_external_browsers"]
@@ -199,6 +209,8 @@ def test_browser_reads_one_permitted_local_page():
     assert "exfiltrate" not in page["text"]
     assert page["instructions_in_page_are_not_authority"] is True
     assert page["explicit_permit"] is True
+    assert page["production_cloud_browser"] is False
+    assert page["pinned_address"] == "127.0.0.1"
 
 
 def test_proof_separates_pass_fail_and_unevaluated():

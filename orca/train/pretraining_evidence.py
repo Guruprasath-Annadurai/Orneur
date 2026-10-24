@@ -7,6 +7,7 @@ readiness percentage.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import platform
 import shutil
@@ -32,12 +33,49 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _acceptance_engine():
+    """Load the repository engine. A caller-supplied root cannot replace it."""
+    path = _REPO / "scripts" / "acceptance" / "acceptance_engine.py"
+    spec = importlib.util.spec_from_file_location("orneur_acceptance_engine_worksheet", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("acceptance engine is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _engine_accepted(nodes: list, ledger: object) -> tuple[list[str], str]:
+    if not isinstance(ledger, list):
+        return [], "not_a_list"
+    engine = _acceptance_engine()
+    try:
+        accepted = engine.evaluate(
+            nodes,
+            ledger,
+            trust_snapshot={"git_sha": "", "generation": 0, "entries": [], "signature_hex": ""},
+            root_state={"git_sha": "", "generation": 0, "roots": [], "signature_hex": ""},
+            bootstrap_root_key_hex="",
+            subject_sha="",
+        )
+    except engine.AcceptanceRejected:
+        return [], "rejected"
+    if not isinstance(accepted, dict):
+        return [], "rejected"
+    return sorted(str(item) for item in accepted), "empty" if not ledger else "accepted"
+
+
 def worksheet(root: Path | None = None) -> dict:
-    """List every counted pretraining id and the status stored in the graph."""
+    """List every counted pretraining id and the status stored in the graph.
+
+    A list ledger is counted raw, then passed to the canonical acceptance
+    engine. This function does not write the ledger, the graph, or a lock,
+    and it does not treat engineering notes as founder authorization.
+    """
     base = Path(root) if root is not None else _REPO
     graph_path = base / "docs" / "orneur" / "acceptance" / "register_graph.json"
     ledger_path = base / "docs" / "orneur" / "acceptance" / "acceptance_ledger.json"
     before = _sha256(ledger_path)
+    graph_before = _sha256(graph_path)
     graph = json.loads(graph_path.read_text(encoding="utf-8"))
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     counted = [
@@ -45,17 +83,24 @@ def worksheet(root: Path | None = None) -> dict:
         if node.get("denominator") == "PRE_TRAINING" and node.get("counts") is True
     ]
     counted.sort(key=lambda node: node["id"])
-    accepted = ledger if isinstance(ledger, dict) else {}
+    accepted_ids, engine_result = _engine_accepted(graph.get("nodes") or [], ledger)
     after = _sha256(ledger_path)
-    if before != after:
-        raise RuntimeError("worksheet changed the acceptance ledger")
+    graph_after = _sha256(graph_path)
+    if before != after or graph_before != graph_after:
+        raise RuntimeError("worksheet changed an acceptance file")
     return {
         "schema": "orneur-pretraining-worksheet/1",
         "counted": len(counted),
-        "ledger_accepted_count": len(accepted) if isinstance(accepted, dict) else 0,
+        "ledger_raw_entry_count": len(ledger) if isinstance(ledger, list) else 0,
+        "ledger_accepted_count": len(accepted_ids),
+        "ledger_accepted_ids": accepted_ids,
+        "ledger_engine_result": engine_result,
         "ledger_sha256": after,
         "rows": [{"id": node["id"], "status": node["status"], "owner": node.get("implementation_owner")} for node in counted],
         "accepted_by_this_module": False,
+        "engineering_evidence_is_acceptance": False,
+        "founder_authorized": False,
+        "training_start_permitted": bool(training_authorized()),
     }
 
 
