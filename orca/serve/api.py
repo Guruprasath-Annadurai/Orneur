@@ -2599,9 +2599,20 @@ async def delete_doc(
         # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
         return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
     ok = sess.doc_store.delete_doc(doc_id)
+    if not ok:
+        audit.log("doc_delete_incomplete", user_id=user.id if user else None, detail={"doc_id": doc_id})
+        return JSONResponse(
+            {
+                "deleted": False,
+                "doc_id": doc_id,
+                "code": "delete_incomplete",
+                "error": "The document could not be removed from every store.",
+            },
+            status_code=409,
+        )
     unregister_doc(sess.id, doc_id)
     audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
-    return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}
+    return {"deleted": True, "doc_id": doc_id, "session_id": sess.id}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
