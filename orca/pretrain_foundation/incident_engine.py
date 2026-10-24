@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -73,10 +73,44 @@ def _iso(unix: float) -> str:
 
 
 class IncidentJournal:
-    """Append-only chain. A torn tail or an edited line fails closed."""
+    """Append-only chain. A torn tail or an edited line fails closed.
+
+    The lock is a single-host flock. It is not a multi-host lease, and the
+    digest chain is not a signature.
+    """
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
+        self._thread_lock = threading.RLock()
+        self._lock_depth = 0
+        self._lock_fd: int | None = None
+
+    def exclusive(self):
+        return _JournalLock(self)
+
+    def recover_torn_tail(self) -> int:
+        """Drop one incomplete trailing line and keep the intact prefix.
+
+        Opening the journal still fails closed until this is called. A
+        complete line that fails the chain check is not rewritten.
+        """
+        with self.exclusive():
+            if not self.path.exists():
+                return 0
+            raw = read_regular_nofollow(self.path)
+            if not raw or raw.endswith(b"\n"):
+                return 0
+            try:
+                self.read()
+            except IncidentJournalError as exc:
+                if str(exc) != "torn journal tail":
+                    raise
+                intact = list(exc.intact)
+            else:
+                return 0
+            payload = b"".join((_canonical(row) + "\n").encode("utf-8") for row in intact)
+            atomic_write_regular(self.path, payload)
+            return 1
 
     def read(self) -> list[dict]:
         if not self.path.exists():
@@ -116,13 +150,14 @@ class IncidentJournal:
             raise IncidentJournalError("journal chain mismatch", prior)
 
     def append(self, body: dict) -> dict:
-        existing = self.read()
-        prev = GENESIS_HASH if not existing else existing[-1]["digest"]
-        digest = _digest({"prev": prev, "body": body})
-        row = {"prev": prev, "body": body, "digest": digest}
-        line = (_canonical(row) + "\n").encode("utf-8")
-        self._append_line(line)
-        return row
+        with self.exclusive():
+            existing = self.read()
+            prev = GENESIS_HASH if not existing else existing[-1]["digest"]
+            digest = _digest({"prev": prev, "body": body})
+            row = {"prev": prev, "body": body, "digest": digest}
+            line = (_canonical(row) + "\n").encode("utf-8")
+            self._append_line(line)
+            return row
 
     def _append_line(self, line: bytes) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -154,6 +189,31 @@ class IncidentJournal:
             os.close(raw_parent)
 
 
+class _JournalLock:
+    def __init__(self, journal: IncidentJournal) -> None:
+        self.journal = journal
+
+    def __enter__(self):
+        journal = self.journal
+        journal._thread_lock.acquire()
+        if journal._lock_depth == 0:
+            journal.path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(str(journal.path) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            journal._lock_fd = fd
+        journal._lock_depth += 1
+        return self
+
+    def __exit__(self, *_args):
+        journal = self.journal
+        journal._lock_depth -= 1
+        if journal._lock_depth == 0 and journal._lock_fd is not None:
+            os.close(journal._lock_fd)
+            journal._lock_fd = None
+        journal._thread_lock.release()
+
+
 class IncidentEngine:
     """One incident directory. Reopening the directory reloads the journal."""
 
@@ -165,6 +225,7 @@ class IncidentEngine:
         self.effects = EffectLedger(self.root / "effects.json")
         self.founder_online = True
         self.developer_online = True
+        self._in_txn = False
         self._by_id: dict[str, dict] = {}
         self._by_fingerprint: dict[str, str] = {}
         self._reload()
@@ -201,6 +262,23 @@ class IncidentEngine:
             raise IncidentError("detect requires incident id, commit, signal, fingerprint, and owner")
         if budget_units < 1 or retry_limit < 1:
             raise IncidentError("budget and retry limit must be positive")
+        if not self._in_txn:
+            with self.journal.exclusive():
+                self._in_txn = True
+                try:
+                    self._reload()
+                    return self.detect(
+                        incident_id=incident_id,
+                        source_commit=source_commit,
+                        signal=signal,
+                        fingerprint=fingerprint,
+                        owner_id=owner_id,
+                        deadline_unix=deadline_unix,
+                        budget_units=budget_units,
+                        retry_limit=retry_limit,
+                    )
+                finally:
+                    self._in_txn = False
         existing = self._by_fingerprint.get(fingerprint)
         if existing is not None:
             self._append({"kind": "duplicate", "incident_id": existing, "fingerprint": fingerprint, "unix": self.now()})
@@ -227,6 +305,14 @@ class IncidentEngine:
         return row
 
     def note(self, incident_id: str, *, actor_id: str, text: str) -> dict:
+        if not self._in_txn:
+            with self.journal.exclusive():
+                self._in_txn = True
+                try:
+                    self._reload()
+                    return self.note(incident_id, actor_id=actor_id, text=text)
+                finally:
+                    self._in_txn = False
         incident = self._require(incident_id)
         if actor_id != incident["owner_id"]:
             raise IncidentError("task is owned by another actor")
@@ -242,29 +328,55 @@ class IncidentEngine:
         return self._public(incident_id)
 
     def observe_command(self, incident_id: str, command: list[str], cwd: Path) -> dict:
-        """Run a command and store the exit code this process actually saw."""
+        """Refuse an arbitrary command.
+
+        Test execution goes through ``run_authorized_test``. This method does
+        not start a process.
+        """
+        del incident_id, command, cwd
+        raise IncidentError("agent-directed command execution is disabled")
+
+    def run_authorized_test(self, incident_id: str, workspace: Path, relative_test: str) -> dict:
+        """Run one authorized pytest file in the restricted jail and record it."""
+        from orca.pretrain_foundation.restricted_runner import ContainmentError, run_authorized_pytest
+
         incident = self._require(incident_id)
-        if not isinstance(command, list) or not command or any(not isinstance(part, str) or not part for part in command):
-            raise IncidentError("command must be a list of strings")
-        directory = Path(cwd)
-        if not directory.is_dir() or directory.is_symlink():
-            raise IncidentError("observation directory must be a real directory")
-        proc = subprocess.run(command, cwd=directory, capture_output=True, text=True, timeout=60, check=False)
-        output = ((proc.stdout or "") + (proc.stderr or ""))[:64000]
-        observation_id = hashlib.sha256(f"{proc.returncode}\n{output}".encode("utf-8")).hexdigest()
+        try:
+            result = run_authorized_pytest(Path(workspace), relative_test)
+        except ContainmentError as exc:
+            raise IncidentError(f"containment gap: {exc}") from exc
+        output = result["output"]
+        observation_id = hashlib.sha256(f"{result['exit_code']}\n{output}".encode("utf-8")).hexdigest()
         self._append({
             "kind": "observation",
             "incident_id": incident_id,
             "actor_id": incident["owner_id"],
             "observation_id": observation_id,
-            "exit_code": proc.returncode,
+            "exit_code": result["exit_code"],
             "output": output,
-            "command": command,
+            "command": result["command"],
+            "test_digest": result["test_digest"],
+            "containment": result["containment"],
             "unix": self.now(),
         })
-        return {"observation_id": observation_id, "exit_code": proc.returncode, "output_digest": observation_id}
+        return {
+            "observation_id": observation_id,
+            "exit_code": result["exit_code"],
+            "output_digest": observation_id,
+            "test_digest": result["test_digest"],
+            "command": result["command"],
+            "containment": result["containment"],
+        }
 
     def transition(self, incident_id: str, to_state: str, *, actor_id: str, evidence: dict) -> dict:
+        if not self._in_txn:
+            with self.journal.exclusive():
+                self._in_txn = True
+                try:
+                    self._reload()
+                    return self.transition(incident_id, to_state, actor_id=actor_id, evidence=evidence)
+                finally:
+                    self._in_txn = False
         incident = self._require(incident_id)
         if to_state not in STATES or to_state == "DETECTED":
             raise IncidentError("unknown incident state")
@@ -295,6 +407,14 @@ class IncidentEngine:
         return self._public(incident_id)
 
     def cancel(self, incident_id: str, *, actor_id: str, reason: str) -> dict:
+        if not self._in_txn:
+            with self.journal.exclusive():
+                self._in_txn = True
+                try:
+                    self._reload()
+                    return self.cancel(incident_id, actor_id=actor_id, reason=reason)
+                finally:
+                    self._in_txn = False
         incident = self._require(incident_id)
         if actor_id != incident["owner_id"]:
             raise IncidentError("task is owned by another actor")
@@ -312,6 +432,14 @@ class IncidentEngine:
         return self._public(incident_id)
 
     def notify(self, incident_id: str, sender) -> dict:
+        if not self._in_txn:
+            with self.journal.exclusive():
+                self._in_txn = True
+                try:
+                    self._reload()
+                    return self.notify(incident_id, sender)
+                finally:
+                    self._in_txn = False
         incident = self._require(incident_id)
         if incident["notification"] == "DELIVERED":
             return {"delivered": True, "duplicate": True, "state": incident["state"]}
@@ -345,6 +473,9 @@ class IncidentEngine:
             "No reviewer is enrolled.",
             "The acceptance ledger is unchanged.",
             "Native models were not loaded.",
+            "The journal hash chain is not a signature.",
+            "Journal locking is single-host flock, not a multi-host lease.",
+            "Notification delivery is not exactly-once.",
         ]
         if incident["contradiction"]:
             risks.append("Competing patch digests blocked verification.")
@@ -375,6 +506,9 @@ class IncidentEngine:
             },
             "authorization_decision": "DENIED",
             "production_authorization": "DENIED",
+            "hash_chain_is_signature": False,
+            "coordination": "single-host-flock",
+            "exactly_once_effects": False,
             "execution_status": execution,
             "recovery_result": recovery,
             "resource_consumption": {

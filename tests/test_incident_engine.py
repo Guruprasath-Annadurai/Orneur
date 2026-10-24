@@ -1,10 +1,12 @@
 """Incident lifecycle, durability, and refusal of self-approval."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from orca.pretrain_foundation.incident_engine import STATES, IncidentEngine, IncidentError, IncidentJournalError
-from orca.pretrain_foundation.model_monitor import PROBES, monitoring_contracts
+from orca.pretrain_foundation.model_monitor import PROBES, ModelMonitorError, diagnose, monitoring_contracts, request_rollback
 
 
 def _engine(tmp_path, **clock):
@@ -54,10 +56,17 @@ def _reach_proposed(engine, workspace):
     )
 
 
+def _pytest_case(workspace: Path, source: str) -> str:
+    (workspace / "tests").mkdir(parents=True, exist_ok=True)
+    (workspace / "tests" / "test_check.py").write_text(source)
+    return "tests/test_check.py"
+
+
 def test_lifecycle_requires_an_observed_command_and_refuses_self_approval(tmp_path):
     workspace = tmp_path / "iso"
     workspace.mkdir()
-    (workspace / "check.py").write_text("import sys\nprint('secret still present')\nsys.exit(1)\n")
+    (workspace / "app.py").write_text("VALUE = 0\n")
+    relative = _pytest_case(workspace, "import app\n\ndef test_value():\n    assert app.VALUE == 1, 'secret still present'\n")
     engine = _engine(tmp_path)
     proposed = _reach_proposed(engine, workspace)
     assert proposed["state"] == "PATCH_PROPOSED"
@@ -69,15 +78,17 @@ def test_lifecycle_requires_an_observed_command_and_refuses_self_approval(tmp_pa
             actor_id="repair-agent",
             evidence={"exit_code": 0, "output": "ok", "verified": True, "recovered": True},
         )
-    failed = engine.observe_command("INC-1", ["python3", "check.py"], workspace)
-    assert failed["exit_code"] == 1
+    failed = engine.run_authorized_test("INC-1", workspace, relative)
+    assert failed["exit_code"] != 0
+    assert failed["containment"] == "user-namespace-chroot"
     held = engine.transition("INC-1", "TESTED", actor_id="repair-agent", evidence={"observation_id": failed["observation_id"]})
     assert held["advanced"] is False
     assert held["state"] == "PATCH_PROPOSED"
     assert held["test_failures"] == 1
-    (workspace / "check.py").write_text("print('fallback purged')\n")
-    passed = engine.observe_command("INC-1", ["python3", "check.py"], workspace)
+    (workspace / "app.py").write_text("VALUE = 1\n")
+    passed = engine.run_authorized_test("INC-1", workspace, relative)
     assert passed["exit_code"] == 0
+    assert passed["test_digest"] == failed["test_digest"]
     tested = engine.transition("INC-1", "TESTED", actor_id="repair-agent", evidence={"observation_id": passed["observation_id"]})
     assert tested["state"] == "TESTED"
     with pytest.raises(IncidentError, match="author cannot verify"):
@@ -108,8 +119,7 @@ def test_lifecycle_requires_an_observed_command_and_refuses_self_approval(tmp_pa
         evidence={"request": "isolated rerun only", "approved": True, "production_authorization": "GRANTED"},
     )
     assert waiting["production_authorization"] == "DENIED"
-    (workspace / "check.py").write_text("print('isolated rerun clean')\n")
-    rerun = engine.observe_command("INC-1", ["python3", "check.py"], workspace)
+    rerun = engine.run_authorized_test("INC-1", workspace, relative)
     with pytest.raises(IncidentError, match="isolated-test"):
         engine.transition(
             "INC-1",
@@ -181,8 +191,8 @@ def test_restart_mutation_competing_patches_and_notification(tmp_path):
     )
     workspace = tmp_path / "iso"
     workspace.mkdir()
-    (workspace / "check.py").write_text("print('ok')\n")
-    passed = engine.observe_command("INC-1", ["python3", "check.py"], workspace)
+    relative = _pytest_case(workspace, "def test_ok():\n    assert True\n")
+    passed = engine.run_authorized_test("INC-1", workspace, relative)
     engine.transition("INC-1", "TESTED", actor_id="repair-agent", evidence={"observation_id": passed["observation_id"]})
     with pytest.raises(IncidentError, match="contradict"):
         engine.transition(
@@ -247,3 +257,10 @@ def test_model_contracts_do_not_claim_a_loaded_model():
         assert record["checkpoint_digest"] is None
         assert set(record["probes"]) == set(PROBES)
         assert set(record["probes"].values()) == {"NOT_OBSERVED"}
+    for family in contracts:
+        diagnosis = diagnose(family)
+        assert diagnosis["model_loaded"] is False
+        assert diagnosis["trained"] is False
+        assert diagnosis["rollback"] == "REFUSED"
+        with pytest.raises(ModelMonitorError, match="rollback refused"):
+            request_rollback(family, "abc")
