@@ -2,15 +2,16 @@
 
 Priorities verified:
 1. Generation cancellation vs completion cross-process race safety
-2. B11 authorization, immutability, idempotency, regeneration failure rollback, doc-grounding limitation
-3. B13 temporary chat persistence exclusion, expiry cascade, honest scope
-4. B14 correlated runs tenant and session ownership boundaries
-5. B09 sharing authorization, expiry, revocation, temporary chat protection, no session ID leak
-6. Simultaneous share creation, revocation, expiry, deletion and in-flight reads
+2. Real active stream cancellation: enforced termination, no further chunks, truthful state
+3. B11 authorization, immutability, idempotency, regeneration failure rollback, doc-grounding limitation
+4. B13 temporary chat persistence exclusion, expiry cascade, honest scope
+5. B14 correlated runs tenant and session ownership boundaries
+6. B09 sharing authorization, expiry, revocation, temporary chat protection, no session ID leak
+7. Simultaneous share creation, revocation, expiry, deletion and in-flight reads with clean thread termination
 """
 from __future__ import annotations
 
-import concurrent.futures
+import hashlib
 import json
 import multiprocessing
 import os
@@ -31,6 +32,7 @@ from tests.test_g006_tenant_isolation import _hdr, _signup, client  # noqa: F401
 def fake(client, monkeypatch):
     from orca.serve import ratelimit
 
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     ratelimit._local_counters.clear()
     with FakeOllama(reply="The answer is 42.", chunks=("The answer ", "is 42.")) as backend:
         point_orneur_at(backend, monkeypatch)
@@ -58,6 +60,7 @@ def _worker_cancel(mem_dir: str, gen_id: str, barrier):
 
 def test_cross_process_cancellation_vs_completion_atomicity(tmp_path, monkeypatch):
     """Real separate OS processes race completion vs cancellation."""
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     import orca.brain.memory as mem
     monkeypatch.setattr(mem, "MEMORY_DIR", tmp_path)
 
@@ -98,10 +101,132 @@ def test_cross_process_cancellation_vs_completion_atomicity(tmp_path, monkeypatc
 
 
 # -------------------------------------------------------------------------
-# 2. B11 authorization, immutable versions, idempotency, regeneration failures
+# 2. Real active stream cancellation during generation
+# -------------------------------------------------------------------------
+
+def test_real_active_stream_cancellation_stops_generation_truthfully(client, monkeypatch):
+    """Cancel an active in-flight stream and verify immediate termination and terminal state."""
+    import asyncio
+    import orca.serve.api as api
+    from orca.serve import ratelimit
+
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
+    ratelimit._local_counters.clear()
+
+    # Provide 20 chunks with delay so stream is active when cancel is sent
+    chunks = tuple(f"token-{i} " for i in range(20))
+    with FakeOllama(chunks=chunks, chunk_delay=0.04) as backend:
+        point_orneur_at(backend, monkeypatch)
+        owner, _ = _signup(client)
+        headers = _hdr(owner)
+        sid = _chat(client, headers, "Initial question", model_variant="nano")["session_id"]
+
+        captured_gen_id = None
+        chunks_received = []
+        terminal_gen_event = None
+        seen_done = False
+        cancel_response_data = {}
+
+        async def drive(token: str):
+            nonlocal captured_gen_id, chunks_received, terminal_gen_event, seen_done, cancel_response_data
+            path = "/api/stream"
+            body = {"message": "Stream this prompt", "session_id": sid, "model_variant": "nano"}
+            scope = {
+                "type": "http",
+                "method": "POST",
+                "path": path,
+                "raw_path": path.encode(),
+                "query_string": b"",
+                "root_path": "",
+                "scheme": "http",
+                "http_version": "1.1",
+                "server": ("test", 80),
+                "client": ("127.0.0.1", 1234),
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"authorization", f"Bearer {token}".encode()),
+                    (b"host", b"test"),
+                    (b"idempotency-key", b"stream-active-cancel-key"),
+                ],
+            }
+            sent = False
+
+            async def receive():
+                nonlocal sent
+                if not sent:
+                    sent = True
+                    return {"type": "http.request", "body": json.dumps(body).encode(), "more_body": False}
+                await asyncio.sleep(10)
+                return {"type": "http.disconnect"}
+
+            async def send(msg):
+                nonlocal captured_gen_id, chunks_received, terminal_gen_event, seen_done, cancel_response_data
+                raw = msg.get("body") or b""
+                for line in raw.decode("utf-8", errors="replace").splitlines():
+                    if not line.startswith("data:"):
+                        continue
+                    event_str = line[5:].strip()
+                    if not event_str:
+                        continue
+                    try:
+                        event = json.loads(event_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    event_type = event.get("type")
+                    if event_type == "generation":
+                        if captured_gen_id is None:
+                            captured_gen_id = event.get("generation_id")
+                        if event.get("state") == "cancelled":
+                            terminal_gen_event = event
+
+                    elif event_type == "chunk":
+                        chunks_received.append(event.get("text"))
+                        # Cancel actively as soon as chunk 1 arrives
+                        if len(chunks_received) == 1 and captured_gen_id:
+                            res = generations.request_cancel(captured_gen_id)
+                            cancel_response_data.update(res)
+
+                    elif event_type == "done":
+                        seen_done = True
+
+            await api.app(scope, receive, send)
+
+        token = owner
+        asyncio.run(drive(token))
+
+        assert captured_gen_id is not None, "Failed to capture generation_id from stream!"
+        assert cancel_response_data.get("cancel_accepted") is True, f"Cancel was not accepted: {cancel_response_data}"
+        assert terminal_gen_event is not None, "Stream did not emit cancelled generation event!"
+        assert terminal_gen_event["state"] == "cancelled"
+        assert terminal_gen_event["reason"] == "cancel_requested"
+        assert not seen_done, "Stream emitted 'done' event despite active cancellation!"
+        assert len(chunks_received) < len(chunks), f"Stream did not abort early: received {len(chunks_received)} chunks"
+        assert backend.chunks_sent < len(chunks), f"FakeOllama sent all {backend.chunks_sent} chunks"
+
+        # Check stored record in generation store
+        stored = generations.read(captured_gen_id)
+        assert stored is not None
+        assert stored["state"] == "cancelled"
+        assert stored["reason"] == "cancel_requested"
+        view = generations.public(stored)
+        assert view["state"] == "cancelled"
+        assert view["terminal"] is True
+        assert view["retry_eligible"] is True
+
+        # Check GET /api/generations/{generation_id} endpoint
+        status_res = client.get(f"/api/generations/{captured_gen_id}", headers=headers)
+        assert status_res.status_code == 200
+        assert status_res.json()["state"] == "cancelled"
+        assert status_res.json()["retry_eligible"] is True
+
+
+# -------------------------------------------------------------------------
+# 3. B11 authorization, immutable versions, idempotency, regeneration failures
 # -------------------------------------------------------------------------
 
 def test_b11_security_and_failure_semantics(client, fake, tmp_path, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, owner_id = _signup(client)
     attacker, attacker_id = _signup(client)
     h_owner = _hdr(owner)
@@ -155,11 +280,9 @@ def test_b11_security_and_failure_semantics(client, fake, tmp_path, monkeypatch)
     assert diff_res.json()["code"] == "idempotency_mismatch"
 
     # 5. Regeneration failure rollback
-    # Monkeypatch complete to fail
     def fail_complete(*args, **kwargs):
         raise RuntimeError("Model provider timeout/OOM")
 
-    sess = client.app.state._api_sessions[sid] if hasattr(client.app.state, "_api_sessions") else None
     from orca.serve import api
     live_sess = api._sessions.get(sid)
     assert live_sess is not None
@@ -186,10 +309,11 @@ def test_b11_security_and_failure_semantics(client, fake, tmp_path, monkeypatch)
 
 
 # -------------------------------------------------------------------------
-# 3. B13 temporary chat persistence exclusion, expiry, honest scope
+# 4. B13 temporary chat persistence exclusion, expiry, honest scope
 # -------------------------------------------------------------------------
 
-def test_b13_temporary_chat_exclusion_and_expiry(client, fake):
+def test_b13_temporary_chat_exclusion_and_expiry(client, fake, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, _ = _signup(client)
     h_owner = _hdr(owner)
 
@@ -224,10 +348,11 @@ def test_b13_temporary_chat_exclusion_and_expiry(client, fake):
 
 
 # -------------------------------------------------------------------------
-# 4. B14 correlated runs ownership isolation
+# 5. B14 correlated runs ownership isolation
 # -------------------------------------------------------------------------
 
-def test_b14_correlated_runs_tenant_isolation(client, fake):
+def test_b14_correlated_runs_tenant_isolation(client, fake, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     user_a, _ = _signup(client)
     user_b, _ = _signup(client)
     h_a = _hdr(user_a)
@@ -254,10 +379,11 @@ def test_b14_correlated_runs_tenant_isolation(client, fake):
 
 
 # -------------------------------------------------------------------------
-# 5. B09 sharing leak prevention and temporary chat protection
+# 6. B09 sharing leak prevention and temporary chat protection
 # -------------------------------------------------------------------------
 
-def test_b09_sharing_security_and_temporary_protection(client, fake):
+def test_b09_sharing_security_and_temporary_protection(client, fake, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, _ = _signup(client)
     grantee, grantee_id = _signup(client)
     stranger, _ = _signup(client)
@@ -302,11 +428,12 @@ def test_b09_sharing_security_and_temporary_protection(client, fake):
 
 
 # -------------------------------------------------------------------------
-# 6. Simultaneous share creation, revocation, expiry, deletion and in-flight reads
+# 7. Simultaneous share creation, revocation, expiry, deletion and in-flight reads
 # -------------------------------------------------------------------------
 
-def test_simultaneous_share_lifecycle_concurrency(client, fake):
-    """Stress test simultaneous share creation, revocation, deletion, expiry, and reads."""
+def test_simultaneous_share_lifecycle_concurrency(client, fake, monkeypatch):
+    """Stress test simultaneous share creation, revocation, deletion, expiry, and reads with clean thread error propagation."""
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, _ = _signup(client)
     grantee, grantee_id = _signup(client)
     stranger, _ = _signup(client)
@@ -320,62 +447,80 @@ def test_simultaneous_share_lifecycle_concurrency(client, fake):
     created_shares: list[str] = []
     shares_lock = threading.Lock()
 
+    worker_errors: list[tuple[str, BaseException]] = []
+    errors_lock = threading.Lock()
+
+    def record_error(thread_name: str, exc: BaseException):
+        with errors_lock:
+            worker_errors.append((thread_name, exc))
+
     def creator():
-        for i in range(15):
-            if stop_event.is_set():
-                break
-            res = client.post(
-                f"/api/session/{sid}/shares",
-                json={"grantee_id": grantee_id, "ttl_seconds": 60 + i},
-                headers=h_owner,
-            )
-            if res.status_code == 200:
-                s_id = res.json()["share_id"]
-                with shares_lock:
-                    created_shares.append(s_id)
-            time.sleep(0.01)
+        try:
+            for i in range(15):
+                if stop_event.is_set():
+                    break
+                res = client.post(
+                    f"/api/session/{sid}/shares",
+                    json={"grantee_id": grantee_id, "ttl_seconds": 60 + i},
+                    headers=h_owner,
+                )
+                if res.status_code == 200:
+                    s_id = res.json()["share_id"]
+                    with shares_lock:
+                        created_shares.append(s_id)
+                time.sleep(0.01)
+        except BaseException as e:
+            record_error("share-creator", e)
 
     def revoker():
-        while not stop_event.is_set():
-            target = None
-            with shares_lock:
-                if created_shares:
-                    target = created_shares[-1]
-            if target:
-                client.post(f"/api/shares/{target}/revoke", headers=h_owner)
-            time.sleep(0.015)
+        try:
+            while not stop_event.is_set():
+                target = None
+                with shares_lock:
+                    if created_shares:
+                        target = created_shares[-1]
+                if target:
+                    client.post(f"/api/shares/{target}/revoke", headers=h_owner)
+                time.sleep(0.015)
+        except BaseException as e:
+            record_error("share-revoker", e)
 
     def reader_grantee():
-        while not stop_event.is_set():
-            target = None
-            with shares_lock:
-                if created_shares:
-                    target = created_shares[0]
-            if target:
-                res = client.get(f"/api/shares/{target}/messages", headers=h_grantee)
-                # Must be 200 (if active) or 409 (if revoked/expired/deleted)
-                assert res.status_code in {200, 404, 409}, f"Unexpected status: {res.status_code}"
-                if res.status_code == 200:
-                    assert "session_id" not in res.json()
-            time.sleep(0.01)
+        try:
+            while not stop_event.is_set():
+                target = None
+                with shares_lock:
+                    if created_shares:
+                        target = created_shares[0]
+                if target:
+                    res = client.get(f"/api/shares/{target}/messages", headers=h_grantee)
+                    assert res.status_code in {200, 404, 409}, f"Unexpected status: {res.status_code}"
+                    if res.status_code == 200:
+                        assert "session_id" not in res.json(), "Grantee message body leaked session_id!"
+                time.sleep(0.01)
+        except BaseException as e:
+            record_error("share-reader-grantee", e)
 
     def reader_stranger():
-        while not stop_event.is_set():
-            target = None
-            with shares_lock:
-                if created_shares:
-                    target = created_shares[0]
-            if target:
-                res = client.get(f"/api/shares/{target}/messages", headers=h_stranger)
-                # Stranger MUST ALWAYS be 404
-                assert res.status_code == 404, f"Stranger received {res.status_code}!"
-            time.sleep(0.01)
+        try:
+            while not stop_event.is_set():
+                target = None
+                with shares_lock:
+                    if created_shares:
+                        target = created_shares[0]
+                if target:
+                    res = client.get(f"/api/shares/{target}/messages", headers=h_stranger)
+                    # Stranger MUST ALWAYS be 404
+                    assert res.status_code == 404, f"Stranger received {res.status_code}!"
+                time.sleep(0.01)
+        except BaseException as e:
+            record_error("share-reader-stranger", e)
 
     threads = [
-        threading.Thread(target=creator),
-        threading.Thread(target=revoker),
-        threading.Thread(target=reader_grantee),
-        threading.Thread(target=reader_stranger),
+        threading.Thread(target=creator, name="share-creator"),
+        threading.Thread(target=revoker, name="share-revoker"),
+        threading.Thread(target=reader_grantee, name="share-reader-grantee"),
+        threading.Thread(target=reader_stranger, name="share-reader-stranger"),
     ]
 
     for t in threads:
@@ -390,8 +535,13 @@ def test_simultaneous_share_lifecycle_concurrency(client, fake):
     time.sleep(0.3)
     stop_event.set()
 
+    # Assert all worker threads terminate cleanly within strict timeout
     for t in threads:
-        t.join(timeout=3)
+        t.join(timeout=5)
+        assert not t.is_alive(), f"Worker thread {t.name} did not terminate cleanly!"
+
+    # Assert zero worker thread errors or failed assertions occurred
+    assert len(worker_errors) == 0, f"Worker thread errors encountered during share concurrency: {worker_errors}"
 
     # After deletion, any existing shares MUST return 409 (or 404)
     with shares_lock:

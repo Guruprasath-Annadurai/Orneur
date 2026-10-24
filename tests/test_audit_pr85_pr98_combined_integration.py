@@ -4,21 +4,23 @@ Tests real frontend/backend journeys:
 - Editing (B11)
 - Regeneration
 - Temporary Chat (B13)
-- Stop / Cancel (B10)
+- Stop / Real Active Cancel (B10)
 - Quick Switch (B14)
-- Attachments (B16)
-- Citations (B15)
+- Attachments & Provenance Citations (B15/B16) with deletion & revocation context removal
 - Pinning (B06)
 - Sharing (B09)
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 from pathlib import Path
 
 import pytest
 
 from orca.serve import api, conversations, generations, message_versions, organization, temporary_chat, runs
+from orca.serve.authorized_product_index import revoke as revoke_authorized_index
 from tests.fake_ollama import FakeOllama, point_orneur_at
 from tests.test_b_conversations import _chat, _msgs
 from tests.test_g006_tenant_isolation import _hdr, _signup, client  # noqa: F401
@@ -28,13 +30,15 @@ from tests.test_g006_tenant_isolation import _hdr, _signup, client  # noqa: F401
 def fake(client, monkeypatch):
     from orca.serve import ratelimit
 
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     ratelimit._local_counters.clear()
     with FakeOllama(reply="The answer is 42.", chunks=("The answer ", "is 42.")) as backend:
         point_orneur_at(backend, monkeypatch)
         yield backend
 
 
-def test_journey_1_editing_and_regeneration(client, fake):
+def test_journey_1_editing_and_regeneration(client, fake, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, _ = _signup(client)
     h_owner = _hdr(owner)
 
@@ -79,7 +83,8 @@ def test_journey_1_editing_and_regeneration(client, fake):
     assert regen_retry.json()["created"] is False
 
 
-def test_journey_2_temporary_chat_lifecycle(client, fake):
+def test_journey_2_temporary_chat_lifecycle(client, fake, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, _ = _signup(client)
     h_owner = _hdr(owner)
 
@@ -109,32 +114,123 @@ def test_journey_2_temporary_chat_lifecycle(client, fake):
     assert close_res.json()["deleted"] is True
 
 
-def test_journey_3_stop_cancel_streaming(client, fake):
-    owner, _ = _signup(client)
-    h_owner = _hdr(owner)
+def test_journey_3_stop_cancel_streaming(client, monkeypatch):
+    """Real active stream cancellation: verify immediate termination and terminal state."""
+    import asyncio
+    import orca.serve.api as api
+    from orca.serve import ratelimit
 
-    sid = _chat(client, h_owner, "First prompt")["session_id"]
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
+    ratelimit._local_counters.clear()
 
-    # Start stream with idempotency key
-    stream_res = client.post(
-        "/api/stream",
-        json={"message": "Long generation prompt", "session_id": sid},
-        headers={**h_owner, "idempotency-key": "idem-stream-cancel-01"},
-    )
-    assert stream_res.status_code == 200
-    events = [line for line in stream_res.text.split("\n") if line.startswith("data: ")]
-    gen_event = next((json.loads(line[6:]) for line in events if "generation_id" in line), None)
-    assert gen_event is not None
-    gen_id = gen_event["generation_id"]
+    chunks = tuple(f"segment-{i} " for i in range(20))
+    with FakeOllama(chunks=chunks, chunk_delay=0.04) as backend:
+        point_orneur_at(backend, monkeypatch)
+        owner, _ = _signup(client)
+        h_owner = _hdr(owner)
+        sid = _chat(client, h_owner, "First prompt", model_variant="nano")["session_id"]
 
-    # Request cancel
-    cancel_res = client.post(f"/api/generations/{gen_id}/cancel", headers=h_owner)
-    # Cancel returns status indicating request was accepted or state is already terminal
-    assert cancel_res.status_code == 200
-    assert "cancel_accepted" in cancel_res.json()
+        captured_gen_id = None
+        chunks_received = []
+        terminal_gen_event = None
+        seen_done = False
+        cancel_response_data = {}
+
+        async def drive(token: str):
+            nonlocal captured_gen_id, chunks_received, terminal_gen_event, seen_done, cancel_response_data
+            path = "/api/stream"
+            body = {"message": "Long generation prompt", "session_id": sid, "model_variant": "nano"}
+            scope = {
+                "type": "http",
+                "method": "POST",
+                "path": path,
+                "raw_path": path.encode(),
+                "query_string": b"",
+                "root_path": "",
+                "scheme": "http",
+                "http_version": "1.1",
+                "server": ("test", 80),
+                "client": ("127.0.0.1", 1234),
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"authorization", f"Bearer {token}".encode()),
+                    (b"host", b"test"),
+                    (b"idempotency-key", b"idem-stream-cancel-01"),
+                ],
+            }
+            sent = False
+
+            async def receive():
+                nonlocal sent
+                if not sent:
+                    sent = True
+                    return {"type": "http.request", "body": json.dumps(body).encode(), "more_body": False}
+                await asyncio.sleep(10)
+                return {"type": "http.disconnect"}
+
+            async def send(msg):
+                nonlocal captured_gen_id, chunks_received, terminal_gen_event, seen_done, cancel_response_data
+                raw = msg.get("body") or b""
+                for line in raw.decode("utf-8", errors="replace").splitlines():
+                    if not line.startswith("data:"):
+                        continue
+                    event_str = line[5:].strip()
+                    if not event_str:
+                        continue
+                    try:
+                        event = json.loads(event_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    event_type = event.get("type")
+                    if event_type == "generation":
+                        if captured_gen_id is None:
+                            captured_gen_id = event.get("generation_id")
+                        if event.get("state") == "cancelled":
+                            terminal_gen_event = event
+
+                    elif event_type == "chunk":
+                        chunks_received.append(event.get("text"))
+                        # Cancel actively as soon as chunk 1 arrives
+                        if len(chunks_received) == 1 and captured_gen_id:
+                            res = generations.request_cancel(captured_gen_id)
+                            cancel_response_data.update(res)
+
+                    elif event_type == "done":
+                        seen_done = True
+
+            await api.app(scope, receive, send)
+
+        asyncio.run(drive(owner))
+
+        assert captured_gen_id is not None, "Failed to capture generation_id from stream!"
+        assert cancel_response_data.get("cancel_accepted") is True, f"Cancel was not accepted: {cancel_response_data}"
+        assert terminal_gen_event is not None, "Stream did not emit cancelled generation event!"
+        assert terminal_gen_event["state"] == "cancelled"
+        assert terminal_gen_event["reason"] == "cancel_requested"
+        assert not seen_done, "Stream emitted 'done' event despite active cancellation!"
+        assert len(chunks_received) < len(chunks), f"Stream did not abort early: received {len(chunks_received)} chunks"
+        assert backend.chunks_sent < len(chunks), f"FakeOllama sent all {backend.chunks_sent} chunks"
+
+        # Confirm server-side terminal record
+        stored = generations.read(captured_gen_id)
+        assert stored is not None
+        assert stored["state"] == "cancelled"
+        assert stored["reason"] == "cancel_requested"
+        view = generations.public(stored)
+        assert view["state"] == "cancelled"
+        assert view["terminal"] is True
+        assert view["retry_eligible"] is True
+
+        # Confirm via endpoint
+        status_res = client.get(f"/api/generations/{captured_gen_id}", headers=h_owner)
+        assert status_res.status_code == 200
+        assert status_res.json()["state"] == "cancelled"
+        assert status_res.json()["retry_eligible"] is True
 
 
-def test_journey_4_quick_switch_and_runs(client, fake):
+def test_journey_4_quick_switch_and_runs(client, fake, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, _ = _signup(client)
     h_owner = _hdr(owner)
 
@@ -166,45 +262,112 @@ def test_journey_4_quick_switch_and_runs(client, fake):
     assert s1 in session_ids and s2 in session_ids
 
 
-def test_journey_5_attachments_and_citations(client, fake):
-    owner, _ = _signup(client)
+def test_journey_5_attachments_and_citations(client, fake, monkeypatch):
+    """Test document provenance with non-empty citation result, SHA-256 binding, and context removal on deletion/revocation."""
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
+    owner, owner_id = _signup(client)
     h_owner = _hdr(owner)
 
     sid = _chat(client, h_owner, "Session with attachments")["session_id"]
 
-    # Upload attachment document
+    # 1. Upload attachment document with known text and compute expected SHA-256
+    doc_text_1 = "Quantum computation utilizes quantum bits or qubits for superposition."
+    expected_sha_1 = hashlib.sha256(doc_text_1.encode()).hexdigest()
+
     upload_res = client.post(
         "/api/docs/upload",
-        files={"file": ("report.txt", b"Quantum computation utilizes quantum bits or qubits.")},
+        files={"file": ("report.txt", doc_text_1.encode(), "text/plain")},
         params={"session_id": sid},
         headers=h_owner,
     )
     assert upload_res.status_code == 200
-    doc_id = upload_res.json()["doc_id"]
+    doc_id_1 = upload_res.json()["doc_id"]
 
     # List attachments
     list_res = client.get(f"/api/docs/list?session_id={sid}", headers=h_owner)
     assert list_res.status_code == 200
     docs = list_res.json()["docs"]
-    assert any(d["doc_id"] == doc_id for d in docs)
+    assert any(d["doc_id"] == doc_id_1 for d in docs)
 
-    # Query with document context
+    # 2. Query with document context -> require non-empty authorized citation with expected doc_id and SHA-256
+    time.sleep(0.15)
+    fake.requests.clear()
     chat_doc = client.post(
         "/api/chat",
-        json={"message": "What does quantum computation utilize?", "session_id": sid},
+        json={"message": "What does quantum computation utilize?", "session_id": sid, "model_variant": "nano"},
         headers=h_owner,
     )
     assert chat_doc.status_code == 200
-    if "sources" in chat_doc.json():
-        sources = chat_doc.json()["sources"]
-        assert isinstance(sources, list)
+    body = chat_doc.json()
+    assert body.get("authorized_retrieval", {}).get("prompt_passage_count", 0) >= 1
+    assert len(body.get("sources", [])) >= 1
+    source_1 = body["sources"][0]
+    assert source_1["doc_id"] == doc_id_1
+    assert source_1["content_sha256"] == expected_sha_1
+    assert "qubits" in source_1.get("excerpt", "")
+    assert any("qubits" in json.dumps(req) for req in fake.requests), "Authorized text was not sent to model context!"
 
-    # Delete attachment
-    del_doc = client.delete(f"/api/docs/{doc_id}?session_id={sid}", headers=h_owner)
+    # 3. Delete attachment -> assert deletion removes material from later model context
+    del_doc = client.delete(f"/api/docs/{doc_id_1}", params={"session_id": sid}, headers=h_owner)
     assert del_doc.status_code == 200
 
+    time.sleep(0.15)
+    fake.requests.clear()
+    chat_after_del = client.post(
+        "/api/chat",
+        json={"message": "What does quantum computation utilize?", "session_id": sid, "model_variant": "nano"},
+        headers=h_owner,
+    )
+    assert chat_after_del.status_code == 200
+    body_del = chat_after_del.json()
+    assert body_del.get("authorized_retrieval", {}).get("prompt_passage_count", 0) == 0
+    assert len(body_del.get("sources", [])) == 0
+    assert not any("qubits" in json.dumps(req) for req in fake.requests), "Deleted material was still sent to model context!"
 
-def test_journey_6_pinning_and_sharing(client, fake):
+    # 4. Revocation test -> upload second document, query successfully, then revoke session
+    doc_text_2 = "Superconducting resonators operate at cryogenic temperatures."
+    expected_sha_2 = hashlib.sha256(doc_text_2.encode()).hexdigest()
+
+    upload_res_2 = client.post(
+        "/api/docs/upload",
+        files={"file": ("cryo.txt", doc_text_2.encode(), "text/plain")},
+        params={"session_id": sid},
+        headers=h_owner,
+    )
+    assert upload_res_2.status_code == 200
+    doc_id_2 = upload_res_2.json()["doc_id"]
+
+    time.sleep(0.15)
+    fake.requests.clear()
+    chat_doc_2 = client.post(
+        "/api/chat",
+        json={"message": "What operates at cryogenic temperatures?", "session_id": sid, "model_variant": "nano"},
+        headers=h_owner,
+    )
+    assert chat_doc_2.status_code == 200
+    body_2 = chat_doc_2.json()
+    assert body_2.get("authorized_retrieval", {}).get("prompt_passage_count", 0) >= 1
+    assert any(s.get("doc_id") == doc_id_2 and s.get("content_sha256") == expected_sha_2 for s in body_2.get("sources", []))
+    assert any("resonators" in json.dumps(req) for req in fake.requests), "Authorized document material was not sent to model context!"
+
+    # Revoke session authorized index
+    revoke_authorized_index(owner_id, sid)
+
+    time.sleep(0.15)
+    fake.requests.clear()
+    denied_after_revoke = client.post(
+        "/api/chat",
+        json={"message": "What operates at cryogenic temperatures?", "session_id": sid, "model_variant": "nano"},
+        headers=h_owner,
+    )
+    # Revocation causes authorized retrieval to fail closed (403 retrieval_unauthorized)
+    assert denied_after_revoke.status_code == 403
+    assert denied_after_revoke.json()["code"] == "retrieval_unauthorized"
+    assert not any("resonators" in json.dumps(req) for req in fake.requests), "Revoked material reached model context!"
+
+
+def test_journey_6_pinning_and_sharing(client, fake, monkeypatch):
+    monkeypatch.setenv("ORNEUR_HOME", str(Path.home() / ".orca"))
     owner, _ = _signup(client)
     grantee, grantee_id = _signup(client)
     h_owner = _hdr(owner)
