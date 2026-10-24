@@ -996,17 +996,30 @@ async function loadAttachmentsForSession() {
   const container = document.getElementById('attach-chips');
   if (!container) return;
   if (!sessionId) { container.innerHTML = ''; return; }
+  const myToken = _authToken;
   const mySid = sessionId;
   try {
     const r = await fetch(`/api/docs/list?session_id=${encodeURIComponent(mySid)}`, { headers: _authHeaders() });
-    if (sessionId !== mySid) return; // switched again while this was in flight
+    if (myToken !== _authToken || sessionId !== mySid) return; // a different account signed in, or the conversation changed, while this was in flight
+    // AUDIT-B16-FIX: /api/docs/list uses get_current_user_optional, which
+    // never itself raises 401 (orca/auth/middleware.py:57-65) -- live-
+    // verified an invalid/expired token against an owned session_id
+    // surfaces as 404 "session not found" via _get_session's ownership
+    // check, not 401. This branch is kept for defense-in-depth /
+    // consistency with the other six authenticated call sites
+    // (ORNEUR_SESSION_EXPIRY_401_AUDIT.md), not because it fires today.
+    // A 404 here is deliberately NOT treated as session-expiry: the same
+    // 404 also covers a session simply evicted by >2h idle eviction in
+    // _get_session, which is not an auth problem -- conflating the two
+    // would spuriously log out a user whose tab just sat idle.
+    if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) { container.innerHTML = ''; return; }
     const data = await r.json();
-    if (sessionId !== mySid) return;
+    if (myToken !== _authToken || sessionId !== mySid) return;
     container.innerHTML = '';
     (data.docs || []).forEach((d) => renderAttachChip({ doc_id: d.doc_id, filename: d.filename, state: 'ready' }));
   } catch (e) {
-    if (sessionId !== mySid) return;
+    if (myToken !== _authToken || sessionId !== mySid) return;
     container.innerHTML = '';
   }
 }
@@ -1023,8 +1036,33 @@ function renderAttachChip(doc) {
     (stateLabel ? `<span class="chip-state">${esc(stateLabel)}</span>` : '') +
     `<button type="button" class="attach-chip-remove" aria-label="Remove ${esc(doc.filename)}">×</button>`;
   container.appendChild(chip);
-  chip.querySelector('.attach-chip-remove').addEventListener('click', () => removeAttachment(chip, doc));
+  // AUDIT-B16-FIX (confirmed identity defect): read the doc id from
+  // chip.dataset.docId at CLICK time, never from a closure-captured `doc`
+  // object. uploadAttachment() updates chip.dataset.docId asynchronously
+  // after a successful upload; a captured `doc` object (the one passed in
+  // here with no doc_id while the upload is still pending) would never
+  // see that update, so clicking Remove immediately after a successful
+  // upload took the local-only branch below instead of calling the real
+  // DELETE endpoint -- a genuinely uploaded document silently stayed on
+  // the server with no visible chip to delete it from.
+  chip.querySelector('.attach-chip-remove').addEventListener('click', () => removeAttachment(chip));
   return chip;
+}
+
+function _deleteOrphanedUpload(docId, sidForDelete, tokenForAuth) {
+  // AUDIT-B16-FIX: fire-and-forget cleanup for a document that finished
+  // uploading server-side after the caller no longer wants it attached
+  // anywhere visible (account/conversation changed mid-upload, the user
+  // clicked Remove while the upload was still pending, or a sibling
+  // concurrent upload to a brand-new conversation won the session-adopt
+  // race -- see uploadAttachment()). Never awaited: the user's UI has
+  // already moved on, and a failure here just leaves an unreachable
+  // document the user never sees a chip for, which is the state that
+  // already existed before this fix, not a regression.
+  fetch(`/api/docs/${encodeURIComponent(docId)}?session_id=${encodeURIComponent(sidForDelete || '')}`, {
+    method: 'DELETE',
+    headers: tokenForAuth ? { Authorization: `Bearer ${tokenForAuth}` } : {},
+  }).catch(() => {});
 }
 
 async function uploadAttachment(file) {
@@ -1043,9 +1081,34 @@ async function uploadAttachment(file) {
       headers: _authToken ? { Authorization: `Bearer ${_authToken}` } : {},
       body: form,
     });
-    if (myToken !== _authToken || sessionId !== mySidAtStart) { chip.remove(); return; } // account/conversation changed mid-upload
-    if (r.status === 401) { chip.remove(); _handleSessionExpired(); return; }
+    const accountShifted = myToken !== _authToken;
+    if (r.status === 401) { if (!accountShifted) chip.remove(); _handleSessionExpired(); return; }
     const data = await r.json().catch(() => ({}));
+    // AUDIT-B16-FIX: for an EXISTING conversation (mySidAtStart set), the
+    // conversation identity moving out from under this upload is the
+    // existing check. For a BRAND-NEW conversation (mySidAtStart null),
+    // session_id=None always means "create a new session" on the backend
+    // -- there is no dedup -- so two uploads started concurrently each
+    // independently get their OWN new session. Whichever response adopts
+    // the shared `sessionId` first wins; a sibling upload whose own
+    // data.session_id does not match the adopted one must not silently
+    // become an unreachable orphan (a later delete would query the wrong
+    // session and 404 "no such document" even though it really exists).
+    const conversationShifted = mySidAtStart !== null
+      ? sessionId !== mySidAtStart
+      : (sessionId !== null && r.ok && data.session_id !== sessionId);
+    if (accountShifted || conversationShifted || chip._removeRequested) {
+      // AUDIT-B16-FIX: the account changed, the conversation changed, a
+      // concurrent sibling upload won the new-conversation session-adopt
+      // race, or the user explicitly removed this chip while the upload
+      // was still in-flight. The chip is already gone from (or never
+      // belonged to) the currently visible list -- but if the upload
+      // succeeded server-side anyway, it must not become an invisible
+      // orphan the user has no way to ever delete.
+      if (r.ok && data.doc_id) _deleteOrphanedUpload(data.doc_id, data.session_id || mySidAtStart, myToken);
+      chip.remove();
+      return;
+    }
     if (!r.ok) {
       chip.classList.add('failed');
       chip.querySelector('.chip-state')?.remove();
@@ -1064,29 +1127,52 @@ async function uploadAttachment(file) {
       sessionId = data.session_id;
       showActiveView(document.getElementById('conv-title').textContent);
     }
+    // AUDIT-B16-FIX (the confirmed identity defect): this is the single
+    // place a chip's doc_id becomes known. renderAttachChip() now wires
+    // Remove to read chip.dataset.docId at click time instead of a
+    // closure-captured object, so this assignment is what makes a
+    // post-upload Remove click actually call the real DELETE endpoint.
     chip.dataset.docId = data.doc_id;
     chip.classList.remove('failed');
     const stateEl = chip.querySelector('.chip-state');
     if (stateEl) stateEl.remove();
   } catch (e) {
-    if (myToken !== _authToken || sessionId !== mySidAtStart) { chip.remove(); return; }
+    if (myToken !== _authToken || sessionId !== mySidAtStart || chip._removeRequested) { chip.remove(); return; }
     chip.classList.add('failed');
     const stateEl = chip.querySelector('.chip-state');
     if (stateEl) stateEl.textContent = 'Network error';
   }
 }
 
-async function removeAttachment(chip, doc) {
-  if (!doc.doc_id) { chip.remove(); return; } // never finished uploading -- nothing server-side to delete
+async function removeAttachment(chip) {
+  // AUDIT-B16-FIX (confirmed identity defect, fixed): doc_id is read from
+  // chip.dataset.docId -- the single place uploadAttachment() writes it
+  // on success -- never from a second, independently-stale object.
+  const docId = chip.dataset.docId;
+  if (!docId) {
+    // Either never uploaded, or the upload for it is still in-flight.
+    // Remove visually now -- the user asked for it gone -- and mark the
+    // request so a later-arriving successful upload (uploadAttachment()
+    // checks chip._removeRequested after its own await) deletes the
+    // now-orphaned server-side document instead of silently leaving it
+    // undeletable or re-showing it as if nothing happened.
+    chip._removeRequested = true;
+    chip.remove();
+    return;
+  }
   const mySid = sessionId;
   try {
-    const r = await fetch(`/api/docs/${encodeURIComponent(doc.doc_id)}?session_id=${encodeURIComponent(mySid || '')}`, {
+    const r = await fetch(`/api/docs/${encodeURIComponent(docId)}?session_id=${encodeURIComponent(mySid || '')}`, {
       method: 'DELETE',
       headers: _authHeaders(),
     });
     if (sessionId !== mySid) return; // switched conversations mid-delete -- this chip no longer belongs to the visible list
+    // AUDIT-B16-FIX: kept for defense-in-depth (see loadAttachmentsForSession's
+    // comment) -- /api/docs/{doc_id} also uses get_current_user_optional and
+    // live-verified does not itself raise 401 for an invalid token.
     if (r.status === 401) { _handleSessionExpired(); return; }
     if (r.ok) chip.remove();
+    // else: leave the chip in place -- a failed delete must not silently claim removal
   } catch (e) {
     // leave the chip in place -- a failed delete must not silently claim removal
   }
