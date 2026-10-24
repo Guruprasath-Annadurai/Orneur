@@ -102,6 +102,15 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .edit-msg-note{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.4}
 .edit-msg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 .edit-msg-actions .expand-action{height:32px;padding:0 12px;font-size:11.5px}
+/* INTEGRATION Phase C (2026-10-24): real editing, PR #94. */
+.edit-msg-error{font-size:10.5px;color:var(--error, #e55);margin-top:6px}
+.edited-badge{font-size:10px;color:var(--muted);margin-left:6px;cursor:pointer;background:none;border:none;font-family:inherit;text-decoration:underline;padding:0}
+.edit-history-panel{display:none;margin-top:8px;width:min(480px,85%);background:var(--compose);border:1px solid var(--border);border-radius:13px;padding:12px 14px;font-size:11.5px}
+.edit-history-panel.open{display:block}
+.edit-history-row{padding:7px 0;border-bottom:1px solid var(--border)}
+.edit-history-row:last-child{border-bottom:none}
+.edit-history-kind{font-weight:600;color:var(--muted);text-transform:uppercase;font-size:9.5px;letter-spacing:.03em}
+.edit-history-content{margin-top:3px;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
 
 /* B16 Context & Attachments */
 .attach-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
@@ -1942,30 +1951,53 @@ function newConversation() {
 // backend to compare against, so even a disabled affordance for it would
 // have nothing real to anchor to. Disclosed in the engineering report.
 let _userMsgCounter = 0;
-function appendUserMessage(text) {
+function appendUserMessage(text, meta) {
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
   div.className = 'msg-user';
   const uid = ++_userMsgCounter;
+  // INTEGRATION Phase C (2026-10-24, PR #94): `meta` is undefined for a
+  // message just rendered optimistically by sendMessage() -- the real
+  // backend only assigns message_id once the turn is persisted
+  // (ORNEUR_B11_MESSAGE_VERSIONS_HANDOFF.md: "A line with no message_id
+  // cannot be edited"), and /api/stream's `done` event does not include
+  // the USER side's id (confirmed by reading _persist_turn() directly --
+  // only assistant_message_id is echoed back). sendMessage() backfills
+  // it via _backfillMessageIds() after a successful exchange. Until
+  // then, dataset.messageId is empty and Save stays honestly disabled.
+  div.dataset.messageId = (meta && meta.messageId) || '';
+  div.dataset.editedCount = String((meta && meta.versionCount) || 1);
+  const editedBadge = (meta && meta.edited) ? ` <button type="button" class="edited-badge" data-action="history">Edited</button>` : '';
   div.innerHTML = `<div class="sample-q">${esc(text)}</div>` +
     `<button type="button" class="edit-msg-btn" aria-label="Edit message" aria-expanded="false" aria-controls="edit-msg-panel-${uid}">` +
-    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Edit</button>` +
+    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Edit</button>${editedBadge}` +
     `<div class="edit-msg-panel" id="edit-msg-panel-${uid}" hidden>` +
     `<textarea class="edit-msg-textarea" aria-label="Edit message draft">${esc(text)}</textarea>` +
-    `<div class="edit-msg-note">The original stays in history. Sending the edit requires an available model.</div>` +
+    `<div class="edit-msg-note">The original stays in history. Editing does not remove this content from long-term memory, and does not regenerate the response below.</div>` +
+    `<div class="edit-msg-error" hidden></div>` +
     `<div class="edit-msg-actions"><button type="button" class="expand-action" data-action="cancel">Cancel</button>` +
-    `<button type="button" class="expand-action primary-disabled" disabled title="Editing requires a real message-edit endpoint, which does not exist in this backend yet">Save edit</button></div>` +
-    `</div>`;
+    `<button type="button" class="expand-action primary-disabled" data-action="save" disabled title="This message hasn't finished saving yet -- editing becomes available once it's part of the conversation history.">Save edit</button></div>` +
+    `</div>` +
+    `<div class="edit-history-panel" data-history-for="${uid}"></div>`;
   container.appendChild(div);
+  let currentText = text; // updated on a successful edit so re-opening/cancelling restores the NEW active content, not the stale original
   const editBtn = div.querySelector('.edit-msg-btn');
   const panel = div.querySelector('.edit-msg-panel');
   const textarea = div.querySelector('.edit-msg-textarea');
   const cancelBtn = div.querySelector('[data-action="cancel"]');
+  const saveBtn = div.querySelector('[data-action="save"]');
+  const errorEl = div.querySelector('.edit-msg-error');
   function closeEdit() {
     panel.hidden = true;
     panel.classList.remove('open');
     editBtn.setAttribute('aria-expanded', 'false');
     editBtn.focus();
+  }
+  function refreshSaveEnabled() {
+    const hasId = !!div.dataset.messageId;
+    saveBtn.disabled = !hasId;
+    saveBtn.classList.toggle('primary-disabled', !hasId);
+    saveBtn.title = hasId ? '' : 'This message hasn\'t finished saving yet -- editing becomes available once it\'s part of the conversation history.';
   }
   editBtn.addEventListener('click', () => {
     const willOpen = panel.hidden;
@@ -1974,15 +2006,161 @@ function appendUserMessage(text) {
     editBtn.setAttribute('aria-expanded', String(willOpen));
     if (willOpen) {
       // AUDIT-B11: "initial text exactly equals selected message" -- reset
-      // to the real original on every open, discarding any abandoned
-      // local-only draft from a prior open/cancel, since Cancel itself
-      // "restores the original displayed message; no mutation."
-      textarea.value = text;
+      // to the real CURRENT active text on every open (the original on
+      // first edit, or the last successfully-saved edit afterward),
+      // discarding any abandoned local-only draft from a prior
+      // open/cancel, since Cancel itself "restores the original
+      // displayed message; no mutation."
+      textarea.value = currentText;
+      errorEl.hidden = true;
+      refreshSaveEnabled();
       textarea.focus();
     }
   });
   cancelBtn.addEventListener('click', closeEdit);
+  saveBtn.addEventListener('click', async () => {
+    const messageId = div.dataset.messageId;
+    if (!messageId || saveBtn.disabled) return; // real disabled attribute already prevents this, defense-in-depth
+    const newContent = textarea.value;
+    if (!newContent.trim()) { errorEl.textContent = 'An edit cannot be empty.'; errorEl.hidden = false; return; }
+    const mySid = sessionId;
+    const myToken = _authToken;
+    // INTEGRATION Phase C: duplicate-submit protection -- a real
+    // disabled attribute while the request is in flight, not just a
+    // flag, so a second click (or Enter) genuinely cannot fire a
+    // second request for the same edit.
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    errorEl.hidden = true;
+    try {
+      const r = await fetch(`/api/session/${encodeURIComponent(mySid)}/messages/${encodeURIComponent(messageId)}/edits`, {
+        method: 'POST',
+        headers: { ..._authHeaders(), 'Idempotency-Key': crypto.randomUUID() },
+        body: JSON.stringify({ content: newContent }),
+      });
+      if (myToken !== _authToken || sessionId !== mySid) return; // account/conversation changed mid-save -- this bubble no longer belongs to the visible view
+      if (r.status === 401) { _handleSessionExpired(); return; }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        errorEl.textContent = data.error || `The edit could not be saved (status ${r.status}).`;
+        errorEl.hidden = false;
+        return;
+      }
+      // Real success: active_content is the server's own confirmed
+      // active version text -- not merely an echo of what was typed.
+      currentText = data.active_content != null ? data.active_content : newContent;
+      div.querySelector('.sample-q').textContent = currentText;
+      div.dataset.editedCount = String(data.version_count || 1);
+      if (!div.querySelector('.edited-badge')) {
+        const badge = document.createElement('button');
+        badge.type = 'button';
+        badge.className = 'edited-badge';
+        badge.dataset.action = 'history';
+        badge.textContent = 'Edited';
+        badge.addEventListener('click', () => toggleEditHistory());
+        editBtn.insertAdjacentElement('afterend', badge);
+      }
+      closeEdit();
+    } catch (e) {
+      if (myToken !== _authToken || sessionId !== mySid) return;
+      errorEl.textContent = 'Network error -- the edit was not saved. Your draft is still in the box above.';
+      errorEl.hidden = false;
+    } finally {
+      if (myToken === _authToken && sessionId === mySid) {
+        saveBtn.textContent = 'Save edit';
+        refreshSaveEnabled();
+      }
+    }
+  });
+  // INTEGRATION Phase C: a real, read-only version-history viewer (the
+  // addendum's own explicit allowance: "A version-history viewer is
+  // acceptable. Do not implement a working previous/next version
+  // selection control unless the backend can actually activate that
+  // selected version"). This never activates a historical version --
+  // GET /api/session/{id}/messages/{message_id}/versions exposes no such
+  // action, only a read of the list, so this exposes exactly that and
+  // nothing more.
+  const historyPanel = div.querySelector('.edit-history-panel');
+  let historyLoaded = false;
+  async function toggleEditHistory() {
+    const willOpen = !historyPanel.classList.contains('open');
+    historyPanel.classList.toggle('open', willOpen);
+    if (!willOpen || historyLoaded) return;
+    const messageId = div.dataset.messageId;
+    if (!messageId) { historyPanel.textContent = 'History is not available until this message finishes saving.'; return; }
+    const mySid = sessionId;
+    historyPanel.textContent = 'Loading version history...';
+    try {
+      const r = await fetch(`/api/session/${encodeURIComponent(mySid)}/messages/${encodeURIComponent(messageId)}/versions`, { headers: _authHeaders() });
+      if (sessionId !== mySid) return;
+      if (!r.ok) { historyPanel.textContent = 'Version history could not be loaded.'; return; }
+      const data = await r.json();
+      if (sessionId !== mySid) return;
+      historyLoaded = true;
+      historyPanel.innerHTML = '';
+      (data.versions || []).forEach((v) => {
+        const row = document.createElement('div');
+        row.className = 'edit-history-row';
+        const kindLabel = v.version_id === data.active_version_id ? `${v.kind} · active` : v.kind;
+        row.innerHTML = `<div class="edit-history-kind">${esc(kindLabel)}</div><div class="edit-history-content"></div>`;
+        row.querySelector('.edit-history-content').textContent = v.content;
+        historyPanel.appendChild(row);
+      });
+    } catch (e) {
+      if (sessionId !== mySid) return;
+      historyPanel.textContent = 'Version history could not be loaded (network error).';
+    }
+  }
+  const initialBadge = div.querySelector('.edited-badge');
+  if (initialBadge) initialBadge.addEventListener('click', () => toggleEditHistory());
+  // A message constructed with a real message_id already known (e.g.
+  // openSession() loading a persisted conversation) must not sit behind
+  // the template's hardcoded `disabled` -- correct it immediately rather
+  // than waiting for the Edit button's first open.
+  refreshSaveEnabled();
   scrollReadingToBottom();
+  return div;
+}
+
+// INTEGRATION Phase C (2026-10-24): backfills the real message_id onto
+// the just-rendered user/assistant bubbles for the turn that just
+// completed. /api/stream's `done` event only echoes the ASSISTANT's
+// message_id (confirmed by reading _persist_turn() -- the user side's
+// id is a separate, freshly-generated UUID never sent back); a user
+// message cannot be edited until this runs. Fetches only the real
+// message list already used by openSession() -- never fabricates ids.
+async function _backfillMessageIds(userDiv, answerDiv, mySid, myToken) {
+  if (!userDiv) return;
+  try {
+    // No "last N" pagination exists on this route (confirmed: limit/offset
+    // only page from the start) -- fetches the same bounded list
+    // openSession() already uses and takes the real tail from it.
+    const r = await fetch(`/api/session/${encodeURIComponent(mySid)}/messages`, { headers: _authHeaders() });
+    if (myToken !== _authToken || sessionId !== mySid) return;
+    if (!r.ok) return;
+    const data = await r.json();
+    if (myToken !== _authToken || sessionId !== mySid) return;
+    const msgs = data.messages || [];
+    const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
+    const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+    if (lastUser && lastUser.message_id) {
+      userDiv.dataset.messageId = lastUser.message_id;
+      userDiv.dataset.editedCount = String(lastUser.version_count || 1);
+      const saveBtn = userDiv.querySelector('[data-action="save"]');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('primary-disabled');
+        saveBtn.title = '';
+      }
+    }
+    if (lastAssistant && lastAssistant.message_id && answerDiv) {
+      answerDiv.dataset.messageId = lastAssistant.message_id;
+    }
+  } catch (e) {
+    // Non-fatal: editing just stays disabled for this turn until the
+    // conversation is next reloaded (openSession() backfills it
+    // directly from the real message list at that point).
+  }
 }
 
 function appendThinking() {
@@ -2225,7 +2403,7 @@ async function sendMessage() {
 
   const firstMessage = !sessionId;
   showActiveView(firstMessage ? text.slice(0, 60) : document.getElementById('conv-title').textContent);
-  appendUserMessage(text);
+  const userDiv = appendUserMessage(text);
   input.value = ''; input.style.height = 'auto';
   updateSendEnabled();
 
@@ -2331,15 +2509,25 @@ async function sendMessage() {
           // the contract's own "no citations means no fabricated
           // references."
           const doneSources = Array.isArray(ev.sources) ? ev.sources : [];
+          let finalAnswerDiv = null;
           if (!answerEl) {
             thinkEl.remove();
             if (rawBuffer.trim()) {
-              appendAssistantMessage(rawBuffer, doneSources);
+              finalAnswerDiv = appendAssistantMessage(rawBuffer, doneSources);
             } else {
               appendUnavailableNote('ORNEUR completed the request but returned no response content.', { retryText: text });
             }
           } else {
             finalizeStreamingMessage(answerEl, rawBuffer, doneSources);
+            finalAnswerDiv = answerEl;
+          }
+          // INTEGRATION Phase C: backfill the real message_id onto this
+          // turn's user/assistant bubbles so Edit becomes usable without
+          // requiring a conversation reload. Only signed-in turns are
+          // persisted at all (_persist_turn() returns immediately for
+          // anonymous callers), so there is nothing to backfill for one.
+          if (_authToken && sessionId) {
+            _backfillMessageIds(userDiv, finalAnswerDiv, sessionId, _authToken);
           }
         } else if (ev.type === 'error') {
           terminalState = 'error';
@@ -2828,15 +3016,22 @@ async function openSession(sid, title) {
     if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '';
     data.messages.forEach((m) => {
-      if (m.role === 'user') appendUserMessage(m.content);
-      // AUDIT-B15: reloading a past conversation must show the SAME
-      // sources that were real at the time this specific message was
-      // generated -- orca/serve/conversations.py persists them under
-      // this exact message's own `meta.sources` (confirmed by reading
-      // the storage code, not assumed), so a reload binds correctly to
-      // this message's own version rather than drifting to whatever the
-      // live/latest answer happens to cite.
-      else appendAssistantMessage(m.content, m.meta && Array.isArray(m.meta.sources) ? m.meta.sources : []);
+      if (m.role === 'user') {
+        // INTEGRATION Phase C: the real message_id/version_count/edited
+        // fields GET .../messages now adds -- editing a reloaded
+        // message works immediately, no backfill needed.
+        appendUserMessage(m.content, { messageId: m.message_id, versionCount: m.version_count, edited: !!m.edited });
+      } else {
+        // AUDIT-B15: reloading a past conversation must show the SAME
+        // sources that were real at the time this specific message was
+        // generated -- orca/serve/conversations.py persists them under
+        // this exact message's own `meta.sources` (confirmed by reading
+        // the storage code, not assumed), so a reload binds correctly to
+        // this message's own version rather than drifting to whatever the
+        // live/latest answer happens to cite.
+        const aDiv = appendAssistantMessage(m.content, m.meta && Array.isArray(m.meta.sources) ? m.meta.sources : []);
+        if (aDiv && m.message_id) aDiv.dataset.messageId = m.message_id;
+      }
     });
     if (!data.messages.length) container.innerHTML = '<div class="recents-empty">This conversation has no messages yet.</div>';
   } catch (e) {
