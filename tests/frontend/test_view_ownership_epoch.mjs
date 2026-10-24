@@ -198,6 +198,7 @@ test('newConversation() invalidates ONLY the message domain, not history (the CT
     _saveCurrentDraft: () => {},
     _restoreDraftFor: () => {},
     closeQuickSwitch: () => {},
+    loadAttachmentsForSession: () => {},
     document: {
       getElementById: () => ({ innerHTML: '' }),
     },

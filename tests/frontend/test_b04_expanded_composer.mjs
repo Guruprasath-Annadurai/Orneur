@@ -252,6 +252,7 @@ test("newConversation() collapses the composer (and any open workspace) when com
     _saveCurrentDraft: () => {},
     _restoreDraftFor: () => {},
     closeQuickSwitch: () => {},
+    loadAttachmentsForSession: () => {},
     document: { getElementById: () => ({ innerHTML: '' }) },
     highlightSelectedRecent: () => {},
     showEmptyView: () => {},

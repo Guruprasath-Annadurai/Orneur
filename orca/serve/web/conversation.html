@@ -102,6 +102,20 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .edit-msg-note{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.4}
 .edit-msg-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 .edit-msg-actions .expand-action{height:32px;padding:0 12px;font-size:11.5px}
+
+/* B16 Context & Attachments */
+.attach-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.attach-chips:empty{display:none;margin-bottom:0}
+.attach-chip{display:inline-flex;align-items:flex-start;gap:6px;max-width:100%;background:var(--chip);border:1px solid var(--border);border-radius:9px;padding:5px 8px;font-size:11.5px;color:var(--soft)}
+.attach-chip.failed{border-color:var(--error);color:var(--error)}
+.attach-chip .chip-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;color:var(--ink);flex-shrink:0}
+/* A real server error (e.g. the full "Unsupported file type: .c, .cpp,
+   ..." list) can be long -- wrap it within the chip's own bounded width
+   rather than letting it force horizontal overflow past the composer. */
+.attach-chip .chip-state{color:var(--muted);white-space:normal;max-width:260px;line-height:1.35}
+.attach-chip.failed .chip-state{color:var(--error)}
+.attach-chip-remove{background:none;border:none;color:var(--muted);cursor:pointer;padding:0 2px;font-size:13px;line-height:1;flex-shrink:0}
+.attach-chip-remove:hover,.attach-chip-remove:focus-visible{color:var(--ink)}
 .answer{color:var(--ink);margin-bottom:28px}
 .answer-by{display:flex;align-items:center;gap:10px;font-size:12px;margin:0 0 10px}
 .answer-by span:last-child{color:var(--muted)}
@@ -545,7 +559,18 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
     </div>
   </div>
   <textarea id="msg-input" placeholder="Message ORNEUR..." rows="1"></textarea>
+  <!-- B16 Context & Attachments -- source-verified, see wireComposer()'s
+       own comment for the exact archive/SHA. Unlike B13, a REAL upload
+       pipeline exists (POST /api/docs/upload -> extract/chunk/PII-redact/
+       embed, already consumed by B15's own citations as kind:
+       "uploaded_document"), so this is built for real, not a disabled
+       placeholder. -->
+  <div class="attach-chips" id="attach-chips"></div>
   <div class="controls">
+    <button type="button" class="expand-btn" id="attach-btn" title="Attach a document" aria-label="Attach a document">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5 12 19.5a5 5 0 0 1-7-7l9-9a3 3 0 0 1 4.2 4.2L9.5 16.4a1 1 0 0 1-1.4-1.4l8-8"/></svg>
+    </button>
+    <input type="file" id="attach-file-input" class="sr-only-heading" accept=".pdf,.txt,.md,.rst,.log,.yaml,.yml,.toml,.ini,.docx,.csv,.json,.py,.js,.ts,.java,.cpp,.c,.go,.rb,.rs,.sh" aria-hidden="true" tabindex="-1"/>
     <button type="button" class="expand-btn" id="expand-btn" title="Expand composer" aria-label="Expand composer">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3"/></svg>
     </button>
@@ -934,6 +959,137 @@ function wireComposer() {
   composerEl.querySelector('#collapse-composer-btn').addEventListener('click', collapseComposer);
   composerEl.querySelector('#open-workspace-btn').addEventListener('click', openDraftWorkspace);
   document.getElementById('close-workspace-btn').addEventListener('click', closeDraftWorkspace);
+  composerEl.querySelector('#attach-btn').addEventListener('click', () => {
+    composerEl.querySelector('#attach-file-input').click();
+  });
+  composerEl.querySelector('#attach-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (file) uploadAttachment(file);
+  });
+}
+
+/* ── B16 Context & Attachments ────────────────────────────────────────
+   Source-verified against APPROVED_SOURCE_ARCHIVES/ORNEUR_B16_FINAL_LOCK_AND_HANDOFF.zip
+   (SHA-256 a38850996edf55496565ef9b783fc79263e05077855e42ad88e4feace4040f96,
+   verified against SHA256_PACKAGE_MANIFEST.json, 30/30 files). Unlike
+   B13, a REAL document pipeline already exists and is already consumed
+   by B15's own citations: POST /api/docs/upload (extract, PII-redact,
+   chunk, embed -- orca/serve/api.py:2566), GET /api/docs/list, DELETE
+   /api/docs/{doc_id}. No separate async malware-scan step or
+   context-capacity/remaining-token endpoint exists (grepped; none
+   found), so this implements exactly the real three-endpoint lifecycle
+   -- local_selected -> uploading -> ready/failed, plus removed -- and
+   honestly omits the richer scanning/quota states the contract's
+   illustrative state machine names but this backend doesn't compute.
+   The real, authoritative extension/size limits (orca/docs/extractor.py)
+   are never duplicated/hardcoded as a second source of truth here --
+   the `accept` attribute is a UX hint only; every actual accept/reject
+   decision and error message comes from the server's own response. ──── */
+
+// AUDIT-B16: documents are server-side bound to session_id, not cached
+// client-side across conversations -- always re-fetched fresh on
+// openSession()/newConversation(), the same reasoning already applied to
+// per-conversation drafts (B14) and citations (B15): never let one
+// conversation's attachment list silently carry over into another's.
+async function loadAttachmentsForSession() {
+  const container = document.getElementById('attach-chips');
+  if (!container) return;
+  if (!sessionId) { container.innerHTML = ''; return; }
+  const mySid = sessionId;
+  try {
+    const r = await fetch(`/api/docs/list?session_id=${encodeURIComponent(mySid)}`, { headers: _authHeaders() });
+    if (sessionId !== mySid) return; // switched again while this was in flight
+    if (!r.ok) { container.innerHTML = ''; return; }
+    const data = await r.json();
+    if (sessionId !== mySid) return;
+    container.innerHTML = '';
+    (data.docs || []).forEach((d) => renderAttachChip({ doc_id: d.doc_id, filename: d.filename, state: 'ready' }));
+  } catch (e) {
+    if (sessionId !== mySid) return;
+    container.innerHTML = '';
+  }
+}
+
+function renderAttachChip(doc) {
+  const container = document.getElementById('attach-chips');
+  if (!container) return null;
+  const chip = document.createElement('span');
+  chip.className = 'attach-chip';
+  chip.dataset.docId = doc.doc_id || '';
+  const stateLabel = doc.state === 'uploading' ? 'Uploading…' : doc.state === 'failed' ? (doc.error || 'Failed') : '';
+  chip.classList.toggle('failed', doc.state === 'failed');
+  chip.innerHTML = `<span class="chip-name">${esc(doc.filename)}</span>` +
+    (stateLabel ? `<span class="chip-state">${esc(stateLabel)}</span>` : '') +
+    `<button type="button" class="attach-chip-remove" aria-label="Remove ${esc(doc.filename)}">×</button>`;
+  container.appendChild(chip);
+  chip.querySelector('.attach-chip-remove').addEventListener('click', () => removeAttachment(chip, doc));
+  return chip;
+}
+
+async function uploadAttachment(file) {
+  const myToken = _authToken;
+  const mySidAtStart = sessionId;
+  const chip = renderAttachChip({ filename: file.name, state: 'uploading' });
+  const form = new FormData();
+  form.append('file', file);
+  const qs = mySidAtStart ? `?session_id=${encodeURIComponent(mySidAtStart)}` : '';
+  try {
+    const r = await fetch(`/api/docs/upload${qs}`, {
+      method: 'POST',
+      // AUDIT-B16: no Content-Type header here -- the browser must set
+      // its own multipart boundary for FormData; _authHeaders() would
+      // overwrite it with 'application/json' and break the upload.
+      headers: _authToken ? { Authorization: `Bearer ${_authToken}` } : {},
+      body: form,
+    });
+    if (myToken !== _authToken || sessionId !== mySidAtStart) { chip.remove(); return; } // account/conversation changed mid-upload
+    if (r.status === 401) { chip.remove(); _handleSessionExpired(); return; }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      chip.classList.add('failed');
+      chip.querySelector('.chip-state')?.remove();
+      const stateEl = document.createElement('span');
+      stateEl.className = 'chip-state';
+      stateEl.textContent = data.error || 'Upload failed';
+      chip.insertBefore(stateEl, chip.querySelector('.attach-chip-remove'));
+      return;
+    }
+    // AUDIT-B16: uploading to a brand-new conversation (sessionId was
+    // null) is a real, server-confirmed way to start one -- mirrors how
+    // the SSE `session` event does the same thing for a first real
+    // message. Only applied if nothing else changed sessionId while
+    // this upload was in flight.
+    if (!mySidAtStart && sessionId === null) {
+      sessionId = data.session_id;
+      showActiveView(document.getElementById('conv-title').textContent);
+    }
+    chip.dataset.docId = data.doc_id;
+    chip.classList.remove('failed');
+    const stateEl = chip.querySelector('.chip-state');
+    if (stateEl) stateEl.remove();
+  } catch (e) {
+    if (myToken !== _authToken || sessionId !== mySidAtStart) { chip.remove(); return; }
+    chip.classList.add('failed');
+    const stateEl = chip.querySelector('.chip-state');
+    if (stateEl) stateEl.textContent = 'Network error';
+  }
+}
+
+async function removeAttachment(chip, doc) {
+  if (!doc.doc_id) { chip.remove(); return; } // never finished uploading -- nothing server-side to delete
+  const mySid = sessionId;
+  try {
+    const r = await fetch(`/api/docs/${encodeURIComponent(doc.doc_id)}?session_id=${encodeURIComponent(mySid || '')}`, {
+      method: 'DELETE',
+      headers: _authHeaders(),
+    });
+    if (sessionId !== mySid) return; // switched conversations mid-delete -- this chip no longer belongs to the visible list
+    if (r.status === 401) { _handleSessionExpired(); return; }
+    if (r.ok) chip.remove();
+  } catch (e) {
+    // leave the chip in place -- a failed delete must not silently claim removal
+  }
 }
 
 /* ── B04 Expanded Composer / Draft Workspace ─────────────────────────
@@ -1491,6 +1647,7 @@ function newConversation() {
   _saveCurrentDraft();
   sessionId = null;
   _restoreDraftFor(null);
+  loadAttachmentsForSession(); // AUDIT-B16: sessionId is now null -- clears the chip list (a "new conversation" starts with none)
   document.getElementById('reading-container').innerHTML = '';
   highlightSelectedRecent(null);
   showEmptyView();
@@ -2357,6 +2514,7 @@ async function openSession(sid, title) {
   _saveCurrentDraft();
   sessionId = sid;
   _restoreDraftFor(sid);
+  loadAttachmentsForSession(); // AUDIT-B16: this conversation's own real attachments, never a carried-over list
   highlightSelectedRecent(sid);
   showActiveView(title);
   const container = document.getElementById('reading-container');
