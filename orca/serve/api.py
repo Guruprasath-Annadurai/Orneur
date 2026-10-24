@@ -81,13 +81,20 @@ from orca.docs.pii_redact import redact_pii
 from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
-from orca.serve import session_store, ratelimit, metrics, dlp
+from orca.serve import session_store, ratelimit, metrics, dlp, generations
 from orca.serve.errors import public_error, coded_error, default_code_for_status
 from orca.serve.model_identity import model_identity as _model_identity
 from orca.serve.citations import build_sources as _build_sources
 from orca.serve import streaming
 from orca.serve.streaming import aiter_blocking
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
+from orca.serve.authorized_product_index import (
+    ProductRetrievalDenied,
+    admit_uploaded_document,
+    delete_uploaded_document,
+    model_context_from_authorized,
+    retrieve_authorized,
+)
 from orca.code import run_code
 
 _START_TIME = time.time()
@@ -95,6 +102,33 @@ WEB_DIR = Path(__file__).parent / "web"
 _logger = logging.getLogger("orca.serve")
 
 _RETENTION_INTERVAL_S = 6 * 3600
+
+# AUDIT-B81-A-P2-03: asyncio.create_task(...) alone does NOT keep a task
+# alive -- the event loop only holds a WEAK reference, so a task with no
+# other reference anywhere can be garbage-collected mid-execution, which
+# is exactly what "Task was destroyed but it is pending!" means. This set
+# is the strong reference every fire-and-forget background task needs;
+# the done-callback removes it once finished (success or failure) so the
+# set doesn't grow unbounded, and surfaces a genuine exception instead of
+# letting asyncio's default "exception was never retrieved" warning be
+# the only trace of it.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _track_background_task(coro, *, name: str) -> asyncio.Task:
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            _logger.error("background task %r failed", name, exc_info=exc)
+
+    task.add_done_callback(_on_done)
+    return task
 
 
 async def _retention_loop():
@@ -116,6 +150,20 @@ async def _lifespan(_app: FastAPI):
         yield
     finally:
         _retention_task.cancel()
+        # AUDIT-B81-A-P2-03: truthful shutdown visibility, not a claim of
+        # termination. A tracked task wraps asyncio.to_thread, and
+        # cancelling the asyncio.Task only stops AWAITING its result --
+        # it does not and cannot stop the underlying OS thread already
+        # running synchronous code (Python has no safe primitive for
+        # that). Logging what's still outstanding is honest; pretending
+        # cancel() stopped it would not be.
+        if _background_tasks:
+            _logger.warning(
+                "shutdown: %d background task(s) still in flight and cannot be force-terminated "
+                "(underlying thread work continues independently of this process's shutdown): %s",
+                len(_background_tasks),
+                [t.get_name() for t in _background_tasks],
+            )
     # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
     # wait=False: blocking the event loop here to join every worker would
     # itself hang shutdown behind a slow backend call -- the same class of
@@ -422,24 +470,108 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
 
 
 def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> None:
-    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request."""
+    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request.
+
+    Each new line gets a message id and an immutable original version. The JSONL line is not the editable copy.
+    """
     if not user or not session_id:
         return
     try:
-        from orca.serve import conversations
+        from orca.serve import conversations, message_versions
 
-        conversations.append(session_id, "user", user_text)
-        meta: dict = {}
+        user_message_id = str(uuid.uuid4())
+        assistant_message_id = message_id or str(uuid.uuid4())
+        user_stored = (user_text or "")[:conversations.MAX_MESSAGE_CHARS]
+        assistant_stored = (assistant_text or "")[:conversations.MAX_MESSAGE_CHARS]
+        conversations.append(session_id, "user", user_stored, meta={"message_id": user_message_id})
+        meta: dict = {"message_id": assistant_message_id}
         if identity:
             meta["model_identity"] = identity
         if src:
             meta["source_summary"] = src["summary"]
             meta["sources"] = [{k: s.get(k) for k in ("ref", "kind", "filename", "url", "locator", "cited_in_answer")} for s in src["sources"]]
-        if message_id:
-            meta["message_id"] = message_id
-        conversations.append(session_id, "assistant", assistant_text, meta=meta or None)
+        conversations.append(session_id, "assistant", assistant_stored, meta=meta)
+        message_versions.seed(session_id, user.id, user_message_id, "user", user_stored)
+        message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_stored)
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
+
+
+def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> None:
+    """Point the live in-memory window at the active version.
+
+    Long-term vector memory is not rewritten. An edit does not erase the
+    earlier text from that store or from the version list.
+    """
+    sess = _sessions.get(session_id)
+    if sess is None or previous == new_text:
+        return
+    agent = sess._agent
+    if agent is not None:
+        for item in agent._history:
+            if item.get("role") == role and item.get("content") == previous:
+                item["content"] = new_text
+                break
+        try:
+            sess.persist_to_redis()
+        except Exception:
+            _logger.debug("session history sync failed", exc_info=True)
+    for msg in sess.memory.short._messages:
+        if msg.role == role and msg.content == previous:
+            msg.content = new_text
+            break
+
+
+def _regenerate_text(sess, prompt: str) -> str:
+    """One real model completion for a new assistant version. Not a replay of the previous answer."""
+    return sess.brain.complete([{"role": "user", "content": prompt}], system=get_persona_system(sess.model_variant))
+
+
+def _temporary_block(session_id: str):
+    """Refuse a turn when this session's temporary chat is finished or due.
+
+    An active temporary chat returns None. Expiry deletes the transcript
+    before the refusal is returned.
+    """
+    from orca.auth.store import release_session
+    from orca.serve import temporary_chat
+
+    decision = temporary_chat.enforce(session_id)
+    if decision is None:
+        return None
+    user_id = decision.get("user_id")
+    if isinstance(user_id, str):
+        release_session(session_id, user_id)
+    _sessions.pop(session_id, None)
+    return JSONResponse(
+        {"error": decision["error"], "code": decision["code"], "state": decision["state"]},
+        status_code=409,
+    )
+
+
+def _turn_memory_context(sess, message: str) -> str:
+    from orca.serve import temporary_chat
+
+    if temporary_chat.is_active(sess.id):
+        return ""
+    return sess.memory.recall_context(message, n=3) or ""
+
+
+def _retain_turn(sess, user_text: str, assistant_text: str) -> None:
+    """Long-term memory, continuum ingest, and Redis history.
+
+    A live temporary chat keeps the JSONL transcript for the open window
+    and does not copy the turn into those longer-lived stores.
+    """
+    from orca.serve import temporary_chat
+
+    if temporary_chat.is_active(sess.id):
+        return
+    sess.memory.commit_to_long_term(f"Q: {user_text[:200]}\nA: {assistant_text[:500]}")
+    from orca.memory.turn_ingest import maybe_ingest_turn
+
+    maybe_ingest_turn(sess.id, user_text, assistant_text)
+    sess.persist_to_redis()
 
 
 def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
@@ -539,7 +671,15 @@ _ABSTENTION_MESSAGES = {
 }
 
 
-async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None, session_id: str | None = None):
+async def _run_cognitive_kernel(
+    message: str,
+    user: "User | None",
+    model_variant: str | None,
+    session_id: str | None = None,
+    *,
+    defer_direct_generation: bool = False,
+    allow_legacy_doc_store: bool = False,
+):
     """
     Phase 3.1: the Cognitive Kernel is now AUTHORITATIVE for planning and,
     where possible, execution of /api/chat and /api/stream requests (see
@@ -553,6 +693,9 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
       - status == COMPLETED, output   -> the Kernel answered directly via
         is not None                      ModelGateway; use `.output` as the
                                           final response, skip AgentLoop.
+      - pending_direct_generation     -> /api/stream asked the Kernel to
+                                          plan without generate(); stream
+                                          via ModelGateway.stream().
       - status == COMPLETED, output   -> the plan needs RETRIEVE/USE_TOOL/
         is None                          RECALL_MEMORY/DELEGATE_AGENT; fall
                                           through to the existing
@@ -593,15 +736,21 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
         tenant=user.id if user else None,
     )
 
-    # Phase 4: a lightweight lookup into the existing module-level
-    # `_sessions` dict, not a forced full _Session construction (this
-    # function runs BEFORE session construction on the /api/chat and
-    # /api/stream paths -- see the caller's own comment on why). Only an
-    # ALREADY-LIVE session's DocStore is used; a brand-new session simply
-    # has no doc_store yet, which TruthFabric already handles honestly
-    # (no evidence found, not a fabricated citation).
-    doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
-    return await kernel.execute(cognitive_request, entitlement=entitlement, doc_store=doc_store)
+    # Authenticated turns never receive the legacy DocStore. Planning,
+    # Truth Fabric, and the kernel's own model call would otherwise see
+    # passages before the authorized-index gate. Anonymous turns may see
+    # an already-live store, and only after the caller has checked
+    # ownership. A brand-new session simply has no store yet.
+    doc_store = None
+    if allow_legacy_doc_store and session_id and session_id in _sessions:
+        doc_store = _sessions[session_id].doc_store
+    return await kernel.execute(
+        cognitive_request,
+        entitlement=entitlement,
+        doc_store=doc_store,
+        defer_direct_generation=defer_direct_generation,
+        defer_retrieval=not allow_legacy_doc_store,
+    )
 
 
 def _record_shadow_verification(requested_tier: str | None, resolved_tier: str | None) -> None:
@@ -805,6 +954,74 @@ def _check_session_ownership(session_id: str | None, user_id: str | None) -> Non
         raise HTTPException(status_code=404, detail="session not found")
 
 
+def _retrieval_denial_response(exc: ProductRetrievalDenied) -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": "Authorized retrieval was refused.",
+            "code": "retrieval_unauthorized",
+            "reason": exc.reason,
+        },
+        status_code=403,
+    )
+
+
+def _authorized_metadata(authorized, rag_result) -> dict | None:
+    if authorized is None:
+        return None
+    prompt_passages = 0 if rag_result is None else len(getattr(rag_result, "citation_dna", {}) or {})
+    return {
+        "method": authorized.method,
+        "hit_count": len(authorized.hits),
+        "production_neural": authorized.production_neural,
+        "tool_grant": authorized.tool_grant,
+        "abstained": authorized.abstained,
+        "contradictions": list(authorized.contradictions),
+        "prompt_passage_count": prompt_passages,
+    }
+
+
+def _resolve_turn_documents(user, sess, query: str, cognitive_result, enriched: str, *, pending_direct: bool, route: str):
+    """Choose the document text, if any, that this turn may show a model.
+
+    Returns `(enriched, rag_result, authorized, denial, use_direct)`.
+    Authenticated turns read only replay-checked AuthorizedIndex passages.
+    `denial` is an HTTP response and means no generation should run.
+    Anonymous turns leave retrieval to the caller, which still uses the
+    legacy pipeline after this returns.
+    """
+    if user is None:
+        has_output = cognitive_result.output is not None or pending_direct
+        use_direct = has_output and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
+        return enriched, None, None, None, use_direct
+    try:
+        authorized = retrieve_authorized(user.id, sess.id, query)
+    except ProductRetrievalDenied as exc:
+        if exc.code == "absent":
+            authorized = None
+        else:
+            return enriched, None, None, _retrieval_denial_response(exc), False
+    except Exception as exc:
+        err = public_error(exc, route=route, user_id=user.id)
+        return enriched, None, None, JSONResponse(err.as_json(), status_code=500), False
+    try:
+        rag_result = None if authorized is None else model_context_from_authorized(user.id, sess.id, authorized)
+    except ProductRetrievalDenied as exc:
+        if exc.code == "absent":
+            rag_result = None
+            authorized = None
+        else:
+            return enriched, None, authorized, _retrieval_denial_response(exc), False
+    except Exception as exc:
+        err = public_error(exc, route=route, user_id=user.id)
+        return enriched, None, authorized, JSONResponse(err.as_json(), status_code=500), False
+    document_grounded = rag_result is not None and bool(rag_result.context_block)
+    if document_grounded:
+        enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+    has_output = cognitive_result.output is not None or pending_direct
+    use_direct = has_output and not document_grounded
+    return enriched, rag_result, authorized, None, use_direct
+
+
 def _get_session(session_id: str | None, model_variant: str | None = None, user_id: str | None = None) -> _Session:
     """Phase 14C edge-qualification finding, fixed centrally here rather
     than per-route: a CALLER-SUPPLIED `session_id` (never a freshly
@@ -860,6 +1077,28 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     model_variant: str | None = None  # 'nano' | 'core' | 'ultra'
+
+
+class MessageEditRequest(BaseModel):
+    content: str
+
+
+class TemporaryChatRequest(BaseModel):
+    ttl_seconds: int = 3600
+    session_id: str | None = None
+
+
+class FolderRequest(BaseModel):
+    name: str
+
+
+class FolderSessionRequest(BaseModel):
+    session_id: str
+
+
+class ShareGrantRequest(BaseModel):
+    grantee_id: str
+    ttl_seconds: int = 86400
 
 
 class MemoryRequest(BaseModel):
@@ -934,6 +1173,19 @@ async def serve_trust():
     if trust.exists():
         return HTMLResponse(trust.read_text())
     return HTMLResponse("<h1>Orneur trust page not found</h1>")
+
+
+@app.get("/conversation", response_class=HTMLResponse)
+async def serve_conversation_shell():
+    """B01/B02/B03 founder-approved conversation experience (separate from
+    the pre-existing /app page, which is left unmodified -- preserving its
+    existing functionality -- while this route hosts the new, approved
+    visual design wired to the SAME real backend endpoints /app already
+    uses)."""
+    page = WEB_DIR / "conversation.html"
+    if page.exists():
+        return HTMLResponse(page.read_text())
+    return HTMLResponse("<h1>Orneur conversation UI not found</h1>")
 
 
 def _brand_asset(role: str) -> Optional[Path]:
@@ -1283,6 +1535,8 @@ async def _chat_impl(
             e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
             return JSONResponse(e.as_json(), status_code=e.status)
 
+    _check_session_ownership(req.session_id, user.id if user else None)
+
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
         e = coded_error("model_access_denied", message=model_reason)
@@ -1320,7 +1574,10 @@ async def _chat_impl(
     from orca.cognitive.errors import CognitiveError
 
     try:
-        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
+        cognitive_result = await _run_cognitive_kernel(
+            req.message, user, req.model_variant, session_id=req.session_id,
+            allow_legacy_doc_store=user is None,
+        )
     except Exception as e:
         # A real internal Kernel failure -- the Kernel is authoritative
         # now, so this must surface as a clean error, never be silently
@@ -1407,7 +1664,10 @@ async def _chat_impl(
         }
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
-    mem_ctx = sess.memory.recall_context(req.message, n=3)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
+    mem_ctx = _turn_memory_context(sess, req.message)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
     persona_system = get_persona_system(sess.model_variant)
     if mod_result.action == "support":
@@ -1418,12 +1678,16 @@ async def _chat_impl(
 
     used_tools: list[str] = []
     plan_action = "cognitive_direct"
-    # G-024: same rule as /api/stream. The Kernel's no-retrieval direct answer is used only if this session has no documents, or the Kernel itself
-    # grounded the answer in them (Truth Fabric). Otherwise the uploaded documents go through the deep-RAG pipeline and into the model's context --
-    # they used to be silently ignored on this route unless the wording happened to trigger retrieval.
-    kernel_answered = cognitive_result.output is not None and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
-    rag_result = None
-    if not kernel_answered and sess.doc_store.count() > 0:
+    # Authenticated document text comes only from the authorized index.
+    # Anonymous sessions keep the legacy pipeline. A direct kernel answer
+    # is not treated as document-grounded unless that pipeline, or the
+    # authorized passages below, actually supplied text.
+    enriched, rag_result, authorized, denial, kernel_answered = _resolve_turn_documents(
+        user, sess, req.message, cognitive_result, enriched, pending_direct=False, route="/api/chat",
+    )
+    if denial is not None:
+        return denial
+    if user is None and not kernel_answered and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
         try:
@@ -1458,13 +1722,11 @@ async def _chat_impl(
 
     sess.memory.add_turn("user", req.message)
     sess.memory.add_turn("assistant", final)
-    sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
     # Phase 5: additive, significance-gated Memory Continuum ingestion --
-    # does NOT replace the unconditional legacy commit_to_long_term()
-    # call above (see orca/memory/turn_ingest.py's own docstring for why).
-    from orca.memory.turn_ingest import maybe_ingest_turn
-    maybe_ingest_turn(sess.id, req.message, final)
-    sess.persist_to_redis()
+    # does NOT replace the legacy commit_to_long_term() call. Both are
+    # skipped for a live temporary chat; the JSONL transcript is the copy
+    # that expiry deletes.
+    _retain_turn(sess, req.message, final)
 
     audit.log("chat", user_id=user.id if user else None,
               detail={"model": sess.model_variant, "backend": "ollama", "data_left_infrastructure": False,
@@ -1483,13 +1745,15 @@ async def _chat_impl(
             "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
         })
 
+    if user is None and kernel_answered:
+        _ev_state, _ev_cov, _ev_pass = cognitive_result.evidence_state, cognitive_result.citation_coverage, cognitive_result.evidence_passages
+    else:
+        _ev_state = _ev_cov = _ev_pass = None
     _src = _build_sources(answer=final, session_id=sess.id, rag_result=rag_result,
-                          evidence_state=cognitive_result.evidence_state if kernel_answered else None,
-                          citation_coverage=cognitive_result.citation_coverage if kernel_answered else None,
-                          evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
+                          evidence_state=_ev_state, citation_coverage=_ev_cov, evidence_passages=_ev_pass)
     _ident = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered)
     _persist_turn(user, sess.id, req.message, dlp_result["safe_text"], identity=_ident, src=_src)
-    return {
+    payload = {
         "response": dlp_result["safe_text"],
         "session_id": sess.id,
         "used_tools": used_tools,
@@ -1500,6 +1764,10 @@ async def _chat_impl(
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
+    _auth_meta = _authorized_metadata(authorized, rag_result)
+    if _auth_meta is not None:
+        payload["authorized_retrieval"] = _auth_meta
+    return payload
 
 
 @app.post("/api/stream")
@@ -1531,6 +1799,8 @@ async def stream_chat(
                 yield f"data: {json.dumps(_q.as_sse())}\n\n"
             return StreamingResponse(_quota_err(), media_type="text/event-stream")
 
+    _check_session_ownership(req.session_id, user.id if user else None)
+
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
         _g = coded_error("model_access_denied", message=model_reason)
@@ -1558,7 +1828,10 @@ async def stream_chat(
     from orca.cognitive.errors import CognitiveError
 
     try:
-        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
+        cognitive_result = await _run_cognitive_kernel(
+            req.message, user, req.model_variant, session_id=req.session_id,
+            defer_direct_generation=True, allow_legacy_doc_store=user is None,
+        )
     except Exception as e:
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
@@ -1649,44 +1922,39 @@ async def stream_chat(
         )
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
-    mem_ctx = sess.memory.recall_context(req.message, n=3)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
+    mem_ctx = _turn_memory_context(sess, req.message)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
 
-    # Kernel's direct-answer path is used whenever the Kernel actually
-    # produced an answer -- either because this session has no loaded
-    # documents (Phase 3.1 spec §13's original guard: the legacy RAG
-    # pipeline's query rewriting/HyDE/corrective-retrieval/citation-DNA
-    # behavior must survive cutover unconditionally whenever docs ARE
-    # present), OR because the Kernel's answer came from Truth Fabric
-    # itself (`evidence_state is not None`), in which case it already
-    # used this session's doc_store as real evidence and is authoritative
-    # over the legacy pipeline for this request (Phase 4.1 spec §26-27:
-    # "Do not allow existing RAG branches to bypass Truth Fabric for
-    # request classes where Truth Fabric is authoritative"). Before this
-    # fix, a Truth-Fabric-verified, citation-checked answer was silently
-    # discarded in favor of the legacy Gateway-bypassing pipeline for
-    # every session that had any document loaded -- exactly backwards,
-    # since that is precisely when Truth Fabric's evidence grounding
-    # matters most.
-    use_kernel_direct = cognitive_result.output is not None and (
-        sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None
+    # Authenticated streams ground only on replay-checked index passages.
+    # A kernel-direct answer is ordinary chat with no document context.
+    # Anonymous streams keep legacy deep RAG, including when Truth Fabric
+    # already grounded an answer in the caller's own DocStore.
+    enriched, rag_result, authorized, denial, use_kernel_direct = _resolve_turn_documents(
+        user, sess, req.message, cognitive_result, enriched,
+        pending_direct=bool(cognitive_result.pending_direct_generation), route="/api/stream",
     )
-
-    # Deep RAG: 7-stage pipeline (query intelligence → multi-signal recall →
-    # RRF fusion → rerank → sufficiency check → citation DNA). Only runs if
-    # docs are loaded for this session.
-    rag_result = None
-    if not use_kernel_direct and sess.doc_store.count() > 0:
+    if denial is not None:
+        return denial
+    if user is None and not use_kernel_direct and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
-        rag_result = await asyncio.to_thread(
-            run_deep_rag,
-            req.message,
-            sess.doc_store,
-            history_strs,
-            CONFIG.ollama.host,
-            _model_name_for_variant(req.model_variant),
-        )
+        try:
+            rag_result = await asyncio.to_thread(
+                run_deep_rag,
+                req.message,
+                sess.doc_store,
+                history_strs,
+                CONFIG.ollama.host,
+                _model_name_for_variant(req.model_variant),
+            )
+        except Exception as e:
+            err = public_error(e, route="/api/stream", user_id=user.id if user else None)
+            async def _rag_fail():
+                yield f"data: {json.dumps(err.as_sse())}\n\n"
+            return StreamingResponse(_rag_fail(), media_type="text/event-stream")
         if rag_result.context_block:
             enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
 
@@ -1697,83 +1965,193 @@ async def stream_chat(
             f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
         )
     message_id = str(uuid.uuid4())
+    idempotency_key = request.headers.get("idempotency-key") or None
+    request_hash = None
+    if idempotency_key:
+        request_hash = generations.fingerprint(
+            message=req.message, session_id=sess.id, model_variant=req.model_variant,
+        )
+    from orca.serve import runs
+    run_header = request.headers.get("x-run-id") or None
+    run_id = None
+    if run_header:
+        if user is None:
+            e = coded_error("auth_required")
+            return JSONResponse(e.as_json(), status_code=e.status)
+        try:
+            runs.require_owner(run_header, user.id)
+        except runs.RunDenied:
+            return JSONResponse({"error": "run was not found", "code": "run_not_found"}, status_code=404)
+        run_id = run_header
+    cancellable_generation = not (use_kernel_direct and not cognitive_result.pending_direct_generation)
+    try:
+        generation, generation_created = generations.begin(
+            session_id=sess.id,
+            user_id=user.id if user else None,
+            delivery="upstream" if cancellable_generation else "replayed",
+            cancellable=cancellable_generation,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            run_id=run_id,
+        )
+    except generations.GenerationMismatch as exc:
+        return JSONResponse(
+            {"error": exc.reason, "code": "idempotency_mismatch", "generation_id": exc.generation_id},
+            status_code=422,
+        )
+    except generations.GenerationDenied as exc:
+        return JSONResponse({"error": exc.reason, "code": "generation_rejected"}, status_code=400)
+    if not generation_created:
+        if generation.get("run_id") != run_id:
+            return JSONResponse(
+                {"error": "idempotency key is already bound to a different run", "code": "run_mismatch", "generation_id": generation.get("generation_id")},
+                status_code=409,
+            )
+        status_code, body = generations.existing_http(generation)
+        return JSONResponse(body, status_code=status_code)
+    generation_id = generation["generation_id"]
+    if run_id is not None:
+        try:
+            runs.attach(run_id, user.id, generation_id, sess.id)
+        except runs.RunDenied as exc:
+            generations.finish(generation_id, "failed", reason="run_rejected")
+            status = 409 if exc.reason == "run is full" else 404
+            code = "run_full" if status == 409 else "run_not_found"
+            return JSONResponse({"error": exc.reason, "code": code, "generation_id": generation_id}, status_code=status)
 
-    async def _event_stream() -> AsyncIterator[str]:
-        # Send session_id first
-        yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
-        identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
-        yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
-        if rag_result and rag_result.sources:
-            yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
+    async def _stop_if_needed() -> str | None:
+        generations.touch(generation_id)
+        if generations.cancel_requested(generation_id):
+            generations.finish(generation_id, "cancelled", reason="cancel_requested")
+            return "cancel_requested"
+        if await request.is_disconnected():
+            generations.finish(generation_id, "cancelled", reason="client_disconnected")
+            return "client_disconnected"
+        return None
 
-        full = ""
-        tool_names: list[str] = []
-        plan_action = "direct"
-        delivery = "upstream"
+    def _generation_sse() -> str:
+        current = generations.read(generation_id) or generation
+        return f"data: {json.dumps({'type': 'generation', **generations.public(current)})}\n\n"
 
-        if use_kernel_direct:
-            # Kernel's plan needed nothing beyond a direct model call --
-            # already answered via ModelGateway, entitlement-reconciled.
-            # Word-chunked for the same incremental SSE UX as any other
-            # path (same pattern as the frontier-passthrough branch above)
-            # -- ModelGateway.generate() was a single non-streaming call,
-            # this is presentation-layer chunking, not fake generation.
-            plan_action = "cognitive_direct"
-            # G-026: the Kernel's ModelGateway call is non-streaming -- the answer is already complete here. It used to be split into words and
-            # re-emitted with sleep(0) between them (presentation-layer "typing"). It is now sent once and labelled, so a client can neither mistake it
-            # for live generation nor offer a "stop generating" control that would not stop anything.
-            delivery = "replayed"
-            full = cognitive_result.output or ""
-            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
-            yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
-        else:
-            try:
-                gen, trace = await asyncio.to_thread(
-                    lambda: sess.agent.stream(enriched, persona_system)
+    async def _event_stream_inner() -> AsyncIterator[str]:
+        try:
+            # Send session_id first
+            yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
+            yield _generation_sse()
+            identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
+            yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
+            if rag_result and rag_result.sources:
+                yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
+
+            full = ""
+            tool_names: list[str] = []
+            plan_action = "direct"
+            delivery = "upstream"
+
+            if use_kernel_direct and cognitive_result.pending_direct_generation:
+                # G-026: plan/entitle only; stream the authorized ModelGateway
+                # request so disconnect cancels real upstream generation.
+                plan_action = "cognitive_direct"
+                delivery = "upstream"
+                from orca.cognitive.wiring import get_shared_kernel
+                kernel = get_shared_kernel()
+                objective = cognitive_result.pending_direct_objective or req.message
+                tier = cognitive_result.resolved_tier or (req.model_variant or "core")
+                inference_request, allow_experimental, gateway = kernel.direct_inference_binding(
+                    objective, tier, cognitive_result.trace_id
                 )
-                # Send tool activity if any
-                if trace.plan_action == "tools":
-                    yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
-                # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
                 yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                try:
+                    async with contextlib.aclosing(
+                        gateway.stream(inference_request, allow_experimental=allow_experimental)
+                    ) as achunks:
+                        async for piece in achunks:
+                            if piece.delta:
+                                full += piece.delta
+                                yield f"data: {json.dumps({'type': 'chunk', 'text': piece.delta})}\n\n"
+                            stop_reason = await _stop_if_needed()
+                            if stop_reason:
+                                audit.log(
+                                    "stream_client_disconnected",
+                                    user_id=user.id if user else None,
+                                    detail={"chars_sent": len(full), "path": "kernel_direct", "reason": stop_reason, "generation_id": generation_id},
+                                )
+                                yield _generation_sse()
+                                return
+                except Exception as e:
+                    generations.finish(generation_id, "failed", reason="stream_failed")
+                    yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                    return
+            elif use_kernel_direct:
+                # Truth Fabric (or another path) already produced a complete
+                # answer that had to exist before citation verification.
+                # Deliver once and label replayed -- do not fake typing.
+                plan_action = "cognitive_direct"
+                delivery = "replayed"
+                full = cognitive_result.output or ""
+                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
+            else:
+                try:
+                    gen, trace = await asyncio.to_thread(
+                        lambda: sess.agent.stream(enriched, persona_system)
+                    )
+                    # Send tool activity if any
+                    if trace.plan_action == "tools":
+                        yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
+                    # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
+                    yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
 
-                # contextlib.aclosing, not a bare `async for`: breaking the
-                # loop below on client disconnect does not by itself call
-                # aclose() on an async generator (same rule as a sync
-                # generator abandoned mid-`for`) -- without this, a
-                # disconnected client's backend generator is only closed
-                # whenever Python eventually garbage-collects it, leaking
-                # the worker thread and the backend connection until then.
-                async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
-                    async for chunk in achunks:
-                        full += chunk
-                        yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                        if await request.is_disconnected():
-                            audit.log("stream_client_disconnected", user_id=user.id if user else None,
-                                      detail={"chars_sent": len(full)})
-                            return
+                    # contextlib.aclosing, not a bare `async for`: breaking the
+                    # loop below on client disconnect does not by itself call
+                    # aclose() on an async generator (same rule as a sync
+                    # generator abandoned mid-`for`) -- without this, a
+                    # disconnected client's backend generator is only closed
+                    # whenever Python eventually garbage-collects it, leaking
+                    # the worker thread and the backend connection until then.
+                    async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
+                        async for chunk in achunks:
+                            full += chunk
+                            yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                            stop_reason = await _stop_if_needed()
+                            if stop_reason:
+                                audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                          detail={"chars_sent": len(full), "reason": stop_reason, "generation_id": generation_id})
+                                yield _generation_sse()
+                                return
 
-                tool_names = [tc.tool for tc in trace.tool_calls]
-                plan_action = trace.plan_action
+                    tool_names = [tc.tool for tc in trace.tool_calls]
+                    plan_action = trace.plan_action
 
-            except streaming.StreamingUnavailable as e:
-                err = public_error(e, route="/api/stream", user_id=user.id if user else None,
-                                   code="server_busy", message="The server is at capacity. Please retry shortly.")
-                yield f"data: {json.dumps(err.as_sse())}\n\n"
-                return
-            except Exception as e:
-                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
-                return
+                except streaming.StreamingUnavailable as e:
+                    generations.finish(generation_id, "failed", reason="server_busy")
+                    err = public_error(e, route="/api/stream", user_id=user.id if user else None,
+                                       code="server_busy", message="The server is at capacity. Please retry shortly.")
+                    yield f"data: {json.dumps(err.as_sse())}\n\n"
+                    return
+                except Exception as e:
+                    generations.finish(generation_id, "failed", reason="stream_failed")
+                    yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                    return
 
-        # Persist
-        sess.memory.add_turn("user", req.message)
-        sess.memory.add_turn("assistant", full)
-        sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
-        from orca.memory.turn_ingest import maybe_ingest_turn
-        maybe_ingest_turn(sess.id, req.message, full)
-        sess.persist_to_redis()
-        if user:
-            increment_usage(user.id, "message")
+            # Persist
+            sess.memory.add_turn("user", req.message)
+            sess.memory.add_turn("assistant", full)
+            _retain_turn(sess, req.message, full)
+            if user:
+                increment_usage(user.id, "message")
+        finally:
+            # Backend correction: ensure durable terminal state on disconnect / cancellation
+            # even when aborted before the first generated chunk or during slow generation.
+            try:
+                curr = generations.read(generation_id)
+                if curr and curr.get("state") == "running":
+                    if generations.cancel_requested(generation_id):
+                        generations.finish(generation_id, "cancelled", reason="cancel_requested")
+                    elif await request.is_disconnected():
+                        generations.finish(generation_id, "cancelled", reason="client_disconnected")
+            except Exception:
+                pass
 
         # Knowledge graph extraction — fire-and-forget, NOT awaited. This is
         # an LLM call (real latency on CPU inference per this project's own
@@ -1782,10 +2160,22 @@ async def stream_chat(
         # too would be pure UX cost for a background-enrichment feature.
         # Failures here are silent by design (extract_and_add never raises)
         # and don't affect the conversation that already completed.
-        asyncio.create_task(asyncio.to_thread(
-            sess.knowledge_graph.extract_and_add,
-            f"{req.message}\n{full}", "chat", sess.brain,
-        ))
+        # INTEGRATION (2026-10-24): reconciles two independent fixes --
+        # AUDIT-B81-A-P2-03 (this branch) tracks the task via
+        # _track_background_task so it holds a strong reference and can't
+        # be garbage-collected mid-run; B13 temporary-chat (PR #95-98)
+        # skips the extraction entirely for a temporary session, since
+        # that graph would outlive the chat's own TTL. Neither change
+        # supersedes the other -- combined, not chosen between.
+        from orca.serve import temporary_chat
+        if not temporary_chat.is_active(sess.id):
+            _track_background_task(
+                asyncio.to_thread(
+                    sess.knowledge_graph.extract_and_add,
+                    f"{req.message}\n{full}", "chat", sess.brain,
+                ),
+                name=f"kg_extract:{sess.id}",
+            )
 
         # Citation compliance: mechanical check, not just a prompt instruction.
         # If document context was available and the response cited zero
@@ -1806,15 +2196,33 @@ async def stream_chat(
         # Explainability: capture the full retrieval/reasoning trace for this
         # message, keyed by message_id so the frontend "Explain" button can
         # fetch it on demand without bloating every SSE payload.
+        if user is None and use_kernel_direct:
+            _ev_state, _ev_cov, _ev_pass = cognitive_result.evidence_state, cognitive_result.citation_coverage, cognitive_result.evidence_passages
+        else:
+            _ev_state = _ev_cov = _ev_pass = None
         _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
-                              evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
-                              citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
-                              evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
+                              evidence_state=_ev_state, citation_coverage=_ev_cov, evidence_passages=_ev_pass)
         _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
+        finished = generations.finish(generation_id, "completed")
+        if finished is None or finished.get("state") != "completed":
+            yield _generation_sse()
+            return
+        done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'generation_id': generation_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
+        _auth_meta = _authorized_metadata(authorized, rag_result)
+        if _auth_meta is not None:
+            done_event['authorized_retrieval'] = _auth_meta
+        yield f"data: {json.dumps(done_event)}\n\n"
+
+    async def _event_stream() -> AsyncIterator[str]:
+        heartbeat = generations.start_heartbeat(generation_id)
+        try:
+            async for piece in _event_stream_inner():
+                yield piece
+        finally:
+            heartbeat.stop()
 
     return StreamingResponse(
         _event_stream(),
@@ -1824,6 +2232,49 @@ async def stream_chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/runs")
+async def create_run(user: User | None = Depends(get_current_user_optional)):
+    """A correlation id for later streams. It does not grant access to any conversation."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import runs
+
+    return runs.create(user.id)
+
+
+@app.get("/api/runs/{run_id}")
+async def get_run(run_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import runs
+
+    try:
+        return runs.read(run_id, user.id)
+    except runs.RunDenied:
+        return JSONResponse({"error": "run was not found", "code": "run_not_found"}, status_code=404)
+
+
+@app.get("/api/generations/{generation_id}")
+async def get_generation(generation_id: str, user: User | None = Depends(get_current_user_optional)):
+    record = generations.read(generation_id)
+    if record is None or not generations.allowed(record, user.id if user else None):
+        raise HTTPException(status_code=404, detail="generation not found")
+    return generations.public(record)
+
+
+@app.post("/api/generations/{generation_id}/cancel")
+async def cancel_generation(generation_id: str, user: User | None = Depends(get_current_user_optional)):
+    record = generations.read(generation_id)
+    if record is None or not generations.allowed(record, user.id if user else None):
+        raise HTTPException(status_code=404, detail="generation not found")
+    try:
+        return generations.request_cancel(generation_id)
+    except generations.GenerationDenied:
+        raise HTTPException(status_code=404, detail="generation not found")
 
 
 @app.post("/api/memory/recall")
@@ -1841,6 +2292,15 @@ async def recall_memory(req: MemoryRequest, user: User | None = Depends(get_curr
 @app.post("/api/remember")
 async def remember(req: RememberRequest, user: User | None = Depends(get_current_user_optional)):
     sess = _get_session(req.session_id, user_id=user.id if user else None)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
+    from orca.serve import temporary_chat
+    if temporary_chat.is_active(sess.id):
+        return JSONResponse(
+            {"error": "temporary chat does not store long-term memory", "code": "temporary_memory_disabled", "state": "active"},
+            status_code=409,
+        )
     sess.memory.commit_to_long_term(req.fact, {"type": "user_fact", "manual": True})
     # G-006: this route used to ALSO append every user's note to one global,
     # unscoped `all_sessions_summary` string. Nothing reads it any more (the
@@ -1859,6 +2319,76 @@ def _anonymous_listing_allowed() -> bool:
     from orca.gateway.wiring import public_edge_enabled
 
     return not public_edge_enabled() and _count_users() == 0
+
+
+def _temporary_error(exc) -> JSONResponse:
+    status = 404 if exc.code == "temporary_not_found" else 409 if exc.code in {"temporary_not_empty", "temporary_finished"} else 400
+    return JSONResponse({"error": exc.reason, "code": exc.code}, status_code=status)
+
+
+@app.post("/api/sessions/temporary")
+async def open_temporary_chat(req: TemporaryChatRequest, user: User | None = Depends(get_current_user_optional)):
+    """Open a server-owned temporary chat. The response is `active` only after the record is stored."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations, temporary_chat
+
+    if not temporary_chat.MIN_TTL_SECONDS <= req.ttl_seconds <= temporary_chat.MAX_TTL_SECONDS:
+        return JSONResponse(
+            {"error": "temporary chat ttl is not valid", "code": "temporary_rejected"},
+            status_code=400,
+        )
+    if req.session_id:
+        _owned_session_or_404(req.session_id, user)
+        sid = req.session_id
+        if conversations.last_activity(sid) is not None and not temporary_chat.is_active(sid):
+            return JSONResponse(
+                {"error": "temporary chat cannot adopt an existing transcript", "code": "temporary_not_empty"},
+                status_code=409,
+            )
+    else:
+        sid = _get_session(None, user_id=user.id).id
+    try:
+        return temporary_chat.activate(sid, user.id, req.ttl_seconds)
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+
+
+@app.get("/api/session/{session_id}/temporary")
+async def temporary_chat_status(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import temporary_chat
+
+    try:
+        record = temporary_chat.read(session_id, user.id)
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+    if record is not None and record.get("state") == "active":
+        temporary_chat.enforce(session_id)
+        record = temporary_chat.read(session_id, user.id)
+    if record is None:
+        _owned_session_or_404(session_id, user)
+        return {"session_id": session_id, "state": "inactive", "terminal": False}
+    return record
+
+
+@app.post("/api/session/{session_id}/temporary/close")
+async def close_temporary_chat(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Delete the temporary conversation, then report `closed`."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import temporary_chat
+
+    try:
+        view = temporary_chat.finish(session_id, user.id, "closed")
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+    status = 200 if view.get("state") in {"closed", "expired"} else 500
+    return JSONResponse(view, status_code=status)
 
 
 @app.get("/api/sessions")
@@ -1886,7 +2416,13 @@ async def list_sessions(
                 activity[sid] = ts
         for sid in episode_ids:
             activity.setdefault(sid, 0.0)
-        visible = sorted(activity, key=lambda s: activity[s], reverse=True)
+        from orca.serve import temporary_chat
+
+        visible = sorted(
+            (sid for sid in activity if not temporary_chat.is_hidden(sid)),
+            key=lambda s: activity[s],
+            reverse=True,
+        )
     elif _anonymous_listing_allowed():
         visible = saved
         activity = {}
@@ -1896,10 +2432,138 @@ async def list_sessions(
     total = len(visible)
     page = visible[offset:offset + limit]
     nxt = offset + limit if offset + limit < total else None
+    from orca.serve import organization
+
+    pinned = set(organization.pins_for(user.id) if user is not None else [])
     return {
-        "sessions": [{"id": s, "title": _session_titles.get(s, ""), "updated_at": activity.get(s) or None} for s in page],
+        "sessions": [
+            {"id": s, "title": _session_titles.get(s, ""), "updated_at": activity.get(s) or None, "pinned": s in pinned}
+            for s in page
+        ],
         "total": total, "limit": limit, "offset": offset, "next_offset": nxt,
     }
+
+
+def _organization_error(exc) -> JSONResponse:
+    status = 404 if exc.code in {"share_not_found", "folder_not_found"} else 409 if exc.code.endswith("_full") or exc.code == "share_not_active" else 400
+    return JSONResponse({"error": exc.reason, "code": exc.code}, status_code=status)
+
+
+@app.post("/api/session/{session_id}/pin")
+async def pin_session(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import organization
+
+    try:
+        return organization.pin(user.id, session_id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.delete("/api/session/{session_id}/pin")
+async def unpin_session(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import organization
+
+    return organization.unpin(user.id, session_id)
+
+
+@app.get("/api/folders")
+async def list_folders(user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    return {"folders": organization.folders_for(user.id)}
+
+
+@app.post("/api/folders")
+async def create_folder(req: FolderRequest, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    try:
+        return organization.create_folder(user.id, req.name)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.post("/api/folders/{folder_id}/sessions")
+async def add_session_to_folder(folder_id: str, req: FolderSessionRequest, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(req.session_id, user)
+    from orca.serve import organization
+
+    try:
+        return organization.add_to_folder(user.id, folder_id, req.session_id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.post("/api/session/{session_id}/shares")
+async def create_session_share(session_id: str, req: ShareGrantRequest, user: User | None = Depends(get_current_user_optional)):
+    """Grant one account read access through a share id. The session id stays private."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import organization
+
+    try:
+        return organization.create_share(user.id, session_id, req.grantee_id, req.ttl_seconds)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.post("/api/shares/{share_id}/revoke")
+async def revoke_session_share(share_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    try:
+        return organization.revoke_share(share_id, user.id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+
+
+@app.get("/api/shares/incoming")
+async def incoming_shares(user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import organization
+
+    return {"shares": organization.incoming_shares(user.id)}
+
+
+@app.get("/api/shares/{share_id}/messages")
+async def shared_messages(share_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Read a transcript through an active grant. This does not make the grantee the owner."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations, organization
+
+    try:
+        session_id = organization.share_session_for_reader(share_id, user.id)
+    except organization.OrganizationDenied as exc:
+        return _organization_error(exc)
+    body = conversations.transcript(session_id)
+    body.pop("session_id", None)
+    return body
 
 
 @app.post("/api/session/load")
@@ -1994,6 +2658,173 @@ async def session_messages(session_id: str, limit: int = 200, offset: int = 0, u
     return conversations.transcript(session_id, limit=limit, offset=offset)
 
 
+def _message_version_error(exc) -> JSONResponse:
+    from orca.serve import message_versions
+
+    if isinstance(exc, message_versions.MessageVersionMismatch):
+        return JSONResponse(
+            {"error": exc.reason, "code": "idempotency_mismatch", "version_id": exc.version_id},
+            status_code=422,
+        )
+    if isinstance(exc, message_versions.MessageVersionInProgress):
+        return JSONResponse(
+            {"error": exc.reason, "code": "regeneration_in_progress", "version_id": exc.version_id, "generation_id": exc.generation_id},
+            status_code=409,
+        )
+    mapping = {
+        "message version was not found": (404, "message_not_found"),
+        "regeneration version was not found": (404, "message_not_found"),
+        "version history is full": (409, "version_history_full"),
+        "only an assistant message can be regenerated": (400, "message_not_regenerable"),
+    }
+    status, code = mapping.get(exc.reason, (400, "message_version_rejected"))
+    return JSONResponse({"error": exc.reason, "code": code}, status_code=status)
+
+
+def _version_body(view: dict) -> dict:
+    return {key: value for key, value in view.items() if not str(key).startswith("_")}
+
+
+@app.get("/api/session/{session_id}/messages/{message_id}/versions")
+async def message_version_history(session_id: str, message_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Every immutable version of one owned message, oldest first. The JSONL line is not rewritten."""
+    _owned_session_or_404(session_id, user)
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations, message_versions
+
+    line = conversations.find_message(session_id, message_id)
+    if line is None or line.get("role") not in ("user", "assistant"):
+        return JSONResponse({"error": "message was not found", "code": "message_not_found"}, status_code=404)
+    try:
+        message_versions.seed(session_id, user.id, message_id, line["role"], line.get("content") or "")
+        return message_versions.read(session_id, message_id, user.id)
+    except message_versions.MessageVersionDenied as exc:
+        return _message_version_error(exc)
+
+
+@app.post("/api/session/{session_id}/messages/{message_id}/edits")
+async def edit_session_message(
+    session_id: str,
+    message_id: str,
+    req: MessageEditRequest,
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    """Append an immutable edit and make it active. The original version stays in the history."""
+    _owned_session_or_404(session_id, user)
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="message-edit")
+    from orca.serve import conversations, message_versions
+
+    line = conversations.find_message(session_id, message_id)
+    if line is None or line.get("role") not in ("user", "assistant"):
+        return JSONResponse({"error": "message was not found", "code": "message_not_found"}, status_code=404)
+    try:
+        message_versions.seed(session_id, user.id, message_id, line["role"], line.get("content") or "")
+        current = message_versions.active_view(session_id, message_id)
+        previous = current["content"] if current else (line.get("content") or "")
+        view = message_versions.edit(
+            session_id,
+            user.id,
+            message_id,
+            req.content,
+            idempotency_key=request.headers.get("idempotency-key") or None,
+        )
+    except message_versions.MessageVersionDenied as exc:
+        return _message_version_error(exc)
+    if view.get("created"):
+        _replace_visible_copy(session_id, previous, view.get("active_content") or "", line["role"])
+    return _version_body(view)
+
+
+@app.post("/api/session/{session_id}/messages/{message_id}/regenerate")
+async def regenerate_session_message(
+    session_id: str,
+    message_id: str,
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    """Create a new assistant version from one model completion.
+
+    The previous version stays in the history. A model failure aborts the
+    uncommitted reservation and leaves the active version unchanged.
+    This call does not re-run authorized document retrieval, and it is not
+    a stream: the cancel route does not stop it.
+    """
+    _owned_session_or_404(session_id, user)
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="message-regenerate")
+    from orca.serve import conversations, message_versions
+
+    line = conversations.find_message(session_id, message_id)
+    if line is None:
+        return JSONResponse({"error": "message was not found", "code": "message_not_found"}, status_code=404)
+    if line.get("role") != "assistant":
+        return JSONResponse({"error": "only an assistant message can be regenerated", "code": "message_not_regenerable"}, status_code=400)
+    preceding = conversations.preceding_user_message(session_id, message_id)
+    if preceding is None:
+        return JSONResponse({"error": "only an assistant message can be regenerated", "code": "message_not_regenerable"}, status_code=400)
+    prompt, _extra = conversations._shown(session_id, preceding)
+    sess = _get_session(session_id, user_id=user.id)
+    refusal = _authorize_inference(user, sess.model_variant, prompt, route="/api/session/messages/regenerate")
+    if refusal is not None:
+        return JSONResponse(refusal.as_json(), status_code=refusal.status)
+    heartbeat = None
+    generation_id = None
+    version_id = None
+    try:
+        message_versions.seed(session_id, user.id, message_id, "assistant", line.get("content") or "")
+        attempt = message_versions.begin_regeneration(
+            session_id,
+            user.id,
+            message_id,
+            idempotency_key=request.headers.get("idempotency-key") or None,
+        )
+    except message_versions.MessageVersionDenied as exc:
+        return _message_version_error(exc)
+    heartbeat = attempt.pop("_heartbeat", None)
+    if not attempt.get("created"):
+        if heartbeat is not None:
+            heartbeat.stop()
+        return _version_body(attempt)
+    generation_id = attempt.get("generation_id")
+    version_id = attempt.get("version_id")
+    current = message_versions.active_view(session_id, message_id)
+    previous = current["content"] if current else (line.get("content") or "")
+    try:
+        text = await asyncio.to_thread(_regenerate_text, sess, prompt)
+        view = message_versions.commit_regeneration(session_id, user.id, message_id, version_id, text)
+    except message_versions.MessageVersionDenied as exc:
+        message_versions.abort_regeneration(session_id, user.id, message_id, version_id)
+        if generation_id:
+            generations.finish(generation_id, "failed", reason="regeneration_failed")
+        return _message_version_error(exc)
+    except Exception as exc:
+        message_versions.abort_regeneration(session_id, user.id, message_id, version_id)
+        if generation_id:
+            generations.finish(generation_id, "failed", reason="regeneration_failed")
+        err = public_error(exc, route="/api/session/messages/regenerate", user_id=user.id)
+        body = err.as_json()
+        body["generation_id"] = generation_id
+        return JSONResponse(body, status_code=err.status)
+    else:
+        finished = generations.finish(generation_id, "completed") if generation_id else None
+        view["generation_state"] = None if finished is None else finished.get("state")
+        if view.get("created"):
+            _replace_visible_copy(session_id, previous, view.get("active_content") or "", "assistant")
+            increment_usage(user.id, "message")
+        return _version_body(view)
+    finally:
+        if heartbeat is not None:
+            heartbeat.stop()
+
+
 @app.get("/api/sessions/search")
 async def search_sessions(q: str, request: Request, limit: int = 20, user: User | None = Depends(get_current_user_optional)):
     """Full-text search over the CALLER's own conversations (titles and messages). Plain substring match, never a regex. Anonymous callers get nothing."""
@@ -2008,7 +2839,9 @@ async def search_sessions(q: str, request: Request, limit: int = 20, user: User 
     from orca.auth.store import get_user_session_ids
     from orca.serve import conversations
 
-    owned = get_user_session_ids(user.id)
+    from orca.serve import temporary_chat
+
+    owned = [sid for sid in get_user_session_ids(user.id) if not temporary_chat.is_hidden(sid)]
     return await asyncio.to_thread(conversations.search, owned, _session_titles, q, limit=max(1, min(int(limit), 50)))
 
 
@@ -2016,6 +2849,12 @@ async def search_sessions(q: str, request: Request, limit: int = 20, user: User 
 async def export_session(session_id: str, format: str = "md", user: User | None = Depends(get_current_user_optional)):
     """Export one conversation as Markdown (default) or JSON (`?format=json`, schema orneur.conversation/1)."""
     _owned_session_or_404(session_id, user)
+    from orca.serve import temporary_chat
+    if temporary_chat.is_hidden(session_id):
+        return JSONResponse(
+            {"error": "temporary chat cannot be exported", "code": "temporary_not_exportable", "state": "active"},
+            status_code=409,
+        )
     title = _session_titles.get(session_id, f"Session {session_id[:8].upper()}")
     from orca.serve import conversations
 
@@ -2050,10 +2889,14 @@ async def delete_conversation(session_id: str, user: User | None = Depends(get_c
 
     if session_id not in set(get_user_session_ids(user.id)):
         raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
+    from orca.serve import organization
+
+    organization.forget_session(user.id, session_id)
     result = await asyncio.to_thread(_delete_session_data, session_id)
     _remove_session_title(session_id)
     _sessions.pop(session_id, None)
     release_session(session_id, user.id)
+    organization.revoke_session(session_id)
     audit.log("conversation_deleted", user_id=user.id, detail={"session_id": session_id})
     return {"deleted": True, "session_id": session_id, "stores": {k: v for k, v in result.items() if not k.endswith("_error")}}
 
@@ -2390,6 +3233,9 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         return StreamingResponse(_ultra_refused(), media_type="text/event-stream")
 
     sess = _get_session(req.session_id, user_id=user.id if user else None)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
     # Phase 3.1: cognitive planning must not be bypassed even for Ultra
@@ -2482,13 +3328,15 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         sess.memory.add_turn("user", req.task)
         sess.memory.add_turn("assistant", pipeline.final_output)
         _persist_turn(user, sess.id, req.task, text)
-        sess.memory.commit_to_long_term(
-            f"[Ultra] Q: {req.task[:200]}\nA: {pipeline.final_output[:500]}"
-        )
-        # Note: OrcaUltra doesn't run through AgentLoop, so this turn won't
-        # appear in agent.get_history() — persist_to_redis() still preserves
-        # model_variant continuity even though the turn itself isn't captured.
-        sess.persist_to_redis()
+        from orca.serve import temporary_chat
+        if not temporary_chat.is_active(sess.id):
+            sess.memory.commit_to_long_term(
+                f"[Ultra] Q: {req.task[:200]}\nA: {pipeline.final_output[:500]}"
+            )
+            # Note: OrcaUltra doesn't run through AgentLoop, so this turn won't
+            # appear in agent.get_history() — persist_to_redis() still preserves
+            # model_variant continuity even though the turn itself isn't captured.
+            sess.persist_to_redis()
 
         yield f"data: {json.dumps({'type': 'done', 'grade': pipeline.grade, 'iterations': pipeline.iterations})}\n\n"
 
@@ -2563,7 +3411,39 @@ async def upload_doc(
     chunks = chunk_text(text, doc_id=doc_id, filename=filename)
 
     sess = _get_session(session_id, user_id=user.id if user else None)
-    stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
+    admitted = False
+    if user:
+        try:
+            admit_uploaded_document(
+                user.id, sess.id, filename=filename, text=text, doc_id=doc_id,
+            )
+            admitted = True
+        except ProductRetrievalDenied as exc:
+            return JSONResponse(
+                {
+                    "error": "Document was not admitted to the authorized index.",
+                    "code": "retrieval_unauthorized",
+                    "reason": exc.reason,
+                },
+                status_code=403,
+            )
+    try:
+        stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
+    except Exception as exc:
+        # The index admission is rolled back. If that rollback itself fails,
+        # the response is still a failure: the registry is not updated, and
+        # unregistered index text is not eligible for a prompt.
+        if admitted:
+            try:
+                delete_uploaded_document(user.id, sess.id, filename=filename, doc_id=doc_id)
+            except Exception:
+                _logger.exception("authorized index rollback failed after document-store rejection")
+            try:
+                sess.doc_store.delete_doc(doc_id)
+            except Exception:
+                pass
+        err = public_error(exc, route="/api/docs/upload", user_id=user.id if user else None)
+        return JSONResponse(err.as_json(), status_code=500)
     register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data))
 
     audit.log("doc_upload", user_id=user.id if user else None,
@@ -2595,10 +3475,42 @@ async def delete_doc(
 ):
     """Remove a document and all its chunks from the session store."""
     sess = _get_session(session_id, user_id=user.id if user else None)
-    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id)):
+    listed = list_docs(sess.id)
+    meta = next((d for d in listed if d.get("doc_id") == doc_id), None)
+    if meta is None:
         # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
         return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
-    ok = sess.doc_store.delete_doc(doc_id)
+    index_removed = 0
+    if user:
+        try:
+            index_removed = delete_uploaded_document(
+                user.id, sess.id, filename=str(meta.get("filename") or "upload.txt"), doc_id=doc_id,
+            )
+        except ProductRetrievalDenied as exc:
+            return JSONResponse(
+                {
+                    "error": "Authorized document deletion was refused.",
+                    "code": "retrieval_unauthorized",
+                    "reason": exc.reason,
+                },
+                status_code=403,
+            )
+    try:
+        ok = sess.doc_store.delete_doc(doc_id)
+    except Exception as exc:
+        # The index copy is already gone, so a later prompt cannot see it.
+        # Do not re-admit it to make the legacy store match.
+        err = public_error(exc, route="/api/docs/delete", user_id=user.id if user else None)
+        return JSONResponse(err.as_json(), status_code=500)
+    if user and index_removed > 0 and not ok:
+        return JSONResponse(
+            {
+                "error": "The authorized copy was removed, but the legacy copy could not be.",
+                "code": "document_store_disagreement",
+                "doc_id": doc_id,
+            },
+            status_code=500,
+        )
     unregister_doc(sess.id, doc_id)
     audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
     return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}

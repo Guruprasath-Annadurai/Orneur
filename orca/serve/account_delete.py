@@ -75,10 +75,22 @@ def _delete_session_data(session_id: str) -> dict:
         result["memory_error"] = str(e)
 
     try:
+        from orca.serve import organization
+        result["shares_revoked"] = organization.revoke_session(session_id)
+    except Exception as e:
+        result["shares_error"] = str(e)
+
+    try:
         from orca.serve import conversations
         result["conversation_transcript_deleted"] = conversations.delete(session_id)
     except Exception as e:
         result["conversation_transcript_error"] = str(e)
+
+    try:
+        from orca.serve import message_versions
+        result["message_versions_deleted"] = message_versions.delete_session(session_id)
+    except Exception as e:
+        result["message_versions_error"] = str(e)
 
     try:
         # Phase 5.1: a real, confirmed gap this cascade never covered --
@@ -195,6 +207,11 @@ def delete_account(user_id: str) -> dict:
     shouldn't be hidden behind an overall success flag.
     """
     session_ids = get_user_session_ids(user_id)
+    try:
+        from orca.serve import organization
+        organization.drop_owner(user_id)
+    except Exception:
+        pass
     session_results = []
     for sid in session_ids:
         session_results.append(_delete_session_data(sid))
