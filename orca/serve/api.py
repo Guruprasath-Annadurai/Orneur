@@ -3473,8 +3473,15 @@ async def delete_doc(
     session_id: str | None = None,
     user: User | None = Depends(get_current_user_optional),
 ):
-    """Remove a document and all its chunks from the session store."""
+    """Remove a document from the authorized index and the legacy stores.
+
+    The stores are not one atomic transaction. A partial result names the
+    store that still holds the document and does not re-admit a revoked copy.
+    """
     sess = _get_session(session_id, user_id=user.id if user else None)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
     listed = list_docs(sess.id)
     meta = next((d for d in listed if d.get("doc_id") == doc_id), None)
     if meta is None:
@@ -3502,18 +3509,31 @@ async def delete_doc(
         # Do not re-admit it to make the legacy store match.
         err = public_error(exc, route="/api/docs/delete", user_id=user.id if user else None)
         return JSONResponse(err.as_json(), status_code=500)
-    if user and index_removed > 0 and not ok:
+    state = getattr(sess.doc_store, "last_delete_state", None) or {}
+    if not ok:
+        disagreement = bool(user and index_removed > 0)
         return JSONResponse(
             {
-                "error": "The authorized copy was removed, but the legacy copy could not be.",
-                "code": "document_store_disagreement",
+                "deleted": False,
+                "error": "The authorized copy was removed, but the legacy copy could not be." if disagreement else "The document could not be removed from every store.",
+                "code": "document_store_disagreement" if disagreement else "delete_incomplete",
                 "doc_id": doc_id,
+                "index_removed": index_removed,
+                "collection": state.get("collection"),
+                "fallback": state.get("fallback"),
+                "atomic": False,
             },
-            status_code=500,
+            status_code=500 if disagreement else 409,
         )
     unregister_doc(sess.id, doc_id)
-    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
-    return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}
+    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id, "atomic": False})
+    return {
+        "deleted": True,
+        "doc_id": doc_id,
+        "session_id": sess.id,
+        "atomic": False,
+        "index_removed": index_removed,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

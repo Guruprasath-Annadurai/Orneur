@@ -128,3 +128,5 @@ def test_expiry_deletes_before_the_expired_state_is_visible(client, fake):
     assert "expires soon" not in json.dumps(record)
     direct = client.post("/api/chat", json={"message": "another turn", "session_id": sid, "model_variant": "core"}, headers=headers)
     assert direct.status_code == 409 and direct.json()["code"] == "temporary_expired"
+    expired_delete = client.delete(f"/api/docs/not-a-doc", params={"session_id": sid}, headers=headers)
+    assert expired_delete.status_code == 409 and expired_delete.json()["code"] == "temporary_expired"
