@@ -6,7 +6,7 @@ This document does not assert `PRETRAINING_READINESS_ACCEPTED`, `FOUNDER_AUTHORI
 
 ## 1. SHA and branch
 
-Implementation parent: `origin/cursor/orneur-pretraining-foundation-p0-4e55` at `fc1eb1dd098377e8506485dbcd82d6ed148b52b3`. The commit that adds this package is the head of `cursor/agent-role-registry-a8b0` after this file is committed. Gap register: `cursor/pretraining-gap-register-a8b0` at `255d25a404e1c74d6feca0fc5931497ec29b0bf9` (PR #100). Readiness gate: `cursor/pretraining-readiness-gate-a8b0` at `eaa3eaceef79c78924f0b1d5b0eaea48a04f7c4d` (PR #101). Draft PR #99 was inspected at `c395dba09c54f10d626156ed57512dc635f1e9b8` and was not modified.
+Implementation parent: `origin/cursor/orneur-pretraining-foundation-p0-4e55` at `fc1eb1dd098377e8506485dbcd82d6ed148b52b3`. Agent registry: `cursor/agent-role-registry-a8b0` at `374b49e5ad8b9f744c04780b617cdada6d234480`. The provenance update in this copy is on `cursor/synthetic-provenance-steps-a8b0`. Gap register: `cursor/pretraining-gap-register-a8b0` at `255d25a404e1c74d6feca0fc5931497ec29b0bf9` (PR #100). Readiness gate: `cursor/pretraining-readiness-gate-a8b0` at `eaa3eaceef79c78924f0b1d5b0eaea48a04f7c4d` (PR #101). Draft PR #99 was inspected at `c395dba09c54f10d626156ed57512dc635f1e9b8` and was not modified.
 
 ## 2. Acceptance numerator and denominator
 
@@ -42,7 +42,7 @@ Status `NOT_AVAILABLE`. No native checkpoint.
 
 ## 10. Dataset provenance
 
-The parent branch already admits local records, rejects a symlink leaf, and can require a license string. That string is not a training grant. No protected corpus was generated here. Public-web text was not classified as cleared. A full 20-step custody pipeline with an independent custodian is not qualified.
+The parent branch already admits local records, rejects a symlink leaf, and can require a license string. That string is not a training grant. The descendant gate `qualify_synthetic_records` in `orca/genesis/data/provenance_steps.py` runs the twenty named steps on in-memory fixtures. `training_admitted` stays false. Public-web and ordinary license names are rejected. Independent custody and publication rights stay `BLOCKED`. `literature_token_requirement` can state a Hoffmann et al. 2022 illustration and records `tokens_acquired` 0. No protected corpus was generated. Evidence: `docs/orneur/cursor/ORNEUR_DATASET_PROVENANCE_PIPELINE.md`.
 
 ## 11. Legal blockers
 
@@ -82,6 +82,6 @@ Not done. The handoff file asks a reviewer to re-run the pytest command on the e
 
 ## 20. Next executable work that does not need new authority
 
-Keep the ledger unchanged. Extend synthetic provenance checks on local fixtures. Add the uncovered adversarial cases that do not need secrets or GPUs. Do not start training.
+Keep the ledger unchanged. The synthetic provenance gate now exists and still does not admit training. Add the uncovered adversarial cases that do not need secrets or GPUs. Measure team sizes 2 and 16 only with distinct handlers. Do not start training.
 
 Closure order: R65 source, G1 review, trust enrollment, DEC-K decision with C27 still open, corpus custody, foundation choice, compute qualification, then FINAL-1 only after every counted row has its own acceptance. FINAL-2 and EXEC-1 stay after that. There is no readiness percentage.
