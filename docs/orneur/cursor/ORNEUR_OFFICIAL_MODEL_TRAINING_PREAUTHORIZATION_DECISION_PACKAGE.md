@@ -6,7 +6,7 @@ This document does not assert `PRETRAINING_READINESS_ACCEPTED`, `FOUNDER_AUTHORI
 
 ## 1. SHA and branch
 
-Implementation parent: `origin/cursor/orneur-pretraining-foundation-p0-4e55` at `fc1eb1dd098377e8506485dbcd82d6ed148b52b3`. Agent registry: `cursor/agent-role-registry-a8b0` at `374b49e5ad8b9f744c04780b617cdada6d234480`. The provenance update in this copy is on `cursor/synthetic-provenance-steps-a8b0`. Gap register: `cursor/pretraining-gap-register-a8b0` at `255d25a404e1c74d6feca0fc5931497ec29b0bf9` (PR #100). Readiness gate: `cursor/pretraining-readiness-gate-a8b0` at `eaa3eaceef79c78924f0b1d5b0eaea48a04f7c4d` (PR #101). Draft PR #99 was inspected at `c395dba09c54f10d626156ed57512dc635f1e9b8` and was not modified.
+Implementation parent: `origin/cursor/orneur-pretraining-foundation-p0-4e55` at `fc1eb1dd098377e8506485dbcd82d6ed148b52b3`. Agent registry: `cursor/agent-role-registry-a8b0` at `374b49e5ad8b9f744c04780b617cdada6d234480`. Provenance gate: `cursor/synthetic-provenance-steps-a8b0` at `dfc8eb89c6ff39dc82e3b4b9e7fe7dc2678d8bc3`. The measurement update in this copy is on `cursor/measurement-gaps-a8b0`. Gap register: `cursor/pretraining-gap-register-a8b0` at `255d25a404e1c74d6feca0fc5931497ec29b0bf9` (PR #100). Readiness gate: `cursor/pretraining-readiness-gate-a8b0` at `eaa3eaceef79c78924f0b1d5b0eaea48a04f7c4d` (PR #101). Draft PR #99 was inspected at `c395dba09c54f10d626156ed57512dc635f1e9b8` and was not modified.
 
 ## 2. Acceptance numerator and denominator
 
@@ -38,7 +38,7 @@ Status `NOT_AVAILABLE`. No native checkpoint.
 
 ## 9. Tested handlers
 
-12 synthetic handlers. 0 qualified. 0 production authorized. Existing orchestrator tests still pass with the new ones: 18 passed.
+12 synthetic handlers. 0 qualified. 0 production authorized. On the unsupported equation, size 2 matches size 3. Sizes 5 and 10 match that verdict and use more calls. Size 16 was not run: only 12 distinct handlers exist.
 
 ## 10. Dataset provenance
 
@@ -50,7 +50,7 @@ No foundation license was accepted for training. Path A (licensed adaptation) an
 
 ## 12. Private evaluation
 
-`GENESIS_CAPABILITY_EVAL_V2_FROZEN` is false in `GENESIS_CAPABILITY_EVAL_V2_STATUS.json`. The agent equation comparison is a synthetic fixture, not that freeze.
+`GENESIS_CAPABILITY_EVAL_V2_FROZEN` is false in `GENESIS_CAPABILITY_EVAL_V2_STATUS.json`. `EvalDefinition` refuses `frozen=True`. `EvalHarness.run` executes only `SYNTHETIC_HARNESS` and sets `model_loaded` false. `REAL_BASELINE`, `EXTERNAL_COMPARISON`, and `POST_TRAINING` are labels, not completed evaluations. The agent equation comparison is a synthetic fixture, not that freeze.
 
 ## 13. Architecture selection
 
@@ -58,11 +58,11 @@ No model was selected. No weights were downloaded.
 
 ## 14. Hardware
 
-Compute is unqualified. No throughput was measured in this pass. Frontier pretraining is not the workstation. Prices that were not looked up are `UNKNOWN`, not zero. No GPU job was started and nothing was purchased.
+Compute is `COMPUTE_NOT_QUALIFIED`. No throughput was measured. Frontier pretraining is not the workstation. Prices are `UNKNOWN`, not zero. On 2026-10-24, Colab's FAQ, Kaggle's GPU doc, and two disagreeing Hugging Face pricing pages were read and not enrolled. No GPU job was started and nothing was purchased.
 
 ## 15. Reproducibility
 
-The agent tests are deterministic across five trials on one machine. That does not prove another operating system. The acceptance ledger hash was not changed by the gate tests on `main`.
+The agent tests are deterministic across five trials on one machine. That does not prove another operating system. The acceptance ledger hash was not changed by these tests. `tests/test_cursor_training_math.py` remains the CPU mathematical suite from the parent branch. This pass did not add an optimizer step and did not change the historical adversarial training tests.
 
 ## 16. Security
 
@@ -70,7 +70,7 @@ Handler denials cover the cases in `ORNEUR_AGENT_ADVERSARIAL_SECURITY_REPORT.md`
 
 ## 17. Future training cost
 
-`UNKNOWN`. No new price source was queried. Promotional credits in older documents are not treated as available.
+`UNKNOWN`. Publisher free-tier pages were read on 2026-10-24 and were not treated as a price of zero or as available capacity. Promotional credits in older documents are not treated as available.
 
 ## 18. Founder-only decisions
 
@@ -82,6 +82,6 @@ Not done. The handoff file asks a reviewer to re-run the pytest command on the e
 
 ## 20. Next executable work that does not need new authority
 
-Keep the ledger unchanged. The synthetic provenance gate now exists and still does not admit training. Add the uncovered adversarial cases that do not need secrets or GPUs. Measure team sizes 2 and 16 only with distinct handlers. Do not start training.
+Keep the ledger unchanged. The synthetic provenance gate does not admit training. Size 2 is the measured team for the equation fixture; size 16 stays unrun until 16 distinct handlers exist. Collusion, forged signatures, symlink and checkpoint substitution, duplicate irreversible effects, and private-evaluation leakage remain open. Do not start training.
 
 Closure order: R65 source, G1 review, trust enrollment, DEC-K decision with C27 still open, corpus custody, foundation choice, compute qualification, then FINAL-1 only after every counted row has its own acceptance. FINAL-2 and EXEC-1 stay after that. There is no readiness percentage.

@@ -36,11 +36,16 @@ def _verdict(results: list[dict]) -> str:
 
 
 def compare_equation_teams(*, trials: int = 5) -> dict:
-    """Compare 1, 3, 5, and 10 handler calls on two fixed equations."""
+    """Compare 1, 2, 3, 5, and 10 distinct handler calls on two fixed equations.
+
+    Size 16 is not run. Only 12 handlers exist, and calling one twice
+    would not be another agent.
+    """
     if trials < 2:
         raise ValueError("trials must be at least 2")
     plans = {
         1: ("claim.classify",),
+        2: ("claim.classify", "claim.falsify"),
         3: ("claim.classify", "claim.falsify", "claim.arbitrate"),
         5: ("claim.classify", "claim.falsify", "claim.arbitrate", "content.screen", "deadline.bound"),
         10: (
@@ -73,7 +78,15 @@ def compare_equation_teams(*, trials: int = 5) -> dict:
             "grant": {"tenant_id": "t", "capabilities": ["read"], "expired": False, "revoked": False},
         },
     }
-    report = {"trials": trials, "deterministic": True, "model_inference": False, "cases": {}}
+    report = {
+        "trials": trials,
+        "deterministic": True,
+        "model_inference": False,
+        "not_run": {
+            "16": "only 12 distinct handlers exist; duplicate calls are not an extra agent",
+        },
+        "cases": {},
+    }
     for name, base in cases.items():
         sizes = {}
         for size, names in plans.items():
@@ -98,6 +111,7 @@ def compare_equation_teams(*, trials: int = 5) -> dict:
         report["cases"][name] = {
             "sizes": sizes,
             "larger_team_changes_verdict": bool(sizes_better_than_one),
+            "two_matches_three": sizes["2"]["verdict"] == pair,
             "ten_matches_three": sizes["10"]["verdict"] == pair,
             "ten_costs_more_calls": sizes["10"]["handler_calls"] > sizes["3"]["handler_calls"],
         }

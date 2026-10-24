@@ -8,6 +8,7 @@ from orca.genesis.eval.integrity import (
     EvalHarness,
     EvalIntegrityError,
     EvalItem,
+    judge_disagreement,
     revise_threshold,
     scan_exact_contamination,
     seeded_item_order,
@@ -103,3 +104,24 @@ def test_seeded_order_is_stable_and_complete():
     definition = _definition()
     assert seeded_item_order(definition) == seeded_item_order(definition)
     assert sorted(seeded_item_order(definition)) == ["a", "b", "c"]
+
+
+def test_freeze_and_non_synthetic_stages_do_not_execute():
+    items = (EvalItem("a", "1+1", "2"),)
+    with pytest.raises(EvalIntegrityError, match="refuses to freeze"):
+        EvalDefinition("synthetic-arith", "v1", "exact-v1", 1, items, frozen=True)
+    held = EvalDefinition(
+        "synthetic-arith", "v1", "exact-v1", 1, items, stage="REAL_BASELINE", family="GENESIS",
+    )
+    with pytest.raises(EvalIntegrityError, match="SYNTHETIC_HARNESS"):
+        EvalHarness().run(held, lambda _prompt: "2")
+    report = EvalHarness().run(_definition(), lambda prompt: {"1+1": "2", "2+2": "4", "3+3": "6"}[prompt])
+    assert report.model_loaded is False
+    assert report.stage == "SYNTHETIC_HARNESS"
+    assert report.family == "UNSPECIFIED"
+
+
+def test_judge_false_pass_and_false_fail_are_labeled():
+    assert judge_disagreement("FAIL", "PASS")["bias"] == "JUDGE_FALSE_PASS"
+    assert judge_disagreement("PASS", "FAIL")["false_negative"] is True
+    assert judge_disagreement("PASS", "PASS")["bias"] == "NONE"

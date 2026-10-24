@@ -15,6 +15,15 @@ class EvalIntegrityError(Exception):
     """The run would have misreported what the items actually did."""
 
 
+EVAL_STAGES = frozenset({
+    "SYNTHETIC_HARNESS",
+    "REAL_BASELINE",
+    "EXTERNAL_COMPARISON",
+    "POST_TRAINING",
+})
+EVAL_FAMILIES = frozenset({"UNSPECIFIED", "GENESIS", "NOVUS", "AETERNUM"})
+
+
 @dataclass(frozen=True)
 class EvalItem:
     item_id: str
@@ -31,10 +40,19 @@ class EvalDefinition:
     seed: int
     items: tuple[EvalItem, ...]
     pass_threshold: float | None = None
+    stage: str = "SYNTHETIC_HARNESS"
+    family: str = "UNSPECIFIED"
+    frozen: bool = False
 
     def __post_init__(self) -> None:
         if not self.eval_id or not self.version or not self.rubric_version:
             raise EvalIntegrityError("eval_id, version, and rubric_version are required")
+        if self.stage not in EVAL_STAGES:
+            raise EvalIntegrityError(f"unknown eval stage {self.stage}")
+        if self.family not in EVAL_FAMILIES:
+            raise EvalIntegrityError(f"unknown eval family {self.family}")
+        if self.frozen:
+            raise EvalIntegrityError("this harness refuses to freeze an evaluation")
         if self.seed < 0:
             raise EvalIntegrityError("seed must be non-negative")
         ids = [item.item_id for item in self.items]
@@ -61,6 +79,9 @@ class EvalReport:
     seed: int
     results: tuple[ItemResult, ...]
     pass_threshold: float | None
+    stage: str = "SYNTHETIC_HARNESS"
+    family: str = "UNSPECIFIED"
+    model_loaded: bool = False
 
     def counts(self) -> dict[str, int]:
         out = {"PASS": 0, "FAIL": 0, "ERROR": 0, "MISSING": 0}
@@ -147,6 +168,10 @@ class EvalHarness:
     """Run a registered definition. Item order is the registered order."""
 
     def run(self, definition: EvalDefinition, predict) -> EvalReport:
+        if definition.stage != "SYNTHETIC_HARNESS":
+            raise EvalIntegrityError(
+                "only SYNTHETIC_HARNESS is executable; other stages are labels, not completed evaluations"
+            )
         results: list[ItemResult] = []
         for item in definition.items:
             try:
@@ -173,6 +198,9 @@ class EvalHarness:
             seed=definition.seed,
             results=tuple(results),
             pass_threshold=definition.pass_threshold,
+            stage=definition.stage,
+            family=definition.family,
+            model_loaded=False,
         )
         self._require_complete(definition, report)
         return report
@@ -235,6 +263,22 @@ class EvalHarness:
             "left_version": left.version,
             "right_version": right.version,
         }
+
+
+def judge_disagreement(exact_status: str, judge_status: str) -> dict[str, object]:
+    """Compare a judge label with the exact scorer.
+
+    The exact status is the reference for this synthetic harness. A judge
+    pass on an exact fail is a false pass. This is not a claim about a
+    human rater or a model.
+    """
+    if exact_status not in {"PASS", "FAIL"} or judge_status not in {"PASS", "FAIL"}:
+        raise EvalIntegrityError("judge comparison needs PASS or FAIL on both sides")
+    if exact_status == judge_status:
+        return {"bias": "NONE", "false_positive": False, "false_negative": False}
+    if judge_status == "PASS":
+        return {"bias": "JUDGE_FALSE_PASS", "false_positive": True, "false_negative": False}
+    return {"bias": "JUDGE_FALSE_FAIL", "false_positive": False, "false_negative": True}
 
 
 def seeded_item_order(definition: EvalDefinition) -> tuple[str, ...]:

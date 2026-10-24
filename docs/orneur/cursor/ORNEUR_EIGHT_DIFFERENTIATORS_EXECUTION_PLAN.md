@@ -6,7 +6,7 @@ Dependency order used in this pass: evidence span, then epistemic transition, th
 |---|---|---|---|---|
 | Proof-carrying answers | none | `EvidenceSpan`, `Claim` | a claim with no span stays UNKNOWN | digest mismatch cannot become VERIFIED |
 | Falsification and arbitration | proof types | `falsify_claim`, `arbitrate_claims` | classifier leaves `2+2=5` as OBSERVED | falsifier returns REFUTED; arbiter does not count votes |
-| Dynamic teams | role registry | `select_team`, `team_benchmark` | one handler | ten handlers match three on the equation and use more calls |
+| Dynamic teams | role registry | `select_team`, `team_benchmark` | one handler | two handlers match three, five, and ten on the equation; the larger teams use more calls |
 | Epistemic state | `Claim` | `transition` | producer state OBSERVED | producer cannot set VERIFIED |
 | Denial receipts | authority gate | `DenialReceipt` | no receipt when the path permits | receipt scope is the guarded path only; it is not a signature |
 | Authority and revocation | `Orchestrator.tick` | `decide_authority` | permit does not execute | a grant mutated to revoked before the tick is denied |

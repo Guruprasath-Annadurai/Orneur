@@ -84,9 +84,13 @@ def test_equation_benchmark_shows_where_a_larger_team_helps():
     assert supported["sizes"]["1"]["verdict"] == "OBSERVED"
     assert supported["larger_team_changes_verdict"] is False
     assert unsupported["sizes"]["1"]["verdict"] == "OBSERVED"
+    assert unsupported["sizes"]["2"]["verdict"] == "REFUTED"
     assert unsupported["sizes"]["3"]["verdict"] == "REFUTED"
+    assert unsupported["two_matches_three"] is True
     assert unsupported["larger_team_changes_verdict"] is True
     assert unsupported["ten_matches_three"] is True
+    assert "16" not in unsupported["sizes"]
+    assert "12 distinct handlers" in report["not_run"]["16"]
     assert unsupported["ten_costs_more_calls"] is True
     assert all(row["variance"] == 0 for row in unsupported["sizes"].values())
     assert report["model_inference"] is False
