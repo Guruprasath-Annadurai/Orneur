@@ -412,6 +412,52 @@ def start_heartbeat(generation_id: str, *, interval: float = _HEARTBEAT_INTERVAL
     return _Heartbeat(fd, thread, stop)
 
 
+def delete_for_session(session_id: str, user_id: str | None) -> int:
+    """Remove generation records and idempotency keys for one session.
+
+    A record whose stored user id is a different account is left in place.
+    """
+    if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id):
+        return 0
+    removed = 0
+    directory = _dir()
+    for path in list(directory.glob("*.json")):
+        record = _read_path(path)
+        if not isinstance(record, dict) or record.get("session_id") != session_id:
+            continue
+        if user_id is not None and record.get("user_id") not in (user_id, None):
+            continue
+        generation_id = record.get("generation_id")
+        if not isinstance(generation_id, str) or _ID.fullmatch(generation_id) is None:
+            continue
+        with _record_lock(generation_id):
+            current = _read_path(_path(generation_id))
+            if not isinstance(current, dict) or current.get("session_id") != session_id:
+                continue
+            try:
+                _path(generation_id).unlink()
+                removed += 1
+            except FileNotFoundError:
+                pass
+        for suffix in (".lock", ".live"):
+            try:
+                _path(generation_id).with_suffix(suffix).unlink()
+            except OSError:
+                pass
+    if user_id is not None:
+        try:
+            folder = _dir() / "idempotency" / _owner_component(user_id)
+        except GenerationDenied:
+            return removed
+        if folder.exists():
+            for path in folder.glob(f"{session_id}-*"):
+                try:
+                    path.unlink()
+                except OSError:
+                    continue
+    return removed
+
+
 def worker_alive(generation_id: str) -> bool:
     try:
         _path(generation_id)

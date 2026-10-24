@@ -486,6 +486,53 @@ def _regenerate_text(sess, prompt: str) -> str:
     return sess.brain.complete([{"role": "user", "content": prompt}], system=get_persona_system(sess.model_variant))
 
 
+def _temporary_block(session_id: str):
+    """Refuse a turn when this session's temporary chat is finished or due.
+
+    An active temporary chat returns None. Expiry deletes the transcript
+    before the refusal is returned.
+    """
+    from orca.auth.store import release_session
+    from orca.serve import temporary_chat
+
+    decision = temporary_chat.enforce(session_id)
+    if decision is None:
+        return None
+    user_id = decision.get("user_id")
+    if isinstance(user_id, str):
+        release_session(session_id, user_id)
+    _sessions.pop(session_id, None)
+    return JSONResponse(
+        {"error": decision["error"], "code": decision["code"], "state": decision["state"]},
+        status_code=409,
+    )
+
+
+def _turn_memory_context(sess, message: str) -> str:
+    from orca.serve import temporary_chat
+
+    if temporary_chat.is_active(sess.id):
+        return ""
+    return sess.memory.recall_context(message, n=3) or ""
+
+
+def _retain_turn(sess, user_text: str, assistant_text: str) -> None:
+    """Long-term memory, continuum ingest, and Redis history.
+
+    A live temporary chat keeps the JSONL transcript for the open window
+    and does not copy the turn into those longer-lived stores.
+    """
+    from orca.serve import temporary_chat
+
+    if temporary_chat.is_active(sess.id):
+        return
+    sess.memory.commit_to_long_term(f"Q: {user_text[:200]}\nA: {assistant_text[:500]}")
+    from orca.memory.turn_ingest import maybe_ingest_turn
+
+    maybe_ingest_turn(sess.id, user_text, assistant_text)
+    sess.persist_to_redis()
+
+
 def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
     """The single authorization every inference-spending route applies BEFORE any model, session cost or tool is touched: per-user quota, per-user plan gate
     for the requested tier, and input moderation. Returns a `PublicError` to refuse, or None to proceed.
@@ -993,6 +1040,11 @@ class ChatRequest(BaseModel):
 
 class MessageEditRequest(BaseModel):
     content: str
+
+
+class TemporaryChatRequest(BaseModel):
+    ttl_seconds: int = 3600
+    session_id: str | None = None
 
 
 class MemoryRequest(BaseModel):
@@ -1545,7 +1597,10 @@ async def _chat_impl(
         }
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
-    mem_ctx = sess.memory.recall_context(req.message, n=3)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
+    mem_ctx = _turn_memory_context(sess, req.message)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
     persona_system = get_persona_system(sess.model_variant)
     if mod_result.action == "support":
@@ -1600,13 +1655,11 @@ async def _chat_impl(
 
     sess.memory.add_turn("user", req.message)
     sess.memory.add_turn("assistant", final)
-    sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
     # Phase 5: additive, significance-gated Memory Continuum ingestion --
-    # does NOT replace the unconditional legacy commit_to_long_term()
-    # call above (see orca/memory/turn_ingest.py's own docstring for why).
-    from orca.memory.turn_ingest import maybe_ingest_turn
-    maybe_ingest_turn(sess.id, req.message, final)
-    sess.persist_to_redis()
+    # does NOT replace the legacy commit_to_long_term() call. Both are
+    # skipped for a live temporary chat; the JSONL transcript is the copy
+    # that expiry deletes.
+    _retain_turn(sess, req.message, final)
 
     audit.log("chat", user_id=user.id if user else None,
               detail={"model": sess.model_variant, "backend": "ollama", "data_left_infrastructure": False,
@@ -1802,7 +1855,10 @@ async def stream_chat(
         )
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
-    mem_ctx = sess.memory.recall_context(req.message, n=3)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
+    mem_ctx = _turn_memory_context(sess, req.message)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
 
     # Authenticated streams ground only on replay-checked index passages.
@@ -1987,10 +2043,7 @@ async def stream_chat(
         # Persist
         sess.memory.add_turn("user", req.message)
         sess.memory.add_turn("assistant", full)
-        sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
-        from orca.memory.turn_ingest import maybe_ingest_turn
-        maybe_ingest_turn(sess.id, req.message, full)
-        sess.persist_to_redis()
+        _retain_turn(sess, req.message, full)
         if user:
             increment_usage(user.id, "message")
 
@@ -2001,10 +2054,13 @@ async def stream_chat(
         # too would be pure UX cost for a background-enrichment feature.
         # Failures here are silent by design (extract_and_add never raises)
         # and don't affect the conversation that already completed.
-        asyncio.create_task(asyncio.to_thread(
-            sess.knowledge_graph.extract_and_add,
-            f"{req.message}\n{full}", "chat", sess.brain,
-        ))
+        # Temporary chats do not extract a graph that would outlive the TTL.
+        from orca.serve import temporary_chat
+        if not temporary_chat.is_active(sess.id):
+            asyncio.create_task(asyncio.to_thread(
+                sess.knowledge_graph.extract_and_add,
+                f"{req.message}\n{full}", "chat", sess.brain,
+            ))
 
         # Citation compliance: mechanical check, not just a prompt instruction.
         # If document context was available and the response cited zero
@@ -2097,6 +2153,15 @@ async def recall_memory(req: MemoryRequest, user: User | None = Depends(get_curr
 @app.post("/api/remember")
 async def remember(req: RememberRequest, user: User | None = Depends(get_current_user_optional)):
     sess = _get_session(req.session_id, user_id=user.id if user else None)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
+    from orca.serve import temporary_chat
+    if temporary_chat.is_active(sess.id):
+        return JSONResponse(
+            {"error": "temporary chat does not store long-term memory", "code": "temporary_memory_disabled", "state": "active"},
+            status_code=409,
+        )
     sess.memory.commit_to_long_term(req.fact, {"type": "user_fact", "manual": True})
     # G-006: this route used to ALSO append every user's note to one global,
     # unscoped `all_sessions_summary` string. Nothing reads it any more (the
@@ -2115,6 +2180,76 @@ def _anonymous_listing_allowed() -> bool:
     from orca.gateway.wiring import public_edge_enabled
 
     return not public_edge_enabled() and _count_users() == 0
+
+
+def _temporary_error(exc) -> JSONResponse:
+    status = 404 if exc.code == "temporary_not_found" else 409 if exc.code in {"temporary_not_empty", "temporary_finished"} else 400
+    return JSONResponse({"error": exc.reason, "code": exc.code}, status_code=status)
+
+
+@app.post("/api/sessions/temporary")
+async def open_temporary_chat(req: TemporaryChatRequest, user: User | None = Depends(get_current_user_optional)):
+    """Open a server-owned temporary chat. The response is `active` only after the record is stored."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations, temporary_chat
+
+    if not temporary_chat.MIN_TTL_SECONDS <= req.ttl_seconds <= temporary_chat.MAX_TTL_SECONDS:
+        return JSONResponse(
+            {"error": "temporary chat ttl is not valid", "code": "temporary_rejected"},
+            status_code=400,
+        )
+    if req.session_id:
+        _owned_session_or_404(req.session_id, user)
+        sid = req.session_id
+        if conversations.last_activity(sid) is not None and not temporary_chat.is_active(sid):
+            return JSONResponse(
+                {"error": "temporary chat cannot adopt an existing transcript", "code": "temporary_not_empty"},
+                status_code=409,
+            )
+    else:
+        sid = _get_session(None, user_id=user.id).id
+    try:
+        return temporary_chat.activate(sid, user.id, req.ttl_seconds)
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+
+
+@app.get("/api/session/{session_id}/temporary")
+async def temporary_chat_status(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import temporary_chat
+
+    try:
+        record = temporary_chat.read(session_id, user.id)
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+    if record is not None and record.get("state") == "active":
+        temporary_chat.enforce(session_id)
+        record = temporary_chat.read(session_id, user.id)
+    if record is None:
+        _owned_session_or_404(session_id, user)
+        return {"session_id": session_id, "state": "inactive", "terminal": False}
+    return record
+
+
+@app.post("/api/session/{session_id}/temporary/close")
+async def close_temporary_chat(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Delete the temporary conversation, then report `closed`."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import temporary_chat
+
+    try:
+        view = temporary_chat.finish(session_id, user.id, "closed")
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+    status = 200 if view.get("state") in {"closed", "expired"} else 500
+    return JSONResponse(view, status_code=status)
 
 
 @app.get("/api/sessions")
@@ -2142,7 +2277,13 @@ async def list_sessions(
                 activity[sid] = ts
         for sid in episode_ids:
             activity.setdefault(sid, 0.0)
-        visible = sorted(activity, key=lambda s: activity[s], reverse=True)
+        from orca.serve import temporary_chat
+
+        visible = sorted(
+            (sid for sid in activity if not temporary_chat.is_hidden(sid)),
+            key=lambda s: activity[s],
+            reverse=True,
+        )
     elif _anonymous_listing_allowed():
         visible = saved
         activity = {}
@@ -2431,7 +2572,9 @@ async def search_sessions(q: str, request: Request, limit: int = 20, user: User 
     from orca.auth.store import get_user_session_ids
     from orca.serve import conversations
 
-    owned = get_user_session_ids(user.id)
+    from orca.serve import temporary_chat
+
+    owned = [sid for sid in get_user_session_ids(user.id) if not temporary_chat.is_hidden(sid)]
     return await asyncio.to_thread(conversations.search, owned, _session_titles, q, limit=max(1, min(int(limit), 50)))
 
 
@@ -2439,6 +2582,12 @@ async def search_sessions(q: str, request: Request, limit: int = 20, user: User 
 async def export_session(session_id: str, format: str = "md", user: User | None = Depends(get_current_user_optional)):
     """Export one conversation as Markdown (default) or JSON (`?format=json`, schema orneur.conversation/1)."""
     _owned_session_or_404(session_id, user)
+    from orca.serve import temporary_chat
+    if temporary_chat.is_hidden(session_id):
+        return JSONResponse(
+            {"error": "temporary chat cannot be exported", "code": "temporary_not_exportable", "state": "active"},
+            status_code=409,
+        )
     title = _session_titles.get(session_id, f"Session {session_id[:8].upper()}")
     from orca.serve import conversations
 
@@ -2813,6 +2962,9 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         return StreamingResponse(_ultra_refused(), media_type="text/event-stream")
 
     sess = _get_session(req.session_id, user_id=user.id if user else None)
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
     # Phase 3.1: cognitive planning must not be bypassed even for Ultra
@@ -2905,13 +3057,15 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         sess.memory.add_turn("user", req.task)
         sess.memory.add_turn("assistant", pipeline.final_output)
         _persist_turn(user, sess.id, req.task, text)
-        sess.memory.commit_to_long_term(
-            f"[Ultra] Q: {req.task[:200]}\nA: {pipeline.final_output[:500]}"
-        )
-        # Note: OrcaUltra doesn't run through AgentLoop, so this turn won't
-        # appear in agent.get_history() — persist_to_redis() still preserves
-        # model_variant continuity even though the turn itself isn't captured.
-        sess.persist_to_redis()
+        from orca.serve import temporary_chat
+        if not temporary_chat.is_active(sess.id):
+            sess.memory.commit_to_long_term(
+                f"[Ultra] Q: {req.task[:200]}\nA: {pipeline.final_output[:500]}"
+            )
+            # Note: OrcaUltra doesn't run through AgentLoop, so this turn won't
+            # appear in agent.get_history() — persist_to_redis() still preserves
+            # model_variant continuity even though the turn itself isn't captured.
+            sess.persist_to_redis()
 
         yield f"data: {json.dumps({'type': 'done', 'grade': pipeline.grade, 'iterations': pipeline.iterations})}\n\n"
 
