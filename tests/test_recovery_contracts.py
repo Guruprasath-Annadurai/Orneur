@@ -41,7 +41,10 @@ def _arm(monkeypatch, tmp_path, *, history: str = "hello"):
         memory=SimpleNamespace(short=SimpleNamespace(_messages=[_Line("user", history)])),
         persist_to_redis=lambda: None,
     )
-    api_module._sessions["sess-edit-1"] = session
+    # The idle sweep in _get_session reads last_active on every live
+    # session. A leftover stand-in crashes later requests in the same
+    # process, including the ownership suite.
+    monkeypatch.setitem(api_module._sessions, "sess-edit-1", session)
     return session
 
 

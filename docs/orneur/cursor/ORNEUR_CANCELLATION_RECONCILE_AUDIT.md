@@ -39,7 +39,7 @@ PR #113 stays `fd04b135d376632b2acefdbbdd96fd3dbf71f8e1`. This assignment does n
 
 `tests/test_upstream_closure_contract.py` covers the known-bad publish-inside-close order, the product order, a failed close, a disconnect that stays unknown until a later post, a deferred in-flight read, a local HTTP close through `OllamaRuntime` and `ModelGateway`, and a gateway close that raises.
 
-`tests/test_recovery_contracts.py` covers an edit rejected before commit, a write failure before replace, a cache failure after commit with a same-key heal, owner-scoped closure retry, remaining transcript evidence, and an authorized binding that blocks `closed`.
+`tests/test_recovery_contracts.py` covers an edit rejected before commit, a write failure before replace, a cache failure after commit with a same-key heal, owner-scoped closure retry, remaining transcript evidence, and an authorized binding that blocks `closed`. The stand-in session is removed when the test ends. Leaving it in the process-wide map makes `_get_session`'s idle sweep raise `AttributeError` on `last_active` for a later request. Deterministic Unit Tests on `441bab64ab8230fddcf8445120dcef243d05045d` failed that way in `tests/test_session_ownership_isolation.py`.
 
 `tests/test_cancellation_lifecycle.py` no longer expects an old temp file to be deleted.
 
