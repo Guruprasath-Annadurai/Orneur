@@ -71,6 +71,12 @@ def test_unavailable_containment_starts_no_pytest(tmp_path, monkeypatch):
     )
     with pytest.raises(ContainmentError, match="user namespace refused"):
         run_authorized_pytest(tmp_path, _passing_workspace(tmp_path))
+    workspace = tmp_path / "tree"
+    workspace.mkdir()
+    (workspace / "tests").mkdir()
+    (workspace / "tests" / "test_link.py").symlink_to("/etc/passwd")
+    with pytest.raises(ContainmentError, match="symlink"):
+        run_authorized_pytest(workspace, "tests/test_link.py")
 
 
 def test_command_substitution_symlink_and_timeout_do_not_escape(tmp_path):

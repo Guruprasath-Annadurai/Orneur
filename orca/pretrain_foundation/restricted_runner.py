@@ -82,14 +82,14 @@ def run_authorized_pytest(
     cpu_seconds: int = 8,
     memory_bytes: int = 768 * 1024 * 1024,
 ) -> dict:
-    status = containment_status()
-    if not status["available"]:
-        raise ContainmentError(status["gap"] or "containment is unavailable")
     relative = _validate_test(workspace, relative_test)
     if wall_seconds < 1 or wall_seconds > 60 or cpu_seconds < 1 or cpu_seconds > 30:
         raise ContainmentError("resource budget is outside the authorized range")
     if memory_bytes < 256 * 1024 * 1024 or memory_bytes > 1024 * 1024 * 1024:
         raise ContainmentError("memory budget is outside the authorized range")
+    status = containment_status()
+    if not status["available"]:
+        raise ContainmentError(status["gap"] or "containment is unavailable")
     test_bytes = (Path(workspace) / relative).read_bytes()
     test_digest = hashlib.sha256(test_bytes).hexdigest()
     command = ["python3", "-m", "pytest", "-q", "--tb=line", "-p", "no:cacheprovider", relative]

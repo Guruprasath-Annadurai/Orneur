@@ -30,7 +30,7 @@ An expired temporary chat receives `409 temporary_expired` from document deletio
 
 `IncidentEngine.observe_command()` does not start a process. Authorized execution is `run_authorized_test()`, which accepts one relative pytest path and runs it with `unshare` user, mount, pid, and network namespaces, a tmpfs chroot, a cleared environment, `prlimit` CPU and address-space limits, and `timeout`. Host secrets in the parent environment are not passed in. A symlink in the tree is refused before execution.
 
-If `unshare`, `chroot`, `prlimit`, or `timeout` is missing, or `unshare` cannot write the user-namespace map, the runner reports the gap and executes nothing. The GitHub-hosted runner for the previous head of this branch returned `unshare: write failed /proc/self/uid_map: Operation not permitted`. That result is a refusal. It is not a passed jail test. This host can create the namespace, and the jail assertions ran here. This is host isolation for a pytest process. It is not a production sandbox certification.
+A command substitution or a symlink is refused before the namespace probe, so that refusal still names the path when the jail cannot start. If `unshare`, `chroot`, `prlimit`, or `timeout` is missing, or `unshare` cannot write the user-namespace map, the runner reports the gap and executes nothing. The GitHub-hosted runner for the previous head of this branch returned `unshare: write failed /proc/self/uid_map: Operation not permitted`. That result is a refusal. It is not a passed jail test. This host can create the namespace, and the jail assertions ran here. This is host isolation for a pytest process. It is not a production sandbox certification.
 
 ### Patch evidence
 
