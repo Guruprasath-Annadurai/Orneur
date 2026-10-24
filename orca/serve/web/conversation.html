@@ -2292,12 +2292,28 @@ function appendUserMessage(text, meta) {
   });
   cancelBtn.addEventListener('click', () => {
     if (cancelBtn.disabled) return; // a save is in flight -- see saveBtn's listener, which re-enables this in `finally`
-    // Abandoning this attempt -- a later re-open starts a genuinely new
-    // edit with its own fresh key, not a reuse of a now-abandoned one.
-    // (If an uncertain save actually DID land server-side before this
-    // Cancel, the real content remains visible via "Edited" history or
-    // the next conversation reload -- Cancel only affects this panel's
-    // own local draft/tracking, never the server's own record.)
+    // REQUALIFICATION, priority 1 (2026-10-24): Cancel is disabled for
+    // the full duration of any IN-FLIGHT save (see saveBtn's listener),
+    // so the only way this handler can ever run with _pendingEditKey
+    // still set is the genuinely AMBIGUOUS case: a save attempt that
+    // already fully settled as uncertain (two consecutive network
+    // errors, or a 500 that may or may not have committed -- see the
+    // 500-handling comment in saveBtn's listener above). That key's
+    // identity must be PRESERVED, not discarded, here. Clearing it would
+    // mean a later resave of the identical content mints a FRESH
+    // Idempotency-Key -- and because message_versions.edit()'s
+    // _find_key() (orca/serve/message_versions.py) dedupes by EXACT key
+    // match, never by content, a fresh key for content that was already
+    // committed under the old key would create a genuine, real duplicate
+    // version, not merely an apparent one. So Cancel here only closes
+    // the panel; the pending key/content stay tracked, which also means
+    // reopening the panel surfaces this exact unresolved draft (see
+    // editBtn's listener above) rather than silently discarding the
+    // ambiguity along with the key.
+    if (_pendingEditKey) { closeEdit(); return; }
+    // No outstanding ambiguity -- a normal abandon of a draft that was
+    // never submitted (or that already resolved definitively). A later
+    // re-open starts a genuinely new edit with its own fresh key.
     _pendingEditKey = null;
     _pendingEditContent = null;
     closeEdit();

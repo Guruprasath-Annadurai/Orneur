@@ -686,3 +686,97 @@ test('reopening the edit panel after an uncertain outcome shows the unresolved p
   assert.equal(errorEl.hidden, false, 'must surface that an earlier attempt is unresolved, not silently hide the ambiguity');
   assert.ok(errorEl.textContent.includes('never got a confirmed result'));
 });
+
+// --- REQUALIFICATION, priority 1 (2026-10-24): Cancel clicked AFTER an
+// uncertain save has already settled (not during it -- Cancel is
+// disabled for the full duration of any in-flight request, so this is
+// the only way Cancel's handler can ever run with a pending key still
+// set). Clearing the key here would let a later resave of the identical
+// content mint a fresh Idempotency-Key -- and since
+// message_versions.edit()'s _find_key() dedupes by EXACT key, never by
+// content, that would risk a genuine duplicate version if the original
+// uncertain attempt actually committed. ---
+
+test('Cancel after an uncertain (settled, ambiguous) save preserves the pending key/content instead of discarding them', async () => {
+  const { sandbox, container } = buildSandbox(async () => { throw new TypeError('Failed to fetch'); });
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const errorEl = div._children.find((c) => c.className === 'edit-msg-error');
+  const saveBtn = div.querySelector('[data-action="save"]');
+  const cancelBtn = div.querySelector('[data-action="cancel"]');
+
+  editBtn._on_click();
+  textarea.value = 'an edit that will end up genuinely uncertain';
+  await saveBtn._on_click(); // two network errors -> uncertain, key retained, panel stays open, Cancel re-enabled
+
+  assert.equal(cancelBtn.disabled, false, 'Cancel must be re-enabled once the ambiguous attempt has settled');
+  cancelBtn._on_click(); // the scenario this test is about: Cancel clicked AFTER settling, not during
+
+  assert.equal(panel.hidden, true, 'Cancel must still visually close the panel');
+
+  // Reopen -- per the reopen fix above, this must show the SAME
+  // preserved draft (proving the key/content were not discarded by Cancel).
+  editBtn._on_click();
+  assert.equal(textarea.value, 'an edit that will end up genuinely uncertain', 'the pending draft must survive a Cancel click made after the save already settled as uncertain');
+  assert.equal(errorEl.hidden, false);
+});
+
+test('ADVERSARIAL: Cancel after an uncertain save, then a later identical-content resave reuses the SAME Idempotency-Key -- proving Cancel cannot cause a duplicate version even when clicked in between', async () => {
+  const calls = [];
+  let attempt = 0;
+  const { sandbox, container } = buildSandbox(async (url, opts) => {
+    calls.push(opts.headers['Idempotency-Key']);
+    attempt++;
+    if (attempt <= 2) throw new TypeError('Failed to fetch'); // the original attempt + its one automatic retry both fail
+    // The LATER resave (after Cancel, then reopening and clicking Save
+    // again) finally reaches the server -- message_versions.edit()'s
+    // own idempotency lookup is what actually guarantees no duplicate,
+    // but that guarantee only holds if the client reuses the same key,
+    // which is exactly what this test verifies.
+    return { ok: true, status: 200, json: async () => ({ active_content: 'an edit that will end up genuinely uncertain', version_count: 2, created: false }) };
+  });
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const saveBtn = div.querySelector('[data-action="save"]');
+  const cancelBtn = div.querySelector('[data-action="cancel"]');
+
+  editBtn._on_click();
+  textarea.value = 'an edit that will end up genuinely uncertain';
+  await saveBtn._on_click(); // settles as uncertain (2 network errors), key retained
+
+  cancelBtn._on_click(); // user cancels AFTER the uncertain settle -- panel closes, key must survive
+  editBtn._on_click(); // reopen -- shows the preserved pending draft (verified by the previous test)
+  await saveBtn._on_click(); // resave with the SAME (unmodified) content
+
+  assert.equal(new Set(calls).size, 1, 'all three attempts -- the original, its auto-retry, and the post-Cancel resave -- must share the exact same Idempotency-Key, so the backend\'s own idempotency lookup can never see this as more than one logical attempt');
+  const sampleQ = div._children.find((c) => c.className === 'sample-q');
+  assert.equal(sampleQ.textContent, 'an edit that will end up genuinely uncertain');
+  assert.equal(panel.hidden, true, 'the eventual real success must close the panel');
+});
+
+test('Cancel on a FRESH draft that was never submitted (no pending key) still abandons normally -- a later re-open gets its own fresh key, not a stale reused one', () => {
+  const { sandbox, container } = buildSandbox();
+  loadFns(sandbox);
+  sandbox.appendUserMessage('original text', { messageId: 'real-id-1', versionCount: 1, edited: false });
+  const div = container._children[0];
+  const editBtn = div._children.find((c) => c.className === 'edit-msg-btn');
+  const panel = div._children.find((c) => c.className === 'edit-msg-panel');
+  const textarea = div._children.find((c) => c.className === 'edit-msg-textarea');
+  const cancelBtn = div.querySelector('[data-action="cancel"]');
+
+  editBtn._on_click();
+  textarea.value = 'a draft that is abandoned before ever clicking Save';
+  cancelBtn._on_click();
+
+  assert.equal(panel.hidden, true);
+  editBtn._on_click();
+  assert.equal(textarea.value, 'original text', 'with no outstanding ambiguity, reopening must show the real current text, not the abandoned draft');
+});
