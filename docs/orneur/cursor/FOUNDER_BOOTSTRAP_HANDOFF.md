@@ -2,7 +2,7 @@
 
 Status: `AWAITING_INDEPENDENT_ENROLLMENT`
 
-Subject of this package: the commit that adds `orca/founder_enrollment.py`. Governance is not closed. This package does not qualify the runtime and does not replace the separate macOS lock audit of `c27791fe3ad705ff34e6d4fb301c066f4ea93757`.
+Subject of this package: founder enrollment remains `AWAITING_INDEPENDENT_ENROLLMENT` after the trust-boundary corrections. Governance is not closed. This package does not qualify the runtime and does not replace the separate macOS lock audit of `c27791fe3ad705ff34e6d4fb301c066f4ea93757`. The audited starting commit is `9e2b69bc623c6d7dae6aefbf356f793fafe4d9c5`.
 
 Baseline: `cd6af2ac2cf1320b5ffd5ca646784c99ccc5ee8d`
 
@@ -16,9 +16,12 @@ Proposal SHA-256: `08daabb09d79c22b241691bc92c8a519f065519303a368cb44e5afb972f69
 
 ## What Antigravity should check
 
-- `OPERATIONAL_OBSERVATION_SHA256` is `None`. No founder private key, seed, or pinned public key is in the diff.
+The trust-boundary design and the requalification list are in `docs/orneur/cursor/TRUST_AUTHORITY_BOUNDARY.md`. In short:
+
+- `OPERATIONAL_OBSERVATION_SHA256` is `None`. No founder private key, seed, or pinned public key is in the diff. The ceremony does not recommend a raw seed.
 - `establish` on this tree returns `enrollment_absent` with `operational_authority` false and `governance_exception_active` false.
-- A synthetic enrollment can verify and still leaves `future_exception_applies` false. The governance test does not import `founder_enrollment`.
+- A synthetic enrollment can verify and still leaves `future_exception_applies` false. The governance test does not import `founder_enrollment`. Repository source, an in-repo hash, and a substituted loader cannot make that function return true.
+- A GitHub URL is `publication_not_independent`. One actor creating both keys is `witness_identity_unauthenticated`. Version-2 observation digests change when an authority field changes. Version 1 is `legacy_schema_refused`.
 - A witness who uses the founder key is `witness_not_independent`. A caller-supplied public key is refused. A substituted anchor loader is `caller_supplied_anchor_refused`.
 - The prepared gate rejects a fourth file, a changed permitted byte, a frozen deletion, a changed acceptance ledger, a changed training-authorization file, a changed trust root, and a missing historical commit.
 - Approval binding rejects an identity mismatch, an unknown key, a forged signature, a replayed proposal digest, and a duplicate approval.
@@ -29,12 +32,12 @@ A pass on this bootstrap review does not activate the freeze exception and does 
 
 ## Founder actions still outstanding
 
-1. Generate the Ed25519 key on a founder-controlled machine, outside the repository and outside the agent.
-2. Have a separate witness generate a different key and countersign the enrollment statement.
-3. Publish the observation hash on a founder-controlled GitHub commit or release that an agent did not create.
-4. Have a reviewer who is neither the key holder nor the preparing agent transcribe that hash into `OPERATIONAL_OBSERVATION_SHA256`.
+1. Generate the Ed25519 key on a founder-controlled machine and store it with `write_encrypted_software_key`, outside the repository and outside the agent.
+2. Have a different person generate their own key, compare fingerprints in person, and countersign the enrollment statement. Two keys created by one actor are not that witness.
+3. Have a third key sign the publication receipt. A GitHub commit URL or release URL is not that receipt.
+4. Establish the witness channel and the publisher key outside this repository. Do not transcribe the observation hash into `OPERATIONAL_OBSERVATION_SHA256` and treat that assignment as the anchor.
 5. Sign the freeze approval `adopt_files` with the enrolled key, binding the proposal digest, the baseline, and the three paths.
-6. Only after those checks may a later commit wire `test_no_frozen_or_private_path_differs_from_the_branch_point` to `future_exception_applies`.
+6. Only after those external anchors exist may a later commit change `test_no_frozen_or_private_path_differs_from_the_branch_point`. Editing `future_exception_applies` is not that change.
 
 Ceremony: `docs/orneur/cursor/FOUNDER_AUTHORITY_ENROLLMENT.md`.
 

@@ -51,7 +51,7 @@ Do not generate a key for this approval and do not ask Cursor to pin a new key a
 1. Recompute the proposal digest and the three file digests. Confirm the baseline commit and the introducing commit.
 2. Sign `canonical_approval_bytes` with the Ed25519 key that is already the founder's authorized key. The private key stays outside this repository and outside Cursor.
 3. An independent reviewer confirms that the public key is the same key as the external trust source. Agreement of a hash inside this repository is not that confirmation.
-4. A later reviewed commit may pin that already-established key and may then change the governance test so the only allowed frozen difference is these three digests. This preparation does not do that.
+4. A later commit may change the governance test only after the founder anchor exists outside this repository. Copying a hash or a public key into this repository does not establish that anchor. This preparation does not change the test.
 
 Until those steps are done, the amendment status stays `AWAITING_FOUNDER_SIGNED_APPROVAL`.
 

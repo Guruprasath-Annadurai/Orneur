@@ -16,7 +16,9 @@ Proposal SHA-256: `08daabb09d79c22b241691bc92c8a519f065519303a368cb44e5afb972f69
 
 ## The gate that is not wired
 
-`orca.founder_enrollment.future_exception_applies` returns true only when the frozen-diff reasons, the approval problems, and the enrollment problems are all empty, and the operational observation anchor is the established pin. In this commit the pin is absent, and a loader that claims a pin is caller-supplied, so the function returns false. The live test does not call the function.
+`orca.founder_enrollment.future_exception_applies` returns false in this commit. Empty defect lists do not apply the exception. A loader that claims the observation pin is present is caller-supplied. `repository_material_cannot_authorize` returns `repository_logic_not_authority` for source text and for an in-repository hash, and substituting that function still does not make the gate return true. The live test does not call the function. Changing Python in this repository, or replacing a hash in this repository, is not founder authority.
+
+The founder trust anchor has to be established outside this repository. A GitHub URL, a git author, an Actions secret, and a workflow file in this tree are not that anchor. This commit does not change rulesets, branch protection, or secrets. Organization owners, repository administrators, holders of admin tokens, and GitHub Support can change those controls. The limits are recorded in `docs/orneur/cursor/TRUST_AUTHORITY_BOUNDARY.md`.
 
 A later commit may wire the test only after a real enrollment is independently pinned and a founder signature over `orneur-freeze-amendment-approval/1` verifies. That commit must keep `cd6af2a` as the baseline. It must not point the test at a newer tree. The only permitted difference remains the three paths and digests above.
 

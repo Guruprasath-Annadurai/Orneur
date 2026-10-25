@@ -78,6 +78,10 @@ On this Linux x86_64 worktree, CPython 3.12.3, `bash scripts/ci/run_deterministi
 
 The founder-enrollment preparation on the same host reported sentinel 13 passed and main `1 failed, 9243 passed, 456 skipped, 43 deselected, 6 xfailed` in 824.70s. The same governance test is the only failure. `tests/test_founder_enrollment.py` passed. `OPERATIONAL_OBSERVATION_SHA256` is absent. `establish` returns `enrollment_absent`.
 
+Trust-boundary hardening keeps that enrollment at `AWAITING_INDEPENDENT_ENROLLMENT`. Schema `orneur-founder-enrollment/2` is the ceremony under test. The publisher anchor and the witness identity channel are absent. `future_exception_applies` returns false. The governance test is still unwired and still names the three denial files. No operational founder key is in the tree. The design record is `docs/orneur/cursor/TRUST_AUTHORITY_BOUNDARY.md`.
+
+On this Linux x86_64 worktree the trust-boundary deterministic run finished at 1:21 AM IST on 26 Oct 2026. The sentinel passed 13. The main process was `1 failed, 9263 passed, 456 skipped, 43 deselected, 6 xfailed` in 816.46s. The one failure is still `test_no_frozen_or_private_path_differs_from_the_branch_point` on the three denial files. macOS was not executed.
+
 Truth labels:
 
 | Area | Label |
