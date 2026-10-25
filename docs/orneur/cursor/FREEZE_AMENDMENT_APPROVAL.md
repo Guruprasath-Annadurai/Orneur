@@ -55,6 +55,8 @@ Do not generate a key for this approval and do not ask Cursor to pin a new key a
 
 Until those steps are done, the amendment status stays `AWAITING_FOUNDER_SIGNED_APPROVAL`.
 
+The founder key itself is not yet enrolled. The ceremony, the witness rule, and the absent observation pin are in `docs/orneur/cursor/FOUNDER_AUTHORITY_ENROLLMENT.md`. A synthetic test key cannot satisfy that ceremony.
+
 ## Separate runtime review
 
 Antigravity's audit of this amendment is not the macOS qualification of `c27791fe3ad705ff34e6d4fb301c066f4ea93757`. The runtime audit still needs its own evidence on macOS: at least 100 concurrent lock-creation iterations, a fresh journal directory per iteration, at least 16 threads where that is supported, one stable lock inode, no unexpected `ENOENT`, `EEXIST`, or `lock_refused`, symlink, hard-link, and lock-replacement resistance, verification-seal regressions, macOS golden determinism, and the applicable test results. Linux results are not that evidence.

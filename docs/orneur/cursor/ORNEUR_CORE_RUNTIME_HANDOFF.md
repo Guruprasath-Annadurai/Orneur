@@ -76,6 +76,8 @@ The acceptance ledger sha256 remains `37517e5f3dc66819f61f5a7bb8ace1921282415f10
 
 On this Linux x86_64 worktree, CPython 3.12.3, `bash scripts/ci/run_deterministic_tests.sh` ran the sentinel (13 passed) and then the main process: 1 failed, 9220 passed, 456 skipped, 43 deselected, 6 xfailed, in 800.85s. The one failure is still `test_no_frozen_or_private_path_differs_from_the_branch_point`, naming the three `genesis_native_pretraining` files. `tests/test_freeze_amendment.py` passed in that process. `evaluate` is `AWAITING_FOUNDER_SIGNED_APPROVAL` with `activated` false. macOS was not executed. That Linux run is not the runtime qualification of `c27791fe3ad705ff34e6d4fb301c066f4ea93757`.
 
+The founder-enrollment preparation on the same host reported sentinel 13 passed and main `1 failed, 9243 passed, 456 skipped, 43 deselected, 6 xfailed` in 824.70s. The same governance test is the only failure. `tests/test_founder_enrollment.py` passed. `OPERATIONAL_OBSERVATION_SHA256` is absent. `establish` returns `enrollment_absent`.
+
 Truth labels:
 
 | Area | Label |
@@ -92,4 +94,5 @@ Truth labels:
 | Training start | BLOCKED |
 | Workstation | BLOCKED until the named machine is observed |
 | Freeze amendment | PREPARED — `AWAITING_FOUNDER_SIGNED_APPROVAL` |
+| Founder enrollment | PREPARED — `AWAITING_INDEPENDENT_ENROLLMENT` |
 | macOS lock qualification of `c27791f` | NOT RUN — separate from the amendment |
