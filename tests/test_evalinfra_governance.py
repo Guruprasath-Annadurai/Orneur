@@ -85,10 +85,18 @@ FROZEN = ["docs/orneur/acceptance", "docs/orneur/authorization", "docs/orneur/ph
 
 
 def test_no_frozen_or_private_path_differs_from_the_branch_point():
-    """The branch was cut from cd6af2a; none of the frozen/governance paths may differ from it. Skipped where the commit is not available (e.g. a shallow clone)."""
+    """The branch was cut from cd6af2a; none of the frozen/governance paths may differ from it.
+
+    A missing branch-point commit is a qualification failure. The check must
+    not skip on a shallow checkout.
+    """
     base = "cd6af2ac2cf1320b5ffd5ca646784c99ccc5ee8d"
     probe = subprocess.run(["git", "cat-file", "-e", base + "^{commit}"], cwd=ROOT, capture_output=True)
     if probe.returncode != 0:
-        pytest.skip("branch-point commit not available")
+        pytest.fail(
+            "qualification failure: branch-point commit "
+            + base
+            + " is absent, so the frozen-path governance diff did not execute"
+        )
     out = subprocess.run(["git", "diff", "--name-only", base, "--", *FROZEN], cwd=ROOT, capture_output=True, text=True)
     assert out.returncode == 0 and out.stdout.strip() == "", out.stdout

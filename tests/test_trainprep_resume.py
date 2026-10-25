@@ -39,6 +39,21 @@ def test_golden_final_state_pins_cross_platform_determinism(tmp_path):
     assert run(Plan(), tmp_path / "g").state.sha256 == GOLDEN_FINAL_STATE_SHA256
 
 
+def test_gradient_norm_uses_left_to_right_addition():
+    """Builtin sum() of floats is compensated on CPython 3.12 and must not feed the norm."""
+    from orca.train.dryrun.toy import _sum_left
+
+    values = [0.1] * 10
+    folded = 0.0
+    for value in values:
+        folded += value
+    assert _sum_left(values) == folded
+    squares = 0.0
+    for value in values:
+        squares += value * value
+    assert _sum_left(value * value for value in values) == squares
+
+
 def test_training_actually_learns(tmp_path):
     out = run(Plan(total_steps=60, lr=0.1, dropout_p=0.0, warmup_steps=2), tmp_path / "l")
     assert out.state.losses[-1] < out.state.losses[0] * 0.2
