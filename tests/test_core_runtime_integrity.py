@@ -773,6 +773,83 @@ def test_failed_critical_section_releases_the_lock(tmp_path: Path):
     assert journal.get("m4", "owner-a")["mission_id"] == "m4"
 
 
+def test_removed_directory_does_not_create_a_lock(tmp_path: Path):
+    root = tmp_path / "journal"
+    root.mkdir()
+    journal = Journal(root)
+    dirfd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    os.rmdir(root)
+    try:
+        with pytest.raises(MissionError) as exc:
+            journal._open_lock(dirfd)
+        assert exc.value.code == "lock_refused"
+    finally:
+        os.close(dirfd)
+
+
+def test_replaced_lock_inode_is_refused_after_the_wait(tmp_path: Path):
+    journal = Journal(tmp_path)
+    _create(journal, "m1")
+    lock = tmp_path / ".lock"
+    original = lock.stat().st_ino
+    lock.unlink()
+    replacement = tmp_path / "other.lock"
+    replacement.write_text("x", encoding="utf-8")
+    os.link(replacement, lock)
+    with pytest.raises(MissionError) as linked:
+        journal.get("m1", "owner-a")
+    assert linked.value.code == "lock_refused"
+    lock.unlink()
+    (tmp_path / ".lock").symlink_to(replacement)
+    with pytest.raises(MissionError) as swapped:
+        journal.get("m1", "owner-a")
+    assert swapped.value.code == "symlink_refused"
+    assert replacement.read_text(encoding="utf-8") == "x"
+    (tmp_path / ".lock").unlink()
+    (tmp_path / ".lock").write_text("", encoding="utf-8")
+    reopened = journal.get("m1", "owner-a")
+    assert reopened["mission_id"] == "m1"
+    assert (tmp_path / ".lock").stat().st_ino != original
+    assert (tmp_path / ".lock").stat().st_nlink == 1
+    assert (tmp_path / ".lock").stat().st_mode & 0o777 == 0o600
+
+
+def test_concurrent_lock_creation_keeps_one_inode(tmp_path: Path):
+    """One hundred fresh directories, each with concurrent first creates."""
+    for round_id in range(100):
+        root = tmp_path / f"round-{round_id}"
+        root.mkdir()
+        inodes: list[int] = []
+        errors: list[BaseException] = []
+        barrier = threading.Barrier(4)
+
+        def worker(index: int) -> None:
+            try:
+                barrier.wait(timeout=5)
+                journal = Journal(root)
+                journal.create(
+                    mission_id=f"m{index}",
+                    owner_user_id="owner-a",
+                    objective={"kind": "structured_report"},
+                    steps=_STEPS,
+                )
+                inodes.append((root / ".lock").stat().st_ino)
+            except BaseException as exc:  # noqa: BLE001 - the assertion reports the worker error
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(index,)) for index in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+        assert errors == []
+        info = (root / ".lock").stat()
+        assert stat.S_ISREG(info.st_mode)
+        assert info.st_nlink == 1
+        assert info.st_mode & 0o777 == 0o600
+        assert inodes == [info.st_ino] * 4
+
+
 def test_metadata_allowlist_never_connects(monkeypatch: pytest.MonkeyPatch):
     calls = {"n": 0}
 

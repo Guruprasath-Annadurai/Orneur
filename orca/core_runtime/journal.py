@@ -138,6 +138,43 @@ class Journal:
         if not stat.S_ISREG(named.st_mode) or named.st_ino != info.st_ino or named.st_dev != info.st_dev:
             raise MissionError("lock_refused")
 
+    def _open_lock(self, dirfd: int) -> int:
+        """Open the single lock inode from ``dirfd``.
+
+        Darwin ``openat(dirfd, name, O_CREAT)`` without ``O_EXCL`` returns
+        ``ENOENT`` to the loser of a create race. ``vn_open_auth`` restarts
+        after ``EEXIST`` while ``USEDVP`` is still set and the directory
+        vnode is null, so the second lookup fails before it reads the name
+        (xnu ``vfs_vnops.c``; measured with ``O_NOFOLLOW`` in golang/go#81246).
+        ``O_EXCL`` returns ``EEXIST`` on that race and is the create used here.
+        A missing parent, a symlink, a hard link, or a non-regular file is
+        refused. This is not multi-host durability.
+        """
+        existing = os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC
+        creating = existing | os.O_CREAT | os.O_EXCL
+        for _ in range(8):
+            try:
+                return os.open(".lock", existing, dir_fd=dirfd)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                if exc.errno == errno.ELOOP:
+                    raise MissionError("symlink_refused") from exc
+                raise MissionError("lock_refused") from exc
+            try:
+                return os.open(".lock", creating, 0o600, dir_fd=dirfd)
+            except FileExistsError:
+                continue
+            except FileNotFoundError as exc:
+                raise MissionError("lock_refused") from exc
+            except OSError as exc:
+                if exc.errno == errno.EEXIST:
+                    continue
+                if exc.errno == errno.ELOOP:
+                    raise MissionError("symlink_refused") from exc
+                raise MissionError("lock_refused") from exc
+        raise MissionError("lock_refused")
+
     @contextmanager
     def _exclusive(self):
         """Single-host flock. The lock file is opened from the root directory descriptor.
@@ -151,12 +188,7 @@ class Journal:
             raise MissionError("symlink_refused") from exc
         fd = None
         try:
-            try:
-                fd = os.open(".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=dirfd)
-            except OSError as exc:
-                if exc.errno == errno.ELOOP:
-                    raise MissionError("symlink_refused") from exc
-                raise MissionError("lock_refused") from exc
+            fd = self._open_lock(dirfd)
             self._check_lock(dirfd, fd)
             os.fchmod(fd, 0o600)
             fcntl.flock(fd, fcntl.LOCK_EX)
