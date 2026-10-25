@@ -4,9 +4,13 @@ Schema: `orneur-freeze-amendment-proposal/1`
 
 Status: `PROPOSED`
 
+Activation: `AWAITING_FOUNDER_SIGNED_APPROVAL`
+
 Activated: false
 
-This document does not change a frozen file, the governance test, or the baseline commit. It does not authorize training, a GPU, a model, or spending. Founder approval is absent.
+Founder-selected decision, not yet signed: `adopt_files`
+
+This document does not change a frozen file, the governance test, or the baseline commit. It does not authorize training, a GPU, a model, or spending. A chat directive is not a signature. Founder approval is absent.
 
 ## Baseline that stays in force
 
@@ -52,12 +56,22 @@ Approval is not this file. A future founder authorization would be a separate si
 - this proposal's SHA-256
 - baseline `cd6af2ac2cf1320b5ffd5ca646784c99ccc5ee8d`
 - the three paths and the SHA-256 values above
-- one decision: `adopt_files` or `remove_files`
-- the approving identity, key id, and an Ed25519 signature over those fields
+- one decision: `adopt_files`
+- the approving identity, key id, and an Ed25519 signature over the canonical payload
 
-The signature would have to verify against a founder key that is not in this repository today. The committed authority registries are empty. This process cannot sign the approval. An approval record must not set `gpu_allowed`, name a model, or set a non-zero spend, and it must not be accepted by `authorize_native_pretraining` or `training_authorized`.
+The closure directive selects Option A, retaining the three files. `remove_files` is not the selected decision. The selection is not a signature.
 
-`adopt_files` would mean a later founder-identified commit updates the governance test to keep `cd6af2a` for every other frozen path and to allow only these three digests. `remove_files` would mean that commit deletes the three files. Until that commit exists and an independent check shows the governance test passing for that reason, the check remains a failure.
+The signature would have to verify against a founder key that is not in this repository today. The committed authority registries are empty. This process cannot sign the approval and does not generate a founder key. An approval record must not set `gpu_allowed`, name a model, or set a non-zero spend, and it must not be accepted by `authorize_native_pretraining` or `training_authorized`.
+
+`adopt_files`, once a later commit has verified a real signature, would keep `cd6af2a` for every other frozen path and allow only these three digests. This preparation does not make that code change. Until an independent check shows the governance test passing for that reason, the check remains a failure.
+
+## Preparation that does not activate
+
+`orca/freeze_amendment.py` recomputes the three digests, requires `cd6af2a` and the introducing commit `6cd6127b608a0ea6670576ba6a506f8f3a6220b1`, and refuses a fourth path, a changed permitted byte, a deletion, a changed acceptance ledger, a changed trust root, and a malformed or conflicting approval. Its `activated` field is false. Missing trust material leaves the verdict at `AWAITING_FOUNDER_SIGNED_APPROVAL`.
+
+`tests/test_evalinfra_governance.py` does not call that module. The empty-diff assertion against `cd6af2a` stays in force.
+
+Signing instructions are in `docs/orneur/cursor/FREEZE_AMENDMENT_APPROVAL.md`. Putting a JSON file on disk does not turn the governance check green. The proposal digest that a signature must bind is the SHA-256 of this file, computed outside this file and checked by the verifier.
 
 ## Independent verification while this proposal is inactive
 

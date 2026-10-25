@@ -24,9 +24,15 @@ No other frozen path in the governance test differs from that commit. The accept
 
 ## Proposal, pending founder authorization
 
-These three files are empty `NOT_AUTHORIZED` records introduced with the inherited Workstream F tree. They do not authorize training. Two founder-controlled resolutions are available:
+These three files are empty `NOT_AUTHORIZED` records introduced with the inherited Workstream F tree. They do not authorize training. Two founder-controlled resolutions were available when this note was written:
 
 1. Adopt the three documents as the new frozen baseline at a founder-chosen commit, and point the governance test at that commit.
 2. Remove the three documents in a founder-authorized change if they should not be part of the frozen tree.
 
-Cursor does not choose between those options and does not edit the files to make the check pass.
+Cursor does not edit the files to make the check pass.
+
+## Selected direction
+
+The closure directive selects Option A: retain the three files. That selection is an exact-path and exact-digest exception, not a new baseline. `cd6af2ac2cf1320b5ffd5ca646784c99ccc5ee8d` stays the historical reference. Resolution 1 above, retargeting the governance test at a newer commit, is not the selected direction.
+
+The exception is prepared in `docs/orneur/cursor/FREEZE_AMENDMENT_PROPOSAL.md` and `orca/freeze_amendment.py`. It is inactive. The governance check still fails on the three additions until a founder signature verifies against an independent trust source that this repository does not contain.

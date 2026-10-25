@@ -26,6 +26,7 @@ This branch does not edit the acceptance ledger, the register graph, trust roots
 - A planted `committed` effect file, even when its payload hash matches a well-formed artifact, does not admit the effect. `seal_verified` raises `effect_not_authorized`. `commit_effect` requires `bytes_written`. An unconfirmed outcome stays unsealed. Cancel and revoke still fail closed. A later artifact or input change keeps the historical `completed_verified` record and reports a separate integrity code.
 - `open(.lock)` followed a symlink and created the mission. The lock is opened from the root directory descriptor with `O_NOFOLLOW`, `O_CLOEXEC`, and mode `0600`. Creation uses `O_EXCL` because Darwin `openat(dirfd, name, O_CREAT)` without `O_EXCL` returns `ENOENT` to the loser of a create race. A symlink raises `symlink_refused`. A hard link, fifo, or cross-device replacement raises `lock_refused`. This remains single-host `flock`. This Linux host did not reproduce that `ENOENT`. macOS was not executed here.
 - The freeze-amendment proposal is `docs/orneur/cursor/FREEZE_AMENDMENT_PROPOSAL.md`. It is `PROPOSED` and inactive. The three `genesis_native_pretraining` files and the governance failure stay as they are.
+- Option A is prepared, not activated, in `orca/freeze_amendment.py`. The historical baseline remains `cd6af2ac2cf1320b5ffd5ca646784c99ccc5ee8d`. The verdict status is `AWAITING_FOUNDER_SIGNED_APPROVAL` and `activated` is false. No founder key is pinned. Signing instructions are in `docs/orneur/cursor/FREEZE_AMENDMENT_APPROVAL.md`. This preparation does not qualify the runtime and does not close the macOS lock audit of `c27791fe3ad705ff34e6d4fb301c066f4ea93757`.
 - `docs/orneur/cursor/EVIDENCE_TRUST_BOUNDARY.md` records that matching hashes do not identify a writer who can replace every journal file, and that `principal.authenticate` is a refusal.
 - The frozen-path governance test skipped when `cd6af2a` was absent. It now fails instead of skipping. The deterministic CI checkout uses `fetch-depth: 0`. With history present, the check executes and fails on three added `NOT_AUTHORIZED` files under `docs/orneur/authorization/genesis_native_pretraining/`. Those files are not edited here. The difference and the two founder options are in `docs/orneur/cursor/GOVERNANCE_DIFF_PROPOSAL.md`.
 - The dry-run golden state diverged on CPython 3.12 because `sum` of floats uses compensated addition. The gradient norm now uses an explicit left-to-right fold. The pinned hash `5bb79b0f13b944b0e7ea966f867cbbcba85585ebcf4cc035a6dc3b1f85e424c9` is unchanged. This machine did not run macOS.
@@ -71,6 +72,10 @@ Packaging tests `test_wheel_contains_both_orca_and_orneur_packages`, `test_isola
 
 The acceptance ledger sha256 remains `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`. GitHub CI for `d1b2fe0` is not evidence for the commit that follows it.
 
+## Freeze amendment preparation
+
+On this Linux x86_64 worktree, CPython 3.12.3, `bash scripts/ci/run_deterministic_tests.sh` ran the sentinel (13 passed) and then the main process: 1 failed, 9220 passed, 456 skipped, 43 deselected, 6 xfailed, in 800.85s. The one failure is still `test_no_frozen_or_private_path_differs_from_the_branch_point`, naming the three `genesis_native_pretraining` files. `tests/test_freeze_amendment.py` passed in that process. `evaluate` is `AWAITING_FOUNDER_SIGNED_APPROVAL` with `activated` false. macOS was not executed. That Linux run is not the runtime qualification of `c27791fe3ad705ff34e6d4fb301c066f4ea93757`.
+
 Truth labels:
 
 | Area | Label |
@@ -86,3 +91,5 @@ Truth labels:
 | Pretraining acceptance | BLOCKED at 0/95 |
 | Training start | BLOCKED |
 | Workstation | BLOCKED until the named machine is observed |
+| Freeze amendment | PREPARED — `AWAITING_FOUNDER_SIGNED_APPROVAL` |
+| macOS lock qualification of `c27791f` | NOT RUN — separate from the amendment |
