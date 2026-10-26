@@ -939,7 +939,7 @@ def _profile_processes(profile: Path) -> list[int]:
 
 
 def _wait_external(engine: SovereignMission, user, mission_id: str) -> None:
-    deadline = time.monotonic() + 35
+    deadline = time.monotonic() + 80
     last = None
     while time.monotonic() < deadline:
         last = engine.get(user, mission_id)
@@ -965,7 +965,7 @@ def _dispatch_later(engine: SovereignMission, user, mission_id: str, step_id: st
 
 
 def _join_dispatch(started: dict) -> dict:
-    started["worker"].join(45)
+    started["worker"].join(90)
     assert not started["worker"].is_alive()
     return started["box"]
 

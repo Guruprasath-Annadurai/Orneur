@@ -25,7 +25,7 @@ _MARKER_ARGUMENT_KEYS = frozenset({"name", "text"})
 _LIVE: dict[str, object] = {}
 _STOP: dict[str, str] = {}
 _LIVE_LOCK = threading.Lock()
-LEASE_GRACE_SECONDS = 10.0
+LEASE_GRACE_SECONDS = 45.0
 
 
 class MissionError(Exception):
@@ -1033,6 +1033,7 @@ def _run_browser(
             service._heartbeat(mission_id, generation)
             _refuse_if_stopped(mission_id, service.worker_id, generation)
 
+        _tick()
         engine.start(now=now)
         _tick()
         service._begin_external(mission_id, step_id, generation)

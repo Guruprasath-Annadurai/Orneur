@@ -105,7 +105,7 @@ These are not independently enforced here:
 - Tenant isolation is the service check `owner_user_id == tenant_id == authenticated user`. Both users share the service OS account. Mode `0600` evidence does not stop that account.
 - A database writer who replaces `record_json`, `record_sha256`, and `evidence_sha256` together is not detected. A partial edit is `withheld`.
 - Browser `COMPLETED_UNVERIFIED` is still not an external transaction witness. Independent receipts for browser effects are not implemented on the local fixture. The grant still cannot grow.
-- Worker leases are SQLite-local. Tests do not establish multi-host readiness.
+- Worker leases are SQLite-local. Tests do not establish multi-host readiness. Lease grace is 45 seconds so a slow Chrome DevTools handshake is not treated as a dead worker.
 - Recovery of an expired lease fences commit authority; it does not prove the previous process is dead.
 - Chrome has CPU and open-file limits and no memory cap. The mission path refuses a binary whose bytes contain `--no-sandbox` because the browser engine does. The live crash test checked the mission Chrome command line. Chrome profiles are under `/tmp/orneur-chrome/<scope>/c` so the DevTools singleton socket fits `AF_UNIX`; a nested mission workspace path was observed to make Chrome exit before CDP was ready.
 - There is no pause or resume.
