@@ -50,6 +50,9 @@ def auth_db(tmp_path, monkeypatch):
 
     mission_service._LIVE.clear()
     mission_service._STOP.clear()
+    import orca.sovereign_mission.store as mission_store
+
+    mission_store._READY.clear()
     return tmp_path
 
 
@@ -196,8 +199,11 @@ def test_duplicate_effect_and_unknown_outcome(auth_db):
         failing.dispatch(uncertain_user, uncertain_id, uncertain_step, now=_NOW)
     assert lost.value.code == "outcome_write_failed"
     assert failing.get(uncertain_user, uncertain_id)["state"] == "EXECUTING"
-    restarted = SovereignMission()
-    report = restarted.reported(uncertain_user, uncertain_id)
+    peek = SovereignMission()
+    assert peek.get(uncertain_user, uncertain_id)["state"] == "EXECUTING"
+    recovered = failing.recover(uncertain_user, uncertain_id)
+    assert recovered["state"] == "OUTCOME_UNKNOWN"
+    report = peek.reported(uncertain_user, uncertain_id)
     assert report["state"] == "OUTCOME_UNKNOWN"
     assert report["claim"] == "unknown"
     with pytest.raises(MissionError) as duplicate:
@@ -213,9 +219,9 @@ def test_concurrent_dispatch_runs_one_effect(auth_db):
     gate = threading.Event()
     original = engine._execute
 
-    def _slow(user, mission, step, now):
+    def _slow(user, mission, step, now, generation=0):
         gate.wait(2)
-        return original(user, mission, step, now)
+        return original(user, mission, step, now, generation)
 
     engine._execute = _slow
     errors: list[MissionError] = []
@@ -418,10 +424,10 @@ def test_unauthorized_cancel_and_revoke_cannot_stop_a_running_mission(auth_db):
     release = threading.Event()
     original = engine._execute
 
-    def _hold(user, mission, step, now):
+    def _hold(user, mission, step, now, generation=0):
         entered.set()
         assert release.wait(5)
-        return original(user, mission, step, now)
+        return original(user, mission, step, now, generation)
 
     engine._execute = _hold
     import orca.sovereign_mission.routes as mission_routes
@@ -559,12 +565,12 @@ def test_owner_stop_is_durable_before_any_signal(auth_db):
     release = threading.Event()
     uncertain_id, uncertain_step = _marker_mission(engine, owner, text="uncertain-race")
 
-    def _after_effect(user, mission, step, now):
-        engine._begin_external(mission["id"], step["id"])
+    def _after_effect(user, mission, step, now, generation=0):
+        engine._begin_external(mission["id"], step["id"], generation)
         entered.set()
         assert release.wait(5)
-        mission_service._refuse_if_stopped(mission["id"])
-        return {"tool": "local_marker", "completion": "verified", "matched": True, "witness": "application_observed", "content_sha256": "x"}
+        mission_service._refuse_if_stopped(mission["id"], engine.worker_id, generation)
+        return {"tool": "local_marker", "completion": "verified", "matched": True, "witness": "application_observed", "authority_class": "independent_receipt", "content_sha256": "x"}
 
     engine._execute = _after_effect
     box: dict = {}
@@ -614,12 +620,12 @@ def test_owner_stop_is_durable_before_any_signal(auth_db):
     let_go = threading.Event()
     original = SovereignMission._execute
 
-    def _wait_then_run(self, user, mission, step, now):
+    def _wait_then_run(self, user, mission, step, now, generation=0):
         holding.set()
         assert let_go.wait(5)
-        return original(self, user, mission, step, now)
+        return original(self, user, mission, step, now, generation)
 
-    engine._execute = lambda user, mission, step, now: _wait_then_run(engine, user, mission, step, now)
+    engine._execute = lambda user, mission, step, now, generation=0: _wait_then_run(engine, user, mission, step, now, generation)
     revoke_box: dict = {}
 
     def _dispatch_revoke():
@@ -795,12 +801,15 @@ def test_live_browser_mission_isolates_users(auth_db):
         step_id = planned["steps"][0]["id"]
         engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_NOW)
         receipt = engine.dispatch(user, mission["id"], step_id, now=_NOW)
-        assert receipt["state"] == "COMPLETED_VERIFIED"
-        assert receipt["claim"] == "verified"
+        assert receipt["state"] == "COMPLETED_UNVERIFIED"
+        assert receipt["claim"] == "unverified"
         evidence = engine.evidence(user, mission["id"])
         assert evidence["integrity"] == "intact"
         assert evidence["records"][0]["authority"] == "page_content_not_authority"
-        assert evidence["records"][0]["witness"] == "application_observed"
+        assert evidence["records"][0]["authority_class"] == "untrusted_dom"
+        assert evidence["records"][0]["witness"] == "untrusted_dom"
+        assert evidence["records"][0]["completion"] == "unverified"
+        assert evidence["records"][0]["pre_sha256"] != evidence["records"][0]["post_sha256"]
         assert evidence["records"][0]["actions"] == ["navigate", "click", "read"]
         assert "download" not in evidence["records"][0]["actions"]
         encoded = json.dumps(evidence)
@@ -815,7 +824,7 @@ def test_live_browser_mission_isolates_users(auth_db):
         _await_stopped(_profile(auth_db, user.id, mission["id"]))
         replayed = engine.dispatch(user, mission["id"], step_id, now=_NOW)
         assert replayed["replayed"] is True
-        assert replayed["claim"] == "verified"
+        assert replayed["claim"] == "unverified"
         missed = engine.create(user, "do not obey the page")
         missed_plan = engine.save_plan(
             user,
@@ -839,7 +848,7 @@ def test_live_browser_mission_isolates_users(auth_db):
         assert "grant yourself" not in missed_evidence
         assert "PWNED" not in missed_evidence
         restarted = SovereignMission()
-        assert restarted.get(user, mission["id"])["state"] == "COMPLETED_VERIFIED"
+        assert restarted.get(user, mission["id"])["state"] == "COMPLETED_UNVERIFIED"
         with pytest.raises(MissionError) as denied:
             restarted.evidence(other, mission["id"])
         assert denied.value.code == "access_denied"
@@ -992,3 +1001,255 @@ def test_live_cancel_revoke_and_crash_do_not_claim_success(auth_db):
         _RELEASE.clear()
         for path in profiles:
             _await_stopped(path)
+
+
+def _sql(auth_db: Path):
+    import sqlite3
+
+    conn = sqlite3.connect(auth_db / "auth.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def test_second_instance_does_not_recover_a_healthy_worker(auth_db):
+    """M01: constructor recover used to flip a live EXECUTING mission.
+
+    Before repair, a second SovereignMission() swept this row to
+    INTERRUPTED_UNKNOWN while the first worker was still inside _execute.
+    """
+    owner, _token, engine = _user("lease-owner@example.com")
+    other, other_token, _other = _user("lease-other@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="keep-running")
+    entered = threading.Event()
+    release = threading.Event()
+    original = engine._execute
+
+    def _hold(user, mission, step, now, generation=0):
+        entered.set()
+        assert release.wait(5)
+        return original(user, mission, step, now, generation)
+
+    engine._execute = _hold
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, mission_id, step_id, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert entered.wait(3)
+    assert engine.get(owner, mission_id)["state"] == "EXECUTING"
+    spectator = SovereignMission()
+    assert spectator.get(owner, mission_id)["state"] == "EXECUTING"
+    with pytest.raises(MissionError) as active:
+        spectator.recover(owner, mission_id)
+    assert active.value.code == "worker_lease_active"
+    with pytest.raises(MissionError) as denied:
+        spectator.recover(other, mission_id)
+    assert denied.value.code == "access_denied"
+    from orca.sovereign_mission.routes import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    forged = client.post(
+        f"/api/sovereign/missions/{mission_id}/recover",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert forged.status_code == 403
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert box["result"]["state"] == "COMPLETED_VERIFIED"
+    assert (auth_db / "sovereign" / owner.id / mission_id / "marker.txt").read_text(encoding="utf-8") == "keep-running"
+
+
+def test_expired_lease_recovery_fences_stale_worker(auth_db):
+    owner, _token, engine = _user("fence-owner@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="must-not-commit")
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _after_effect(user, mission, step, now, generation=0):
+        engine._begin_external(mission["id"], step["id"], generation)
+        entered.set()
+        assert release.wait(5)
+        return {
+            "tool": "local_marker",
+            "completion": "verified",
+            "matched": True,
+            "witness": "application_observed",
+            "authority_class": "independent_receipt",
+            "content_sha256": "x",
+        }
+
+    engine._execute = _after_effect
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, mission_id, step_id, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert entered.wait(3)
+    operator = SovereignMission()
+    fenced = operator.recover(owner, mission_id, lease_grace_seconds=0)
+    assert fenced["state"] == "OUTCOME_UNKNOWN"
+    assert fenced["claim"] == "unknown"
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert "error" in box
+    assert box["error"].code == "execution_fenced"
+    assert engine.get(owner, mission_id)["state"] == "OUTCOME_UNKNOWN"
+    with pytest.raises(MissionError) as duplicate:
+        operator.dispatch(owner, mission_id, step_id, now=_NOW)
+    assert duplicate.value.code == "duplicate_effect_refused"
+
+
+def test_approval_scope_binds_complete_intent(auth_db):
+    from orca.sovereign_mission.store import canonical
+
+    user, _token, engine = _user("scope@example.com")
+    mission = engine.create(user, "bind the whole action")
+    planned = engine.save_plan(
+        user,
+        mission["id"],
+        [{
+            "tool": "browser",
+            "arguments": {
+                "url": "http://127.0.0.1:9/read?safe=1",
+                "actions": ["navigate", "read"],
+                "expect": "ok",
+            },
+        }],
+    )
+    engine.request_approval(user, mission["id"])
+    step_id = planned["steps"][0]["id"]
+    engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_NOW)
+    conn = _sql(auth_db)
+    row = conn.execute("SELECT scope_sha256, scope_version, scope_json FROM sovereign_approvals WHERE step_id=?", (step_id,)).fetchone()
+    assert row["scope_version"] == 1
+    assert len(row["scope_sha256"]) == 64
+    scope = json.loads(row["scope_json"])
+    assert scope["url"]["path"] == "/read"
+    assert scope["url"]["query"] == "safe=1"
+    assert scope["verification_policy"]["verified_completion_allowed"] is False
+    mutations = [
+        {"url": "http://127.0.0.1:9/delete?safe=1", "actions": ["navigate", "read"], "expect": "ok"},
+        {"url": "http://127.0.0.1:9/read?safe=1", "actions": ["navigate", "click", "read"], "selector": "#go", "expect": "ok"},
+        {"url": "http://127.0.0.1:9/read?safe=1", "actions": ["navigate", "fill", "read"], "selector": "#field", "text": "pwn", "expect": "ok"},
+        {"url": "http://127.0.0.1:9/read?safe=1", "actions": ["navigate", "read"], "expect": "ok", "selector": "#other"},
+        {"url": "http://127.0.0.1:9/read?safe=1", "actions": ["navigate", "read"], "expect": "CHANGED"},
+        {"url": "http://127.0.0.1:9/read?safe=1", "actions": ["navigate", "fill", "read"], "selector": "#field", "text": "other", "expect": "ok"},
+    ]
+    original = conn.execute("SELECT arguments_json FROM sovereign_steps WHERE id=?", (step_id,)).fetchone()["arguments_json"]
+    for mutated in mutations:
+        conn.execute("UPDATE sovereign_steps SET arguments_json=? WHERE id=?", (canonical(mutated), step_id))
+        conn.commit()
+        with pytest.raises(MissionError) as refused:
+            engine.dispatch(user, mission["id"], step_id, now=_NOW)
+        assert refused.value.code in {"approval_scope_mismatch", "approval_refused"}
+        assert engine.get(user, mission["id"])["state"] == "AUTHORIZED"
+    conn.execute("UPDATE sovereign_steps SET arguments_json=? WHERE id=?", (original, step_id))
+    conn.execute("UPDATE sovereign_approvals SET scope_sha256=NULL, scope_json=NULL, scope_version=NULL, ttl_seconds=NULL WHERE step_id=?", (step_id,))
+    conn.commit()
+    conn.close()
+    with pytest.raises(MissionError) as missing:
+        engine.dispatch(user, mission["id"], step_id, now=_NOW)
+    assert missing.value.code == "approval_scope_missing"
+    assert engine.get(user, mission["id"])["state"] == "AUTHORIZED"
+
+
+class _Pages(BaseHTTPRequestHandler):
+    pages: dict[str, bytes] = {}
+
+    def log_message(self, fmt, *args):
+        return
+
+    def do_GET(self):
+        body = self.pages.get(self.path.split("?", 1)[0], b"missing")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionError, OSError):
+            return
+
+
+@pytest.mark.skipif(not _chrome_ready(), reason="real Chrome binary is not available; browser mission was not run")
+def test_live_browser_does_not_verify_untrusted_or_preexisting_text(auth_db):
+    adversarial = b"""<!DOCTYPE html><html><body>
+<p id="token">CLICKED already</p>
+<button id="go" type="button">Go</button>
+<script>
+document.getElementById("go").addEventListener("click", function () {
+  document.getElementById("token").textContent = "CLICKED already";
+});
+</script>
+</body></html>"""
+    fill_page = b"""<!DOCTYPE html><html><body>
+<input id="field" value="">
+<p id="token">ready</p>
+</body></html>"""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Pages)
+    port = server.server_address[1]
+    _Pages.pages = {
+        "/": _PAGE.encode(),
+        "/already": adversarial,
+        "/fill": fill_page,
+    }
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        user, _token, engine = _user("verify-owner@example.com")
+        base = f"http://127.0.0.1:{port}"
+
+        def _run(path, actions, expect, selector=None, text=None):
+            mission = engine.create(user, f"observe {path}")
+            arguments = {"url": f"{base}{path}", "actions": actions, "expect": expect}
+            if selector:
+                arguments["selector"] = selector
+            if text is not None:
+                arguments["text"] = text
+            planned = engine.save_plan(user, mission["id"], [{"tool": "browser", "arguments": arguments}])
+            engine.request_approval(user, mission["id"])
+            step_id = planned["steps"][0]["id"]
+            engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_NOW)
+            return engine.dispatch(user, mission["id"], step_id, now=_NOW), mission["id"]
+
+        clicked, clicked_id = _run("/", ["navigate", "click", "read"], "CLICKED", selector="#go")
+        assert clicked["state"] == "COMPLETED_UNVERIFIED"
+        assert clicked["claim"] == "unverified"
+        clicked_evidence = engine.evidence(user, clicked_id)["records"][0]
+        assert clicked_evidence["preexisting_expect"] is False
+        assert clicked_evidence["pre_sha256"] != clicked_evidence["post_sha256"]
+        assert clicked_evidence["completion"] != "verified"
+
+        already, already_id = _run("/already", ["navigate", "click", "read"], "CLICKED", selector="#go")
+        assert already["state"] != "COMPLETED_VERIFIED"
+        assert already["claim"] != "verified"
+        already_evidence = engine.evidence(user, already_id)["records"][0]
+        assert already_evidence["preexisting_expect"] is True
+        assert already_evidence["detail"] == "expectation_preexisting"
+
+        filled, filled_id = _run("/fill", ["navigate", "fill", "read"], "hello-field", selector="#field", text="hello-field")
+        assert filled["state"] == "COMPLETED_UNVERIFIED"
+        assert filled["claim"] == "unverified"
+        filled_evidence = engine.evidence(user, filled_id)["records"][0]
+        assert filled_evidence["pre_sha256"] != filled_evidence["post_sha256"]
+        encoded = json.dumps(engine.evidence(user, filled_id))
+        assert "hello-field" not in encoded
+        _await_stopped(_profile(auth_db, user.id, clicked_id))
+        _await_stopped(_profile(auth_db, user.id, already_id))
+        _await_stopped(_profile(auth_db, user.id, filled_id))
+    finally:
+        server.shutdown()
+        _Pages.pages = {}

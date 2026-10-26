@@ -15,6 +15,7 @@ AUTHORIZED = "AUTHORIZED"
 EXECUTING = "EXECUTING"
 VERIFYING = "VERIFYING"
 COMPLETED_VERIFIED = "COMPLETED_VERIFIED"
+COMPLETED_UNVERIFIED = "COMPLETED_UNVERIFIED"
 FAILED = "FAILED"
 CANCELLED = "CANCELLED"
 REVOKED = "REVOKED"
@@ -27,10 +28,11 @@ _ALLOWED: dict[str, frozenset[str]] = {
     AWAITING_APPROVAL: frozenset({AUTHORIZED, CANCELLED}),
     AUTHORIZED: frozenset({EXECUTING, CANCELLED, REVOKED}),
     EXECUTING: frozenset({VERIFYING, FAILED, CANCELLED, REVOKED, INTERRUPTED_UNKNOWN, OUTCOME_UNKNOWN}),
-    VERIFYING: frozenset({COMPLETED_VERIFIED, FAILED, OUTCOME_UNKNOWN}),
+    VERIFYING: frozenset({COMPLETED_VERIFIED, COMPLETED_UNVERIFIED, FAILED, OUTCOME_UNKNOWN}),
     INTERRUPTED_UNKNOWN: frozenset({OUTCOME_UNKNOWN, FAILED, VERIFYING}),
     OUTCOME_UNKNOWN: frozenset({FAILED, VERIFYING}),
     COMPLETED_VERIFIED: frozenset(),
+    COMPLETED_UNVERIFIED: frozenset(),
     FAILED: frozenset(),
     CANCELLED: frozenset(),
     REVOKED: frozenset(),
@@ -40,9 +42,9 @@ _ALLOWED: dict[str, frozenset[str]] = {
 def transition(current: str, new: str, *, evidence_intact: bool = False) -> str:
     if new not in _ALLOWED.get(current, frozenset()):
         raise StateError("transition_refused")
-    if new == COMPLETED_VERIFIED:
+    if new in {COMPLETED_VERIFIED, COMPLETED_UNVERIFIED}:
         if current != VERIFYING or not evidence_intact:
             raise StateError("verification_refused")
-    if current in {INTERRUPTED_UNKNOWN, OUTCOME_UNKNOWN} and new == COMPLETED_VERIFIED:
+    if current in {INTERRUPTED_UNKNOWN, OUTCOME_UNKNOWN} and new in {COMPLETED_VERIFIED, COMPLETED_UNVERIFIED}:
         raise StateError("verification_refused")
     return new

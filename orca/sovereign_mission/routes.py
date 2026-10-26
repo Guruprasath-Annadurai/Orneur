@@ -91,6 +91,11 @@ async def revoke(mission_id: str, user: User = Depends(get_current_user)):
     return _call(lambda: _service().revoke(user, mission_id))
 
 
+@router.post("/missions/{mission_id}/recover")
+async def recover(mission_id: str, user: User = Depends(get_current_user)):
+    return _call(lambda: _service().recover(user, mission_id))
+
+
 @router.get("/missions/{mission_id}/evidence")
 async def evidence(mission_id: str, user: User = Depends(get_current_user)):
     return _call(lambda: _service().evidence(user, mission_id))

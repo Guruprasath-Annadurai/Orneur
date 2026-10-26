@@ -312,6 +312,26 @@ class BrowserEngine:
         self._require_grant("read", now)
         return self._page_text()
 
+    def element_snapshot(self, selector: str | None, now: datetime | None = None) -> dict:
+        self._require_grant("read", now)
+        if not selector:
+            return {"present": False, "text": "", "value": ""}
+        if not isinstance(selector, str) or _SELECTOR.fullmatch(selector) is None:
+            raise BrowserError("selector_refused")
+        raw = self._eval_value(
+            "(() => { const el = document.querySelector("
+            + json.dumps(selector)
+            + "); if (!el) return {present: false, text: '', value: ''};"
+            + " return {present: true, text: String(el.innerText || ''), value: String(el.value || '')}; })()"
+        )
+        if not isinstance(raw, dict):
+            return {"present": False, "text": "", "value": ""}
+        return {
+            "present": bool(raw.get("present")),
+            "text": str(raw.get("text") or ""),
+            "value": str(raw.get("value") or ""),
+        }
+
     def _page_text(self) -> dict:
         value = self._call("Runtime.evaluate", {"expression": "document.body ? document.body.innerText : ''", "returnByValue": True})
         text = str(value.get("result", {}).get("value") or "")

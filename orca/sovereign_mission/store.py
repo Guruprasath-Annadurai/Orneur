@@ -20,7 +20,12 @@ CREATE TABLE IF NOT EXISTS sovereign_missions (
     revoked INTEGER NOT NULL DEFAULT 0,
     evidence_sha256 TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    lease_worker_id TEXT,
+    lease_token TEXT,
+    lease_generation INTEGER NOT NULL DEFAULT 0,
+    lease_heartbeat_at REAL,
+    lease_pid INTEGER
 );
 CREATE TABLE IF NOT EXISTS sovereign_steps (
     id TEXT PRIMARY KEY,
@@ -44,7 +49,11 @@ CREATE TABLE IF NOT EXISTS sovereign_approvals (
     destination TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     nonce TEXT NOT NULL,
-    consumed_at TEXT
+    consumed_at TEXT,
+    scope_json TEXT,
+    scope_sha256 TEXT,
+    scope_version INTEGER,
+    ttl_seconds INTEGER
 );
 CREATE TABLE IF NOT EXISTS sovereign_evidence (
     id TEXT PRIMARY KEY,
@@ -83,10 +92,36 @@ def connect() -> sqlite3.Connection:
     key = str(auth_db.AUTH_DB)
     if key not in _READY:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         _READY.add(key)
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+_EXTRA_COLUMNS = {
+    "sovereign_missions": {
+        "lease_worker_id": "TEXT",
+        "lease_token": "TEXT",
+        "lease_generation": "INTEGER NOT NULL DEFAULT 0",
+        "lease_heartbeat_at": "REAL",
+        "lease_pid": "INTEGER",
+    },
+    "sovereign_approvals": {
+        "scope_json": "TEXT",
+        "scope_sha256": "TEXT",
+        "scope_version": "INTEGER",
+        "ttl_seconds": "INTEGER",
+    },
+}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, columns in _EXTRA_COLUMNS.items():
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, declaration in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
 
 
 def ensure_schema() -> None:
