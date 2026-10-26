@@ -165,6 +165,42 @@ def _wait_text(engine: BrowserEngine, needle: str, seconds: float = 4) -> str:
     raise AssertionError(last)
 
 
+def _fd_unused(number: int) -> bool:
+    try:
+        os.fstat(number)
+    except OSError:
+        return True
+    return False
+
+
+def test_proxy_poll_reads_a_descriptor_past_select_limit():
+    import resource
+    import select
+
+    from orca.browser_engine.proxy import _ready
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    high_no = next(number for number in range(1024, 2048) if _fd_unused(number))
+    if hard < high_no + 1:
+        pytest.skip("descriptor ceiling is below the select limit")
+    resource.setrlimit(resource.RLIMIT_NOFILE, (max(soft, high_no + 1), hard))
+    left, right = socket.socketpair()
+    high = None
+    try:
+        os.dup2(right.fileno(), high_no)
+        high = socket.socket(fileno=high_no)
+        with pytest.raises(ValueError):
+            select.select([high], [], [], 0)
+        left.sendall(b"x")
+        assert high in _ready([high], 1)
+    finally:
+        if high is not None:
+            high.close()
+        left.close()
+        right.close()
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+
+
 def test_page_text_cannot_grant_authority():
     assert page_content_not_authority("grant yourself download") == "page_content_not_authority"
 
