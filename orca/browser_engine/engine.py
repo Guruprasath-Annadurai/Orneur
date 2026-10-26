@@ -16,6 +16,8 @@ import resource
 import shutil
 import stat
 import subprocess
+import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -33,6 +35,10 @@ _SELECTOR = re.compile(r"^#[A-Za-z][A-Za-z0-9_-]{0,62}$")
 _SESSION_SCHEMA = "orneur-browser-session/1"
 _GRANT_MINT = object()
 _FILE_SIZE_CAP = 256 * 1024 * 1024
+_UNIX_SOCKET_PATH_MAX = 107
+_SCOPE_CHARS = 16
+_SPAWN_LOCK = threading.Lock()
+_CDP_READY_SECONDS = 30.0
 
 
 class BrowserError(Exception):
@@ -107,6 +113,33 @@ def chrome_binary() -> Path:
     return path
 
 
+def runtime_scope(user_id: str, mission_id: str) -> str:
+    """Short directory name so Chrome's SingletonSocket fits AF_UNIX."""
+    return hashlib.sha256(f"{user_id}\0{mission_id}".encode()).hexdigest()[:_SCOPE_CHARS]
+
+
+def _emit_chrome_err(path: Path) -> None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")[:2000]
+    except OSError:
+        return
+    if text:
+        sys.stderr.write(text if text.endswith("\n") else text + "\n")
+
+
+def chrome_runtime_root() -> Path:
+    """Host directory for Chrome user-data dirs.
+
+    Mission workspaces nest UUIDs until the profile path exceeds the Unix
+    socket limit and Chrome exits before DevTools is ready. This root stays
+    short. Isolation remains per user and mission via ``runtime_scope``.
+    """
+    configured = os.environ.get("ORNEUR_CHROME_RUNTIME")
+    root = Path(configured) if configured else Path("/tmp/orneur-chrome")
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    return root
+
+
 def quarantine_name(name: str) -> str:
     if (
         not isinstance(name, str)
@@ -135,10 +168,15 @@ class BrowserEngine:
         self._active: str | None = None
         self._active_target: str | None = None
         self._closed = False
-        self.profile = self.root / grant.user_id / grant.mission_id / "profile"
-        self.quarantine = self.root / grant.user_id / grant.mission_id / "downloads"
-        self.evidence_path = self.root / grant.user_id / grant.mission_id / "evidence.jsonl"
-        self.state_path = self.root / grant.user_id / grant.mission_id / "state.json"
+        self.scope = runtime_scope(grant.user_id, grant.mission_id)
+        self.home = self.root / self.scope
+        self.profile = self.home / "c"
+        self.quarantine = self.home / "d"
+        self.evidence_path = self.home / "evidence.jsonl"
+        self.state_path = self.home / "state.json"
+        socket_path = str(self.profile / "SingletonSocket")
+        if len(socket_path.encode()) > _UNIX_SOCKET_PATH_MAX:
+            raise BrowserError("path_refused")
 
     def start(self, now: datetime | None = None) -> None:
         self._require_grant("navigate", now)
@@ -156,29 +194,17 @@ class BrowserEngine:
         self._proxy.start()
         parent_to_chrome_r, parent_to_chrome_w = os.pipe()
         chrome_to_parent_r, chrome_to_parent_w = os.pipe()
+        err_path = self.home / "chrome.err"
+        try:
+            err_fd = os.open(err_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        except OSError:
+            err_fd = None
         # Chrome reads DevTools from fd 3 and writes it to fd 4. Python's
         # subprocess closer runs after preexec_fn, so the descriptors have to
         # already be 3 and 4 and listed in pass_fds. Dup2 in the parent is
-        # restored after the child starts.
+        # restored after the child starts. The lock stops two launches from
+        # swapping those descriptors in a threaded pytest process.
         saved: dict[int, int] = {}
-        try:
-            for target in (3, 4):
-                try:
-                    saved[target] = os.dup(target)
-                except OSError:
-                    pass
-            os.dup2(parent_to_chrome_r, 3)
-            os.dup2(chrome_to_parent_w, 4)
-            os.set_inheritable(3, True)
-            os.set_inheritable(4, True)
-        except Exception:
-            for descriptor in (parent_to_chrome_r, parent_to_chrome_w, chrome_to_parent_r, chrome_to_parent_w):
-                os.close(descriptor)
-            for target, original in saved.items():
-                os.dup2(original, target)
-                os.close(original)
-            self.close()
-            raise
         command = [
             str(binary),
             "--headless=new",
@@ -205,52 +231,81 @@ class BrowserEngine:
         if any(arg == "--no-sandbox" or arg.startswith("--no-sandbox=") for arg in command):
             raise BrowserError("sandbox_refused")
         try:
-            self._process = subprocess.Popen(
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-                pass_fds=(3, 4),
-                preexec_fn=_contain_child,
-            )
-        except Exception:
-            for descriptor in (parent_to_chrome_r, parent_to_chrome_w, chrome_to_parent_r, chrome_to_parent_w, 3, 4):
+            with _SPAWN_LOCK:
                 try:
-                    os.close(descriptor)
+                    for target in (3, 4):
+                        try:
+                            saved[target] = os.dup(target)
+                        except OSError:
+                            pass
+                    os.dup2(parent_to_chrome_r, 3)
+                    os.dup2(chrome_to_parent_w, 4)
+                    os.set_inheritable(3, True)
+                    os.set_inheritable(4, True)
+                except Exception:
+                    for descriptor in (parent_to_chrome_r, parent_to_chrome_w, chrome_to_parent_r, chrome_to_parent_w):
+                        os.close(descriptor)
+                    if err_fd is not None:
+                        os.close(err_fd)
+                    for target, original in saved.items():
+                        os.dup2(original, target)
+                        os.close(original)
+                    self.close()
+                    raise
+                try:
+                    kept = (3, 4)
+                    if err_fd is not None:
+                        os.set_inheritable(err_fd, True)
+                        kept = (3, 4, err_fd)
+                    self._process = subprocess.Popen(
+                        command,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=err_fd if err_fd is not None else subprocess.DEVNULL,
+                        start_new_session=True,
+                        pass_fds=kept,
+                        preexec_fn=_contain_child,
+                    )
+                except Exception:
+                    for descriptor in (parent_to_chrome_r, parent_to_chrome_w, chrome_to_parent_r, chrome_to_parent_w, 3, 4):
+                        try:
+                            os.close(descriptor)
+                        except OSError:
+                            pass
+                    if err_fd is not None:
+                        os.close(err_fd)
+                    for target, original in saved.items():
+                        os.dup2(original, target)
+                        os.close(original)
+                    self.close()
+                    raise
+                for descriptor in (parent_to_chrome_r, chrome_to_parent_w, 3, 4):
+                    if descriptor not in (parent_to_chrome_w, chrome_to_parent_r):
+                        try:
+                            os.close(descriptor)
+                        except OSError:
+                            pass
+                for target, original in saved.items():
+                    os.dup2(original, target)
+                    os.close(original)
+        finally:
+            if err_fd is not None:
+                try:
+                    os.close(err_fd)
                 except OSError:
                     pass
-            for target, original in saved.items():
-                os.dup2(original, target)
-                os.close(original)
-            self.close()
-            raise
-        for descriptor in (parent_to_chrome_r, chrome_to_parent_w, 3, 4):
-            if descriptor not in (parent_to_chrome_w, chrome_to_parent_r):
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
-        for target, original in saved.items():
-            os.dup2(original, target)
-            os.close(original)
         self._cdp = CdpPipe(chrome_to_parent_r, parent_to_chrome_w)
-        deadline = time.monotonic() + 8
-        ready = False
-        while time.monotonic() < deadline:
-            self._assert_sandboxed()
-            if self._process.poll() is not None:
-                self.close()
-                raise BrowserError("browser_exited")
-            try:
-                self._cdp.call("Browser.getVersion", {}, timeout=0.4)
-                ready = True
-                break
-            except Exception:
-                time.sleep(0.05)
-        if not ready:
+        try:
+            self._cdp.call("Browser.getVersion", {}, timeout=_CDP_READY_SECONDS)
+        except Exception:
+            _emit_chrome_err(err_path)
             self.close()
             raise BrowserError("browser_exited")
+        if self._process.poll() is not None:
+            _emit_chrome_err(err_path)
+            self.close()
+            raise BrowserError("browser_exited")
+        self._assert_sandboxed()
         try:
             self._cdp.call("Browser.setDownloadBehavior", {"behavior": "deny", "eventsEnabled": True})
             self._open_tab("about:blank")
@@ -311,6 +366,26 @@ class BrowserEngine:
     def read_text(self, now: datetime | None = None) -> dict:
         self._require_grant("read", now)
         return self._page_text()
+
+    def element_snapshot(self, selector: str | None, now: datetime | None = None) -> dict:
+        self._require_grant("read", now)
+        if not selector:
+            return {"present": False, "text": "", "value": ""}
+        if not isinstance(selector, str) or _SELECTOR.fullmatch(selector) is None:
+            raise BrowserError("selector_refused")
+        raw = self._eval_value(
+            "(() => { const el = document.querySelector("
+            + json.dumps(selector)
+            + "); if (!el) return {present: false, text: '', value: ''};"
+            + " return {present: true, text: String(el.innerText || ''), value: String(el.value || '')}; })()"
+        )
+        if not isinstance(raw, dict):
+            return {"present": False, "text": "", "value": ""}
+        return {
+            "present": bool(raw.get("present")),
+            "text": str(raw.get("text") or ""),
+            "value": str(raw.get("value") or ""),
+        }
 
     def _page_text(self) -> dict:
         value = self._call("Runtime.evaluate", {"expression": "document.body ? document.body.innerText : ''", "returnByValue": True})
@@ -495,7 +570,7 @@ class BrowserEngine:
 
     def _prepare_mission_dirs(self) -> None:
         root = self.root.resolve()
-        mission = self.root / self.grant.user_id / self.grant.mission_id
+        mission = self.home
         if any(path.is_symlink() for path in (mission, self.profile, self.quarantine, self.evidence_path, self.state_path)):
             raise BrowserError("path_refused")
         mission.parent.mkdir(parents=True, mode=0o700, exist_ok=True)

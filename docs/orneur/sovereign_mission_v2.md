@@ -31,20 +31,23 @@ Sessions are the existing product sessions.
 
 Also `FAILED`, `CANCELLED`, `REVOKED`, `INTERRUPTED_UNKNOWN`, and `OUTCOME_UNKNOWN`.
 
-`COMPLETED_VERIFIED` is reachable only from `VERIFYING` with an intact evidence hash. `INTERRUPTED_UNKNOWN` and `OUTCOME_UNKNOWN` cannot become `COMPLETED_VERIFIED`. A new `SovereignMission` reconciles rows left in `EXECUTING`: an `effect_started` row with no outcome becomes `OUTCOME_UNKNOWN`; an intent with no effect becomes `INTERRUPTED_UNKNOWN`. Recovery does not report success.
+`COMPLETED_VERIFIED` is reachable only from `VERIFYING` with an intact evidence hash and an independent receipt (`local_marker` file bytes). `COMPLETED_UNVERIFIED` is the honest terminal when the only observation is untrusted DOM text or a DOM mutation. `INTERRUPTED_UNKNOWN` and `OUTCOME_UNKNOWN` cannot become either completed state.
+
+Ordinary construction of `SovereignMission` does not sweep `EXECUTING` rows. Each instance has a worker id, takes a lease at dispatch, and heartbeats while it holds execution authority. A second live instance cannot recover a mission whose lease is still fresh. Recovery is `POST /missions/{id}/recover` (owner session only) or `shutdown()` for this worker's own leases. An expired lease is fenced and recorded as unknown; it is not proof the previous worker has stopped, and it is not a retry. A fenced worker cannot commit `COMPLETED_VERIFIED`. SQLite on one host is not a multi-host lock.
 
 Claims:
 
 | Claim | When |
 | --- | --- |
 | `authorized_not_performed` | Planned or authorized, and no effect has started. |
-| `verified` | `COMPLETED_VERIFIED` and the evidence hash matches. |
+| `verified` | `COMPLETED_VERIFIED` and the evidence hash matches. Independent file receipt only. |
+| `unverified` | `COMPLETED_UNVERIFIED`. Untrusted page text or a DOM delta is not an external transaction. |
 | `failed` | `FAILED`. |
 | `refused` | `CANCELLED` or `REVOKED` with no unknown effect. |
 | `unknown` | `INTERRUPTED_UNKNOWN`, `OUTCOME_UNKNOWN`, or executing after a cancel request. |
 | `withheld` | A stored evidence record or the mission aggregate does not match its hash. The records are not returned. |
 
-`verified` means this process observed the predeclared expectation. For a marker, it wrote the file. For a browser step, the untrusted DOM text contained `expect`. The browser tool's own navigation and click records remain `performed_unverified`. A hash is not authorship and is not an external witness.
+`verified` means this process produced and read back an independent receipt. For a marker, that receipt is the exclusive file: after the write, the process reopens the path and hashes the bytes it actually read. A browser step never uses substring presence of `expect` as verified completion. Pre-action and post-action hashes are stored; page text stays untrusted. If `expect` was already in the page, the detail is `expectation_preexisting` and the claim is not `verified`. The browser tool's own navigation and click records remain `performed_unverified`. A hash is not authorship and is not an external witness.
 
 ## HTTP
 
@@ -60,10 +63,11 @@ Prefix `/api/sovereign`. Mission errors use `detail.code`, and the full applicat
 | POST | `/missions/{id}/dispatch` | `{"step_id": "..."}` |
 | POST | `/missions/{id}/cancel` | |
 | POST | `/missions/{id}/revoke` | |
+| POST | `/missions/{id}/recover` | |
 | GET | `/missions/{id}/evidence` | |
 | GET | `/missions/{id}/result` | |
 
-Approval expiry uses the server clock on the HTTP path. A consumed approval cannot be replayed. Dispatch of a finished step returns the stored claim with `replayed: true` and does not repeat the effect. Dispatch after an intent or an unknown outcome is `duplicate_effect_refused`.
+Approval expiry uses the server clock on the HTTP path. A consumed approval cannot be replayed. Each approval stores a version-1 canonical scope digest over mission, owner, step, tool, risk, full URL path and query, actions, selector, input/form values, expect, verification policy, ttl, and the single-use approval id and nonce. Dispatch recomputes that digest before consuming authorization. A missing digest is `approval_scope_missing`. Any altered scope is `approval_scope_mismatch`. Old rows are not grandfathered. Dispatch of a finished step returns the stored claim with `replayed: true` and does not repeat the effect. Dispatch after an intent or an unknown outcome is `duplicate_effect_refused`.
 
 Cancel response includes `cancel_confirmed`. That is true only when no external effect had started and the state is `CANCELLED`. A cancel after `effect_started` leaves `OUTCOME_UNKNOWN`. Revoke consumes the caller's unused approvals. Revoke after an effect has started leaves `OUTCOME_UNKNOWN` and does not become success. Revoke while `EXECUTING`, before the effect flag, commits `REVOKED`.
 
@@ -100,8 +104,10 @@ These are not independently enforced here:
 - Focus the next adversarial pass on this stop boundary: cross-user cancel and revoke during `EXECUTING` (service and HTTP), a planted `_STOP` or `_LIVE` entry, cancel after `effect_started`, revoke before the file or browser call, restart from `OUTCOME_UNKNOWN`, and a crash between the effect flag and the outcome write. A same-process caller who can already invoke `engine.cancel` on a live object is inside the service, not a second tenant.
 - Tenant isolation is the service check `owner_user_id == tenant_id == authenticated user`. Both users share the service OS account. Mode `0600` evidence does not stop that account.
 - A database writer who replaces `record_json`, `record_sha256`, and `evidence_sha256` together is not detected. A partial edit is `withheld`.
-- Mission `verified` has no external witness. The DOM check is a substring of untrusted text, so a fixture page can contain the operator's `expect` string without having performed the intended action. The grant still cannot grow.
-- Chrome has CPU and open-file limits and no memory cap. The mission path refuses a binary whose bytes contain `--no-sandbox` because the browser engine does. The live crash test checked the mission Chrome command line.
+- Browser `COMPLETED_UNVERIFIED` is still not an external transaction witness. Independent receipts for browser effects are not implemented on the local fixture. The grant still cannot grow.
+- Worker leases are SQLite-local. Tests do not establish multi-host readiness. Lease grace is 45 seconds so a slow Chrome DevTools handshake is not treated as a dead worker.
+- Recovery of an expired lease fences commit authority; it does not prove the previous process is dead.
+- Chrome has CPU and open-file limits and no memory cap. The mission path refuses a binary whose bytes contain `--no-sandbox` because the browser engine does. The live crash test checked the mission Chrome command line. Chrome profiles are under `/tmp/orneur-chrome/<scope>/c` so the DevTools singleton socket fits `AF_UNIX`; a nested mission workspace path was observed to make Chrome exit before CDP was ready.
 - There is no pause or resume.
 - An unknown outcome is not retried. That prevents a duplicate effect; it also leaves a mission that never reached the peer stuck.
 - `effect_started` is committed immediately before the external call. A crash in that window is unknown even if the peer saw nothing.
@@ -112,4 +118,4 @@ These are not independently enforced here:
 
 ## Tests that have to stay honest
 
-`tests/test_sovereign_mission.py` starts real Chrome for the two live tests and skips those two only when `chrome_binary()` refuses the binary. A skip is not a pass. The non-live tests use a real marker file, the product password hasher, and the product session token. They are not a substitute for the live browser mission.
+`tests/test_browser_sovereign_mission.py` starts real Chrome for the live tests and skips those only when `chrome_binary()` refuses the binary. It sits next to `tests/test_browser_engine.py` so Chrome is started before the rest of the deterministic suite has exhausted the runner. A skip is not a pass. The non-live tests use a real marker file, the product password hasher, and the product session token. They are not a substitute for the live browser mission.

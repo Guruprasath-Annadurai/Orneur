@@ -15,13 +15,17 @@ from orca.auth.crypto import create_token, verify_token
 import orca.auth.db as auth_db
 from orca.auth.store import User, get_user_by_id, is_token_revoked
 from orca.sovereign_mission import states
+from orca.sovereign_mission.approval_scope import SCOPE_VERSION, build_scope, scope_digest
 from orca.sovereign_mission.store import StoreError, Unit, canonical, connect, digest, ensure_schema, now_iso
 
 _TOOLS = frozenset({"browser", "local_marker"})
 _BROWSER_ACTIONS = frozenset({"navigate", "read", "click", "fill", "scroll", "screenshot"})
+_BROWSER_ARGUMENT_KEYS = frozenset({"url", "actions", "selector", "expect", "text", "delta_y", "form_values"})
+_MARKER_ARGUMENT_KEYS = frozenset({"name", "text"})
 _LIVE: dict[str, object] = {}
 _STOP: dict[str, str] = {}
 _LIVE_LOCK = threading.Lock()
+LEASE_GRACE_SECONDS = 45.0
 
 
 class MissionError(Exception):
@@ -34,8 +38,8 @@ class SovereignMission:
     def __init__(self, *, fail_outcome_write: bool = False):
         ensure_schema()
         self.fail_outcome_write = fail_outcome_write
-        # A restarted process must not leave an in-flight effect looking executable.
-        self.recover()
+        self.worker_id = uuid.uuid4().hex
+        self.pid = os.getpid()
 
     def session_user(self, token: str) -> User:
         payload = verify_token(token) if isinstance(token, str) else None
@@ -150,13 +154,42 @@ class SovereignMission:
             if step["approval_id"]:
                 raise MissionError("approval_replay_refused")
             destination = _destination(step)
+            nonce = uuid.uuid4().hex
+            expires_stamp = now_iso(expires)
+            arguments = json.loads(step["arguments_json"])
+            scope = build_scope(
+                mission_id=mission_id,
+                owner_user_id=user.id,
+                step_id=step_id,
+                tool=step["tool"],
+                risk=step["risk"],
+                arguments=arguments,
+                approval_id=approval_id,
+                nonce=nonce,
+                expires_at=expires_stamp,
+                ttl_seconds=ttl_seconds,
+            )
             unit.conn.execute(
                 """
                 INSERT INTO sovereign_approvals
-                    (id, mission_id, step_id, user_id, tool, destination, expires_at, nonce)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, mission_id, step_id, user_id, tool, destination, expires_at, nonce,
+                     scope_json, scope_sha256, scope_version, ttl_seconds)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (approval_id, mission_id, step_id, user.id, step["tool"], destination, now_iso(expires), uuid.uuid4().hex),
+                (
+                    approval_id,
+                    mission_id,
+                    step_id,
+                    user.id,
+                    step["tool"],
+                    destination,
+                    expires_stamp,
+                    nonce,
+                    canonical(scope),
+                    scope_digest(scope),
+                    SCOPE_VERSION,
+                    ttl_seconds,
+                ),
             )
             unit.conn.execute("UPDATE sovereign_steps SET approval_id=? WHERE id=?", (approval_id, step_id))
             if mission["state"] == states.AWAITING_APPROVAL:
@@ -174,16 +207,17 @@ class SovereignMission:
         prepared = self._prepare(user, mission_id, step_id, clock)
         if prepared.get("receipt"):
             return prepared["receipt"]
+        generation = prepared["generation"]
         try:
-            outcome = self._execute(user, prepared["mission"], prepared["step"], clock)
+            outcome = self._execute(user, prepared["mission"], prepared["step"], clock, generation)
         except MissionError as exc:
             if exc.code != "outcome_write_failed":
-                self._settle(mission_id, step_id, exc.code)
+                self._settle(mission_id, step_id, exc.code, generation)
             raise
         except Exception as exc:
-            self._settle(mission_id, step_id, "execution_interrupted")
+            self._settle(mission_id, step_id, "execution_interrupted", generation)
             raise MissionError("execution_interrupted") from exc
-        self._finish(user, mission_id, step_id, outcome)
+        self._finish(user, mission_id, step_id, outcome, generation)
         return self.reported(user, mission_id)
 
     def request_cancel(self, user: User, mission_id: str) -> dict:
@@ -249,14 +283,73 @@ class SovereignMission:
         self._arm_stop(mission_id, "revoked")
         return self.get(user, mission_id)
 
-    def recover(self) -> list[str]:
-        """Reconcile missions left executing by a dead process. Does not claim success."""
+    def recover(self, user: User, mission_id: str, *, lease_grace_seconds: float | None = None) -> dict:
+        """Fence one owned EXECUTING mission. Does not retry and does not claim success.
+
+        A fresh heartbeat from another worker is not recoverable. An expired
+        lease is not proof that the previous worker has stopped producing
+        effects; recovery only withdraws commit authority and records unknown.
+        """
+        grace = LEASE_GRACE_SECONDS if lease_grace_seconds is None else lease_grace_seconds
+        unit = Unit()
+        try:
+            mission = self._owned(unit, user, mission_id)
+            if mission["state"] != states.EXECUTING:
+                unit.commit()
+                return self.get(user, mission_id)
+            heartbeat = mission["lease_heartbeat_at"]
+            holder = mission["lease_worker_id"]
+            same_worker = holder == self.worker_id
+            age = None if heartbeat is None else (time.time() - float(heartbeat))
+            if holder and not same_worker and age is not None and age < grace:
+                raise MissionError("worker_lease_active")
+            steps = unit.conn.execute(
+                "SELECT intent_json, effect_started, outcome_json FROM sovereign_steps WHERE mission_id=?",
+                (mission_id,),
+            ).fetchall()
+            if any(step["outcome_json"] is None and step["effect_started"] for step in steps):
+                new = states.OUTCOME_UNKNOWN
+            elif any(step["outcome_json"] is None and step["intent_json"] for step in steps):
+                new = states.INTERRUPTED_UNKNOWN
+            else:
+                new = states.INTERRUPTED_UNKNOWN
+            generation = int(mission["lease_generation"] or 0) + 1
+            states.transition(mission["state"], new)
+            unit.conn.execute(
+                """
+                UPDATE sovereign_missions
+                SET state=?, updated_at=?, lease_generation=?, lease_worker_id=NULL,
+                    lease_token=NULL, lease_heartbeat_at=NULL, lease_pid=NULL
+                WHERE id=? AND state=? AND lease_generation=?
+                """,
+                (
+                    new,
+                    now_iso(),
+                    generation,
+                    mission_id,
+                    states.EXECUTING,
+                    int(mission["lease_generation"] or 0),
+                ),
+            )
+            if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
+                raise MissionError("worker_lease_active")
+            unit.commit()
+        except Exception:
+            unit.rollback()
+            raise
+        finally:
+            unit.close()
+        self._arm_stop(mission_id, "execution_fenced")
+        return self.get(user, mission_id)
+
+    def shutdown(self) -> list[str]:
+        """This worker releases its own leases. Uncertain effects stay unknown."""
         changed: list[str] = []
         unit = Unit()
         try:
             rows = unit.conn.execute(
-                "SELECT id, state FROM sovereign_missions WHERE state=?",
-                (states.EXECUTING,),
+                "SELECT * FROM sovereign_missions WHERE state=? AND lease_worker_id=?",
+                (states.EXECUTING, self.worker_id),
             ).fetchall()
             for row in rows:
                 steps = unit.conn.execute(
@@ -265,22 +358,29 @@ class SovereignMission:
                 ).fetchall()
                 if any(step["outcome_json"] is None and step["effect_started"] for step in steps):
                     new = states.OUTCOME_UNKNOWN
-                elif any(step["outcome_json"] is None and step["intent_json"] for step in steps):
-                    new = states.INTERRUPTED_UNKNOWN
                 else:
-                    continue
+                    new = states.INTERRUPTED_UNKNOWN
+                generation = int(row["lease_generation"] or 0) + 1
                 states.transition(row["state"], new)
                 unit.conn.execute(
-                    "UPDATE sovereign_missions SET state=?, updated_at=? WHERE id=?",
-                    (new, now_iso(), row["id"]),
+                    """
+                    UPDATE sovereign_missions
+                    SET state=?, updated_at=?, lease_generation=?, lease_worker_id=NULL,
+                        lease_token=NULL, lease_heartbeat_at=NULL, lease_pid=NULL
+                    WHERE id=? AND lease_worker_id=? AND lease_generation=?
+                    """,
+                    (new, now_iso(), generation, row["id"], self.worker_id, int(row["lease_generation"] or 0)),
                 )
-                changed.append(row["id"])
+                if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] == 1:
+                    changed.append(row["id"])
             unit.commit()
         except Exception:
             unit.rollback()
             raise
         finally:
             unit.close()
+        for mission_id in changed:
+            self._arm_stop(mission_id, "execution_fenced")
         return changed
 
     def get(self, user: User, mission_id: str) -> dict:
@@ -372,9 +472,16 @@ class SovereignMission:
                 raise MissionError("approval_replay_refused")
             if approval["expires_at"] <= now_iso(now):
                 raise MissionError("approval_expired")
-            if approval["tool"] != step["tool"] or approval["destination"] != _destination(step):
-                raise MissionError("approval_refused")
-            intent = {"tool": step["tool"], "destination_sha256": digest({"destination": approval["destination"]}), "at": now_iso(now)}
+            self._require_scope(approval, mission, step, user)
+            generation = int(mission["lease_generation"] or 0) + 1
+            intent = {
+                "tool": step["tool"],
+                "destination_sha256": digest({"destination": approval["destination"]}),
+                "scope_sha256": approval["scope_sha256"],
+                "worker_id": self.worker_id,
+                "generation": generation,
+                "at": now_iso(now),
+            }
             unit.conn.execute(
                 "UPDATE sovereign_approvals SET consumed_at=? WHERE id=? AND consumed_at IS NULL",
                 (now_iso(now), approval["id"]),
@@ -383,8 +490,18 @@ class SovereignMission:
                 raise MissionError("approval_replay_refused")
             unit.conn.execute("UPDATE sovereign_steps SET intent_json=? WHERE id=?", (canonical(intent), step_id))
             self._set_state(unit, mission, states.EXECUTING)
+            unit.conn.execute(
+                """
+                UPDATE sovereign_missions
+                SET lease_worker_id=?, lease_token=?, lease_generation=?, lease_heartbeat_at=?, lease_pid=?
+                WHERE id=? AND state=?
+                """,
+                (self.worker_id, uuid.uuid4().hex, generation, time.time(), self.pid, mission_id, states.EXECUTING),
+            )
+            if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
+                raise MissionError("duplicate_effect_refused")
             unit.commit()
-            return {"mission": dict(mission), "step": dict(step)}
+            return {"mission": dict(mission), "step": dict(step), "generation": generation}
         except Exception:
             unit.rollback()
             raise
@@ -410,11 +527,13 @@ class SovereignMission:
         finally:
             unit.close()
 
-    def _execute(self, user: User, mission: dict, step: sqlite_step, now: datetime) -> dict:
+    def _execute(self, user: User, mission: dict, step: sqlite_step, now: datetime, generation: int) -> dict:
         arguments = json.loads(step["arguments_json"])
         if step["tool"] == "local_marker":
-            self._begin_external(mission["id"], step["id"])
-            _refuse_if_stopped(mission["id"])
+            self._heartbeat(mission["id"], generation)
+            self._begin_external(mission["id"], step["id"], generation)
+            self._heartbeat(mission["id"], generation)
+            _refuse_if_stopped(mission["id"], self.worker_id, generation)
             return _run_marker(user.id, mission["id"], arguments)
         if step["tool"] == "browser":
             return _run_browser(
@@ -424,10 +543,11 @@ class SovereignMission:
                 step["id"],
                 arguments,
                 now,
+                generation,
             )
         raise MissionError("capability_unavailable")
 
-    def _finish(self, user: User, mission_id: str, step_id: str, outcome: dict) -> None:
+    def _finish(self, user: User, mission_id: str, step_id: str, outcome: dict, generation: int) -> None:
         if self.fail_outcome_write:
             raise MissionError("outcome_write_failed")
         record = {
@@ -439,13 +559,19 @@ class SovereignMission:
             "detail": outcome.get("detail", ""),
             "witness": outcome.get("witness", ""),
             "authority": outcome.get("authority", ""),
+            "authority_class": outcome.get("authority_class", ""),
             "actions": outcome.get("actions", []),
             "content_sha256": outcome.get("content_sha256"),
+            "pre_sha256": outcome.get("pre_sha256"),
+            "post_sha256": outcome.get("post_sha256"),
+            "preexisting_expect": bool(outcome.get("preexisting_expect")),
         }
         record_hash = digest(record)
         unit = Unit()
         try:
             mission = self._owned(unit, user, mission_id)
+            if not self._lease_holds(unit, mission_id, generation):
+                raise MissionError("execution_fenced")
             unit.conn.execute(
                 """
                 INSERT INTO sovereign_evidence
@@ -469,25 +595,28 @@ class SovereignMission:
                 )
                 unit.commit()
                 return
-            if outcome["matched"] and outcome["completion"] == "verified" and outcome.get("witness") == "application_observed":
-                self._set_state(unit, mission, states.VERIFYING)
-                mission = self._owned(unit, user, mission_id)
-                try:
-                    states.transition(mission["state"], states.COMPLETED_VERIFIED, evidence_intact=True)
-                except states.StateError as exc:
-                    raise MissionError(exc.code) from exc
-                unit.conn.execute(
-                    "UPDATE sovereign_missions SET state=?, evidence_sha256=?, updated_at=? WHERE id=?",
-                    (states.COMPLETED_VERIFIED, aggregate, now_iso(), mission_id),
-                )
+            if (
+                outcome["completion"] == "verified"
+                and outcome.get("authority_class") == "independent_receipt"
+                and outcome.get("witness") == "application_observed"
+            ):
+                terminal = states.COMPLETED_VERIFIED
+            elif outcome["completion"] == "unverified" and outcome.get("authority_class") == "untrusted_dom":
+                terminal = states.COMPLETED_UNVERIFIED
+            elif outcome["completion"] == "unknown":
+                terminal = states.OUTCOME_UNKNOWN
             else:
-                self._set_state(unit, mission, states.VERIFYING)
-                mission = self._owned(unit, user, mission_id)
-                self._set_state(unit, mission, states.FAILED)
-                unit.conn.execute(
-                    "UPDATE sovereign_missions SET evidence_sha256=?, updated_at=? WHERE id=?",
-                    (aggregate, now_iso(), mission_id),
-                )
+                terminal = states.FAILED
+            self._set_state(unit, mission, states.VERIFYING)
+            mission = self._owned(unit, user, mission_id)
+            try:
+                states.transition(mission["state"], terminal, evidence_intact=True)
+            except states.StateError as exc:
+                raise MissionError(exc.code) from exc
+            unit.conn.execute(
+                "UPDATE sovereign_missions SET state=?, evidence_sha256=?, updated_at=? WHERE id=?",
+                (terminal, aggregate, now_iso(), mission_id),
+            )
             unit.commit()
         except Exception:
             unit.rollback()
@@ -495,7 +624,7 @@ class SovereignMission:
         finally:
             unit.close()
 
-    def _begin_external(self, mission_id: str, step_id: str) -> None:
+    def _begin_external(self, mission_id: str, step_id: str, generation: int) -> None:
         """Mark the external attempt, then refuse if stop won the race.
 
         The flag is committed before the call. A crash after this point stays
@@ -507,6 +636,8 @@ class SovereignMission:
             mission = unit.conn.execute("SELECT * FROM sovereign_missions WHERE id=?", (mission_id,)).fetchone()
             if mission is None:
                 raise MissionError("mission_not_found")
+            if not self._lease_holds(unit, mission_id, generation):
+                raise MissionError("execution_fenced")
             if mission["revoked"] or mission["state"] == states.REVOKED:
                 if mission["state"] == states.EXECUTING:
                     self._set_state(unit, mission, states.REVOKED)
@@ -523,9 +654,10 @@ class SovereignMission:
                       AND EXISTS (
                         SELECT 1 FROM sovereign_missions
                         WHERE id=? AND state=? AND cancel_requested=0 AND revoked=0
+                          AND lease_worker_id=? AND lease_generation=?
                       )
                     """,
-                    (step_id, mission_id, states.EXECUTING),
+                    (step_id, mission_id, states.EXECUTING, self.worker_id, generation),
                 )
                 if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
                     raise MissionError("duplicate_effect_refused")
@@ -537,15 +669,18 @@ class SovereignMission:
             unit.close()
         if refusal:
             raise MissionError(refusal)
-        code = _durable_stop(mission_id)
+        code = _durable_stop(mission_id, self.worker_id, generation)
         if code:
             raise MissionError(code)
 
-    def _settle(self, mission_id: str, step_id: str, code: str) -> None:
+    def _settle(self, mission_id: str, step_id: str, code: str, generation: int | None = None) -> None:
         unit = Unit()
         try:
             mission = unit.conn.execute("SELECT * FROM sovereign_missions WHERE id=?", (mission_id,)).fetchone()
             if mission is None or mission["state"] != states.EXECUTING:
+                unit.commit()
+                return
+            if generation is not None and not self._lease_holds(unit, mission_id, generation):
                 unit.commit()
                 return
             step = unit.conn.execute(
@@ -557,10 +692,16 @@ class SovereignMission:
                 new = states.OUTCOME_UNKNOWN if started else states.REVOKED
             elif mission["cancel_requested"] or mission["state"] == states.CANCELLED:
                 new = states.OUTCOME_UNKNOWN if started else states.CANCELLED
-            elif code in {"cancelled", "revoked"}:
+            elif code in {"cancelled", "revoked", "execution_fenced"}:
                 unit.commit()
                 return
-            elif code in {"browser_dead", "browser_closed", "execution_interrupted"}:
+            elif code in {
+                "browser_dead",
+                "browser_closed",
+                "browser_exited",
+                "execution_interrupted",
+                "sandbox_refused",
+            }:
                 new = states.INTERRUPTED_UNKNOWN
             else:
                 new = states.FAILED
@@ -571,6 +712,64 @@ class SovereignMission:
                 (canonical(outcome), step_id),
             )
             self._set_state(unit, mission, new)
+            unit.commit()
+        except Exception:
+            unit.rollback()
+            raise
+        finally:
+            unit.close()
+
+    def _require_scope(self, approval, mission, step, user: User) -> None:
+        if (
+            not approval["scope_sha256"]
+            or approval["scope_version"] != SCOPE_VERSION
+            or approval["ttl_seconds"] is None
+            or not approval["scope_json"]
+        ):
+            raise MissionError("approval_scope_missing")
+        arguments = json.loads(step["arguments_json"])
+        rebuilt = build_scope(
+            mission_id=mission["id"],
+            owner_user_id=user.id,
+            step_id=step["id"],
+            tool=step["tool"],
+            risk=step["risk"],
+            arguments=arguments,
+            approval_id=approval["id"],
+            nonce=approval["nonce"],
+            expires_at=approval["expires_at"],
+            ttl_seconds=int(approval["ttl_seconds"]),
+        )
+        if scope_digest(rebuilt) != approval["scope_sha256"] or canonical(rebuilt) != approval["scope_json"]:
+            raise MissionError("approval_scope_mismatch")
+        if rebuilt["tool"] != approval["tool"] or rebuilt["risk"] != step["risk"]:
+            raise MissionError("approval_scope_mismatch")
+        if approval["tool"] != step["tool"] or approval["destination"] != _destination(step):
+            raise MissionError("approval_refused")
+
+    def _lease_holds(self, unit: Unit, mission_id: str, generation: int) -> bool:
+        row = unit.conn.execute(
+            "SELECT lease_worker_id, lease_generation, state FROM sovereign_missions WHERE id=?",
+            (mission_id,),
+        ).fetchone()
+        return (
+            row is not None
+            and row["lease_worker_id"] == self.worker_id
+            and int(row["lease_generation"] or 0) == generation
+        )
+
+    def _heartbeat(self, mission_id: str, generation: int) -> None:
+        unit = Unit()
+        try:
+            unit.conn.execute(
+                """
+                UPDATE sovereign_missions SET lease_heartbeat_at=?, lease_pid=?
+                WHERE id=? AND lease_worker_id=? AND lease_generation=?
+                """,
+                (time.time(), self.pid, mission_id, self.worker_id, generation),
+            )
+            if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
+                raise MissionError("execution_fenced")
             unit.commit()
         except Exception:
             unit.rollback()
@@ -670,6 +869,8 @@ class SovereignMission:
         state = mission["state"]
         if state == states.COMPLETED_VERIFIED:
             return "verified"
+        if state == states.COMPLETED_UNVERIFIED:
+            return "unverified"
         if state in {states.INTERRUPTED_UNKNOWN, states.OUTCOME_UNKNOWN}:
             return "unknown"
         if state == states.FAILED:
@@ -691,6 +892,8 @@ def _classify(step: dict, index: int) -> dict:
     if not isinstance(arguments, dict):
         raise MissionError("plan_refused")
     if tool == "browser":
+        if set(arguments) - _BROWSER_ARGUMENT_KEYS:
+            raise MissionError("plan_refused")
         _destination_of_browser(arguments)
         actions = arguments.get("actions")
         if not isinstance(actions, list) or not actions or not set(actions) <= _BROWSER_ACTIONS:
@@ -702,8 +905,26 @@ def _classify(step: dict, index: int) -> dict:
         expect = arguments.get("expect")
         if not isinstance(expect, str) or not expect or len(expect) > 64 or "\n" in expect:
             raise MissionError("plan_refused")
+        form_values = arguments.get("form_values")
+        if form_values is not None:
+            if (
+                not isinstance(form_values, dict)
+                or not form_values
+                or "fill" not in actions
+                or not all(isinstance(key, str) and isinstance(value, str) for key, value in form_values.items())
+            ):
+                raise MissionError("plan_refused")
+            for key, value in form_values.items():
+                if not key.startswith("#") or not value or len(value) > 512 or "\n" in value:
+                    raise MissionError("plan_refused")
+            selector = arguments.get("selector")
+            text = arguments.get("text")
+            if selector is not None and (selector not in form_values or (text is not None and form_values[selector] != text)):
+                raise MissionError("plan_refused")
         risk = "local_fixture"
     else:
+        if set(arguments) - _MARKER_ARGUMENT_KEYS:
+            raise MissionError("plan_refused")
         name = arguments.get("name", "marker.txt")
         if not isinstance(name, str) or name != Path(name).name or name in {".", ".."}:
             raise MissionError("destination_refused")
@@ -711,6 +932,13 @@ def _classify(step: dict, index: int) -> dict:
     if step.get("risk") not in {None, risk}:
         raise MissionError("risk_mismatch")
     return {"id": uuid.uuid4().hex, "position": index, "tool": tool, "risk": risk, "arguments": arguments}
+
+
+def _fill_fields(arguments: dict) -> list[tuple[str, str]]:
+    form_values = arguments.get("form_values")
+    if isinstance(form_values, dict) and form_values:
+        return [(key, form_values[key]) for key in form_values]
+    return [(arguments["selector"], arguments.get("text", ""))]
 
 
 def _destination(step) -> str:
@@ -747,23 +975,41 @@ def _run_marker(user_id: str, mission_id: str, arguments: dict) -> dict:
     target = _workspace(user_id, mission_id) / name
     if target.exists() or target.is_symlink():
         raise MissionError("duplicate_effect")
+    expected = text.encode()
     fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY, 0o600)
     try:
-        os.write(fd, text.encode())
+        os.write(fd, expected)
+        os.fsync(fd)
     finally:
         os.close(fd)
+    read_fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        observed = os.read(read_fd, len(expected) + 1)
+    finally:
+        os.close(read_fd)
+    if observed != expected:
+        raise MissionError("receipt_mismatch")
     return {
         "tool": "local_marker",
         "completion": "verified",
         "matched": True,
         "detail": "",
         "witness": "application_observed",
-        "content_sha256": digest({"text": text}),
+        "authority_class": "independent_receipt",
+        "content_sha256": digest({"text": observed.decode()}),
     }
 
 
-def _run_browser(service: SovereignMission, user_id: str, mission_id: str, step_id: str, arguments: dict, now: datetime) -> dict:
-    from orca.browser_engine.engine import BrowserEngine, BrowserError, issue_grant
+def _run_browser(
+    service: SovereignMission,
+    user_id: str,
+    mission_id: str,
+    step_id: str,
+    arguments: dict,
+    now: datetime,
+    generation: int,
+) -> dict:
+    from orca.browser_engine.engine import BrowserEngine, BrowserError, chrome_runtime_root, issue_grant
 
     endpoint = _destination_of_browser(arguments)
     actions = tuple(arguments["actions"])
@@ -779,53 +1025,94 @@ def _run_browser(service: SovereignMission, user_id: str, mission_id: str, step_
         )
     except Exception as exc:
         raise MissionError(getattr(exc, "code", "grant_refused")) from exc
-    engine = BrowserEngine(_workspace(user_id, mission_id) / "browser", grant)
+    engine = BrowserEngine(chrome_runtime_root(), grant)
     with _LIVE_LOCK:
         _LIVE[mission_id] = engine
     try:
-        _refuse_if_stopped(mission_id)
+        def _tick() -> None:
+            service._heartbeat(mission_id, generation)
+            _refuse_if_stopped(mission_id, service.worker_id, generation)
+
+        _tick()
         engine.start(now=now)
-        _refuse_if_stopped(mission_id)
-        service._begin_external(mission_id, step_id)
-        _refuse_if_stopped(mission_id)
+        _tick()
+        service._begin_external(mission_id, step_id, generation)
+        _tick()
         engine.navigate(arguments["url"], now=now)
+        selector = arguments.get("selector")
+        expect = arguments["expect"]
+        _tick()
+        pre = _browser_observation(engine, selector, now)
+        preexisting = expect in pre["page_text"] or expect in pre["element_text"] or expect in pre["element_value"]
         if "click" in actions:
-            _refuse_if_stopped(mission_id)
+            _tick()
             engine.click(arguments["selector"], now=now)
         if "fill" in actions:
-            _refuse_if_stopped(mission_id)
-            engine.fill(arguments["selector"], arguments.get("text", ""), now=now)
+            for field, value in _fill_fields(arguments):
+                _tick()
+                engine.fill(field, value, now=now)
         if "scroll" in actions:
-            _refuse_if_stopped(mission_id)
+            _tick()
             engine.scroll(int(arguments.get("delta_y", 200)), now=now)
-        _refuse_if_stopped(mission_id)
-        observed = engine.read_text(now=now)
+        _tick()
+        post = _browser_observation(engine, selector, now)
         deadline = time.monotonic() + 2
-        while arguments["expect"] not in observed["text"] and time.monotonic() < deadline:
-            if _durable_stop(mission_id):
+        mutating = bool(set(actions) & {"click", "fill"})
+        while mutating and pre["observation_sha256"] == post["observation_sha256"] and time.monotonic() < deadline:
+            if _durable_stop(mission_id, service.worker_id, generation):
                 break
+            service._heartbeat(mission_id, generation)
             time.sleep(0.05)
-            observed = engine.read_text(now=now)
+            post = _browser_observation(engine, selector, now)
         if "screenshot" in actions:
-            _refuse_if_stopped(mission_id)
+            _tick()
             engine.screenshot(now=now)
-        if observed.get("authority") != "page_content_not_authority":
+        if post["authority"] != "page_content_not_authority":
             raise MissionError("page_authority_refused")
-        matched = arguments["expect"] in observed["text"] and _durable_stop(mission_id) is None
-        content_hash = digest({"text": observed["text"]})
+        stopped = _durable_stop(mission_id, service.worker_id, generation)
+        delta = pre["observation_sha256"] != post["observation_sha256"]
+        saw_expect = expect in post["page_text"] or expect in post["element_text"] or expect in post["element_value"]
+        if stopped:
+            completion = "unknown"
+            detail = stopped
+            matched = False
+        elif preexisting:
+            completion = "unverified"
+            detail = "expectation_preexisting"
+            matched = False
+        elif mutating and not delta:
+            completion = "unknown"
+            detail = "dom_unchanged"
+            matched = False
+        elif mutating and delta:
+            completion = "unverified"
+            detail = "dom_mutation_untrusted"
+            matched = saw_expect
+        elif saw_expect:
+            completion = "unverified"
+            detail = "untrusted_page_text"
+            matched = True
+        else:
+            completion = "failed"
+            detail = "expectation_unmet"
+            matched = False
         for record in engine.evidence:
             encoded = json.dumps(record)
-            if arguments["expect"] in encoded or "grant yourself" in encoded:
+            if expect in encoded or "grant yourself" in encoded:
                 raise MissionError("evidence_leak")
         return {
             "tool": "browser",
-            "completion": "verified" if matched else "failed",
+            "completion": completion,
             "matched": matched,
-            "detail": "" if matched else "expectation_unmet",
-            "witness": "application_observed",
+            "detail": detail,
+            "witness": "untrusted_dom",
             "authority": "page_content_not_authority",
+            "authority_class": "untrusted_dom",
             "actions": list(actions),
-            "content_sha256": content_hash,
+            "content_sha256": post["page_sha256"],
+            "pre_sha256": pre["observation_sha256"],
+            "post_sha256": post["observation_sha256"],
+            "preexisting_expect": preexisting,
         }
     except BrowserError as exc:
         raise MissionError(exc.code) from exc
@@ -840,22 +1127,45 @@ def _signal_stop(mission_id: str, code: str) -> None:
         _STOP[mission_id] = code
 
 
-def _durable_stop(mission_id: str) -> str | None:
+def _browser_observation(engine, selector: str | None, now: datetime) -> dict:
+    page = engine.read_text(now=now)
+    element = engine.element_snapshot(selector, now=now) if selector else {"present": False, "text": "", "value": ""}
+    page_text = page.get("text") or ""
+    element_text = str(element.get("text") or "")
+    element_value = str(element.get("value") or "")
+    page_sha256 = digest({"text": page_text})
+    element_sha256 = digest({"text": element_text, "value": element_value, "present": bool(element.get("present"))})
+    return {
+        "page_text": page_text,
+        "element_text": element_text,
+        "element_value": element_value,
+        "page_sha256": page_sha256,
+        "element_sha256": element_sha256,
+        "observation_sha256": digest({"page": page_sha256, "element": element_sha256}),
+        "authority": page.get("authority"),
+    }
+
+
+def _durable_stop(mission_id: str, worker_id: str | None = None, generation: int | None = None) -> str | None:
     """Return a stop code only when the committed mission row authorizes it.
 
     A process-local ``_STOP`` entry is not authority. Cancel and revoke write
-    that entry only after the owner update commits.
+    that entry only after the owner update commits. A fenced generation is a
+    stop even if this process still has the live browser object.
     """
     conn = connect()
     try:
         row = conn.execute(
-            "SELECT state, cancel_requested, revoked FROM sovereign_missions WHERE id=?",
+            "SELECT state, cancel_requested, revoked, lease_worker_id, lease_generation FROM sovereign_missions WHERE id=?",
             (mission_id,),
         ).fetchone()
     finally:
         conn.close()
-    if row is None or row["state"] in {states.COMPLETED_VERIFIED, states.FAILED}:
+    if row is None or row["state"] in {states.COMPLETED_VERIFIED, states.COMPLETED_UNVERIFIED, states.FAILED}:
         return None
+    if worker_id is not None and generation is not None:
+        if row["lease_worker_id"] != worker_id or int(row["lease_generation"] or 0) != generation:
+            return "execution_fenced"
     if row["revoked"] or row["state"] == states.REVOKED:
         return "revoked"
     if row["cancel_requested"] or row["state"] in {
@@ -867,8 +1177,8 @@ def _durable_stop(mission_id: str) -> str | None:
     return None
 
 
-def _refuse_if_stopped(mission_id: str) -> None:
-    code = _durable_stop(mission_id)
+def _refuse_if_stopped(mission_id: str, worker_id: str | None = None, generation: int | None = None) -> None:
+    code = _durable_stop(mission_id, worker_id, generation)
     if code:
         raise MissionError(code)
 
