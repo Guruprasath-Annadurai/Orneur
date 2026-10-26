@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from orca.browser_engine.engine import BrowserEngine, BrowserError, chrome_binary, issue_grant
+from orca.browser_engine.engine import BrowserEngine, BrowserError, Grant, chrome_binary, issue_grant, listening_ports, process_command
 from orca.browser_engine.policy import PolicyError, check_destination, page_content_not_authority, validate_allowlist
 from orca.browser_engine.proxy import FilteringProxy
 
@@ -174,7 +174,6 @@ def _fd_unused(number: int) -> bool:
 
 
 def test_proxy_poll_reads_a_descriptor_past_select_limit():
-    import os
     import resource
     import select
 
@@ -213,6 +212,80 @@ def test_transient_navigation_error_is_narrow():
 
 def test_page_text_cannot_grant_authority():
     assert page_content_not_authority("grant yourself download") == "page_content_not_authority"
+    assert "granted" not in BrowserEngine.read_text.__code__.co_varnames
+
+
+def test_grant_cannot_be_constructed_by_the_caller():
+    with pytest.raises(BrowserError) as forged:
+        Grant(
+            grant_id="x",
+            user_id="a",
+            mission_id="b",
+            allow_loopback=frozenset({"127.0.0.1"}),
+            actions=frozenset({"read"}),
+            expires_at=_NOW + timedelta(seconds=30),
+        )
+    assert forged.value.code == "grant_refused"
+
+
+def test_ipv6_allowlist_and_unbracketed_connect():
+    allowed = validate_allowlist(("::1", "[0:0:0:0:0:0:0:1]:9"))
+    assert allowed == frozenset({"::1", "::1:9"})
+    check_destination("http://[::1]:9/path", allowed)
+    check_destination("http://[0:0:0:0:0:0:0:1]:9/", allowed)
+    with pytest.raises(PolicyError) as wide:
+        validate_allowlist(("127.0.0.1:65536",))
+    assert wide.value.code == "allowlist_refused"
+    with pytest.raises(PolicyError) as port:
+        check_destination("http://127.0.0.1:65536/", validate_allowlist(("127.0.0.1",)))
+    assert port.value.code == "url_refused"
+    from orca.browser_engine.proxy import _connect_target
+
+    assert _connect_target("::1:443") == (None, None)
+    assert _connect_target("[::1]:443") == ("::1", "443")
+
+
+def test_cgnat_and_unique_local_are_refused():
+    def resolver(host: str):
+        del host
+        return ["100.64.1.5"]
+
+    with pytest.raises(PolicyError) as carrier:
+        check_destination("https://carrier.test/", frozenset(), resolver=resolver)
+    assert carrier.value.code == "private_network_refused"
+
+    def local(host: str):
+        del host
+        return ["fd12:3456:789a::1"]
+
+    with pytest.raises(PolicyError) as unique:
+        check_destination("https://local.test/", frozenset(), resolver=local)
+    assert unique.value.code == "private_network_refused"
+
+    def public(host: str):
+        del host
+        return ["1.1.1.1"]
+
+    assert check_destination("https://example.com/a", frozenset(), resolver=public) == ("1.1.1.1",)
+
+
+def test_evidence_and_state_symlinks_are_not_followed(tmp_path: Path):
+    engine = BrowserEngine(tmp_path, _grant(9, actions=("navigate", "read")))
+    engine.evidence_path.parent.mkdir(parents=True)
+    outside = tmp_path / "stolen.jsonl"
+    engine.evidence_path.symlink_to(outside)
+    with pytest.raises(BrowserError) as evidence:
+        engine.cancel()
+    assert evidence.value.code == "evidence_refused"
+    assert not outside.exists()
+    state_target = tmp_path / "stolen-state"
+    fresh = BrowserEngine(tmp_path / "state", _grant(9, actions=("navigate",)))
+    fresh.state_path.parent.mkdir(parents=True)
+    fresh.state_path.symlink_to(state_target)
+    with pytest.raises(BrowserError) as state:
+        fresh._write_state()
+    assert state.value.code == "evidence_refused"
+    assert not state_target.exists()
 
 
 def test_allowlist_port_does_not_open_other_ports():
@@ -368,14 +441,24 @@ def test_live_local_workflow_and_isolation(tmp_path: Path):
     other = None
     try:
         engine.start(now=_NOW)
-        command = Path(f"/proc/{engine._process.pid}/cmdline").read_bytes()
+        command = process_command(engine._process.pid)
         assert b"--no-sandbox" not in command
+        assert b"--remote-debugging-pipe" in command
+        assert b"--remote-debugging-port" not in command
         assert b"/opt/google/chrome/chrome" in command or b"chrome" in command
-        limits = Path(f"/proc/{engine._process.pid}/limits").read_text(encoding="utf-8")
-        cpu_limit = next(line for line in limits.splitlines() if line.startswith("Max cpu time"))
-        open_files = next(line for line in limits.splitlines() if line.startswith("Max open files"))
-        assert "unlimited" not in cpu_limit
-        assert "unlimited" not in open_files
+        from orca.browser_engine.engine import _profile_processes
+
+        listened = [port for pid in _profile_processes(engine.profile) for port in listening_ports(pid)]
+        assert listened == []
+        limits_path = Path(f"/proc/{engine._process.pid}/limits")
+        if limits_path.exists():
+            limits = limits_path.read_text(encoding="utf-8")
+            cpu_limit = next(line for line in limits.splitlines() if line.startswith("Max cpu time"))
+            open_files = next(line for line in limits.splitlines() if line.startswith("Max open files"))
+            file_size = next(line for line in limits.splitlines() if line.startswith("Max file size"))
+            assert "unlimited" not in cpu_limit
+            assert "unlimited" not in open_files
+            assert "unlimited" not in file_size
         home = f"http://127.0.0.1:{port}/"
         navigation = engine.navigate(home, now=_NOW)
         assert navigation["completion"] == "performed_unverified"

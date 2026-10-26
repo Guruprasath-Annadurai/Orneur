@@ -35,8 +35,27 @@ def test_different_seed_changes_the_result(tmp_path):
 
 
 def test_golden_final_state_pins_cross_platform_determinism(tmp_path):
-    """Only + - * / sqrt and 64-bit integer ops are used, so this value must be identical on every IEEE-754 platform."""
+    """Only + - * / sqrt and 64-bit integer ops are used, so this value must be identical on every IEEE-754 platform.
+
+    The gradient norm is a left fold. builtin sum() is not: CPython 3.12
+    compensates float sums, and that compensation produced
+    d42d6dbd4d0abdb2a538d27745f08cc6983c0a25924bdd40a4790df021b7dea8 on
+    CPython 3.12.3. The pin below is the 3.11.17 left-fold digest.
+    """
     assert run(Plan(), tmp_path / "g").state.sha256 == GOLDEN_FINAL_STATE_SHA256
+
+
+def test_float_sum_builtin_is_not_the_pinned_left_fold():
+    """Keeps the golden pin from being 'fixed' by switching the norm back to sum()."""
+    import sys
+
+    values = [1.0e16, 1.0, -1.0e16]
+    folded = 0.0
+    for value in values:
+        folded += value
+    assert folded == 0.0
+    if sys.version_info >= (3, 12):
+        assert sum(values) != folded
 
 
 def test_training_actually_learns(tmp_path):
