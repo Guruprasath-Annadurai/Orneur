@@ -235,7 +235,7 @@ class BrowserEngine:
             os.dup2(original, target)
             os.close(original)
         self._cdp = CdpPipe(chrome_to_parent_r, parent_to_chrome_w)
-        deadline = time.monotonic() + 8
+        deadline = time.monotonic() + 20
         ready = False
         while time.monotonic() < deadline:
             self._assert_sandboxed()

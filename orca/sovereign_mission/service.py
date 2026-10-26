@@ -695,7 +695,13 @@ class SovereignMission:
             elif code in {"cancelled", "revoked", "execution_fenced"}:
                 unit.commit()
                 return
-            elif code in {"browser_dead", "browser_closed", "execution_interrupted", "sandbox_refused"}:
+            elif code in {
+                "browser_dead",
+                "browser_closed",
+                "browser_exited",
+                "execution_interrupted",
+                "sandbox_refused",
+            }:
                 new = states.INTERRUPTED_UNKNOWN
             else:
                 new = states.FAILED
@@ -1027,7 +1033,6 @@ def _run_browser(
             service._heartbeat(mission_id, generation)
             _refuse_if_stopped(mission_id, service.worker_id, generation)
 
-        _tick()
         engine.start(now=now)
         _tick()
         service._begin_external(mission_id, step_id, generation)

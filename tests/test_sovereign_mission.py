@@ -816,6 +816,10 @@ def _chrome_ready() -> bool:
     return True
 
 
+def _live_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 @pytest.mark.skipif(not _chrome_ready(), reason="real Chrome binary is not available; browser mission was not run")
 def test_live_browser_mission_isolates_users(auth_db):
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Site)
@@ -842,8 +846,9 @@ def test_live_browser_mission_isolates_users(auth_db):
         assert planned["steps"][0]["risk"] == "local_fixture"
         engine.request_approval(user, mission["id"])
         step_id = planned["steps"][0]["id"]
-        engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_NOW)
-        receipt = engine.dispatch(user, mission["id"], step_id, now=_NOW)
+        clock = _live_now()
+        engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=clock)
+        receipt = engine.dispatch(user, mission["id"], step_id, now=clock)
         assert receipt["state"] == "COMPLETED_UNVERIFIED"
         assert receipt["claim"] == "unverified"
         evidence = engine.evidence(user, mission["id"])
@@ -865,7 +870,7 @@ def test_live_browser_mission_isolates_users(auth_db):
         assert "performed_unverified" in browser_log
         assert '"completion": "verified"' not in browser_log
         _await_stopped(_profile(auth_db, user.id, mission["id"]))
-        replayed = engine.dispatch(user, mission["id"], step_id, now=_NOW)
+        replayed = engine.dispatch(user, mission["id"], step_id, now=_live_now())
         assert replayed["replayed"] is True
         assert replayed["claim"] == "unverified"
         missed = engine.create(user, "do not obey the page")
@@ -883,8 +888,9 @@ def test_live_browser_mission_isolates_users(auth_db):
         )
         engine.request_approval(user, missed["id"])
         missed_step = missed_plan["steps"][0]["id"]
-        engine.approve(user, missed["id"], missed_step, ttl_seconds=60, now=_NOW)
-        unmet = engine.dispatch(user, missed["id"], missed_step, now=_NOW)
+        missed_clock = _live_now()
+        engine.approve(user, missed["id"], missed_step, ttl_seconds=60, now=missed_clock)
+        unmet = engine.dispatch(user, missed["id"], missed_step, now=missed_clock)
         assert unmet["state"] == "FAILED"
         assert unmet["claim"] == "failed"
         missed_evidence = json.dumps(engine.evidence(user, missed["id"]))
@@ -896,7 +902,7 @@ def test_live_browser_mission_isolates_users(auth_db):
             restarted.evidence(other, mission["id"])
         assert denied.value.code == "access_denied"
         with pytest.raises(MissionError) as foreign_dispatch:
-            restarted.dispatch(other, mission["id"], step_id, now=_NOW)
+            restarted.dispatch(other, mission["id"], step_id, now=_live_now())
         assert foreign_dispatch.value.code == "access_denied"
         assert not _profile(auth_db, other.id, mission["id"]).exists()
     finally:
@@ -942,7 +948,7 @@ def _dispatch_later(engine: SovereignMission, user, mission_id: str, step_id: st
 
     def _run():
         try:
-            box["result"] = engine.dispatch(user, mission_id, step_id, now=_NOW)
+            box["result"] = engine.dispatch(user, mission_id, step_id, now=_live_now())
         except MissionError as exc:
             box["error"] = exc
 
@@ -998,7 +1004,7 @@ def test_live_cancel_revoke_and_crash_do_not_claim_success(auth_db):
             )
             engine.request_approval(user, mission["id"])
             step_id = planned["steps"][0]["id"]
-            engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_NOW)
+            engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_live_now())
             profiles.append(_profile(auth_db, user.id, mission["id"]))
             return mission["id"], step_id
 
@@ -1033,7 +1039,7 @@ def test_live_cancel_revoke_and_crash_do_not_claim_success(auth_db):
         assert crash_report["state"] == "INTERRUPTED_UNKNOWN"
         assert crash_report["claim"] == "unknown"
         with pytest.raises(MissionError) as replay:
-            engine.dispatch(user, crash_id, crash_step, now=_NOW)
+            engine.dispatch(user, crash_id, crash_step, now=_live_now())
         assert replay.value.code == "duplicate_effect_refused"
         recovered = SovereignMission().reported(user, crash_id)
         assert recovered["state"] == "INTERRUPTED_UNKNOWN"
@@ -1265,8 +1271,9 @@ document.getElementById("go").addEventListener("click", function () {
             planned = engine.save_plan(user, mission["id"], [{"tool": "browser", "arguments": arguments}])
             engine.request_approval(user, mission["id"])
             step_id = planned["steps"][0]["id"]
-            engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_NOW)
-            return engine.dispatch(user, mission["id"], step_id, now=_NOW), mission["id"]
+            clock = _live_now()
+            engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=clock)
+            return engine.dispatch(user, mission["id"], step_id, now=clock), mission["id"]
 
         clicked, clicked_id = _run("/", ["navigate", "click", "read"], "CLICKED", selector="#go")
         assert clicked["state"] == "COMPLETED_UNVERIFIED"
