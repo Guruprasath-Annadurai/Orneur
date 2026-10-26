@@ -106,6 +106,7 @@ _EXTRA_COLUMNS = {
         "lease_generation": "INTEGER NOT NULL DEFAULT 0",
         "lease_heartbeat_at": "REAL",
         "lease_pid": "INTEGER",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
     },
     "sovereign_approvals": {
         "scope_json": "TEXT",
@@ -121,7 +122,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         for name, declaration in columns.items():
             if name not in existing:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
 
 
 def ensure_schema() -> None:

@@ -530,7 +530,9 @@ class SovereignMission:
     def _execute(self, user: User, mission: dict, step: sqlite_step, now: datetime, generation: int) -> dict:
         arguments = json.loads(step["arguments_json"])
         if step["tool"] == "local_marker":
+            self._heartbeat(mission["id"], generation)
             self._begin_external(mission["id"], step["id"], generation)
+            self._heartbeat(mission["id"], generation)
             _refuse_if_stopped(mission["id"], self.worker_id, generation)
             return _run_marker(user.id, mission["id"], arguments)
         if step["tool"] == "browser":
@@ -693,7 +695,7 @@ class SovereignMission:
             elif code in {"cancelled", "revoked", "execution_fenced"}:
                 unit.commit()
                 return
-            elif code in {"browser_dead", "browser_closed", "execution_interrupted"}:
+            elif code in {"browser_dead", "browser_closed", "execution_interrupted", "sandbox_refused"}:
                 new = states.INTERRUPTED_UNKNOWN
             else:
                 new = states.FAILED
@@ -898,11 +900,21 @@ def _classify(step: dict, index: int) -> dict:
         if not isinstance(expect, str) or not expect or len(expect) > 64 or "\n" in expect:
             raise MissionError("plan_refused")
         form_values = arguments.get("form_values")
-        if form_values is not None and (
-            not isinstance(form_values, dict)
-            or not all(isinstance(key, str) and isinstance(value, str) for key, value in form_values.items())
-        ):
-            raise MissionError("plan_refused")
+        if form_values is not None:
+            if (
+                not isinstance(form_values, dict)
+                or not form_values
+                or "fill" not in actions
+                or not all(isinstance(key, str) and isinstance(value, str) for key, value in form_values.items())
+            ):
+                raise MissionError("plan_refused")
+            for key, value in form_values.items():
+                if not key.startswith("#") or not value or len(value) > 512 or "\n" in value:
+                    raise MissionError("plan_refused")
+            selector = arguments.get("selector")
+            text = arguments.get("text")
+            if selector is not None and (selector not in form_values or (text is not None and form_values[selector] != text)):
+                raise MissionError("plan_refused")
         risk = "local_fixture"
     else:
         if set(arguments) - _MARKER_ARGUMENT_KEYS:
@@ -914,6 +926,13 @@ def _classify(step: dict, index: int) -> dict:
     if step.get("risk") not in {None, risk}:
         raise MissionError("risk_mismatch")
     return {"id": uuid.uuid4().hex, "position": index, "tool": tool, "risk": risk, "arguments": arguments}
+
+
+def _fill_fields(arguments: dict) -> list[tuple[str, str]]:
+    form_values = arguments.get("form_values")
+    if isinstance(form_values, dict) and form_values:
+        return [(key, form_values[key]) for key in form_values]
+    return [(arguments["selector"], arguments.get("text", ""))]
 
 
 def _destination(step) -> str:
@@ -1004,42 +1023,49 @@ def _run_browser(
     with _LIVE_LOCK:
         _LIVE[mission_id] = engine
     try:
-        _refuse_if_stopped(mission_id, service.worker_id, generation)
+        def _tick() -> None:
+            service._heartbeat(mission_id, generation)
+            _refuse_if_stopped(mission_id, service.worker_id, generation)
+
+        _tick()
         engine.start(now=now)
-        service._heartbeat(mission_id, generation)
-        _refuse_if_stopped(mission_id, service.worker_id, generation)
+        _tick()
         service._begin_external(mission_id, step_id, generation)
-        _refuse_if_stopped(mission_id, service.worker_id, generation)
+        _tick()
         engine.navigate(arguments["url"], now=now)
         selector = arguments.get("selector")
         expect = arguments["expect"]
+        _tick()
         pre = _browser_observation(engine, selector, now)
         preexisting = expect in pre["page_text"] or expect in pre["element_text"] or expect in pre["element_value"]
         if "click" in actions:
-            _refuse_if_stopped(mission_id, service.worker_id, generation)
+            _tick()
             engine.click(arguments["selector"], now=now)
         if "fill" in actions:
-            _refuse_if_stopped(mission_id, service.worker_id, generation)
-            engine.fill(arguments["selector"], arguments.get("text", ""), now=now)
+            for field, value in _fill_fields(arguments):
+                _tick()
+                engine.fill(field, value, now=now)
         if "scroll" in actions:
-            _refuse_if_stopped(mission_id, service.worker_id, generation)
+            _tick()
             engine.scroll(int(arguments.get("delta_y", 200)), now=now)
-        _refuse_if_stopped(mission_id, service.worker_id, generation)
+        _tick()
         post = _browser_observation(engine, selector, now)
         deadline = time.monotonic() + 2
         mutating = bool(set(actions) & {"click", "fill"})
         while mutating and pre["observation_sha256"] == post["observation_sha256"] and time.monotonic() < deadline:
             if _durable_stop(mission_id, service.worker_id, generation):
                 break
+            service._heartbeat(mission_id, generation)
             time.sleep(0.05)
             post = _browser_observation(engine, selector, now)
         if "screenshot" in actions:
-            _refuse_if_stopped(mission_id, service.worker_id, generation)
+            _tick()
             engine.screenshot(now=now)
         if post["authority"] != "page_content_not_authority":
             raise MissionError("page_authority_refused")
         stopped = _durable_stop(mission_id, service.worker_id, generation)
         delta = pre["observation_sha256"] != post["observation_sha256"]
+        saw_expect = expect in post["page_text"] or expect in post["element_text"] or expect in post["element_value"]
         if stopped:
             completion = "unknown"
             detail = stopped
@@ -1049,14 +1075,14 @@ def _run_browser(
             detail = "expectation_preexisting"
             matched = False
         elif mutating and not delta:
-            completion = "failed"
+            completion = "unknown"
             detail = "dom_unchanged"
             matched = False
         elif mutating and delta:
             completion = "unverified"
             detail = "dom_mutation_untrusted"
-            matched = True
-        elif expect in post["page_text"]:
+            matched = saw_expect
+        elif saw_expect:
             completion = "unverified"
             detail = "untrusted_page_text"
             matched = True

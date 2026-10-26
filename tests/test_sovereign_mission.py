@@ -753,6 +753,44 @@ def test_refuses_unapproved_tampered_and_unqualified_actions(auth_db):
         states.transition(states.OUTCOME_UNKNOWN, states.COMPLETED_VERIFIED, evidence_intact=True)
     with pytest.raises(states.StateError):
         states.transition(states.INTERRUPTED_UNKNOWN, states.COMPLETED_VERIFIED, evidence_intact=True)
+    with pytest.raises(states.StateError):
+        states.transition(states.OUTCOME_UNKNOWN, states.VERIFYING)
+    with pytest.raises(states.StateError):
+        states.transition(states.INTERRUPTED_UNKNOWN, states.VERIFYING)
+    with pytest.raises(states.StateError):
+        states.transition(states.OUTCOME_UNKNOWN, states.COMPLETED_UNVERIFIED, evidence_intact=True)
+    with pytest.raises(MissionError) as form_without_fill:
+        engine.save_plan(
+            user,
+            engine.create(user, "form without fill")["id"],
+            [{
+                "tool": "browser",
+                "arguments": {
+                    "url": "http://127.0.0.1:9/",
+                    "actions": ["navigate", "read"],
+                    "expect": "x",
+                    "form_values": {"#field": "secret"},
+                },
+            }],
+        )
+    assert form_without_fill.value.code == "plan_refused"
+    with pytest.raises(MissionError) as form_mismatch:
+        engine.save_plan(
+            user,
+            engine.create(user, "form mismatch")["id"],
+            [{
+                "tool": "browser",
+                "arguments": {
+                    "url": "http://127.0.0.1:9/",
+                    "actions": ["navigate", "fill", "read"],
+                    "selector": "#field",
+                    "text": "a",
+                    "expect": "x",
+                    "form_values": {"#field": "b"},
+                },
+            }],
+        )
+    assert form_mismatch.value.code == "plan_refused"
 
 
 def test_evidence_aggregate_mismatch_is_withheld(auth_db):
@@ -990,7 +1028,7 @@ def test_live_cancel_revoke_and_crash_do_not_claim_success(auth_db):
         _kill_mission_browser(crash_id)
         crashed = _join_dispatch(crashing)
         assert "error" in crashed
-        assert crashed["error"].code in {"browser_dead", "browser_closed", "execution_interrupted"}
+        assert crashed["error"].code in {"browser_dead", "browser_closed", "execution_interrupted", "sandbox_refused"}
         crash_report = engine.reported(user, crash_id)
         assert crash_report["state"] == "INTERRUPTED_UNKNOWN"
         assert crash_report["claim"] == "unknown"
