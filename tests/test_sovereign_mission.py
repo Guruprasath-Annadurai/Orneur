@@ -112,6 +112,11 @@ def test_two_users_cannot_read_each_other(auth_db):
     assert receipt["state"] == "COMPLETED_VERIFIED"
     marker = auth_db / "sovereign" / owner.id / mission_id / "marker.txt"
     assert marker.read_text(encoding="utf-8") == "owner-only"
+    from orca.sovereign_mission.store import digest
+
+    recorded = engine.evidence(owner, mission_id)["records"][0]
+    assert recorded["content_sha256"] == digest({"text": marker.read_text(encoding="utf-8")})
+    assert recorded["authority_class"] == "independent_receipt"
     with pytest.raises(MissionError) as denied:
         engine.get(other, mission_id)
     assert denied.value.code == "access_denied"

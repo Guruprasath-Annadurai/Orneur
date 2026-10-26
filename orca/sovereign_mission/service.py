@@ -950,11 +950,20 @@ def _run_marker(user_id: str, mission_id: str, arguments: dict) -> dict:
     target = _workspace(user_id, mission_id) / name
     if target.exists() or target.is_symlink():
         raise MissionError("duplicate_effect")
+    expected = text.encode()
     fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY, 0o600)
     try:
-        os.write(fd, text.encode())
+        os.write(fd, expected)
+        os.fsync(fd)
     finally:
         os.close(fd)
+    read_fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        observed = os.read(read_fd, len(expected) + 1)
+    finally:
+        os.close(read_fd)
+    if observed != expected:
+        raise MissionError("receipt_mismatch")
     return {
         "tool": "local_marker",
         "completion": "verified",
@@ -962,7 +971,7 @@ def _run_marker(user_id: str, mission_id: str, arguments: dict) -> dict:
         "detail": "",
         "witness": "application_observed",
         "authority_class": "independent_receipt",
-        "content_sha256": digest({"text": text}),
+        "content_sha256": digest({"text": observed.decode()}),
     }
 
 

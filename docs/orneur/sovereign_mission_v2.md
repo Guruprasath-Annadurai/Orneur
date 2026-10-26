@@ -47,7 +47,7 @@ Claims:
 | `unknown` | `INTERRUPTED_UNKNOWN`, `OUTCOME_UNKNOWN`, or executing after a cancel request. |
 | `withheld` | A stored evidence record or the mission aggregate does not match its hash. The records are not returned. |
 
-`verified` means this process produced and read back an independent receipt. For a marker, that receipt is the exclusive file. A browser step never uses substring presence of `expect` as verified completion. Pre-action and post-action hashes are stored; page text stays untrusted. If `expect` was already in the page, the detail is `expectation_preexisting` and the claim is not `verified`. The browser tool's own navigation and click records remain `performed_unverified`. A hash is not authorship and is not an external witness.
+`verified` means this process produced and read back an independent receipt. For a marker, that receipt is the exclusive file: after the write, the process reopens the path and hashes the bytes it actually read. A browser step never uses substring presence of `expect` as verified completion. Pre-action and post-action hashes are stored; page text stays untrusted. If `expect` was already in the page, the detail is `expectation_preexisting` and the claim is not `verified`. The browser tool's own navigation and click records remain `performed_unverified`. A hash is not authorship and is not an external witness.
 
 ## HTTP
 
