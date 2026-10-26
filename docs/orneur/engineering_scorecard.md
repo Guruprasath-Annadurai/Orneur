@@ -1,12 +1,12 @@
 # Engineering preparation scorecard
 
-Measured on branch `cursor/builtin-browser-engine-a8b0` from `origin/main` `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`. This scorecard is not the 95-row acceptance register.
+Measured on branch `cursor/sovereign-mission-v2-a8b0`, parent `f7bf4077a5541e219d6c2bf7f219e14c55e31e1a` (browser PR #116). That parent is `origin/main` `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a` plus the browser engine. PR #115 is not in this tree. This scorecard is not the 95-row acceptance register.
 
 | Metric | Result |
 | --- | --- |
-| Engineering gates at `VERIFIED_ENGINEERING` | 5 / 50 (10%) |
+| Engineering gates at `VERIFIED_ENGINEERING` | 16 / 50 (32%) |
 | Engineering gates at `INDEPENDENTLY_QUALIFIED` | 0 / 50 |
-| Integrated product journeys demonstrated | 0 (A–F). The browser test is a component workflow, not Journey B. |
+| Integrated product journeys demonstrated | 0 (A–F). The authenticated local-fixture mission is an API workflow. It is not one of the named product journeys, and no frozen frontend screen was changed. |
 | Official pretraining acceptance | 0 / 95 |
 | Acceptance ledger SHA-256 | `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570` |
 | Native checkpoints | GENESIS `INTERFACE_ONLY`. NOVUS and AETERNUM `NOT_AVAILABLE` on the canonical registry. No checkpoint was created. |
@@ -18,10 +18,10 @@ Measured on branch `cursor/builtin-browser-engine-a8b0` from `origin/main` `20a8
 
 Classifications below are for `origin/main` plus this branch. Open PR #115 (`5ead4b426cd3d93705119f00353448bdea4bac4f`) is not in this tree. Its read-only browser, voice, and opportunity modules stay on that branch.
 
-- `IMPLEMENTED_AND_VERIFIED` this session: `orca/browser_engine/` via `tests/test_browser_engine.py` (11 passed, twice).
-- `IMPLEMENTED_BUT_UNQUALIFIED`: `orca/auth/store.py` `authenticate`, `orca/serve/model_identity.py`, `orca/mission/state_machine.py`, `orca/mission/mission_store.py`, `orca/agent/runtime.py`, `orca/rse/imp1/locks.py` (all seven locks return false). Present and not re-run here.
-- `PARTIAL_OR_CONTRACT_ONLY`: mission lifecycle (no `INTERRUPTED_UNKNOWN` or `OUTCOME_UNKNOWN`), agent tool runtime (not ten specialist handlers), memory and conversation modules, train dry-run package `orca/train/dryrun/`.
-- `MISSING_OR_BLOCKED`: Chromium HTTP product route, mission-to-browser adapter, deny-all principal adapter (that principal is on PR #115, not here), opportunity and voice on this branch, native training (denied).
+- `IMPLEMENTED_AND_VERIFIED` this session: `orca/browser_engine/` remains the parent browser engine. `orca/sovereign_mission/` via `tests/test_sovereign_mission.py` (12 passed, twice, including the live Chrome missions).
+- `IMPLEMENTED_BUT_UNQUALIFIED`: `orca/serve/model_identity.py`, `orca/mission/state_machine.py`, `orca/mission/mission_store.py`, `orca/agent/runtime.py`, `orca/rse/imp1/locks.py` (all seven locks return false). The Phase 15 mission store was not re-run and was not used.
+- `PARTIAL_OR_CONTRACT_ONLY`: Phase 15 mission lifecycle still has no `INTERRUPTED_UNKNOWN` or `OUTCOME_UNKNOWN`. Agent tool runtime is not ten specialist handlers. Memory and conversation modules were not re-tested. Train dry-run package `orca/train/dryrun/` was not re-run.
+- `MISSING_OR_BLOCKED`: public browser destinations, deny-all principal adapter (that principal is on PR #115, not here), opportunity and voice on this branch, native training (denied), pause/resume.
 
 ## Gates
 
@@ -33,7 +33,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **A2.** Criterion: click, fill, scroll, a second tab, a PNG screenshot, and an evidence file. Files: `orca/browser_engine/engine.py`. Test: same live test. Positive: page showed `CLICKED`, `hello-field`, `SCROLLED`, `SECOND-PAGE`, and a PNG. Negative: fill and scroll raise `fill_failed` or `scroll_failed` when the observed value does not change. Dependency: A1. Review: pending. Blocker: none on this host. Status: `VERIFIED_ENGINEERING`.
 
-**A3.** Criterion: per-user profiles, short grants, page text is not authority, resume checks state. Files: `orca/browser_engine/engine.py`, `orca/browser_engine/policy.py`. Test: live workflow plus `test_grant_bounds_and_download_names` and `test_page_text_cannot_grant_authority`. Positive: user B's page showed `EMPTY` after user A's `secret=alpha` cookie; resume restored the cookie only with matching state. Negative: tampered state is `resume_refused`; captcha is `unsupported_challenge`; evidence file does not contain the page text. Dependency: A1. Review: pending. Blocker: product authentication is not wired to `issue_grant`. Status: `VERIFIED_ENGINEERING`.
+**A3.** Criterion: per-user profiles, short grants, page text is not authority, resume checks state. Files: `orca/browser_engine/engine.py`, `orca/browser_engine/policy.py`. Test: live workflow plus `test_grant_bounds_and_download_names` and `test_page_text_cannot_grant_authority`. Positive: user B's page showed `EMPTY` after user A's `secret=alpha` cookie; resume restored the cookie only with matching state. Negative: tampered state is `resume_refused`; captcha is `unsupported_challenge`; evidence file does not contain the page text. Dependency: A1. Review: pending. Blocker: the engine still does not accept a product session by itself. Sovereign Mission issues the loopback grant after authentication. Status: `VERIFIED_ENGINEERING`.
 
 **A4.** Criterion: metadata, private, rebinding, redirect, and download traversal are refused. Files: `orca/browser_engine/policy.py`, `orca/browser_engine/proxy.py`, `orca/browser_engine/engine.py`. Tests: `test_network_policy_refusals`, `test_dns_rebinding_is_refused_before_connect`, `test_proxy_refuses_metadata_private_and_rebinding`, `test_allowlist_port_does_not_open_other_ports`, `test_grant_bounds_and_download_names`, live redirect. Positive: allowed loopback HTTP is forwarded. Negative: `169.254.169.254`, metadata CONNECT, private `10.1.2.3`, alternating DNS, `../escape.txt`, and a live redirect to metadata. Dependency: Chrome uses the proxy, including loopback (`--proxy-bypass-list=<-loopback>`). Review: pending. Blocker: a Chrome bug that bypassed the proxy was not separately proved absent. Status: `VERIFIED_ENGINEERING`.
 
@@ -41,19 +41,19 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ### B — Mission
 
-**B1.** Criterion: an authenticated user creates a mission and the objective is persisted. Files: `orca/mission/mission_store.py`, `orca/auth/store.py`. Test: not run this session. Positive: none this session. Negative: none this session. Dependency: Postgres. Review: pending. Blocker: store and auth are not connected to this browser, and this session did not re-run the store tests. Status: `PARTIAL`.
+**B1.** Criterion: an authenticated user creates a mission and the objective is persisted. Files: `orca/sovereign_mission/service.py`, `orca/auth/store.py`. Test: `tests/test_sovereign_mission.py::test_two_users_cannot_read_each_other` and `test_http_denies_the_other_user`. Positive: the owner read the stored objective after a new `SovereignMission()` and after an HTTP create. Negative: the other user's HTTP and service reads returned `access_denied` and did not include the objective. Dependency: the product SQLite auth database. Review: pending. Blocker: the Phase 15 Postgres store was not used. Status: `VERIFIED_ENGINEERING`.
 
-**B2.** Criterion: an explicit plan and stored steps classified by capability and risk. Files: `orca/mission/execution_plan.py`, `orca/mission/requirements.py`. Test: not run. Positive: none this session. Negative: none. Dependency: B1. Review: pending. Blocker: not the requested classifier, and not re-tested. Status: `PARTIAL`.
+**B2.** Criterion: an explicit plan and stored steps classified by capability and risk. Files: `orca/sovereign_mission/service.py`. Test: `test_refuses_unapproved_tampered_and_unqualified_actions` and `test_live_browser_mission_isolates_users`. Positive: the browser step was stored with risk `local_fixture`. Negative: `shell` is `capability_unavailable`; `download` is `action_unqualified`; a click without a `#` selector is `plan_refused`; `https://example.com` and `http://localhost` are `public_browser_unqualified`. Dependency: B1. Review: pending. Blocker: none for this classifier. Status: `VERIFIED_ENGINEERING`.
 
-**B3.** Criterion: no execution without a fresh approval. Files: `orca/mission/state_machine.py` (`WAITING_APPROVAL`). Test: not run. Positive: the state machine's own module requires evidence for `COMPLETED_VERIFIED`; that was read, not executed. Negative: not attacked this session. Dependency: B1. Review: pending. Blocker: approval is not bound to a one-time grant. Status: `PARTIAL`.
+**B3.** Criterion: no execution without a fresh approval. Files: `orca/sovereign_mission/service.py`. Test: `test_approval_expiry_replay_and_public_browser_refusal`, `test_refuses_unapproved_tampered_and_unqualified_actions`, `test_concurrent_dispatch_runs_one_effect`. Positive: an approved local marker ran once. Negative: dispatch before approval is `not_authorized`; a second approval is `approval_replay_refused`; the other user is `access_denied`; an expired approval writes no file; a changed approval destination is `approval_refused`; two overlapping dispatches produced one file. Dependency: B1. Review: pending. Blocker: none for this one-time approval. Status: `VERIFIED_ENGINEERING`.
 
-**B4.** Criterion: execute a real tool and record side-effect intent separately from outcome. Files: `orca/mission/operation_store.py`, `orca/browser_engine/`. Test: browser evidence only. Positive: browser completions distinguish performed from verified. Negative: no mission dispatched a browser step. Dependency: B1 and A1. Review: pending. Blocker: no adapter. Status: `NOT_STARTED`.
+**B4.** Criterion: execute a real tool and record side-effect intent separately from outcome. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_duplicate_effect_and_unknown_outcome` and `test_live_browser_mission_isolates_users`. Positive: the marker file contained `owner-only` and the live page's click handler set `CLICKED`, which was not present before JavaScript ran. The browser evidence file stayed `performed_unverified`. Negative: a failed outcome write left `EXECUTING` until restart, which recorded `OUTCOME_UNKNOWN` and did not write the marker again. Dependency: B1 and A1. Review: pending. Blocker: mission `verified` means this process observed the predeclared expectation. It is not an external witness. Status: `VERIFIED_ENGINEERING`.
 
-**B5.** Criterion: pause, cancel, resume, and preserve `INTERRUPTED_UNKNOWN` / `OUTCOME_UNKNOWN`. Files: `orca/mission/state_machine.py`. Test: not run. Positive: `PAUSED_USER` and `CANCELLED` exist in the enum. Negative: `INTERRUPTED_UNKNOWN` and `OUTCOME_UNKNOWN` are absent, so those states cannot be represented. Dependency: B1. Review: pending. Blocker: enum does not contain the unknown-outcome states. Status: `PARTIAL`.
+**B5.** Criterion: pause, cancel, resume, and preserve `INTERRUPTED_UNKNOWN` / `OUTCOME_UNKNOWN`. Files: `orca/sovereign_mission/states.py`, `orca/sovereign_mission/service.py`. Test: `test_cancel_before_effect_and_after_uncertain_outcome` and `test_live_cancel_revoke_and_crash_do_not_claim_success`. Positive: cancel before an effect confirmed `CANCELLED`; a killed Chrome became `INTERRUPTED_UNKNOWN`; a lost outcome write became `OUTCOME_UNKNOWN` after a new process. Negative: cancel after `effect_started` returned `cancel_confirmed` false and a claim of `unknown`. Dependency: B1. Review: pending. Blocker: pause and resume are not implemented. The Phase 15 enum was not changed. Status: `PARTIAL`.
 
 ### C — Identity, memory, persistence
 
-**C1.** Criterion: verified product authentication and session validation. Files: `orca/auth/store.py`, `orca/auth/tokens.py`, `orca/serve/session_store.py`. Test: not run. Positive: none this session. Negative: none. Dependency: auth database. Review: pending. Blocker: not re-qualified. Status: `IMPLEMENTED_UNVERIFIED`.
+**C1.** Criterion: verified product authentication and session validation. Files: `orca/auth/store.py`, `orca/auth/crypto.py`, `orca/auth/middleware.py`. Test: `test_bad_password_expired_and_revoked_tokens` and `test_http_denies_the_other_user`. Positive: a correct password issued a session token that read the owner's mission. Negative: a wrong password, an expired token, a revoked `jti`, a token older than `tokens_valid_after`, and a missing bearer were rejected. Dependency: auth database. Review: pending. Blocker: API keys and `orca/serve/session_store.py` were not exercised. Status: `VERIFIED_ENGINEERING`.
 
 **C2.** Criterion: adapter in front of the deny-all runtime principal, without trusting caller claims. Files: none on this branch. `orca/core_runtime/principal.py` is on PR #115. Test: none. Positive: none. Negative: none. Dependency: PR #115 stays isolated. Review: pending. Blocker: principal module is not in this tree; it must not be switched to trust caller claims. Status: `NOT_STARTED`.
 
@@ -61,7 +61,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **C4.** Criterion: memory consent, deletion, retention, and authorized search. Files: `orca/memory/deletion.py`, `orca/memory/store.py`, `orca/serve/retention.py`. Test: not run. Positive: none this session. Negative: none. Dependency: memory store. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
 
-**C5.** Criterion: two authenticated users cannot read or execute each other's conversation, memory, mission, or browser. Files: `orca/browser_engine/engine.py` for the browser half only. Test: live browser isolation. Positive: browser profiles and cookies were isolated. Negative: cross-user conversation, memory, and mission were not attempted. Dependency: C1. Review: pending. Blocker: only the browser half ran. Status: `PARTIAL`.
+**C5.** Criterion: two authenticated users cannot read or execute each other's conversation, memory, mission, or browser. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_two_users_cannot_read_each_other` and `test_live_browser_mission_isolates_users`. Positive: user B received `access_denied` for the mission, its evidence, and dispatch. User B's browser profile was not created. Negative: conversation and memory isolation were not attempted. Dependency: C1. Review: pending. Blocker: conversation and memory remain untested. Same-OS-user filesystem access is not a tenant boundary. Status: `PARTIAL`.
 
 ### D — Specialist agents
 
@@ -77,13 +77,13 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ### E — Proof and evidence
 
-**E1.** Criterion: the six completion states are enforced for mission and tool results. Files: `orca/browser_engine/engine.py`, `orca/mission/production_proof.py`. Test: browser tests. Positive: browser records use `performed_unverified`, `verified`, `refused`, and `failed`. Negative: success is not recorded when fill, scroll, or navigation does not match. Dependency: none for the browser. Review: pending. Blocker: `unknown` and `authorized_not_performed` are not yet produced, and missions do not use this record. Status: `PARTIAL`.
+**E1.** Criterion: the six completion states are enforced for mission and tool results. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_live_browser_mission_isolates_users`, `test_live_cancel_revoke_and_crash_do_not_claim_success`, `test_cancel_before_effect_and_after_uncertain_outcome`. Positive: the mission produced `verified`, `failed`, `unknown`, `refused`, and `authorized_not_performed`. The browser log for the successful click stayed `performed_unverified`. Negative: an unmet `PWNED` expectation was `FAILED`, and a killed browser was not `verified`. Dependency: B4. Review: pending. Blocker: none for these six names. `verified` at the mission layer is an application observation, not the browser tool's own `verified`. Status: `VERIFIED_ENGINEERING`.
 
-**E2.** Criterion: provenance and digests, without treating a hash as authorship. Files: `orca/browser_engine/engine.py`, `docs/orneur/browser_engine.md`. Test: evidence file assertions. Positive: evidence stores hashes, not page text. Negative: none beyond the file-content check. Dependency: E1. Review: pending. Blocker: no external witness. Status: `PARTIAL`.
+**E2.** Criterion: provenance and digests, without treating a hash as authorship. Files: `orca/sovereign_mission/store.py`, `orca/browser_engine/engine.py`. Test: `test_evidence_aggregate_mismatch_is_withheld` and the live evidence assertions. Positive: evidence stores `content_sha256` and the browser log stores hashes. Negative: changing the aggregate hash made the claim `withheld` and returned no records. Dependency: E1. Review: pending. Blocker: a caller who rewrites the record, its hash, and the aggregate together is not detected. There is no external witness. Status: `VERIFIED_ENGINEERING`.
 
-**E3.** Criterion: a missing, forged, stale, or unverifiable effect cannot be reported as success. Files: `orca/browser_engine/engine.py`, `orca/mission/state_machine.py`. Test: browser negative paths; mission transition not executed. Positive: browser raises on mismatch. Negative: forged mission evidence was not attempted. Dependency: E1. Review: pending. Blocker: mission path not re-tested. Status: `PARTIAL`.
+**E3.** Criterion: a missing, forged, stale, or unverifiable effect cannot be reported as success. Files: `orca/sovereign_mission/service.py`, `orca/sovereign_mission/states.py`. Test: `test_approval_expiry_replay_and_public_browser_refusal`, `test_revoke_before_dispatch_and_evidence_tamper`, `test_duplicate_effect_and_unknown_outcome`. Positive: the intact marker mission reported `verified` only after the file existed. Negative: expired approval wrote nothing; tampered `record_json` was `withheld`; `OUTCOME_UNKNOWN` and `INTERRUPTED_UNKNOWN` cannot transition to `COMPLETED_VERIFIED`. Dependency: E1. Review: pending. Blocker: full evidence replacement by a database writer is the E2 residual. Status: `VERIFIED_ENGINEERING`.
 
-**E4.** Criterion: redaction and tenant boundaries on evidence. Files: `orca/browser_engine/engine.py`. Test: evidence does not contain `secret=alpha` or `hello-field`. Positive: that assertion passed. Negative: log and cache leakage outside this file was not tested. Dependency: C5. Review: pending. Blocker: browser evidence only. Status: `PARTIAL`.
+**E4.** Criterion: redaction and tenant boundaries on evidence. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: live mission evidence assertions and `test_http_denies_the_other_user`. Positive: the evidence JSON contained neither `CLICKED` nor the page's instruction sentence, and user B's evidence response did not contain the marker text. Negative: user B received 403. Dependency: C5. Review: pending. Blocker: process logs outside these evidence files were not audited. Status: `VERIFIED_ENGINEERING`.
 
 **E5.** Criterion: an independent party can re-verify a result. Files: evidence JSONL. Test: a reviewer can read the file; no second verifier ran. Positive: none. Negative: none. Dependency: E2. Review: pending. Blocker: no independent verifier. Status: `NOT_STARTED`.
 
@@ -137,30 +137,30 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ### J — Security and reliability
 
-**J1.** Criterion: authentication before protected data, deny by default. Files: `orca/auth/`, `orca/browser_engine/engine.py`. Test: browser grant tests. Positive: browser actions check the grant. Negative: expired grant and missing action fail. Product routes were not re-tested. Dependency: C1. Review: pending. Blocker: product routes not in this run. Status: `PARTIAL`.
+**J1.** Criterion: authentication before protected data, deny by default. Files: `orca/sovereign_mission/routes.py`, `orca/auth/middleware.py`. Test: `test_http_denies_the_other_user`. Positive: the owner's bearer token created, approved, and dispatched a marker. Negative: a missing bearer returned 401, and the other user's approval and evidence requests returned 403. A body field `owner_user_id` did not select the owner. Dependency: C1. Review: pending. Blocker: routes outside `/api/sovereign` were not re-run. Status: `VERIFIED_ENGINEERING`.
 
-**J2.** Criterion: tenant isolation under adversarial access. Files: `orca/browser_engine/engine.py`. Test: live user A / user B. Positive: separate profiles. Negative: user B did not see user A's cookie. Other resource types were not attacked. Dependency: C5. Review: pending. Blocker: browser only. Status: `PARTIAL`.
+**J2.** Criterion: tenant isolation under adversarial access. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_two_users_cannot_read_each_other` and the live mission test. Positive: user B could not read, dispatch, or collect evidence for user A's mission. Negative: user B's profile directory was absent. Conversation, memory, and other resource types were not attacked. Dependency: C5. Review: pending. Blocker: isolation is enforced in the service, not by separate OS accounts. Status: `PARTIAL`.
 
-**J3.** Criterion: cancellation is not confirmation, and revocation beats dispatch. Files: `orca/browser_engine/engine.py`. Test: `test_live_cancel_and_crash`. Positive: `cancel()` closes the process. Negative: the worker's navigation raised `BrowserError` rather than a success record. Mission revocation was not tested. Dependency: B5. Review: pending. Blocker: mission revocation not in this run. Status: `PARTIAL`.
+**J3.** Criterion: cancellation is not confirmation, and revocation beats dispatch. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_revoke_before_dispatch_and_evidence_tamper` and `test_live_cancel_revoke_and_crash_do_not_claim_success`. Positive: revoke before dispatch wrote no marker. Negative: live cancel after `effect_started` was not confirmed, and live revoke did not report `verified`. Dependency: B5. Review: pending. Blocker: pause is still absent, so B5 stays partial. Status: `VERIFIED_ENGINEERING`.
 
-**J4.** Criterion: timeouts, restart, and no unbounded retry. Files: browser proxy timeouts and `orca/agent/runtime.py` (`_MAX_ACTION_RETRIES = 1`, read only). Test: browser cancel. Positive: proxy reads stop after 5 seconds of silence. Negative: agent retries were not executed. Dependency: D2. Review: pending. Blocker: agent path not run. Status: `PARTIAL`.
+**J4.** Criterion: timeouts, restart, and no unbounded retry. Files: `orca/sovereign_mission/service.py`, browser proxy timeouts, `orca/agent/runtime.py` (`_MAX_ACTION_RETRIES = 1`, read only). Test: `test_duplicate_effect_and_unknown_outcome` and `test_live_cancel_revoke_and_crash_do_not_claim_success`. Positive: a restarted process recorded `OUTCOME_UNKNOWN` or `INTERRUPTED_UNKNOWN`, and a second dispatch was `duplicate_effect_refused`. Negative: the agent retry path was not executed. Dependency: D2. Review: pending. Blocker: agent path not run. One refusal is not a durable cross-process lock. Status: `PARTIAL`.
 
-**J5.** Criterion: no secret in logs or evidence, no hidden paid fallback. Files: `orca/browser_engine/engine.py`. Test: evidence content assertion. Positive: evidence omitted field text and cookie values. Negative: server logs outside this module were not audited. No paid API was called. Dependency: F5. Review: pending. Blocker: log audit is incomplete. Status: `PARTIAL`.
+**J5.** Criterion: no secret in logs or evidence, no hidden paid fallback. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: live evidence assertions. Positive: mission evidence and the browser JSONL omitted the rendered page text and the injected instruction. No paid API was called. Negative: server logs outside these files were not audited. Dependency: F5. Review: pending. Blocker: log audit is incomplete. Status: `PARTIAL`.
 
 ## Count
 
-`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5 (5).
+`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, C1, E1, E2, E3, E4, J1, J3 (16).
 
 `INDEPENDENTLY_QUALIFIED`: none.
 
-`IMPLEMENTED_UNVERIFIED`: C1, F1, F4 (3).
+`IMPLEMENTED_UNVERIFIED`: F1, F4 (2).
 
-`PARTIAL`: B1, B2, B3, B5, C3, C4, C5, D2, D3, E1, E2, E3, E4, F2, F3, G1, G3, H5, I1, I2, I3, I4, I5, J1, J2, J3, J4, J5 (28).
+`PARTIAL`: B5, C3, C4, C5, D2, D3, F2, F3, G1, G3, H5, I1, I2, I3, I4, I5, J2, J4, J5 (19).
 
-`NOT_STARTED`: B4, C2, D1, D4, D5, E5, F5, G2, G4, G5, H1, H2, H3, H4 (14).
+`NOT_STARTED`: C2, D1, D4, D5, E5, F5, G2, G4, G5, H1, H2, H3, H4 (13).
 
-`BLOCKED_EXTERNAL`: none as a sole status. External blockers are recorded on the gates above (no Chrome in CI, no Postgres re-run, no authorized model, no corpus, no founder training grant).
+`BLOCKED_EXTERNAL`: none as a sole status. External blockers are recorded on the gates above (public browser unqualified, no Postgres re-run, no authorized model, no corpus, no founder training grant, no external evidence witness).
 
-5 + 3 + 28 + 14 = 50. The verified fraction is 5/50. That is 10 percent. It is not 90 percent.
+16 + 2 + 19 + 13 = 50. The verified fraction is 16/50. That is 32 percent. It is not 90 percent. The previous verified count on the browser parent was 5/50. This revision adds only the gates whose tests passed in this session.
 
 Training, GPU, spending, corpus generation, protected merge, and production launch remain denied.
