@@ -83,6 +83,8 @@ Cancel response includes `cancel_confirmed`. That is true only when no external 
 
 `actions` may contain `navigate`, `read`, `click`, `fill`, `scroll`, and `screenshot`. `download` is refused. `click` and `fill` require a `#` selector of the browser engine's form. `expect` is required, at most 64 characters, and cannot contain a newline. The grant issued to Chrome adds `navigate` and `read` when the step needs them to open the page and observe it. It never adds `download`. The grant is bound to the authenticated user, the mission, the loopback endpoint, the action set, and a 60-second expiry. The caller cannot supply a grant.
 
+A transient Chrome navigation error (`net::ERR_ABORTED` and the other connection resets listed in the engine) is retried once inside the same authorized step. The loaded URL still has to match the granted destination. Any other navigation error fails the step.
+
 Page text is untrusted. A sentence in the page does not change the grant, the plan, or the recorded actions. Evidence stores hashes of the observed text, not the text. If the expectation string appears inside a browser evidence record, the mission fails with `evidence_leak`.
 
 `local_marker` writes one exclusive file under the mission workspace. The file bytes are the external effect. The HTTP claim is not that effect.

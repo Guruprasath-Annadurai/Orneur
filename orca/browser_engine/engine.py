@@ -223,13 +223,21 @@ class BrowserEngine:
         except PolicyError as exc:
             self._record("navigate", url, "refused", detail=exc.code)
             raise BrowserError(exc.code) from exc
-        result = self._call("Page.navigate", {"url": url}, timeout=8)
-        if result.get("errorText"):
+        error_text = ""
+        transient = False
+        for attempt in range(2):
+            result = self._call("Page.navigate", {"url": url}, timeout=8)
+            error_text = str(result.get("errorText") or "")
+            transient = _transient_navigation_error(error_text)
+            if not error_text or not transient or attempt == 1:
+                break
+            time.sleep(0.05)
+        if error_text and not transient:
             self._record("navigate", url, "failed", detail="navigation_failed")
             raise BrowserError("navigation_failed")
         state = ""
         final = ""
-        deadline = time.monotonic() + 3
+        deadline = time.monotonic() + (8 if transient else 3)
         while time.monotonic() < deadline:
             ready = self._call("Runtime.evaluate", {"expression": "document.readyState", "returnByValue": True})
             located = self._call("Runtime.evaluate", {"expression": "location.href", "returnByValue": True})
@@ -247,6 +255,8 @@ class BrowserEngine:
             detail = "metadata_refused"
         elif self.proxy_refusals:
             detail = self.proxy_refusals[-1]
+        elif error_text:
+            detail = "navigation_failed"
         else:
             detail = "final_url_mismatch"
         record = self._record("navigate", url, completion, content=text["text"], detail=detail)
@@ -534,6 +544,21 @@ class BrowserEngine:
         if self._proxy is None:
             return ()
         return tuple(self._proxy.refusals)
+
+
+def _transient_navigation_error(error_text: str) -> bool:
+    """Chrome sometimes aborts a load that then commits. Only those codes are retried."""
+    return error_text in {
+        "net::ERR_ABORTED",
+        "net::ERR_CONNECTION_CLOSED",
+        "net::ERR_CONNECTION_REFUSED",
+        "net::ERR_CONNECTION_RESET",
+        "net::ERR_EMPTY_RESPONSE",
+        "net::ERR_NETWORK_CHANGED",
+        "net::ERR_PROXY_CONNECTION_FAILED",
+        "net::ERR_SOCKET_NOT_CONNECTED",
+        "net::ERR_TIMED_OUT",
+    }
 
 
 def _same_url(requested: str, final: str) -> bool:

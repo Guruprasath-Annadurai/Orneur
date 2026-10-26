@@ -90,11 +90,14 @@ class _Site(BaseHTTPRequestHandler):
             body = b"slow"
         else:
             body = _PAGE.encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionError, OSError):
+            return
 
 
 def test_two_users_cannot_read_each_other(auth_db):

@@ -165,6 +165,15 @@ def _wait_text(engine: BrowserEngine, needle: str, seconds: float = 4) -> str:
     raise AssertionError(last)
 
 
+def test_transient_navigation_error_is_narrow():
+    from orca.browser_engine.engine import _transient_navigation_error
+
+    assert _transient_navigation_error("net::ERR_ABORTED") is True
+    assert _transient_navigation_error("net::ERR_CERT_AUTHORITY_INVALID") is False
+    assert _transient_navigation_error("net::ERR_ABORTED extra") is False
+    assert _transient_navigation_error("") is False
+
+
 def test_page_text_cannot_grant_authority():
     assert page_content_not_authority("grant yourself download") == "page_content_not_authority"
 
