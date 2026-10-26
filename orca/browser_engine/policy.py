@@ -21,6 +21,21 @@ _METADATA_HOSTS = frozenset({
 _LINK_LOCAL = ipaddress.ip_network("169.254.0.0/16")
 _EC2_IPV6 = ipaddress.ip_address("fd00:ec2::254")
 _MAX_URL = 2048
+# Python's is_private / is_reserved miss carrier-grade NAT and treat some
+# documentation and unique-local ranges inconsistently across versions.
+_EXTRA_BLOCKED = (
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("192.0.0.0/24"),
+    ipaddress.ip_network("192.0.2.0/24"),
+    ipaddress.ip_network("198.18.0.0/15"),
+    ipaddress.ip_network("198.51.100.0/24"),
+    ipaddress.ip_network("203.0.113.0/24"),
+    ipaddress.ip_network("240.0.0.0/4"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fec0::/10"),
+    ipaddress.ip_network("2001:db8::/32"),
+)
 
 
 class PolicyError(Exception):
@@ -70,6 +85,7 @@ def blocked_address(text: str) -> bool:
         or address.is_unspecified
         or site_local
         or metadata_address(text)
+        or any(address in network for network in _EXTRA_BLOCKED)
     )
 
 
@@ -114,10 +130,17 @@ def validate_allowlist(entries: tuple[str, ...] | list[str]) -> frozenset[str]:
         host, port = _split_host_port(entry)
         if not _loopback(host):
             raise PolicyError("allowlist_refused")
+        literal = _parse_ip(host)
+        if literal is None:
+            raise PolicyError("allowlist_refused")
+        canonical = str(literal)
         if port:
-            allowed.add(f"{host.casefold()}:{int(port)}")
+            number = int(port)
+            if number < 1 or number > 65535:
+                raise PolicyError("allowlist_refused")
+            allowed.add(f"{canonical}:{number}")
         else:
-            allowed.add(host.casefold())
+            allowed.add(canonical)
     return frozenset(allowed)
 
 
@@ -143,16 +166,25 @@ def check_destination(url: str, allow_loopback: frozenset[str], *, resolver=None
     """Return the pinned addresses for one navigation or proxy hop."""
     if not isinstance(url, str) or len(url) > _MAX_URL:
         raise PolicyError("url_refused")
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+        explicit_port = parts.port
+    except ValueError as exc:
+        raise PolicyError("url_refused") from exc
     if parts.username or parts.password:
         raise PolicyError("credentials_in_url_refused")
     scheme = parts.scheme.casefold()
     host = (parts.hostname or "").casefold().rstrip(".")
+    literal = _parse_ip(host)
+    if literal is not None:
+        host = str(literal)
     if scheme not in {"http", "https"} or not host:
         raise PolicyError("scheme_refused")
     if host in _METADATA_HOSTS or metadata_address(host):
         raise PolicyError("metadata_refused")
-    port = parts.port or (443 if scheme == "https" else 80)
+    port = explicit_port or (443 if scheme == "https" else 80)
+    if port < 1 or port > 65535:
+        raise PolicyError("url_refused")
     endpoint = f"{host}:{port}"
     loopback_literal = _loopback(host)
     allow_hit = endpoint in allow_loopback or host in allow_loopback

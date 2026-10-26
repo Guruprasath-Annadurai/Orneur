@@ -18,7 +18,9 @@ A caller must already have authenticated the user. This module does not trust pa
 
 `BrowserEngine(root, grant).start()` launches `/opt/google/chrome/chrome` (or `ORNEUR_CHROME_BINARY`) with its own user-data directory, a filtering proxy, and no `--no-sandbox`. A symlink, a script, or a command line that contains `--no-sandbox` is refused. The `google-chrome` wrapper on this host injects `--no-sandbox` and must not be used.
 
-The proxy is the network boundary. Loopback HTTP is allowed only when the grant names that address. Every other destination must be HTTPS and must resolve twice to the same public address set. Metadata names, `169.254.0.0/16`, and `fd00:ec2::254` are refused. Private, link-local, multicast, and reserved addresses are refused. The proxy connects to the pinned address, not to a later DNS answer.
+The proxy is the network boundary. Loopback HTTP is allowed only when the grant names that address. Every other destination must be HTTPS and must resolve twice to the same public address set. Metadata names, `169.254.0.0/16`, and `fd00:ec2::254` are refused. Private, link-local, multicast, reserved, carrier-grade NAT (`100.64.0.0/10`), and unique-local IPv6 addresses are refused. Unbracketed IPv6 in a CONNECT target is refused. The proxy connects to the pinned address, not to a later DNS answer. An HTTP body is forwarded only when the upstream closes it; a five-second idle gap is not treated as the end of the body.
+
+DevTools is a pipe on file descriptors 3 and 4 (`--remote-debugging-pipe`). There is no TCP debugging port. `Grant` can be minted only by `issue_grant`. `read_text` always checks the read action. Chrome downloads are set to deny; `accept_download` is the only quarantine writer. Evidence, state, and screenshots are opened with `O_NOFOLLOW` and are not written through a symlink. A browser-initiated download does not land in the quarantine.
 
 Page text is returned with `untrusted: true` and `authority: page_content_not_authority`. `refuse_unsupported("captcha")` and `refuse_unsupported("authentication_challenge")` always refuse.
 
@@ -44,7 +46,7 @@ One JSON object per line in `evidence.jsonl` (mode 0600):
 
 ## Error codes
 
-`grant_refused`, `grant_ttl_refused`, `grant_expired`, `action_not_granted`, `naive_clock`, `chrome_binary_refused`, `sandbox_refused`, `browser_already_started`, `browser_exited`, `browser_dead`, `browser_closed`, `navigation_failed`, `final_url_mismatch`, `fill_refused`, `fill_failed`, `scroll_refused`, `scroll_failed`, `screenshot_refused`, `screenshot_failed`, `download_refused`, `selector_refused`, `element_absent`, `tab_limit`, `resume_refused`, `unsupported_challenge`, `url_refused`, `credentials_in_url_refused`, `scheme_refused`, `metadata_refused`, `loopback_refused`, `private_network_refused`, `dns_rebinding_refused`, `name_resolution_refused`, `allowlist_refused`, `connect_refused`.
+`grant_refused`, `grant_ttl_refused`, `grant_expired`, `action_not_granted`, `naive_clock`, `chrome_binary_refused`, `sandbox_refused`, `browser_already_started`, `browser_exited`, `browser_dead`, `browser_closed`, `navigation_failed`, `final_url_mismatch`, `fill_refused`, `fill_failed`, `scroll_refused`, `scroll_failed`, `screenshot_refused`, `screenshot_failed`, `download_refused`, `selector_refused`, `element_absent`, `tab_limit`, `resume_refused`, `unsupported_challenge`, `url_refused`, `credentials_in_url_refused`, `scheme_refused`, `metadata_refused`, `loopback_refused`, `private_network_refused`, `dns_rebinding_refused`, `name_resolution_refused`, `allowlist_refused`, `connect_refused`, `path_refused`, `evidence_refused`.
 
 ## Local run
 
@@ -56,10 +58,11 @@ Live tests skip when `/opt/google/chrome/chrome` is missing. A skip is not a pas
 
 ## Residuals
 
-- This is not a production browser qualification.
-- Public HTTPS was not exercised against an external site. The CONNECT path is policy-checked and covered by refusal tests, not by a live public page.
-- Chrome-initiated downloads were not demonstrated. The quarantine writer was.
-- `RLIMIT_CPU` is 30 seconds and `RLIMIT_NOFILE` is 1024. There is no memory cap that still allows Chrome to start.
-- Headless Chrome on this host ignores `mouseWheel`. Scroll uses `Input.synthesizeScrollGesture`, which did move the viewport in the live test.
-- A compromised Chrome process can still be a same-user process. The proxy and the sandbox flag are not a proof against every browser exploit.
-- No mission HTTP route calls this engine yet.
+- This is not a production browser qualification and not an independent security qualification.
+- Public HTTPS was not opened to an external site. Policy tests pin a public address with a fake resolver. The CONNECT tunnel was not demonstrated against a live public host.
+- Chrome's download behavior is set to deny. A page that still writes somewhere else is not fully blocked by a filesystem jail.
+- `RLIMIT_CPU` is 30 seconds, `RLIMIT_NOFILE` is 1024, `RLIMIT_FSIZE` is 256 MiB, and core dumps are 0. `RLIMIT_AS` aborts this Chrome build (signal 5) even at tens of GiB. Creating a memory cgroup was denied (`EACCES` on `/sys/fs/cgroup`). There is still no effective memory cap.
+- Process lookup uses `/proc` on Linux and `ps` elsewhere. The live tests ran on Linux.
+- Headless Chrome on this host ignores `mouseWheel`. Scroll uses `Input.synthesizeScrollGesture`.
+- A compromised Chrome process can still be a same-user process.
+- No product authentication is wired to `issue_grant` on this branch.

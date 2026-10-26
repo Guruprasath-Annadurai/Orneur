@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import json
 import os
+import select
 import socket
 import struct
+import time
 from urllib.parse import urlsplit
 
 from orca.browser_engine.policy import PolicyError
@@ -126,3 +128,53 @@ class CdpClient:
                 raise CdpError("cdp_closed")
             buffer += chunk
         return buffer
+
+
+class CdpPipe:
+    """DevTools over the browser's private pipe. There is no TCP listener."""
+
+    def __init__(self, read_fd: int, write_fd: int):
+        self._read = os.fdopen(read_fd, "rb", buffering=0)
+        self._write = os.fdopen(write_fd, "wb", buffering=0)
+        self._buffer = b""
+        self._next = 0
+
+    def close(self) -> None:
+        for stream in (self._read, self._write):
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    def call(self, method: str, params: dict | None = None, session_id: str | None = None, timeout: float = 10) -> dict:
+        self._next += 1
+        message = {"id": self._next, "method": method, "params": params or {}}
+        if session_id:
+            message["sessionId"] = session_id
+        self._write.write(json.dumps(message).encode() + b"\0")
+        self._write.flush()
+        deadline = time.monotonic() + timeout
+        while True:
+            payload = self._read_message(deadline)
+            if payload.get("id") != message["id"]:
+                continue
+            if "error" in payload:
+                raise CdpError("cdp_command_refused")
+            return payload.get("result") or {}
+
+    def _read_message(self, deadline: float) -> dict:
+        while b"\0" not in self._buffer:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CdpError("cdp_closed")
+            ready, _, _ = select.select([self._read], [], [], remaining)
+            if not ready:
+                raise CdpError("cdp_closed")
+            chunk = self._read.read(65536)
+            if not chunk:
+                raise CdpError("cdp_closed")
+            self._buffer += chunk
+            if len(self._buffer) > 8_000_000:
+                raise CdpError("cdp_frame_refused")
+        raw, _, self._buffer = self._buffer.partition(b"\0")
+        return json.loads(raw.decode())

@@ -14,16 +14,15 @@ import os
 import re
 import resource
 import shutil
-import socket
+import stat
 import subprocess
 import time
-import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from orca.browser_engine.cdp import CdpClient
+from orca.browser_engine.cdp import CdpPipe
 from orca.browser_engine.policy import PolicyError, check_destination, validate_allowlist
 from orca.browser_engine.proxy import FilteringProxy
 
@@ -32,7 +31,8 @@ _MAX_TABS = 4
 _ACTIONS = frozenset({"navigate", "click", "fill", "scroll", "screenshot", "read", "download"})
 _SELECTOR = re.compile(r"^#[A-Za-z][A-Za-z0-9_-]{0,62}$")
 _SESSION_SCHEMA = "orneur-browser-session/1"
-_NO_PROXY = urllib.request.ProxyHandler({})
+_GRANT_MINT = object()
+_FILE_SIZE_CAP = 256 * 1024 * 1024
 
 
 class BrowserError(Exception):
@@ -49,6 +49,11 @@ class Grant:
     allow_loopback: frozenset[str]
     actions: frozenset[str]
     expires_at: datetime
+    token: object = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.token is not _GRANT_MINT:
+            raise BrowserError("grant_refused")
 
     def permits(self, action: str, now: datetime) -> None:
         if now >= self.expires_at:
@@ -86,6 +91,7 @@ def issue_grant(*, user_id: str, mission_id: str, allow_loopback: tuple[str, ...
         allow_loopback=validate_allowlist(allow_loopback),
         actions=chosen,
         expires_at=clock + timedelta(seconds=ttl_seconds),
+        token=_GRANT_MINT,
     )
 
 
@@ -94,7 +100,8 @@ def chrome_binary() -> Path:
     path = Path(configured)
     if path.is_symlink() or not path.is_file():
         raise BrowserError("chrome_binary_refused")
-    sample = path.read_bytes()[:256]
+    with path.open("rb") as handle:
+        sample = handle.read(256)
     if sample.startswith(b"#!") or b"--no-sandbox" in sample:
         raise BrowserError("sandbox_refused")
     return path
@@ -123,7 +130,7 @@ class BrowserEngine:
         self.evidence: list[dict] = []
         self._process: subprocess.Popen | None = None
         self._proxy: FilteringProxy | None = None
-        self._cdp: CdpClient | None = None
+        self._cdp: CdpPipe | None = None
         self._tabs: dict[str, str] = {}
         self._active: str | None = None
         self._active_target: str | None = None
@@ -138,7 +145,7 @@ class BrowserEngine:
         if self._process is not None:
             raise BrowserError("browser_already_started")
         binary = chrome_binary()
-        self.profile.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        self._prepare_mission_dirs()
         if self.state_path.exists():
             self._validate_state()
         elif self.profile.exists():
@@ -147,7 +154,31 @@ class BrowserEngine:
         self.quarantine.mkdir(mode=0o700, exist_ok=True)
         self._proxy = FilteringProxy(self.grant.allow_loopback, self.resolver)
         self._proxy.start()
-        port = _free_port()
+        parent_to_chrome_r, parent_to_chrome_w = os.pipe()
+        chrome_to_parent_r, chrome_to_parent_w = os.pipe()
+        # Chrome reads DevTools from fd 3 and writes it to fd 4. Python's
+        # subprocess closer runs after preexec_fn, so the descriptors have to
+        # already be 3 and 4 and listed in pass_fds. Dup2 in the parent is
+        # restored after the child starts.
+        saved: dict[int, int] = {}
+        try:
+            for target in (3, 4):
+                try:
+                    saved[target] = os.dup(target)
+                except OSError:
+                    pass
+            os.dup2(parent_to_chrome_r, 3)
+            os.dup2(chrome_to_parent_w, 4)
+            os.set_inheritable(3, True)
+            os.set_inheritable(4, True)
+        except Exception:
+            for descriptor in (parent_to_chrome_r, parent_to_chrome_w, chrome_to_parent_r, chrome_to_parent_w):
+                os.close(descriptor)
+            for target, original in saved.items():
+                os.dup2(original, target)
+                os.close(original)
+            self.close()
+            raise
         command = [
             str(binary),
             "--headless=new",
@@ -158,13 +189,14 @@ class BrowserEngine:
             "--disable-background-networking",
             "--disable-default-apps",
             "--disable-translate",
+            "--disable-component-update",
+            "--disable-crash-reporter",
             "--no-default-browser-check",
             "--disable-features=DnsOverHttps,WebRTC",
             "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
             "--window-size=1280,800",
             f"--user-data-dir={self.profile}",
-            f"--remote-debugging-port={port}",
-            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-pipe",
             f"--proxy-server={self._proxy.endpoint}",
             "--proxy-bypass-list=<-loopback>",
             "--disable-dev-shm-usage",
@@ -172,43 +204,55 @@ class BrowserEngine:
         ]
         if any(arg == "--no-sandbox" or arg.startswith("--no-sandbox=") for arg in command):
             raise BrowserError("sandbox_refused")
-        self._process = subprocess.Popen(
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            preexec_fn=_contain_child,
-        )
+        try:
+            self._process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                pass_fds=(3, 4),
+                preexec_fn=_contain_child,
+            )
+        except Exception:
+            for descriptor in (parent_to_chrome_r, parent_to_chrome_w, chrome_to_parent_r, chrome_to_parent_w, 3, 4):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            for target, original in saved.items():
+                os.dup2(original, target)
+                os.close(original)
+            self.close()
+            raise
+        for descriptor in (parent_to_chrome_r, chrome_to_parent_w, 3, 4):
+            if descriptor not in (parent_to_chrome_w, chrome_to_parent_r):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+        for target, original in saved.items():
+            os.dup2(original, target)
+            os.close(original)
+        self._cdp = CdpPipe(chrome_to_parent_r, parent_to_chrome_w)
         deadline = time.monotonic() + 8
-        version = None
-        opener = urllib.request.build_opener(_NO_PROXY)
+        ready = False
         while time.monotonic() < deadline:
             self._assert_sandboxed()
+            if self._process.poll() is not None:
+                self.close()
+                raise BrowserError("browser_exited")
             try:
-                with opener.open(f"http://127.0.0.1:{port}/json/version", timeout=0.4) as response:
-                    version = json.load(response)
-                    break
+                self._cdp.call("Browser.getVersion", {}, timeout=0.4)
+                ready = True
+                break
             except Exception:
-                if self._process.poll() is not None:
-                    self.close()
-                    raise BrowserError("browser_exited")
                 time.sleep(0.05)
-        if version is None:
+        if not ready:
             self.close()
             raise BrowserError("browser_exited")
         try:
-            self._cdp = CdpClient(version["webSocketDebuggerUrl"])
-            try:
-                self._cdp.call(
-                    "Browser.setDownloadBehavior",
-                    {
-                        "behavior": "allow",
-                        "downloadPath": str(self.quarantine),
-                        "eventsEnabled": True,
-                    },
-                )
-            except Exception:
-                pass
+            self._cdp.call("Browser.setDownloadBehavior", {"behavior": "deny", "eventsEnabled": True})
             self._open_tab("about:blank")
         except Exception:
             self.close()
@@ -238,7 +282,7 @@ class BrowserEngine:
             if state in {"interactive", "complete"} and final:
                 break
             time.sleep(0.05)
-        text = self.read_text(now=now, granted=True)
+        text = self._page_text()
         matched = state in {"interactive", "complete"} and _same_url(url, final)
         completion = "performed_unverified" if matched else "failed"
         if matched:
@@ -254,9 +298,11 @@ class BrowserEngine:
             raise BrowserError(detail or "navigation_failed")
         return record
 
-    def read_text(self, now: datetime | None = None, granted: bool = False) -> dict:
-        if not granted:
-            self._require_grant("read", now)
+    def read_text(self, now: datetime | None = None) -> dict:
+        self._require_grant("read", now)
+        return self._page_text()
+
+    def _page_text(self) -> dict:
         value = self._call("Runtime.evaluate", {"expression": "document.body ? document.body.innerText : ''", "returnByValue": True})
         text = str(value.get("result", {}).get("value") or "")
         return {"text": text, "untrusted": True, "authority": "page_content_not_authority"}
@@ -318,8 +364,14 @@ class BrowserEngine:
             self._record("screenshot", "", "failed", detail="screenshot_invalid")
             raise BrowserError("screenshot_failed")
         target = self.evidence_path.parent / f"screenshot-{len(self.evidence)}.png"
-        target.write_bytes(raw)
-        os.chmod(target, 0o600)
+        fd = _open_leaf(target.parent, target.name, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            _write_all(fd, raw)
+        except Exception:
+            os.close(fd)
+            target.unlink(missing_ok=True)
+            raise
+        os.close(fd)
         self._record("screenshot", target.name, "verified")
         return target
 
@@ -349,11 +401,17 @@ class BrowserEngine:
         if target.exists() or target.is_symlink():
             raise BrowserError("download_refused")
         flags = os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY
-        fd = os.open(target, flags, 0o600)
         try:
-            os.write(fd, body)
-        finally:
+            fd = os.open(target, flags, 0o600)
+        except OSError as exc:
+            raise BrowserError("download_refused") from exc
+        try:
+            _write_all(fd, body)
+        except Exception:
             os.close(fd)
+            target.unlink(missing_ok=True)
+            raise
+        os.close(fd)
         self._record("download", safe, "verified")
         return target
 
@@ -361,7 +419,11 @@ class BrowserEngine:
         """Restart this user and mission only when the saved state matches."""
         if self._process is not None and self._process.poll() is None:
             raise BrowserError("browser_already_started")
-        if not self.state_path.is_file():
+        try:
+            info = self.state_path.lstat()
+        except OSError as exc:
+            raise BrowserError("resume_refused") from exc
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise BrowserError("resume_refused")
         self._validate_state()
         self._process = None
@@ -398,16 +460,16 @@ class BrowserEngine:
                 pass
             for signal in (15, 9):
                 remaining = _profile_processes(self.profile)
-                if not remaining:
+                if not remaining and self._process.poll() is not None:
                     break
                 try:
                     os.killpg(pid, signal)
-                except ProcessLookupError:
+                except (ProcessLookupError, PermissionError):
                     pass
                 for child in remaining:
                     try:
                         os.kill(child, signal)
-                    except ProcessLookupError:
+                    except (ProcessLookupError, PermissionError):
                         pass
                 try:
                     self._process.wait(timeout=2)
@@ -421,19 +483,34 @@ class BrowserEngine:
         value = self._call("Runtime.evaluate", {"expression": expression, "returnByValue": True})
         return value.get("result", {}).get("value")
 
+    def _prepare_mission_dirs(self) -> None:
+        root = self.root.resolve()
+        mission = self.root / self.grant.user_id / self.grant.mission_id
+        if any(path.is_symlink() for path in (mission, self.profile, self.quarantine, self.evidence_path, self.state_path)):
+            raise BrowserError("path_refused")
+        mission.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        mission.mkdir(mode=0o700, exist_ok=True)
+        resolved = mission.resolve()
+        if os.path.commonpath((str(root), str(resolved))) != str(root):
+            raise BrowserError("path_refused")
+
     def _write_state(self) -> None:
         payload = {
             "schema": _SESSION_SCHEMA,
             "user_id": self.grant.user_id,
             "mission_id": self.grant.mission_id,
         }
-        self.state_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
-        os.chmod(self.state_path, 0o600)
+        encoded = json.dumps(payload, sort_keys=True).encode()
+        fd = _open_leaf(self.state_path.parent, self.state_path.name, os.O_CREAT | os.O_WRONLY | os.O_TRUNC)
+        try:
+            _write_all(fd, encoded)
+        finally:
+            os.close(fd)
 
     def _validate_state(self) -> None:
         try:
-            payload = json.loads(self.state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            payload = json.loads(_read_leaf(self.state_path).decode())
+        except (OSError, UnicodeError, json.JSONDecodeError, BrowserError) as exc:
             raise BrowserError("resume_refused") from exc
         if (
             not isinstance(payload, dict)
@@ -456,6 +533,7 @@ class BrowserEngine:
         self._call("Page.enable", {})
         self._call("Runtime.enable", {})
         self._call("DOM.enable", {})
+        self._call("Page.setDownloadBehavior", {"behavior": "deny"})
         return created["targetId"]
 
     def _pointer(self, selector: str, click: bool) -> None:
@@ -495,10 +573,12 @@ class BrowserEngine:
     def _assert_sandboxed(self) -> None:
         if self._process is None:
             raise BrowserError("browser_dead")
-        try:
-            command = Path(f"/proc/{self._process.pid}/cmdline").read_bytes().replace(b"\x00", b" ")
-        except FileNotFoundError as exc:
-            raise BrowserError("browser_dead") from exc
+        command = process_command(self._process.pid)
+        if not command:
+            if self._process.poll() is not None:
+                raise BrowserError("browser_dead")
+            self.close()
+            raise BrowserError("sandbox_refused")
         if b"--no-sandbox" in command:
             self.close()
             raise BrowserError("sandbox_refused")
@@ -523,10 +603,11 @@ class BrowserEngine:
             "untrusted_page": True,
         }
         self.evidence.append(record)
-        self.evidence_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-        with self.evidence_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
-        os.chmod(self.evidence_path, 0o600)
+        fd = _open_leaf(self.evidence_path.parent, self.evidence_path.name, os.O_CREAT | os.O_WRONLY | os.O_APPEND)
+        try:
+            _write_all(fd, (json.dumps(record, sort_keys=True) + "\n").encode())
+        finally:
+            os.close(fd)
         return record
 
     @property
@@ -554,28 +635,125 @@ def _contain_child() -> None:
     nofile = 1024
     resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
     resource.setrlimit(resource.RLIMIT_CPU, (30, 45))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (_FILE_SIZE_CAP, _FILE_SIZE_CAP))
+    # RLIMIT_AS aborts this Chrome build (signal 5) even at tens of GiB.
+    # A memory cgroup is the containment that would work, and this process
+    # cannot create one. Do not pretend an address-space rlimit is a cap.
+
+
+def process_command(pid: int) -> bytes:
+    """Command line on Linux via /proc, and on other POSIX hosts via ps."""
+    proc = Path(f"/proc/{pid}/cmdline")
+    if proc.exists():
+        try:
+            return proc.read_bytes()
+        except OSError:
+            return b""
+    if not Path("/proc").is_dir():
+        try:
+            return subprocess.check_output(["ps", "-p", str(pid), "-o", "command="], stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.CalledProcessError):
+            return b""
+    return b""
+
+
+def listening_ports(pid: int) -> list[int]:
+    """Local TCP ports in LISTEN state owned by this process. Empty without /proc."""
+    fd_dir = Path(f"/proc/{pid}/fd")
+    if not fd_dir.is_dir():
+        return []
+    inodes = set()
+    for entry in fd_dir.iterdir():
+        try:
+            target = os.readlink(entry)
+        except OSError:
+            continue
+        if target.startswith("socket:[") and target.endswith("]"):
+            inodes.add(target[len("socket:[") : -1])
+    ports: list[int] = []
+    for table in (Path("/proc/net/tcp"), Path("/proc/net/tcp6")):
+        try:
+            lines = table.read_text(encoding="utf-8").splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 10:
+                continue
+            if fields[9] not in inodes or fields[3] != "0A":
+                continue
+            ports.append(int(fields[1].rsplit(":", 1)[1], 16))
+    return ports
 
 
 def _profile_processes(profile: Path) -> list[int]:
     needle = str(profile).encode()
     found = []
     proc = Path("/proc")
-    for entry in proc.iterdir():
-        if not entry.name.isdigit():
+    if proc.is_dir():
+        for entry in proc.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                command = (entry / "cmdline").read_bytes()
+            except OSError:
+                continue
+            if needle in command and b"chrome" in command:
+                found.append(int(entry.name))
+        return found
+    try:
+        listing = subprocess.check_output(["ps", "-ax", "-o", "pid=,command="], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    for line in listing.splitlines():
+        text = line.strip()
+        if not text:
             continue
-        try:
-            command = (entry / "cmdline").read_bytes()
-        except OSError:
-            continue
-        if needle in command and b"chrome" in command:
-            found.append(int(entry.name))
+        pid_text, separator, command = text.partition(b" ")
+        if separator and needle in command and b"chrome" in command and pid_text.isdigit():
+            found.append(int(pid_text))
     return found
 
 
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+def _open_leaf(directory: Path, name: str, flags: int) -> int:
+    if directory.is_symlink():
+        raise BrowserError("evidence_refused")
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        raise BrowserError("evidence_refused") from exc
+    try:
+        return os.open(name, flags | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
+    except OSError as exc:
+        raise BrowserError("evidence_refused") from exc
+    finally:
+        os.close(directory_fd)
+
+
+def _write_all(descriptor: int, payload: bytes) -> None:
+    view = memoryview(payload)
+    while view:
+        written = os.write(descriptor, view)
+        if written <= 0:
+            raise BrowserError("download_refused")
+        view = view[written:]
+    os.fsync(descriptor)
+
+
+def _read_leaf(path: Path) -> bytes:
+    descriptor = _open_leaf(path.parent, path.name, os.O_RDONLY)
+    try:
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            if sum(len(item) for item in chunks) > 1_000_000:
+                raise BrowserError("resume_refused")
+    finally:
+        os.close(descriptor)
 
 
 def remove_profile(path: Path) -> None:
