@@ -342,6 +342,331 @@ def test_http_denies_the_other_user(auth_db):
     assert forged.json()["owner_user_id"] != owner.id
 
 
+class _Probe:
+    def __init__(self):
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+def _mission_row(auth_db: Path, mission_id: str):
+    import sqlite3
+
+    conn = sqlite3.connect(auth_db / "auth.db")
+    conn.row_factory = sqlite3.Row
+    mission = conn.execute(
+        "SELECT state, cancel_requested, revoked, evidence_sha256, objective FROM sovereign_missions WHERE id=?",
+        (mission_id,),
+    ).fetchone()
+    steps = conn.execute(
+        "SELECT effect_started, outcome_json, intent_json FROM sovereign_steps WHERE mission_id=?",
+        (mission_id,),
+    ).fetchall()
+    evidence = conn.execute(
+        "SELECT COUNT(*) AS n FROM sovereign_evidence WHERE mission_id=?",
+        (mission_id,),
+    ).fetchone()["n"]
+    approvals = conn.execute(
+        "SELECT COUNT(*) AS n FROM sovereign_approvals WHERE mission_id=? AND consumed_at IS NULL",
+        (mission_id,),
+    ).fetchone()["n"]
+    conn.close()
+    return {
+        "state": mission["state"],
+        "cancel_requested": mission["cancel_requested"],
+        "revoked": mission["revoked"],
+        "evidence_sha256": mission["evidence_sha256"],
+        "objective": mission["objective"],
+        "effect_started": bool(steps[0]["effect_started"]) if steps else False,
+        "outcome": steps[0]["outcome_json"] if steps else None,
+        "intent": steps[0]["intent_json"] if steps else None,
+        "evidence": evidence,
+        "open_approvals": approvals,
+    }
+
+
+def test_unauthorized_cancel_and_revoke_cannot_stop_a_running_mission(auth_db):
+    """A non-owner must not arm _STOP or close a live browser before ownership fails."""
+    import orca.sovereign_mission.service as mission_service
+    from orca.sovereign_mission.routes import router
+
+    owner, token, engine = _user("victim@example.com")
+    other, other_token, _other_engine = _user("intruder@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="victim-marker")
+    objective = "write one marker"
+
+    with pytest.raises(MissionError) as idle_cancel:
+        engine.request_cancel(other, mission_id)
+    assert idle_cancel.value.code == "access_denied"
+    with pytest.raises(MissionError) as idle_revoke:
+        engine.revoke(other, mission_id)
+    assert idle_revoke.value.code == "access_denied"
+    with pytest.raises(MissionError) as missing:
+        engine.request_cancel(other, "missing-mission")
+    assert missing.value.code == "mission_not_found"
+    assert mission_service._STOP == {}
+    assert mission_service._LIVE == {}
+    assert "missing-mission" not in mission_service._STOP
+    idle = _mission_row(auth_db, mission_id)
+    assert idle["state"] == "AUTHORIZED"
+    assert idle["cancel_requested"] == 0
+    assert idle["revoked"] == 0
+    assert idle["open_approvals"] == 1
+
+    entered = threading.Event()
+    release = threading.Event()
+    original = engine._execute
+
+    def _hold(user, mission, step, now):
+        entered.set()
+        assert release.wait(5)
+        return original(user, mission, step, now)
+
+    engine._execute = _hold
+    import orca.sovereign_mission.routes as mission_routes
+
+    mission_routes._missions = engine
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, mission_id, step_id, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert entered.wait(3)
+    held = _mission_row(auth_db, mission_id)
+    assert held["state"] == "EXECUTING"
+    assert held["effect_started"] is False
+    probe = _Probe()
+    mission_service._LIVE[mission_id] = probe
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    for path in ("cancel", "revoke"):
+        response = client.post(
+            f"/api/sovereign/missions/{mission_id}/{path}",
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "access_denied"
+        assert objective not in response.text
+        assert "victim-marker" not in response.text
+    errors: list[str] = []
+
+    def _hammer():
+        for _ in range(10):
+            try:
+                engine.request_cancel(other, mission_id)
+            except MissionError as exc:
+                errors.append(exc.code)
+            try:
+                engine.revoke(other, mission_id)
+            except MissionError as exc:
+                errors.append(exc.code)
+
+    hammers = [threading.Thread(target=_hammer) for _ in range(4)]
+    for thread in hammers:
+        thread.start()
+    for thread in hammers:
+        thread.join(5)
+    assert errors
+    assert set(errors) == {"access_denied"}
+    assert probe.cancelled is False
+    assert mission_service._LIVE.get(mission_id) is probe
+    assert mission_id not in mission_service._STOP
+    assert _mission_row(auth_db, mission_id) == held
+    marker = auth_db / "sovereign" / owner.id / mission_id / "marker.txt"
+    assert not marker.exists()
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert box["result"]["state"] == "COMPLETED_VERIFIED"
+    assert box["result"]["claim"] == "verified"
+    assert marker.read_text(encoding="utf-8") == "victim-marker"
+    evidence = engine.evidence(owner, mission_id)
+    assert evidence["integrity"] == "intact"
+    assert evidence["records"][0]["content_sha256"]
+    with pytest.raises(MissionError) as hidden:
+        engine.evidence(other, mission_id)
+    assert hidden.value.code == "access_denied"
+    with pytest.raises(MissionError) as late:
+        engine.revoke(other, mission_id)
+    assert late.value.code == "access_denied"
+    finished = engine.get(owner, mission_id)
+    assert finished["state"] == "COMPLETED_VERIFIED"
+    assert finished["claim"] == "verified"
+    assert finished["cancel_requested"] is False
+    assert finished["revoked"] is False
+    own_cancel = client.post(
+        f"/api/sovereign/missions/{mission_id}/cancel",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert own_cancel.status_code == 200
+    assert own_cancel.json()["state"] == "COMPLETED_VERIFIED"
+    assert own_cancel.json()["cancel_confirmed"] is False
+    with pytest.raises(MissionError):
+        engine.request_cancel(other, mission_id)
+    assert mission_service._STOP.get(mission_id) == "cancelled"
+    assert engine.get(owner, mission_id)["state"] == "COMPLETED_VERIFIED"
+    assert marker.read_text(encoding="utf-8") == "victim-marker"
+    mission_service._LIVE.pop(mission_id, None)
+
+    stray_id, stray_step = _marker_mission(engine, owner, text="ignore-memory-stop")
+    mission_service._STOP[stray_id] = "revoked"
+    stray_probe = _Probe()
+    mission_service._LIVE[stray_id] = stray_probe
+    stray = engine.dispatch(owner, stray_id, stray_step, now=_NOW)
+    assert stray["claim"] == "verified"
+    assert stray["state"] == "COMPLETED_VERIFIED"
+    assert stray_probe.cancelled is False
+    assert (auth_db / "sovereign" / owner.id / stray_id / "marker.txt").read_text(encoding="utf-8") == "ignore-memory-stop"
+
+
+def test_owner_stop_is_durable_before_any_signal(auth_db):
+    import orca.sovereign_mission.service as mission_service
+
+    owner, _token, engine = _user("owner-stop@example.com")
+    other, _other, _engine_b = _user("owner-stop-other@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="do-not-write")
+    seen: list[dict] = []
+    real_signal = mission_service._signal_stop
+
+    def _spy(target: str, code: str):
+        seen.append({"id": target, "code": code, "row": _mission_row(auth_db, target)})
+        real_signal(target, code)
+
+    mission_service._signal_stop = _spy
+    try:
+        cancelled = SovereignMission().request_cancel(owner, mission_id)
+    finally:
+        mission_service._signal_stop = real_signal
+    assert cancelled["cancel_confirmed"] is True
+    assert cancelled["state"] == "CANCELLED"
+    assert seen[0]["code"] == "cancelled"
+    assert seen[0]["row"]["cancel_requested"] == 1
+    assert seen[0]["row"]["state"] == "CANCELLED"
+    assert seen[0]["row"]["effect_started"] is False
+    with pytest.raises(MissionError) as blocked:
+        engine.dispatch(owner, mission_id, step_id, now=_NOW)
+    assert blocked.value.code == "cancelled"
+    assert not (auth_db / "sovereign" / owner.id / mission_id / "marker.txt").exists()
+
+    entered = threading.Event()
+    release = threading.Event()
+    uncertain_id, uncertain_step = _marker_mission(engine, owner, text="uncertain-race")
+
+    def _after_effect(user, mission, step, now):
+        engine._begin_external(mission["id"], step["id"])
+        entered.set()
+        assert release.wait(5)
+        mission_service._refuse_if_stopped(mission["id"])
+        return {"tool": "local_marker", "completion": "verified", "matched": True, "witness": "application_observed", "content_sha256": "x"}
+
+    engine._execute = _after_effect
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, uncertain_id, uncertain_step, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert entered.wait(3)
+    mission_service._signal_stop = _spy
+    probe = _Probe()
+    mission_service._LIVE[uncertain_id] = probe
+    try:
+        stopped = engine.request_cancel(owner, uncertain_id)
+    finally:
+        mission_service._signal_stop = real_signal
+    assert stopped["cancel_confirmed"] is False
+    assert stopped["state"] == "OUTCOME_UNKNOWN"
+    assert stopped["claim"] == "unknown"
+    assert probe.cancelled is True
+    assert seen[-1]["id"] == uncertain_id
+    assert seen[-1]["row"]["state"] == "OUTCOME_UNKNOWN"
+    assert seen[-1]["row"]["effect_started"] is True
+    assert seen[-1]["row"]["cancel_requested"] == 1
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert "error" in box
+    assert not (auth_db / "sovereign" / owner.id / uncertain_id / "marker.txt").exists()
+    recovered = SovereignMission().reported(owner, uncertain_id)
+    assert recovered["state"] == "OUTCOME_UNKNOWN"
+    assert recovered["claim"] == "unknown"
+    with pytest.raises(MissionError) as duplicate:
+        SovereignMission().dispatch(owner, uncertain_id, uncertain_step, now=_NOW)
+    assert duplicate.value.code == "duplicate_effect_refused"
+    with pytest.raises(MissionError) as foreign:
+        engine.revoke(other, uncertain_id)
+    assert foreign.value.code == "access_denied"
+    assert SovereignMission().get(owner, uncertain_id)["state"] == "OUTCOME_UNKNOWN"
+
+    revoke_id, revoke_step = _marker_mission(engine, owner, text="revoked-before-effect")
+    holding = threading.Event()
+    let_go = threading.Event()
+    original = SovereignMission._execute
+
+    def _wait_then_run(self, user, mission, step, now):
+        holding.set()
+        assert let_go.wait(5)
+        return original(self, user, mission, step, now)
+
+    engine._execute = lambda user, mission, step, now: _wait_then_run(engine, user, mission, step, now)
+    revoke_box: dict = {}
+
+    def _dispatch_revoke():
+        try:
+            revoke_box["result"] = engine.dispatch(owner, revoke_id, revoke_step, now=_NOW)
+        except MissionError as exc:
+            revoke_box["error"] = exc
+
+    revoke_worker = threading.Thread(target=_dispatch_revoke)
+    revoke_worker.start()
+    assert holding.wait(3)
+    intruder_errors: list[str] = []
+
+    def _intrude():
+        for _ in range(20):
+            try:
+                engine.revoke(other, revoke_id)
+            except MissionError as exc:
+                intruder_errors.append(exc.code)
+
+    intruder = threading.Thread(target=_intrude)
+    intruder.start()
+    mission_service._signal_stop = _spy
+    try:
+        revoked = engine.revoke(owner, revoke_id)
+    finally:
+        mission_service._signal_stop = real_signal
+    intruder.join(5)
+    assert revoked["state"] == "REVOKED"
+    assert revoked["claim"] == "refused"
+    assert intruder_errors
+    assert set(intruder_errors) == {"access_denied"}
+    assert not intruder.is_alive()
+    assert seen[-1]["code"] == "revoked"
+    assert seen[-1]["row"]["revoked"] == 1
+    assert seen[-1]["row"]["state"] == "REVOKED"
+    assert seen[-1]["row"]["open_approvals"] == 0
+    let_go.set()
+    revoke_worker.join(5)
+    assert not revoke_worker.is_alive()
+    assert revoke_box["error"].code == "revoked"
+    assert not (auth_db / "sovereign" / owner.id / revoke_id / "marker.txt").exists()
+    restarted = SovereignMission().reported(owner, revoke_id)
+    assert restarted["state"] == "REVOKED"
+    assert restarted["claim"] == "refused"
+
+
 def test_cancel_before_effect_and_after_uncertain_outcome(auth_db):
     user, _token, engine = _user("pause-cancel@example.com")
     mission_id, step_id = _marker_mission(engine, user, text="should-not")

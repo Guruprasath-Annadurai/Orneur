@@ -65,7 +65,9 @@ Prefix `/api/sovereign`. Mission errors use `detail.code`, and the full applicat
 
 Approval expiry uses the server clock on the HTTP path. A consumed approval cannot be replayed. Dispatch of a finished step returns the stored claim with `replayed: true` and does not repeat the effect. Dispatch after an intent or an unknown outcome is `duplicate_effect_refused`.
 
-Cancel response includes `cancel_confirmed`. That is true only when no external effect had started and the state is `CANCELLED`. A cancel after `effect_started` leaves `OUTCOME_UNKNOWN` or `INTERRUPTED_UNKNOWN`. Revoke consumes unused approvals. Revoke after an effect has started does not become success.
+Cancel response includes `cancel_confirmed`. That is true only when no external effect had started and the state is `CANCELLED`. A cancel after `effect_started` leaves `OUTCOME_UNKNOWN`. Revoke consumes the caller's unused approvals. Revoke after an effect has started leaves `OUTCOME_UNKNOWN` and does not become success. Revoke while `EXECUTING`, before the effect flag, commits `REVOKED`.
+
+Cancel and revoke check the authenticated owner and commit that decision before they write the process stop table or close a live browser. A denied caller raises `access_denied` or `mission_not_found` and does not change `_STOP`, `_LIVE`, the mission row, an external effect, or evidence. Execution reads the committed row. A process-local stop entry is not authority, including a stop planted for another user's mission. A finished `COMPLETED_VERIFIED` or `FAILED` row is not turned back into a cancellation by a later flag.
 
 ### Browser arguments
 
@@ -93,7 +95,9 @@ Page text is untrusted. A sentence in the page does not change the grant, the pl
 
 These are not independently enforced here:
 
+- PR #116's browser substrate remains independently unqualified. The proxy `poll()` correction and the one-shot transient navigation retry live on this child branch, not in that parent's history.
 - Public and hostname browser destinations stay closed until Browser-01 is qualified. This branch's live proof is a local fixture only.
+- Focus the next adversarial pass on this stop boundary: cross-user cancel and revoke during `EXECUTING` (service and HTTP), a planted `_STOP` or `_LIVE` entry, cancel after `effect_started`, revoke before the file or browser call, restart from `OUTCOME_UNKNOWN`, and a crash between the effect flag and the outcome write. A same-process caller who can already invoke `engine.cancel` on a live object is inside the service, not a second tenant.
 - Tenant isolation is the service check `owner_user_id == tenant_id == authenticated user`. Both users share the service OS account. Mode `0600` evidence does not stop that account.
 - A database writer who replaces `record_json`, `record_sha256`, and `evidence_sha256` together is not detected. A partial edit is `withheld`.
 - Mission `verified` has no external witness. The DOM check is a substring of untrusted text, so a fixture page can contain the operator's `expect` string without having performed the intended action. The grant still cannot grow.

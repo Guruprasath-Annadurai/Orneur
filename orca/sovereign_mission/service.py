@@ -15,7 +15,7 @@ from orca.auth.crypto import create_token, verify_token
 import orca.auth.db as auth_db
 from orca.auth.store import User, get_user_by_id, is_token_revoked
 from orca.sovereign_mission import states
-from orca.sovereign_mission.store import StoreError, Unit, canonical, digest, ensure_schema, now_iso
+from orca.sovereign_mission.store import StoreError, Unit, canonical, connect, digest, ensure_schema, now_iso
 
 _TOOLS = frozenset({"browser", "local_marker"})
 _BROWSER_ACTIONS = frozenset({"navigate", "read", "click", "fill", "scroll", "screenshot"})
@@ -187,19 +187,11 @@ class SovereignMission:
         return self.reported(user, mission_id)
 
     def request_cancel(self, user: User, mission_id: str) -> dict:
-        _signal_stop(mission_id, "cancelled")
         unit = Unit()
         confirmed = False
         try:
-            mission = self._owned(unit, user, mission_id)
-            unit.conn.execute(
-                "UPDATE sovereign_missions SET cancel_requested=1, updated_at=? WHERE id=?",
-                (now_iso(), mission_id),
-            )
-            started = unit.conn.execute(
-                "SELECT effect_started, outcome_json FROM sovereign_steps WHERE mission_id=?",
-                (mission_id,),
-            ).fetchall()
+            mission = self._require_owner(unit, user, mission_id, cancel_requested=1)
+            started = self._step_effects(unit, mission_id)
             uncertain = any(row["effect_started"] and row["outcome_json"] is None for row in started)
             external = any(row["effect_started"] for row in started)
             if uncertain and mission["state"] == states.EXECUTING:
@@ -222,28 +214,29 @@ class SovereignMission:
             raise
         finally:
             unit.close()
-        _cancel_live(mission_id)
+        self._arm_stop(mission_id, "cancelled")
         body = self.get(user, mission_id)
         body["cancel_confirmed"] = confirmed and body["state"] == states.CANCELLED
         return body
 
     def revoke(self, user: User, mission_id: str) -> dict:
-        _signal_stop(mission_id, "revoked")
         unit = Unit()
         try:
-            mission = self._owned(unit, user, mission_id)
-            unit.conn.execute("UPDATE sovereign_missions SET revoked=1, updated_at=? WHERE id=?", (now_iso(), mission_id))
+            mission = self._require_owner(unit, user, mission_id, revoked=1)
             unit.conn.execute(
-                "UPDATE sovereign_approvals SET consumed_at=? WHERE mission_id=? AND consumed_at IS NULL",
-                (now_iso(), mission_id),
+                """
+                UPDATE sovereign_approvals SET consumed_at=?
+                WHERE mission_id=? AND user_id=? AND consumed_at IS NULL
+                """,
+                (now_iso(), mission_id, user.id),
             )
-            started = unit.conn.execute(
-                "SELECT effect_started, outcome_json FROM sovereign_steps WHERE mission_id=?",
-                (mission_id,),
-            ).fetchall()
+            started = self._step_effects(unit, mission_id)
             uncertain = any(row["effect_started"] and row["outcome_json"] is None for row in started)
+            external = any(row["effect_started"] for row in started)
             if uncertain and mission["state"] == states.EXECUTING:
                 self._set_state(unit, mission, states.OUTCOME_UNKNOWN)
+            elif not external and mission["state"] == states.EXECUTING:
+                self._set_state(unit, mission, states.REVOKED)
             elif mission["state"] in {states.AUTHORIZED, states.AWAITING_APPROVAL, states.PLANNED, states.CREATED}:
                 target = states.REVOKED if mission["state"] == states.AUTHORIZED else states.CANCELLED
                 self._set_state(unit, mission, target)
@@ -253,7 +246,7 @@ class SovereignMission:
             raise
         finally:
             unit.close()
-        _cancel_live(mission_id)
+        self._arm_stop(mission_id, "revoked")
         return self.get(user, mission_id)
 
     def recover(self) -> list[str]:
@@ -466,8 +459,8 @@ class SovereignMission:
                 (canonical(outcome), step_id),
             )
             aggregate = digest({"evidence": [record_hash]})
-            stopped = mission["cancel_requested"] or mission["revoked"] or _stop_code(mission_id) is not None
-            if mission["state"] != states.EXECUTING or stopped:
+            stopped = mission["cancel_requested"] or mission["revoked"] or mission["state"] != states.EXECUTING
+            if stopped:
                 if mission["state"] == states.EXECUTING:
                     self._set_state(unit, mission, states.OUTCOME_UNKNOWN)
                 unit.conn.execute(
@@ -509,28 +502,44 @@ class SovereignMission:
         unknown. A stop that lands before the call does not become success.
         """
         unit = Unit()
+        refusal = None
         try:
             mission = unit.conn.execute("SELECT * FROM sovereign_missions WHERE id=?", (mission_id,)).fetchone()
-            code = _stop_code(mission_id)
-            if mission["revoked"] or code == "revoked":
+            if mission is None:
+                raise MissionError("mission_not_found")
+            if mission["revoked"] or mission["state"] == states.REVOKED:
                 if mission["state"] == states.EXECUTING:
                     self._set_state(unit, mission, states.REVOKED)
-                unit.commit()
-                raise MissionError("revoked")
-            if mission["cancel_requested"] or mission["state"] != states.EXECUTING or code == "cancelled":
+                refusal = "revoked"
+            elif mission["cancel_requested"] or mission["state"] != states.EXECUTING:
                 if mission["state"] == states.EXECUTING:
                     self._set_state(unit, mission, states.CANCELLED)
-                unit.commit()
-                raise MissionError("cancelled")
-            unit.conn.execute("UPDATE sovereign_steps SET effect_started=1 WHERE id=?", (step_id,))
+                refusal = "cancelled"
+            else:
+                unit.conn.execute(
+                    """
+                    UPDATE sovereign_steps SET effect_started=1
+                    WHERE id=? AND effect_started=0 AND outcome_json IS NULL
+                      AND EXISTS (
+                        SELECT 1 FROM sovereign_missions
+                        WHERE id=? AND state=? AND cancel_requested=0 AND revoked=0
+                      )
+                    """,
+                    (step_id, mission_id, states.EXECUTING),
+                )
+                if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
+                    raise MissionError("duplicate_effect_refused")
             unit.commit()
         except Exception:
             unit.rollback()
             raise
         finally:
             unit.close()
-        if _stop_code(mission_id):
-            raise MissionError(_stop_code(mission_id) or "cancelled")
+        if refusal:
+            raise MissionError(refusal)
+        code = _durable_stop(mission_id)
+        if code:
+            raise MissionError(code)
 
     def _settle(self, mission_id: str, step_id: str, code: str) -> None:
         unit = Unit()
@@ -544,10 +553,13 @@ class SovereignMission:
                 (step_id,),
             ).fetchone()
             started = bool(step["effect_started"]) if step is not None else False
-            if code == "revoked" or mission["revoked"]:
+            if mission["revoked"] or mission["state"] == states.REVOKED:
                 new = states.OUTCOME_UNKNOWN if started else states.REVOKED
-            elif code == "cancelled" or mission["cancel_requested"]:
+            elif mission["cancel_requested"] or mission["state"] == states.CANCELLED:
                 new = states.OUTCOME_UNKNOWN if started else states.CANCELLED
+            elif code in {"cancelled", "revoked"}:
+                unit.commit()
+                return
             elif code in {"browser_dead", "browser_closed", "execution_interrupted"}:
                 new = states.INTERRUPTED_UNKNOWN
             else:
@@ -573,6 +585,51 @@ class SovereignMission:
         if row["owner_user_id"] != user.id or row["tenant_id"] != user.id:
             raise MissionError("access_denied")
         return row
+
+    def _require_owner(
+        self,
+        unit: Unit,
+        user: User,
+        mission_id: str,
+        *,
+        cancel_requested: int | None = None,
+        revoked: int | None = None,
+    ):
+        """Record this user's authority on the owned row before the caller commits."""
+        mission = self._owned(unit, user, mission_id)
+        if (cancel_requested is None) == (revoked is None):
+            raise MissionError("access_denied")
+        if cancel_requested is not None:
+            unit.conn.execute(
+                """
+                UPDATE sovereign_missions
+                SET cancel_requested=?, updated_at=?
+                WHERE id=? AND owner_user_id=? AND tenant_id=?
+                """,
+                (cancel_requested, now_iso(), mission_id, user.id, user.id),
+            )
+        else:
+            unit.conn.execute(
+                """
+                UPDATE sovereign_missions
+                SET revoked=?, updated_at=?
+                WHERE id=? AND owner_user_id=? AND tenant_id=?
+                """,
+                (revoked, now_iso(), mission_id, user.id, user.id),
+            )
+        if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
+            raise MissionError("access_denied")
+        return mission
+
+    def _step_effects(self, unit: Unit, mission_id: str):
+        return unit.conn.execute(
+            "SELECT effect_started, outcome_json FROM sovereign_steps WHERE mission_id=?",
+            (mission_id,),
+        ).fetchall()
+
+    def _arm_stop(self, mission_id: str, code: str) -> None:
+        _signal_stop(mission_id, code)
+        _cancel_live(mission_id)
 
     def _step(self, unit: Unit, mission_id: str, step_id: str):
         row = unit.conn.execute(
@@ -745,7 +802,7 @@ def _run_browser(service: SovereignMission, user_id: str, mission_id: str, step_
         observed = engine.read_text(now=now)
         deadline = time.monotonic() + 2
         while arguments["expect"] not in observed["text"] and time.monotonic() < deadline:
-            if _stop_code(mission_id):
+            if _durable_stop(mission_id):
                 break
             time.sleep(0.05)
             observed = engine.read_text(now=now)
@@ -754,7 +811,7 @@ def _run_browser(service: SovereignMission, user_id: str, mission_id: str, step_
             engine.screenshot(now=now)
         if observed.get("authority") != "page_content_not_authority":
             raise MissionError("page_authority_refused")
-        matched = arguments["expect"] in observed["text"] and _stop_code(mission_id) is None
+        matched = arguments["expect"] in observed["text"] and _durable_stop(mission_id) is None
         content_hash = digest({"text": observed["text"]})
         for record in engine.evidence:
             encoded = json.dumps(record)
@@ -783,13 +840,35 @@ def _signal_stop(mission_id: str, code: str) -> None:
         _STOP[mission_id] = code
 
 
-def _stop_code(mission_id: str) -> str | None:
-    with _LIVE_LOCK:
-        return _STOP.get(mission_id)
+def _durable_stop(mission_id: str) -> str | None:
+    """Return a stop code only when the committed mission row authorizes it.
+
+    A process-local ``_STOP`` entry is not authority. Cancel and revoke write
+    that entry only after the owner update commits.
+    """
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT state, cancel_requested, revoked FROM sovereign_missions WHERE id=?",
+            (mission_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None or row["state"] in {states.COMPLETED_VERIFIED, states.FAILED}:
+        return None
+    if row["revoked"] or row["state"] == states.REVOKED:
+        return "revoked"
+    if row["cancel_requested"] or row["state"] in {
+        states.CANCELLED,
+        states.OUTCOME_UNKNOWN,
+        states.INTERRUPTED_UNKNOWN,
+    }:
+        return "cancelled"
+    return None
 
 
 def _refuse_if_stopped(mission_id: str) -> None:
-    code = _stop_code(mission_id)
+    code = _durable_stop(mission_id)
     if code:
         raise MissionError(code)
 
