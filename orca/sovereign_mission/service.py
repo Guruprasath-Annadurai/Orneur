@@ -1009,7 +1009,7 @@ def _run_browser(
     now: datetime,
     generation: int,
 ) -> dict:
-    from orca.browser_engine.engine import BrowserEngine, BrowserError, issue_grant
+    from orca.browser_engine.engine import BrowserEngine, BrowserError, chrome_runtime_root, issue_grant
 
     endpoint = _destination_of_browser(arguments)
     actions = tuple(arguments["actions"])
@@ -1025,7 +1025,7 @@ def _run_browser(
         )
     except Exception as exc:
         raise MissionError(getattr(exc, "code", "grant_refused")) from exc
-    engine = BrowserEngine(_workspace(user_id, mission_id) / "browser", grant)
+    engine = BrowserEngine(chrome_runtime_root(), grant)
     with _LIVE_LOCK:
         _LIVE[mission_id] = engine
     try:

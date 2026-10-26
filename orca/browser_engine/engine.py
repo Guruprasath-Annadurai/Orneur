@@ -33,6 +33,8 @@ _SELECTOR = re.compile(r"^#[A-Za-z][A-Za-z0-9_-]{0,62}$")
 _SESSION_SCHEMA = "orneur-browser-session/1"
 _GRANT_MINT = object()
 _FILE_SIZE_CAP = 256 * 1024 * 1024
+_UNIX_SOCKET_PATH_MAX = 107
+_SCOPE_CHARS = 16
 
 
 class BrowserError(Exception):
@@ -107,6 +109,24 @@ def chrome_binary() -> Path:
     return path
 
 
+def runtime_scope(user_id: str, mission_id: str) -> str:
+    """Short directory name so Chrome's SingletonSocket fits AF_UNIX."""
+    return hashlib.sha256(f"{user_id}\0{mission_id}".encode()).hexdigest()[:_SCOPE_CHARS]
+
+
+def chrome_runtime_root() -> Path:
+    """Host directory for Chrome user-data dirs.
+
+    Mission workspaces nest UUIDs until the profile path exceeds the Unix
+    socket limit and Chrome exits before DevTools is ready. This root stays
+    short. Isolation remains per user and mission via ``runtime_scope``.
+    """
+    configured = os.environ.get("ORNEUR_CHROME_RUNTIME")
+    root = Path(configured) if configured else Path("/tmp/orneur-chrome")
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    return root
+
+
 def quarantine_name(name: str) -> str:
     if (
         not isinstance(name, str)
@@ -135,10 +155,15 @@ class BrowserEngine:
         self._active: str | None = None
         self._active_target: str | None = None
         self._closed = False
-        self.profile = self.root / grant.user_id / grant.mission_id / "profile"
-        self.quarantine = self.root / grant.user_id / grant.mission_id / "downloads"
-        self.evidence_path = self.root / grant.user_id / grant.mission_id / "evidence.jsonl"
-        self.state_path = self.root / grant.user_id / grant.mission_id / "state.json"
+        self.scope = runtime_scope(grant.user_id, grant.mission_id)
+        self.home = self.root / self.scope
+        self.profile = self.home / "c"
+        self.quarantine = self.home / "d"
+        self.evidence_path = self.home / "evidence.jsonl"
+        self.state_path = self.home / "state.json"
+        socket_path = str(self.profile / "SingletonSocket")
+        if len(socket_path.encode()) > _UNIX_SOCKET_PATH_MAX:
+            raise BrowserError("path_refused")
 
     def start(self, now: datetime | None = None) -> None:
         self._require_grant("navigate", now)
@@ -515,7 +540,7 @@ class BrowserEngine:
 
     def _prepare_mission_dirs(self) -> None:
         root = self.root.resolve()
-        mission = self.root / self.grant.user_id / self.grant.mission_id
+        mission = self.home
         if any(path.is_symlink() for path in (mission, self.profile, self.quarantine, self.evidence_path, self.state_path)):
             raise BrowserError("path_refused")
         mission.parent.mkdir(parents=True, mode=0o700, exist_ok=True)

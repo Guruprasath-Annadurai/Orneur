@@ -107,7 +107,7 @@ These are not independently enforced here:
 - Browser `COMPLETED_UNVERIFIED` is still not an external transaction witness. Independent receipts for browser effects are not implemented on the local fixture. The grant still cannot grow.
 - Worker leases are SQLite-local. Tests do not establish multi-host readiness.
 - Recovery of an expired lease fences commit authority; it does not prove the previous process is dead.
-- Chrome has CPU and open-file limits and no memory cap. The mission path refuses a binary whose bytes contain `--no-sandbox` because the browser engine does. The live crash test checked the mission Chrome command line.
+- Chrome has CPU and open-file limits and no memory cap. The mission path refuses a binary whose bytes contain `--no-sandbox` because the browser engine does. The live crash test checked the mission Chrome command line. Chrome profiles are under `/tmp/orneur-chrome/<scope>/c` so the DevTools singleton socket fits `AF_UNIX`; a nested mission workspace path was observed to make Chrome exit before CDP was ready.
 - There is no pause or resume.
 - An unknown outcome is not retried. That prevents a duplicate effect; it also leaves a mission that never reached the peer stuck.
 - `effect_started` is committed immediately before the external call. A crash in that window is unknown even if the peer saw nothing.

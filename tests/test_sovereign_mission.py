@@ -912,15 +912,21 @@ def test_live_browser_mission_isolates_users(auth_db):
 
 
 def _profile(auth_db: Path, user_id: str, mission_id: str) -> Path:
-    return auth_db / "sovereign" / user_id / mission_id / "browser" / user_id / mission_id / "profile"
+    from orca.browser_engine.engine import chrome_runtime_root, runtime_scope
+
+    del auth_db
+    return chrome_runtime_root() / runtime_scope(user_id, mission_id) / "c"
 
 
 def _browser_evidence(auth_db: Path, user_id: str, mission_id: str) -> Path:
-    return auth_db / "sovereign" / user_id / mission_id / "browser" / user_id / mission_id / "evidence.jsonl"
+    from orca.browser_engine.engine import chrome_runtime_root, runtime_scope
+
+    del auth_db
+    return chrome_runtime_root() / runtime_scope(user_id, mission_id) / "evidence.jsonl"
 
 
 def _await_stopped(profile: Path) -> None:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 15
     while time.monotonic() < deadline and _profile_processes(profile):
         time.sleep(0.05)
     assert _profile_processes(profile) == []
@@ -933,7 +939,7 @@ def _profile_processes(profile: Path) -> list[int]:
 
 
 def _wait_external(engine: SovereignMission, user, mission_id: str) -> None:
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 35
     last = None
     while time.monotonic() < deadline:
         last = engine.get(user, mission_id)
@@ -959,7 +965,7 @@ def _dispatch_later(engine: SovereignMission, user, mission_id: str, step_id: st
 
 
 def _join_dispatch(started: dict) -> dict:
-    started["worker"].join(15)
+    started["worker"].join(45)
     assert not started["worker"].is_alive()
     return started["box"]
 

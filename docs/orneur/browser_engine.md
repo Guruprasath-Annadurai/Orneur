@@ -16,7 +16,7 @@ A caller must already have authenticated the user. This module does not trust pa
 
 ## What one engine may do
 
-`BrowserEngine(root, grant).start()` launches `/opt/google/chrome/chrome` (or `ORNEUR_CHROME_BINARY`) with its own user-data directory, a filtering proxy, and no `--no-sandbox`. A symlink, a script, or a command line that contains `--no-sandbox` is refused. The `google-chrome` wrapper on this host injects `--no-sandbox` and must not be used.
+`BrowserEngine(root, grant).start()` launches `/opt/google/chrome/chrome` (or `ORNEUR_CHROME_BINARY`) with its own user-data directory, a filtering proxy, and no `--no-sandbox`. A symlink, a script, or a command line that contains `--no-sandbox` is refused. The `google-chrome` wrapper on this host injects `--no-sandbox` and must not be used. The user-data directory is a short hash of the user and mission under `root` (mission execution uses `/tmp/orneur-chrome` or `ORNEUR_CHROME_RUNTIME`) so Chrome's `SingletonSocket` stays inside the Unix socket path limit. A root that would overflow that limit is `path_refused`.
 
 The proxy is the network boundary. Loopback HTTP is allowed only when the grant names that address. Every other destination must be HTTPS and must resolve twice to the same public address set. Metadata names, `169.254.0.0/16`, and `fd00:ec2::254` are refused. Private, link-local, multicast, reserved, carrier-grade NAT (`100.64.0.0/10`), and unique-local IPv6 addresses are refused. Unbracketed IPv6 in a CONNECT target is refused. The proxy connects to the pinned address, not to a later DNS answer. An HTTP body is forwarded only when the upstream closes it; a five-second idle gap is not treated as the end of the body.
 

@@ -17,7 +17,18 @@ from pathlib import Path
 
 import pytest
 
-from orca.browser_engine.engine import BrowserEngine, BrowserError, Grant, chrome_binary, issue_grant, listening_ports, process_command
+from orca.browser_engine.engine import (
+    BrowserEngine,
+    BrowserError,
+    Grant,
+    _UNIX_SOCKET_PATH_MAX,
+    chrome_binary,
+    chrome_runtime_root,
+    issue_grant,
+    listening_ports,
+    process_command,
+    runtime_scope,
+)
 from orca.browser_engine.policy import PolicyError, check_destination, page_content_not_authority, validate_allowlist
 from orca.browser_engine.proxy import FilteringProxy
 
@@ -286,6 +297,32 @@ def test_evidence_and_state_symlinks_are_not_followed(tmp_path: Path):
         fresh._write_state()
     assert state.value.code == "evidence_refused"
     assert not state_target.exists()
+
+
+def test_chrome_user_data_dir_fits_unix_socket_limit(tmp_path: Path):
+    long_user = "0" * 64
+    long_mission = "f" * 64
+    engine = BrowserEngine(chrome_runtime_root(), _grant(9, user=long_user, mission=long_mission, actions=("navigate",)))
+    socket_path = str(engine.profile / "SingletonSocket").encode()
+    assert len(socket_path) <= _UNIX_SOCKET_PATH_MAX
+    assert runtime_scope(long_user, long_mission) != runtime_scope("other", long_mission)
+    nested = (
+        tmp_path
+        / "sovereign"
+        / long_user
+        / long_mission
+        / "browser"
+        / long_user
+        / long_mission
+        / "profile"
+        / "SingletonSocket"
+    )
+    assert len(str(nested).encode()) > _UNIX_SOCKET_PATH_MAX
+    deep = tmp_path / ("n" * 90)
+    deep.mkdir()
+    with pytest.raises(BrowserError) as exc:
+        BrowserEngine(deep, _grant(9, actions=("navigate",)))
+    assert exc.value.code == "path_refused"
 
 
 def test_allowlist_port_does_not_open_other_ports():
