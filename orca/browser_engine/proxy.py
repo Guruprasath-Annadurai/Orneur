@@ -22,6 +22,18 @@ def _peer_in_pins(peer: str, pins: tuple[str, ...]) -> bool:
     return mapped is not None and str(mapped) in pins
 
 
+def _ready(socks: list[socket.socket], timeout: float) -> list[socket.socket]:
+    """Wait for readability. poll() accepts descriptors above select()'s 1024 limit."""
+    poller = select.poll()
+    by_fd: dict[int, socket.socket] = {}
+    for sock in socks:
+        descriptor = sock.fileno()
+        by_fd[descriptor] = sock
+        poller.register(descriptor, select.POLLIN | select.POLLERR | select.POLLHUP)
+    events = poller.poll(int(timeout * 1000))
+    return [by_fd[descriptor] for descriptor, _event in events if descriptor in by_fd]
+
+
 def _connect_target(path: str) -> tuple[str | None, str | None]:
     if path.startswith("["):
         end = path.find("]")
@@ -98,7 +110,7 @@ class FilteringProxy:
                 sockets = [self.connection, upstream]
                 try:
                     while True:
-                        ready, _, _ = select.select(sockets, [], [], 5)
+                        ready = _ready(sockets, 5)
                         if not ready:
                             break
                         for item in ready:
@@ -168,8 +180,7 @@ class FilteringProxy:
             def _read_response(self, upstream: socket.socket) -> bytes:
                 chunks = []
                 while True:
-                    ready, _, _ = select.select([upstream], [], [], 5)
-                    if not ready:
+                    if not _ready([upstream], 5):
                         break
                     chunk = upstream.recv(65536)
                     if not chunk:

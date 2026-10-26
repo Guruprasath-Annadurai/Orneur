@@ -343,6 +343,9 @@ app.add_middleware(RequestBodySizeLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BY
 
 
 app.include_router(auth_router)
+from orca.sovereign_mission.routes import router as sovereign_router  # noqa: E402
+
+app.include_router(sovereign_router)
 
 
 # G-023: every HTTPException / validation failure also carries a stable machine-readable `code` and an `error_id`, in the same shape the chat routes use.
