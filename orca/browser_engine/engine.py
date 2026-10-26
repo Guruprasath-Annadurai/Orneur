@@ -253,13 +253,17 @@ class BrowserEngine:
                     self.close()
                     raise
                 try:
+                    kept = (3, 4)
+                    if err_fd is not None:
+                        os.set_inheritable(err_fd, True)
+                        kept = (3, 4, err_fd)
                     self._process = subprocess.Popen(
                         command,
                         stdin=subprocess.DEVNULL,
                         stdout=subprocess.DEVNULL,
                         stderr=err_fd if err_fd is not None else subprocess.DEVNULL,
                         start_new_session=True,
-                        pass_fds=(3, 4),
+                        pass_fds=kept,
                         preexec_fn=_contain_child,
                     )
                 except Exception:

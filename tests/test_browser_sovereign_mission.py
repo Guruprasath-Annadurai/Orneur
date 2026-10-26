@@ -1,7 +1,10 @@
 """Authenticated mission execution against the product SQLite database.
 
 The browser cases start the real Chrome binary. They skip when that
-binary is absent. A skip is not an end-to-end pass.
+binary is absent. A skip is not an end-to-end pass. This file is named
+so pytest collects it immediately after the browser engine tests; on
+GitHub's runner Chrome's DevTools pipe did not become ready after the
+rest of the deterministic suite had already run.
 """
 
 from __future__ import annotations

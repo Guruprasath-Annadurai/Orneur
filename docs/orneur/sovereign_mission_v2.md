@@ -118,4 +118,4 @@ These are not independently enforced here:
 
 ## Tests that have to stay honest
 
-`tests/test_sovereign_mission.py` starts real Chrome for the two live tests and skips those two only when `chrome_binary()` refuses the binary. A skip is not a pass. The non-live tests use a real marker file, the product password hasher, and the product session token. They are not a substitute for the live browser mission.
+`tests/test_browser_sovereign_mission.py` starts real Chrome for the live tests and skips those only when `chrome_binary()` refuses the binary. It sits next to `tests/test_browser_engine.py` so Chrome is started before the rest of the deterministic suite has exhausted the runner. A skip is not a pass. The non-live tests use a real marker file, the product password hasher, and the product session token. They are not a substitute for the live browser mission.
