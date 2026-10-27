@@ -2781,6 +2781,20 @@ async def message_version_history(session_id: str, message_id: str, user: User |
     if user is None:
         e = coded_error("auth_required")
         return JSONResponse(e.as_json(), status_code=e.status)
+    # PRIORITY 2 (PR #111 closeout, 2026-10-27): version-history reads were
+    # the one owned-session route with no terminal-state check at all --
+    # ownership alone does not expire. An expired temporary chat's
+    # transcript is deleted (temporary_chat.finish()), but its
+    # message_versions store is a SEPARATE file that outlives it; without
+    # this check, a caller could read version history (including an
+    # EARLIER, pre-edit version's content) for a conversation whose
+    # visible transcript and documents are already gone. The same
+    # _temporary_block() boundary every other owned-session mutation uses
+    # (chat, doc upload/delete, memory) now applies here too. A no-op for
+    # a session that was never a temporary chat.
+    temporary_block = _temporary_block(session_id)
+    if temporary_block is not None:
+        return temporary_block
     from orca.serve import conversations, message_versions
 
     line = conversations.find_message(session_id, message_id)
@@ -2806,6 +2820,15 @@ async def edit_session_message(
     if user is None:
         e = coded_error("auth_required")
         return JSONResponse(e.as_json(), status_code=e.status)
+    # PRIORITY 2: see message_version_history()'s comment -- the same
+    # terminal-state boundary now also guards WRITES to version history,
+    # not just reads. Without this, a committed edit on an expired
+    # temporary chat would durably create a new version in a store that
+    # outlives the (deleted) transcript -- editing content the product
+    # has already told the user is gone.
+    temporary_block = _temporary_block(session_id)
+    if temporary_block is not None:
+        return temporary_block
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="message-edit")
     from orca.serve import conversations, message_versions
 
@@ -2857,6 +2880,10 @@ async def regenerate_session_message(
     if user is None:
         e = coded_error("auth_required")
         return JSONResponse(e.as_json(), status_code=e.status)
+    # PRIORITY 2: same boundary as the edit/version-history routes above.
+    temporary_block = _temporary_block(session_id)
+    if temporary_block is not None:
+        return temporary_block
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="message-regenerate")
     from orca.serve import conversations, message_versions
 
