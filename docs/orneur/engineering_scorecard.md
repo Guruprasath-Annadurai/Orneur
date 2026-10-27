@@ -1,10 +1,10 @@
 # Engineering preparation scorecard
 
-Measured on the M01–M03 successor of the #119 reconciliation head `42c81e0c2339bf4fc76169f32e5bb0ca69215ce2`. Parent histories of PRs #116, #117 and #118 remain ancestors. PR #115 is not in this tree. This scorecard is not the 95-row acceptance register. The verified count is not increased by this security remediation.
+Measured on `cursor/backend-programme-ae9d` parent `#121` `637efeceaab65193b31f7c64dd9babf0cf5634df`. Parent histories of PRs #116–#121 remain ancestors. PR #111 and PR #115 are not in this tree. This scorecard is not the 95-row acceptance register.
 
 | Metric | Result |
 | --- | --- |
-| Engineering gates at `VERIFIED_ENGINEERING` | 16 / 50 (32%) |
+| Engineering gates at `VERIFIED_ENGINEERING` | 31 / 50 (62%) |
 | Engineering gates at `INDEPENDENTLY_QUALIFIED` | 0 / 50 |
 | Integrated product journeys demonstrated | 0 (A–F). The authenticated local-fixture mission is an API workflow. It is not one of the named product journeys, and no frozen frontend screen was changed. |
 | Official pretraining acceptance | 0 / 95 |
@@ -18,10 +18,10 @@ Measured on the M01–M03 successor of the #119 reconciliation head `42c81e0c233
 
 Classifications below are for `origin/main` plus this branch. Open PR #115 (`5ead4b426cd3d93705119f00353448bdea4bac4f`) is not in this tree. Its read-only browser, voice, and opportunity modules stay on that branch.
 
-- `IMPLEMENTED_AND_VERIFIED` this session: `orca/sovereign_mission/` via `tests/test_browser_sovereign_mission.py`, and the browser remediation in `orca/browser_engine/` (DevTools pipe, symlink refusal, grant mint, CGNAT and IPv6). The verified count stays 16. Independent qualification stays 0. The gradient-norm left fold restores the existing golden digest on CPython 3.12 and does not add a pretraining acceptance row.
-- `IMPLEMENTED_BUT_UNQUALIFIED`: `orca/serve/model_identity.py`, `orca/mission/state_machine.py`, `orca/mission/mission_store.py`, `orca/agent/runtime.py`, `orca/rse/imp1/locks.py` (all seven locks return false). The Phase 15 mission store was not re-run and was not used.
-- `PARTIAL_OR_CONTRACT_ONLY`: Phase 15 mission lifecycle still has no `INTERRUPTED_UNKNOWN` or `OUTCOME_UNKNOWN`. Agent tool runtime is not ten specialist handlers. Memory and conversation modules were not re-tested.
-- `MISSING_OR_BLOCKED`: public browser destinations, deny-all principal adapter (that principal is on PR #115, not here), opportunity and voice on this branch, native training (denied), pause/resume, an effective browser memory cap.
+- `IMPLEMENTED_AND_VERIFIED` this session: pause/resume before effects; deny-all principal adapter; ten specialist handlers and DAG orchestrator; local evidence recompute; upload store; usage accounting that refuses paid backends; honest voice unavailable contract. Prior browser/mission gates remain. Independent qualification stays 0. No pretraining acceptance row was added.
+- `IMPLEMENTED_BUT_UNQUALIFIED`: `orca/mission/state_machine.py`, `orca/mission/mission_store.py`, `orca/agent/runtime.py`, `orca/rse/imp1/locks.py` (all seven locks return false). The Phase 15 mission store was not re-run and was not used.
+- `PARTIAL_OR_CONTRACT_ONLY`: opportunity discovery without a live source; voice retention of synthetic transcripts; conversation temporary-chat follow-up remains Claude-owned; Phase 15 mission enum unchanged.
+- `MISSING_OR_BLOCKED`: public browser destinations, PR #115 merge, native training (denied), effective browser memory cap, external evidence witness, speech backend, paid model calls.
 
 ## Gates
 
@@ -49,31 +49,31 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **B4.** Criterion: execute a real tool and record side-effect intent separately from outcome. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_duplicate_effect_and_unknown_outcome` and `test_live_browser_mission_isolates_users`. Positive: the marker file contained `owner-only` and the live page's click handler set `CLICKED`, which was not present before JavaScript ran. The browser evidence file stayed `performed_unverified`. The mission claim for that click is `unverified`. Negative: a failed outcome write left `EXECUTING` until the same worker's authenticated recover recorded `OUTCOME_UNKNOWN` and did not write the marker again. A second constructor does not sweep a live worker. Dependency: B1 and A1. Review: pending. Blocker: mission `verified` is an independent file receipt, not untrusted DOM text. Status: `VERIFIED_ENGINEERING`.
 
-**B5.** Criterion: pause, cancel, resume, and preserve `INTERRUPTED_UNKNOWN` / `OUTCOME_UNKNOWN`. Files: `orca/sovereign_mission/states.py`, `orca/sovereign_mission/service.py`. Test: `test_cancel_before_effect_and_after_uncertain_outcome` and `test_live_cancel_revoke_and_crash_do_not_claim_success`. Positive: cancel before an effect confirmed `CANCELLED`; a killed Chrome became `INTERRUPTED_UNKNOWN`; a lost outcome write became `OUTCOME_UNKNOWN` after authenticated recover. Negative: cancel after `effect_started` returned `cancel_confirmed` false and a claim of `unknown`. Dependency: B1. Review: pending. Blocker: pause and resume are not implemented. The Phase 15 enum was not changed. Status: `PARTIAL`.
+**B5.** Criterion: pause, cancel, resume, and preserve `INTERRUPTED_UNKNOWN` / `OUTCOME_UNKNOWN`. Files: `orca/sovereign_mission/states.py`, `orca/sovereign_mission/service.py`. Tests: `tests/test_mission_pause.py`, `test_cancel_before_effect_and_after_uncertain_outcome`. Positive: pause from `AUTHORIZED` stored `PAUSED`; resume returned `AUTHORIZED` and then wrote the marker once; cancel from `PAUSED` confirmed `CANCELLED` with no file. Negative: dispatch while paused is `not_authorized`; pause after a completed effect is `pause_unsafe` or `pause_refused`; the other user received `access_denied`. Dependency: B1. Review: pending. Blocker: pause is refused after any `effect_started`. There is no pause during `EXECUTING`. The Phase 15 enum was not changed. Status: `VERIFIED_ENGINEERING`.
 
 ### C — Identity, memory, persistence
 
 **C1.** Criterion: verified product authentication and session validation. Files: `orca/auth/store.py`, `orca/auth/crypto.py`, `orca/auth/middleware.py`. Test: `test_bad_password_expired_and_revoked_tokens` and `test_http_denies_the_other_user`. Positive: a correct password issued a session token that read the owner's mission. Negative: a wrong password, an expired token, a revoked `jti`, a token older than `tokens_valid_after`, and a missing bearer were rejected. Dependency: auth database. Review: pending. Blocker: API keys and `orca/serve/session_store.py` were not exercised. Status: `VERIFIED_ENGINEERING`.
 
-**C2.** Criterion: adapter in front of the deny-all runtime principal, without trusting caller claims. Files: none on this branch. `orca/core_runtime/principal.py` is on PR #115. Test: none. Positive: none. Negative: none. Dependency: PR #115 stays isolated. Review: pending. Blocker: principal module is not in this tree; it must not be switched to trust caller claims. Status: `NOT_STARTED`.
+**C2.** Criterion: adapter in front of the deny-all runtime principal, without trusting caller claims. Files: `orca/governance/deny_principal.py`. Test: `tests/test_deny_principal.py`. Positive: none — every call is a denial. Negative: `authenticate()` with founder/admin claims, empty claims, and `authorize()` all raised `principal_not_authenticated`. Dependency: PR #115 stays isolated and was not copied. Review: pending. Blocker: this adapter is not the #115 `core_runtime` module. Status: `VERIFIED_ENGINEERING`.
 
 **C3.** Criterion: durable conversations, including temporary conversations, survive restart. Files: `orca/serve/conversations.py`. Test: not run. Positive: none this session. Negative: none. Dependency: conversation store. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
 
 **C4.** Criterion: memory consent, deletion, retention, and authorized search. Files: `orca/memory/deletion.py`, `orca/memory/store.py`, `orca/serve/retention.py`. Test: not run. Positive: none this session. Negative: none. Dependency: memory store. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
 
-**C5.** Criterion: two authenticated users cannot read or execute each other's conversation, memory, mission, or browser. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_two_users_cannot_read_each_other`, `test_unauthorized_cancel_and_revoke_cannot_stop_a_running_mission`, and `test_live_browser_mission_isolates_users`. Positive: user B received `access_denied` for the mission, its evidence, dispatch, cancel, and revoke. During user A's open tool step, user B's calls left `_STOP`, `_LIVE`, the mission row, and the marker untouched, and A's step still finished `verified`. User B's browser profile was not created. Negative: conversation and memory isolation were not attempted. Dependency: C1. Review: pending. Blocker: conversation and memory remain untested. Same-OS-user filesystem access is not a tenant boundary. Status: `PARTIAL`.
+**C5.** Criterion: two authenticated users cannot read or execute each other's conversation, memory, mission, or browser. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`, `orca/serve/conversations.py`, `orca/memory`. Tests: `test_two_users_cannot_read_each_other`, `tests/test_b_conversations.py::test_other_users_cannot_read_search_export_or_delete_a_conversation`, `tests/test_memory_security.py::test_cross_user_memory_does_not_leak_via_recall`. Positive: user B received `access_denied` on the owner's mission; conversation search/export/delete by the other user failed; memory recall did not leak the other scope. Negative: same-OS-user filesystem access is not a tenant boundary. Dependency: C1. Review: pending. Blocker: OS identity is shared. Status: `VERIFIED_ENGINEERING`.
 
 ### D — Specialist agents
 
-**D1.** Criterion: versioned registry; unavailable roles stay unavailable. Files: `orca/agent/tool_registry.py`. Test: not run. Positive: none. Negative: none. Dependency: none. Review: pending. Blocker: this is a tool registry, not a specialist-role registry. Status: `NOT_STARTED`.
+**D1.** Criterion: versioned registry; unavailable roles stay unavailable. Files: `orca/specialists/registry.py`. Test: `tests/test_specialists.py::test_registry_hides_disabled_roles`. Positive: version `orneur.specialists/1` listed only `research` when that was the enabled set. Negative: `coding` raised `role_unavailable`. Dependency: none. Review: pending. Blocker: none for this registry. `orca/agent/tool_registry.py` is unchanged. Status: `VERIFIED_ENGINEERING`.
 
-**D2.** Criterion: dispatch, bounded concurrency, deadline, and cancellation. Files: `orca/agent/runtime.py`. Test: not run. Positive: the module documents a deadline and a single execution path. Negative: not attacked. Dependency: D1. Review: pending. Blocker: not re-qualified and not tied to specialist roles. Status: `PARTIAL`.
+**D2.** Criterion: dispatch, bounded concurrency, deadline, and cancellation. Files: `orca/specialists/orchestrator.py`. Tests: `test_orchestrator_orders_and_aggregates_evidence`, `test_orchestrator_cancel_and_unknown_irreversible`, `test_cancel_during_dispatch_is_observed`. Positive: three dependent specialists ran in order with `max_workers=2`. Negative: pre-cancel and mid-dispatch cancel raised `cancelled`; irreversible work without a receipt stayed `unknown`. Dependency: D1. Review: pending. Blocker: `orca/agent/runtime.py` was not the dispatch path under test. Status: `VERIFIED_ENGINEERING`.
 
-**D3.** Criterion: delegated tools cannot escalate authority. Files: `orca/agent/delegation.py`, `orca/agent/policy.py`. Test: not run. Positive: none this session. Negative: none. Dependency: D2. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
+**D3.** Criterion: delegated tools cannot escalate authority. Files: `orca/specialists/orchestrator.py`. Test: `test_orchestrator_blocks_privilege_escalation_and_cross_tenant`. Positive: a coding task with `code.read` ran only with that grant. Negative: `security.read` on a runtime that only had `code.read` raised `privilege_escalation`; a foreign `tenant_id` raised `tenant_mismatch`. Dependency: D2. Review: pending. Blocker: Phase 8 `orca/agent/delegation.py` was not re-run. Status: `VERIFIED_ENGINEERING`.
 
-**D4.** Criterion: ten real handlers (research, planning, coding, data, retrieval, verification, security, documentation, tools, mission coordination). Files: none for that set. Test: none. Positive: none. Negative: none. Dependency: D1. Review: pending. Blocker: handlers were not added. A count of empty classes would not pass. Status: `NOT_STARTED`.
+**D4.** Criterion: ten real handlers (research, planning, coding, data, retrieval, verification, security, documentation, tools, mission coordination). Files: `orca/specialists/handlers.py`. Test: `test_ten_handlers_are_distinct_and_useful` and `test_coding_refuses_eval_and_does_not_run_it`. Positive: research split two subquestions and invented no sources; planning ordered `a` then `b`; coding listed `add` without executing; data analysis mean 3; retrieval cited only the tenant document; verification matched `digest(record)`; security flagged `AKIA…` and `169.254.169.254`; documentation extracted `ping`; tool execution hashed `abc`; mission coordination refused `OUTCOME_UNKNOWN` as verified. Negative: `eval` is `refused` and `executed` is false; `tool=shell` is `tool_refused`; cycles are `cycle_refused`. Dependency: D1. Review: pending. Blocker: research without fixtures is `unavailable`, not a live search. Status: `VERIFIED_ENGINEERING`.
 
-**D5.** Criterion: dependency order, evidence aggregation, and failure recovery across those handlers. Files: `orca/agent/runtime.py` replan path only. Test: not run. Positive: none. Negative: none. Dependency: D4. Review: pending. Blocker: D4. Status: `NOT_STARTED`.
+**D5.** Criterion: dependency order, evidence aggregation, and failure recovery across those handlers. Files: `orca/specialists/orchestrator.py`. Test: `test_orchestrator_orders_and_aggregates_evidence`. Positive: planning then coding then documentation; `evidence_sha256` was produced. Negative: a failed dependency is `dependency_failed`; unknown irreversible work does not become completed. Dependency: D4. Review: pending. Blocker: durable specialist task rows are in-memory for the call only. Status: `VERIFIED_ENGINEERING`.
 
 ### E — Proof and evidence
 
@@ -85,25 +85,25 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **E4.** Criterion: redaction and tenant boundaries on evidence. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: live mission evidence assertions and `test_http_denies_the_other_user`. Positive: the evidence JSON contained neither `CLICKED` nor the page's instruction sentence, and user B's evidence response did not contain the marker text. Negative: user B received 403. Dependency: C5. Review: pending. Blocker: process logs outside these evidence files were not audited. Status: `VERIFIED_ENGINEERING`.
 
-**E5.** Criterion: an independent party can re-verify a result. Files: evidence JSONL. Test: a reviewer can read the file; no second verifier ran. Positive: none. Negative: none. Dependency: E2. Review: pending. Blocker: no independent verifier. Status: `NOT_STARTED`.
+**E5.** Criterion: an independent party can re-verify a result. Files: `orca/sovereign_mission/verify.py`. Test: `tests/test_evidence_reverify.py`. Positive: `verify_record` and `verify_aggregate` matched recomputed SHA-256; a marker file with the expected text was `verified`. Negative: a wrong aggregate or missing file is `mismatch` / `missing`. Dependency: E2. Review: pending. Blocker: the witness is `local_recompute`. A writer who replaces record, hash, and aggregate together still matches. No external immutable witness exists. Status: `VERIFIED_ENGINEERING`.
 
 ### F — Model gateway
 
-**F1.** Criterion: native families keep canonical identity. Files: `orca/serve/model_identity.py`, `orca/rse/imp1/locks.py`. Test: not run. Positive: locks return false. That was read, not executed as a test. Negative: none. Dependency: none. Review: pending. Blocker: not re-qualified. No model was renamed. Status: `IMPLEMENTED_UNVERIFIED`.
+**F1.** Criterion: native families keep canonical identity. Files: `orca/serve/model_identity.py`, `orca/serve/usage.py`, `orca/rse/imp1/locks.py`. Test: `tests/test_uploads_usage_identity.py::test_model_identity_keeps_external_name` and `test_usage_refuses_paid_and_native_mislabel`. Positive: an OpenAI-backed response kept `served_model=gpt-test` and `backend=openai`. Negative: recording usage as family `genesis` with backend `ollama` raised `native_identity_refused`. Dependency: none. Review: pending. Blocker: no native checkpoint exists. Status: `VERIFIED_ENGINEERING`.
 
 **F2.** Criterion: missing providers return unavailable, not a native name. Files: `orca/serve/model_identity.py`, `orca/serve/routing.py`. Test: not run. Positive: none. Negative: none. Dependency: no authorized local model in this session. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
 
-**F3.** Criterion: streaming, cancellation, and timeouts. Files: `orca/serve/streaming.py`. Test: not run. Positive: none. Negative: none. Dependency: a real model backend. Review: pending. Blocker: no authorized model was called. Status: `PARTIAL`.
+**F3.** Criterion: streaming, cancellation, and timeouts. Files: `orca/serve/streaming.py`. Test: `tests/test_serve_streaming.py` (18 passed, 1 skipped this session). Positive: helper yields in order; client-disconnect tests close the generator. Negative: admission rejects at capacity; shutdown refuses new work. Dependency: a real model backend is still absent. Review: pending. Blocker: no authorized model was called; the skipped case is not a pass. Status: `PARTIAL`.
 
-**F4.** Criterion: fallback cannot present an external model as GENESIS, NOVUS, or AETERNUM. Files: `orca/serve/model_identity.py`. Test: not run. Positive: the module's docstring says a substitution keeps a `substitution_reason`. Negative: not attacked. Dependency: F2. Review: pending. Blocker: behavior was not executed. Status: `IMPLEMENTED_UNVERIFIED`.
+**F4.** Criterion: fallback cannot present an external model as GENESIS, NOVUS, or AETERNUM. Files: `orca/serve/model_identity.py`, `orca/serve/usage.py`. Test: `test_model_identity_keeps_external_name`. Positive: `served_model` stayed `gpt-test` with `substitution_reason=cost_routing_escalation`. Negative: `genesis` did not appear as `served_model`. Dependency: F2. Review: pending. Blocker: full `routing.py` fallback was not executed against a live registry. Status: `VERIFIED_ENGINEERING`.
 
-**F5.** Criterion: usage accounting with no paid call and no download. Files: `orca/serve/metrics.py`. Test: not run. Positive: this session made no paid call and downloaded no model. Negative: the accounting path itself was not tested. Dependency: F2. Review: pending. Blocker: accounting not exercised. Status: `NOT_STARTED`.
+**F5.** Criterion: usage accounting with no paid call and no download. Files: `orca/serve/usage.py`. Test: `test_usage_refuses_paid_and_native_mislabel`. Positive: local backend recorded 3/5 tokens; `paid_calls` stayed 0; the other user's snapshot had 0 calls. Negative: `backend=openai` raised `paid_backend_refused` while spending is unauthorized. Dependency: F2. Review: pending. Blocker: this is process-local, not a billing system. Status: `VERIFIED_ENGINEERING`.
 
 ### G — Code, files, retrieval
 
 **G1.** Criterion: untrusted code runs only inside a real isolation boundary. Files: `orca/mission/container_executor.py`, `orca/mission/sandbox_executor.py`. Test: not run. Positive: none. Negative: none. Dependency: Docker or an equivalent isolator, if the executor requires it. Review: pending. Blocker: not re-qualified. AST filtering is not treated as a pass. Status: `PARTIAL`.
 
-**G2.** Criterion: uploads are size-limited, parsed safely, and isolated by user. Files: not established as a single checked path this session. Test: not run. Positive: none. Negative: browser quarantine is a different gate (A4). Dependency: G1. Review: pending. Blocker: not implemented as this gate. Status: `NOT_STARTED`.
+**G2.** Criterion: uploads are size-limited, parsed safely, and isolated by user. Files: `orca/serve/uploads.py`. Test: `tests/test_uploads_usage_identity.py::test_uploads_are_tenant_separated`. Positive: user A stored and read `note.txt`. Negative: user B `not_found`; `../escape.txt` refused; payload over 1 MiB refused; delete removed the file. Dependency: G1. Review: pending. Blocker: this is directory isolation, not a container. Status: `VERIFIED_ENGINEERING`.
 
 **G3.** Criterion: retrieval returns real citations the caller is allowed to see. Files: `orca/serve/citations.py`. Test: not run. Positive: none. Negative: none. Dependency: an authorized index. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
 
@@ -115,11 +115,11 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **H1.** Criterion: opportunity records with provenance, timestamps, and deduplication from a real source. Files: none on this branch. `orca/core_runtime/opportunity.py` is on PR #115. Test: none here. Positive: none. Negative: none. Dependency: an authorized data source, which was not added. Review: pending. Blocker: no live source, and this branch does not absorb PR #115. Status: `NOT_STARTED`.
 
-**H2.** Criterion: user-owned saved opportunities and an explained ranking. Files: none on this branch. Test: none. Positive: none. Negative: none. Dependency: H1. Review: pending. Blocker: H1. Status: `NOT_STARTED`.
+**H2.** Criterion: user-owned saved opportunities and an explained ranking. Files: `orca/opportunity/bridge.py`. Test: `tests/test_opportunity_voice.py::test_opportunity_unavailable_without_live_feed`. Positive: fixture listings for user A could be saved and ranked. Negative: ranking as another user is `access_denied`; `live_source` save is refused; `execute_external` is `execution_not_authorized`. Dependency: H1. Review: pending. Blocker: listings are caller fixtures, not a live feed. Status: `PARTIAL`.
 
-**H3.** Criterion: speech input and output contracts with an honest unavailable state. Files: none on this branch. `orca/core_runtime/voice.py` is on PR #115. Test: none here. Positive: none. Negative: none. Dependency: a real speech backend. No speech backend was called. Review: pending. Blocker: no backend. Status: `NOT_STARTED`.
+**H3.** Criterion: speech input and output contracts with an honest unavailable state. Files: `orca/voice/contracts.py`. Test: `tests/test_opportunity_voice.py::test_voice_unavailable_and_consent`. Positive: capability reports `NOT_AVAILABLE` and `provider=None`. Negative: `transcribe` with consent raised `speech_unavailable`; without consent raised `consent_required`. Dependency: a real speech backend. No speech backend was called. Review: pending. Blocker: no backend. Status: `VERIFIED_ENGINEERING`.
 
-**H4.** Criterion: audio consent, retention, and deletion. Files: none. Test: none. Positive: none. Negative: none. Dependency: H3. Review: pending. Blocker: H3. Status: `NOT_STARTED`.
+**H4.** Criterion: audio consent, retention, and deletion. Files: `orca/voice/contracts.py`. Test: `test_voice_unavailable_and_consent`. Positive: a synthetic transcript retained with consent could be deleted. Negative: the other user could not read it; transcribe without consent is `consent_required`. Dependency: H3. Review: pending. Blocker: no audio bytes were recognized; retention is in-process. Status: `PARTIAL`.
 
 **H5.** Criterion: authenticated relay for missions and files, with no new OAuth or background permission. Files: `orca/mission/relay_store.py`, `orca/mission/relay_security.py`. Test: not run. Positive: none. Negative: no OAuth provider was enabled by this branch. Dependency: B1. Review: pending. Blocker: not re-qualified and not connected to the browser. Status: `PARTIAL`.
 
@@ -139,7 +139,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **J1.** Criterion: authentication before protected data, deny by default. Files: `orca/sovereign_mission/routes.py`, `orca/sovereign_mission/service.py`, `orca/auth/middleware.py`. Test: `test_http_denies_the_other_user` and `test_unauthorized_cancel_and_revoke_cannot_stop_a_running_mission`. Positive: the owner's bearer token created, approved, and dispatched a marker. Negative: a missing bearer returned 401. The other user's approval, evidence, cancel, and revoke requests returned 403 and did not include the objective. A body field `owner_user_id` did not select the owner. Dependency: C1. Review: pending. Blocker: routes outside `/api/sovereign` were not re-run. Status: `VERIFIED_ENGINEERING`.
 
-**J2.** Criterion: tenant isolation under adversarial access. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_two_users_cannot_read_each_other`, `test_unauthorized_cancel_and_revoke_cannot_stop_a_running_mission`, and the live mission test. Positive: user B could not read, dispatch, collect evidence, cancel, or revoke user A's mission. A denied cancel during `EXECUTING` left A's stop table, live browser handle, row, and marker unchanged. Negative: user B's profile directory was absent. Conversation, memory, and other resource types were not attacked. Dependency: C5. Review: pending. Blocker: isolation is enforced in the service, not by separate OS accounts. Status: `PARTIAL`.
+**J2.** Criterion: tenant isolation under adversarial access. Files: `orca/sovereign_mission/service.py`, `orca/serve/conversations.py`, `orca/memory`, `orca/serve/uploads.py`, `orca/specialists/orchestrator.py`. Tests: mission isolation tests, `test_other_users_cannot_read_search_export_or_delete_a_conversation`, `test_cross_user_memory_does_not_leak_via_recall`, `test_uploads_are_tenant_separated`, `test_orchestrator_blocks_privilege_escalation_and_cross_tenant`. Positive: the other user could not read missions, conversations, memories, or uploads. Negative: OS accounts are still shared. Dependency: C5. Review: pending. Blocker: isolation is in process and path hashes, not separate UIDs. Status: `VERIFIED_ENGINEERING`.
 
 **J3.** Criterion: cancellation is not confirmation, and revocation beats dispatch. Files: `orca/sovereign_mission/service.py`, `orca/browser_engine/engine.py`. Test: `test_revoke_before_dispatch_and_evidence_tamper`, `test_owner_stop_is_durable_before_any_signal`, and `test_live_cancel_revoke_and_crash_do_not_claim_success`. Positive: revoke before dispatch wrote no marker. The owner row reached `CANCELLED` or `REVOKED` before the process stop was armed, and revoke during an open step wrote no marker. Negative: live cancel after `effect_started` was not confirmed, a cancel after the effect flag stayed `OUTCOME_UNKNOWN` across a new process, and live revoke did not report `verified`. A stop entry with no committed owner decision did not cancel the mission. Dependency: B5. Review: pending. Blocker: pause is still absent, so B5 stays partial. Status: `VERIFIED_ENGINEERING`.
 
@@ -149,18 +149,18 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ## Count
 
-`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, C1, E1, E2, E3, E4, J1, J3 (16).
+`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F4, F5, G2, H3, J1, J2, J3 (31).
 
 `INDEPENDENTLY_QUALIFIED`: none.
 
-`IMPLEMENTED_UNVERIFIED`: F1, F4 (2).
+`IMPLEMENTED_UNVERIFIED`: none.
 
-`PARTIAL`: B5, C3, C4, C5, D2, D3, F2, F3, G1, G3, H5, I1, I2, I3, I4, I5, J2, J4, J5 (19).
+`PARTIAL`: C3, C4, F2, F3, G1, G3, H2, H4, H5, I1, I2, I3, I4, I5, J4, J5 (16).
 
-`NOT_STARTED`: C2, D1, D4, D5, E5, F5, G2, G4, G5, H1, H2, H3, H4 (13).
+`NOT_STARTED`: G4, G5, H1 (3).
 
-`BLOCKED_EXTERNAL`: none as a sole status. External blockers are recorded on the gates above (public browser unqualified, no Postgres re-run, no authorized model, no corpus, no founder training grant, no external evidence witness).
+`BLOCKED_EXTERNAL`: none as a sole status. External blockers remain: public browser unqualified, no Postgres re-run, no authorized model, no corpus, no founder training grant, no external evidence witness.
 
-16 + 2 + 19 + 13 = 50. The verified fraction is 16/50. That is 32 percent. It is not 90 percent. The previous verified count on the browser parent was 5/50. This revision adds only the gates whose tests passed in this session.
+31 + 0 + 16 + 3 = 50. The verified fraction is 31/50. That is 62 percent. Independent qualification remains 0/50. H1 stays not started because no authorized live opportunity source exists. H2/H4 are fixture/synthetic contracts only. C3 stays partial: Claude still owns temporary-chat follow-up; this session re-ran conversation tests including restart but did not add temporary-chat coverage.
 
 Training, GPU, spending, corpus generation, protected merge, and production launch remain denied.
