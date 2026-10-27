@@ -4,7 +4,7 @@ Measured on `cursor/backend-programme-ae9d` parent `#121` `637efeceaab65193b31f7
 
 | Metric | Result |
 | --- | --- |
-| Engineering gates at `VERIFIED_ENGINEERING` | 31 / 50 (62%) |
+| Engineering gates at `VERIFIED_ENGINEERING` | 32 / 50 (64%) |
 | Engineering gates at `INDEPENDENTLY_QUALIFIED` | 0 / 50 |
 | Integrated product journeys demonstrated | 0 (A–F). The authenticated local-fixture mission is an API workflow. It is not one of the named product journeys, and no frozen frontend screen was changed. |
 | Official pretraining acceptance | 0 / 95 |
@@ -107,7 +107,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **G3.** Criterion: retrieval returns real citations the caller is allowed to see. Files: `orca/serve/citations.py`. Test: not run. Positive: none. Negative: none. Dependency: an authorized index. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
 
-**G4.** Criterion: synthetic retrieval stays labeled synthetic. Files: not confirmed. Test: not run. Positive: none. Negative: none. Dependency: G3. Review: pending. Blocker: not confirmed in this tree. Status: `NOT_STARTED`.
+**G4.** Criterion: synthetic retrieval stays labeled synthetic. Files: `orca/serve/citations.py`, `orca/specialists/handlers.py`. Test: `tests/test_citation_synthetic_label.py` and specialist retrieval in `test_ten_handlers_are_distinct_and_useful`. Positive: `[D1]` from a fixture kept `synthetic=true`; specialist citations copied the document flag. Negative: an unlabeled uploaded excerpt stayed `synthetic=false`. Dependency: G3. Review: pending. Blocker: this labels caller-supplied flags; it does not detect unlabeled synthetic text automatically. Status: `VERIFIED_ENGINEERING`.
 
 **G5.** Criterion: one authenticated document or code task returns evidence. Files: none for the combined path. Test: none. Positive: none. Negative: none. Dependency: C1, G1, G3. Review: pending. Blocker: journey not built. Status: `NOT_STARTED`.
 
@@ -149,7 +149,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ## Count
 
-`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F4, F5, G2, H3, J1, J2, J3 (31).
+`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F4, F5, G2, G4, H3, J1, J2, J3 (32).
 
 `INDEPENDENTLY_QUALIFIED`: none.
 
@@ -157,10 +157,10 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 `PARTIAL`: C3, C4, F2, F3, G1, G3, H2, H4, H5, I1, I2, I3, I4, I5, J4, J5 (16).
 
-`NOT_STARTED`: G4, G5, H1 (3).
+`NOT_STARTED`: G5, H1 (2).
 
 `BLOCKED_EXTERNAL`: none as a sole status. External blockers remain: public browser unqualified, no Postgres re-run, no authorized model, no corpus, no founder training grant, no external evidence witness.
 
-31 + 0 + 16 + 3 = 50. The verified fraction is 31/50. That is 62 percent. Independent qualification remains 0/50. H1 stays not started because no authorized live opportunity source exists. H2/H4 are fixture/synthetic contracts only. C3 stays partial: Claude still owns temporary-chat follow-up; this session re-ran conversation tests including restart but did not add temporary-chat coverage.
+32 + 0 + 16 + 2 = 50. The verified fraction is 32/50. That is 64 percent. Independent qualification remains 0/50. H1 stays not started because no authorized live opportunity source exists. H2/H4 are fixture/synthetic contracts only. C3 stays partial: Claude still owns temporary-chat follow-up; this session re-ran conversation tests including restart but did not add temporary-chat coverage.
 
 Training, GPU, spending, corpus generation, protected merge, and production launch remain denied.
