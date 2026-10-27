@@ -503,29 +503,63 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         return None
 
 
-def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> None:
+def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> bool:
     """Point the live in-memory window at the active version.
 
     Long-term vector memory is not rewritten. An edit does not erase the
-    earlier text from that store or from the version list.
+    earlier text from that store or from the version list. Called only
+    AFTER message_versions.edit() has already durably committed the new
+    version -- this function's job is purely to keep the in-memory
+    agent._history / memory.short._messages windows (what the CURRENT
+    live session uses as model context) in step with that commit. It
+    must never be allowed to make the caller report the edit itself as
+    failed: the persisted version is the one and only authoritative
+    record (read back correctly on reload via conversations._shown(),
+    which always consults message_versions.active_view() regardless of
+    this function's outcome).
+
+    Returns True if the in-memory copy was kept in step, False if it
+    could not be (and was therefore evicted rather than left stale --
+    see below). Never raises: a failure here is real and is made
+    visible (audit-logged, reflected in the return value), not
+    swallowed, but it is also not conflated with "the edit failed".
     """
     sess = _sessions.get(session_id)
     if sess is None or previous == new_text:
-        return
-    agent = sess._agent
-    if agent is not None:
-        for item in agent._history:
-            if item.get("role") == role and item.get("content") == previous:
-                item["content"] = new_text
-                break
-        try:
+        return True
+    try:
+        agent = sess._agent
+        if agent is not None:
+            for item in agent._history:
+                if item.get("role") == role and item.get("content") == previous:
+                    item["content"] = new_text
+                    break
             sess.persist_to_redis()
+        for msg in sess.memory.short._messages:
+            if msg.role == role and msg.content == previous:
+                msg.content = new_text
+                break
+        return True
+    except Exception:
+        # A partial update here (e.g. agent._history patched but
+        # persist_to_redis failed, or vice versa) would otherwise leave
+        # the in-memory window, the Redis cache, and the authoritative
+        # version store silently disagreeing with each other -- exactly
+        # the inconsistency this boundary must not permit. Rather than
+        # conceal the divergence behind a blanket except, make it
+        # impossible to observe: drop BOTH the in-process session object
+        # and its Redis cache entry so the next access can only rebuild
+        # from the authoritative source (conversations.transcript(),
+        # which _Session.__init__ now consults -- see below), never
+        # replay the stale pre-edit text from either cache.
+        _logger.warning("live conversation sync failed after a committed edit; evicting cached session state for repair on next access", exc_info=True)
+        audit.log("message_edit_live_sync_failed", user_id=sess.user_id, detail={"session_id": session_id, "role": role})
+        _sessions.pop(session_id, None)
+        try:
+            session_store.delete_session(session_id)
         except Exception:
-            _logger.debug("session history sync failed", exc_info=True)
-    for msg in sess.memory.short._messages:
-        if msg.role == role and msg.content == previous:
-            msg.content = new_text
-            break
+            pass
+        return False
 
 
 def _regenerate_text(sess, prompt: str) -> str:
@@ -892,16 +926,41 @@ class _Session:
         if self._restored_history:
             self._agent.load_history(self._restored_history)
         else:
-            # Fallback: no exact turn history available (fresh session, or
-            # Redis disabled/empty) — reconstruct rough context from the
-            # long-term summary store instead. Less precise than Redis's
-            # exact history, only used when that's unavailable.
-            prior = self.memory.load_prior_context()
-            if prior:
-                self._agent.load_history([
-                    {"role": "user", "content": f"[Prior context]\n{prior}"},
-                    {"role": "assistant", "content": "Context loaded."},
-                ])
+            # No exact Redis-cached history (fresh session, Redis
+            # disabled/empty, or -- see _replace_visible_copy() -- this
+            # session's cache was deliberately evicted after a live-sync
+            # failure following a committed edit). Rebuild EXACTLY from
+            # the authoritative, durable source before falling back to a
+            # lossy summary: conversations.transcript() already resolves
+            # each line through message_versions.active_view() (see
+            # conversations._shown()), so this reconstructs the real
+            # conversation with every active edit correctly applied, not
+            # the possibly-stale pre-edit text. Anonymous sessions have no
+            # persisted transcript (session_messages()'s own contract)
+            # and simply yield nothing here, falling through to the
+            # existing summary fallback below as before.
+            rebuilt: list[dict] = []
+            if self.user_id:
+                try:
+                    from orca.serve import conversations as _conversations
+                    page = _conversations.transcript(self.id, limit=1000)
+                    rebuilt = [{"role": m["role"], "content": m["content"]} for m in page.get("messages", [])]
+                except Exception:
+                    rebuilt = []
+            if rebuilt:
+                self._agent.load_history(rebuilt)
+            else:
+                # Fallback: no exact turn history available at all —
+                # reconstruct rough context from the long-term summary
+                # store instead. Less precise than an exact transcript,
+                # only used when neither Redis nor the durable transcript
+                # has anything.
+                prior = self.memory.load_prior_context()
+                if prior:
+                    self._agent.load_history([
+                        {"role": "user", "content": f"[Prior context]\n{prior}"},
+                        {"role": "assistant", "content": "Context loaded."},
+                    ])
 
     @property
     def agent(self):
@@ -2766,9 +2825,18 @@ async def edit_session_message(
         )
     except message_versions.MessageVersionDenied as exc:
         return _message_version_error(exc)
+    # The version is now durably committed, full stop -- everything past
+    # this point is best-effort live-session bookkeeping. A failure here
+    # must never turn into an exception that makes this handler report an
+    # already-committed edit as a definitive failure (per
+    # _message_version_error()'s own contract, this route only ever
+    # returns 400/404/409/422 for a GENUINE pre-commit rejection; a crash
+    # here would be the exact post-commit-500 defect this boundary exists
+    # to close).
+    body = _version_body(view)
     if view.get("created"):
-        _replace_visible_copy(session_id, previous, view.get("active_content") or "", line["role"])
-    return _version_body(view)
+        body["live_sync"] = _replace_visible_copy(session_id, previous, view.get("active_content") or "", line["role"])
+    return body
 
 
 @app.post("/api/session/{session_id}/messages/{message_id}/regenerate")
