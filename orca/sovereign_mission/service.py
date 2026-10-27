@@ -24,8 +24,11 @@ _BROWSER_ARGUMENT_KEYS = frozenset({"url", "actions", "selector", "expect", "tex
 _MARKER_ARGUMENT_KEYS = frozenset({"name", "text"})
 _LIVE: dict[str, object] = {}
 _STOP: dict[str, str] = {}
+_PUMPS: dict[str, "_LeasePump"] = {}
 _LIVE_LOCK = threading.Lock()
-LEASE_GRACE_SECONDS = 45.0
+LEASE_GRACE_SECONDS = 2.0
+HEARTBEAT_INTERVAL_SECONDS = 0.25
+LEASE_PUMP_ENABLED = True
 
 
 class MissionError(Exception):
@@ -40,6 +43,7 @@ class SovereignMission:
         self.fail_outcome_write = fail_outcome_write
         self.worker_id = uuid.uuid4().hex
         self.pid = os.getpid()
+        self._lease_tokens: dict[str, str] = {}
 
     def session_user(self, token: str) -> User:
         payload = verify_token(token) if isinstance(token, str) else None
@@ -208,8 +212,13 @@ class SovereignMission:
         if prepared.get("receipt"):
             return prepared["receipt"]
         generation = prepared["generation"]
+        token = prepared["lease_token"]
+        pump: _LeasePump | None = None
         try:
+            pump = _start_lease_pump(self, mission_id, token, generation)
             outcome = self._execute(user, prepared["mission"], prepared["step"], clock, generation)
+            if pump.failed():
+                raise MissionError("execution_fenced")
         except MissionError as exc:
             if exc.code != "outcome_write_failed":
                 self._settle(mission_id, step_id, exc.code, generation)
@@ -217,8 +226,14 @@ class SovereignMission:
         except Exception as exc:
             self._settle(mission_id, step_id, "execution_interrupted", generation)
             raise MissionError("execution_interrupted") from exc
-        self._finish(user, mission_id, step_id, outcome, generation)
-        return self.reported(user, mission_id)
+        else:
+            self._finish(user, mission_id, step_id, outcome, generation)
+            return self.reported(user, mission_id)
+        finally:
+            if pump is not None:
+                pump.close()
+            self._drop_lease(mission_id, generation)
+            self._lease_tokens.pop(mission_id, None)
 
     def request_cancel(self, user: User, mission_id: str) -> dict:
         unit = Unit()
@@ -286,9 +301,11 @@ class SovereignMission:
     def recover(self, user: User, mission_id: str, *, lease_grace_seconds: float | None = None) -> dict:
         """Fence one owned EXECUTING mission. Does not retry and does not claim success.
 
-        A fresh heartbeat from another worker is not recoverable. An expired
-        lease is not proof that the previous worker has stopped producing
-        effects; recovery only withdraws commit authority and records unknown.
+        A heartbeat newer than the grace interval is not recoverable, including
+        this worker's own renewing lease. The UPDATE also requires the stored
+        heartbeat to still be stale. An expired lease is not proof that the
+        previous worker has stopped producing effects; recovery only withdraws
+        commit authority and records unknown.
         """
         grace = LEASE_GRACE_SECONDS if lease_grace_seconds is None else lease_grace_seconds
         unit = Unit()
@@ -299,9 +316,9 @@ class SovereignMission:
                 return self.get(user, mission_id)
             heartbeat = mission["lease_heartbeat_at"]
             holder = mission["lease_worker_id"]
-            same_worker = holder == self.worker_id
-            age = None if heartbeat is None else (time.time() - float(heartbeat))
-            if holder and not same_worker and age is not None and age < grace:
+            observed = time.time()
+            age = None if heartbeat is None else (observed - float(heartbeat))
+            if holder and age is not None and age < grace:
                 raise MissionError("worker_lease_active")
             steps = unit.conn.execute(
                 "SELECT intent_json, effect_started, outcome_json FROM sovereign_steps WHERE mission_id=?",
@@ -315,12 +332,14 @@ class SovereignMission:
                 new = states.INTERRUPTED_UNKNOWN
             generation = int(mission["lease_generation"] or 0) + 1
             states.transition(mission["state"], new)
+            cutoff = observed - grace
             unit.conn.execute(
                 """
                 UPDATE sovereign_missions
                 SET state=?, updated_at=?, lease_generation=?, lease_worker_id=NULL,
                     lease_token=NULL, lease_heartbeat_at=NULL, lease_pid=NULL
                 WHERE id=? AND state=? AND lease_generation=?
+                  AND (lease_heartbeat_at IS NULL OR lease_heartbeat_at <= ?)
                 """,
                 (
                     new,
@@ -329,6 +348,7 @@ class SovereignMission:
                     mission_id,
                     states.EXECUTING,
                     int(mission["lease_generation"] or 0),
+                    cutoff,
                 ),
             )
             if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
@@ -474,12 +494,14 @@ class SovereignMission:
                 raise MissionError("approval_expired")
             self._require_scope(approval, mission, step, user)
             generation = int(mission["lease_generation"] or 0) + 1
+            token = uuid.uuid4().hex
             intent = {
                 "tool": step["tool"],
                 "destination_sha256": digest({"destination": approval["destination"]}),
                 "scope_sha256": approval["scope_sha256"],
                 "worker_id": self.worker_id,
                 "generation": generation,
+                "lease_token": token,
                 "at": now_iso(now),
             }
             unit.conn.execute(
@@ -496,12 +518,13 @@ class SovereignMission:
                 SET lease_worker_id=?, lease_token=?, lease_generation=?, lease_heartbeat_at=?, lease_pid=?
                 WHERE id=? AND state=?
                 """,
-                (self.worker_id, uuid.uuid4().hex, generation, time.time(), self.pid, mission_id, states.EXECUTING),
+                (self.worker_id, token, generation, time.time(), self.pid, mission_id, states.EXECUTING),
             )
             if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
                 raise MissionError("duplicate_effect_refused")
             unit.commit()
-            return {"mission": dict(mission), "step": dict(step), "generation": generation}
+            self._lease_tokens[mission_id] = token
+            return {"mission": dict(mission), "step": dict(step), "generation": generation, "lease_token": token}
         except Exception:
             unit.rollback()
             raise
@@ -534,7 +557,7 @@ class SovereignMission:
             self._begin_external(mission["id"], step["id"], generation)
             self._heartbeat(mission["id"], generation)
             _refuse_if_stopped(mission["id"], self.worker_id, generation)
-            return _run_marker(user.id, mission["id"], arguments)
+            return _run_marker(user.id, mission["id"], arguments, self.worker_id, generation)
         if step["tool"] == "browser":
             return _run_browser(
                 self,
@@ -749,24 +772,54 @@ class SovereignMission:
 
     def _lease_holds(self, unit: Unit, mission_id: str, generation: int) -> bool:
         row = unit.conn.execute(
-            "SELECT lease_worker_id, lease_generation, state FROM sovereign_missions WHERE id=?",
+            "SELECT lease_worker_id, lease_token, lease_generation, state FROM sovereign_missions WHERE id=?",
             (mission_id,),
         ).fetchone()
         return (
             row is not None
             and row["lease_worker_id"] == self.worker_id
+            and row["lease_token"] == self._lease_tokens.get(mission_id)
             and int(row["lease_generation"] or 0) == generation
         )
 
+    def _drop_lease(self, mission_id: str, generation: int) -> None:
+        """Release this worker's lease after dispatch ends.
+
+        A leftover heartbeat must not block owner recovery of an
+        EXECUTING row whose pump has already stopped.
+        """
+        token = self._lease_tokens.get(mission_id)
+        if not token:
+            return
+        unit = Unit()
+        try:
+            unit.conn.execute(
+                """
+                UPDATE sovereign_missions
+                SET lease_worker_id=NULL, lease_token=NULL, lease_heartbeat_at=NULL, lease_pid=NULL
+                WHERE id=? AND lease_worker_id=? AND lease_token=? AND lease_generation=? AND state=?
+                """,
+                (mission_id, self.worker_id, token, generation, states.EXECUTING),
+            )
+            unit.commit()
+        except Exception:
+            unit.rollback()
+            raise
+        finally:
+            unit.close()
+
     def _heartbeat(self, mission_id: str, generation: int) -> None:
+        token = self._lease_tokens.get(mission_id)
+        if not token:
+            raise MissionError("execution_fenced")
         unit = Unit()
         try:
             unit.conn.execute(
                 """
                 UPDATE sovereign_missions SET lease_heartbeat_at=?, lease_pid=?
-                WHERE id=? AND lease_worker_id=? AND lease_generation=?
+                WHERE id=? AND lease_worker_id=? AND lease_token=? AND lease_generation=?
                 """,
-                (time.time(), self.pid, mission_id, self.worker_id, generation),
+                (time.time(), self.pid, mission_id, self.worker_id, token, generation),
             )
             if unit.conn.execute("SELECT changes() AS n").fetchone()["n"] != 1:
                 raise MissionError("execution_fenced")
@@ -967,11 +1020,12 @@ def _workspace(user_id: str, mission_id: str) -> Path:
     return path
 
 
-def _run_marker(user_id: str, mission_id: str, arguments: dict) -> dict:
+def _run_marker(user_id: str, mission_id: str, arguments: dict, worker_id: str | None = None, generation: int | None = None) -> dict:
     name = arguments.get("name", "marker.txt")
     text = arguments.get("text", "marked")
     if not isinstance(text, str) or len(text) > 64 or "\n" in text:
         raise MissionError("arguments_refused")
+    _refuse_if_stopped(mission_id, worker_id, generation)
     target = _workspace(user_id, mission_id) / name
     if target.exists() or target.is_symlink():
         raise MissionError("duplicate_effect")
@@ -989,6 +1043,7 @@ def _run_marker(user_id: str, mission_id: str, arguments: dict) -> dict:
         os.close(read_fd)
     if observed != expected:
         raise MissionError("receipt_mismatch")
+    _refuse_if_stopped(mission_id, worker_id, generation)
     return {
         "tool": "local_marker",
         "completion": "verified",
@@ -1192,3 +1247,58 @@ def _cancel_live(mission_id: str) -> None:
 
 # sqlite3.Row is the step type at runtime. The alias keeps the signature readable.
 sqlite_step = object
+
+
+class _LeasePump:
+    """Renew the lease while a dispatch is blocked in an external call."""
+
+    def __init__(self, service: SovereignMission, mission_id: str, token: str, generation: int):
+        self.service = service
+        self.mission_id = mission_id
+        self.token = token
+        self.generation = generation
+        self._stop = threading.Event()
+        self._failed = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"orneur-lease-{mission_id[:12]}",
+            daemon=False,
+        )
+
+    def start(self) -> None:
+        if not LEASE_PUMP_ENABLED:
+            return
+        with _LIVE_LOCK:
+            existing = _PUMPS.get(self.mission_id)
+        if existing is not None and existing is not self:
+            existing.close()
+        with _LIVE_LOCK:
+            _PUMPS[self.mission_id] = self
+        self._thread.start()
+
+    def failed(self) -> bool:
+        return self._failed.is_set()
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread.ident is not None:
+            self._thread.join(2.0)
+        with _LIVE_LOCK:
+            if _PUMPS.get(self.mission_id) is self:
+                _PUMPS.pop(self.mission_id, None)
+
+    def _run(self) -> None:
+        try:
+            while not self._stop.is_set():
+                self.service._heartbeat(self.mission_id, self.generation)
+                if self._stop.wait(HEARTBEAT_INTERVAL_SECONDS):
+                    return
+        except Exception:
+            self._failed.set()
+            _signal_stop(self.mission_id, "execution_fenced")
+
+
+def _start_lease_pump(service: SovereignMission, mission_id: str, token: str, generation: int) -> _LeasePump:
+    pump = _LeasePump(service, mission_id, token, generation)
+    pump.start()
+    return pump

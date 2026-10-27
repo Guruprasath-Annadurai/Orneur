@@ -53,6 +53,8 @@ def auth_db(tmp_path, monkeypatch):
 
     mission_service._LIVE.clear()
     mission_service._STOP.clear()
+    mission_service._PUMPS.clear()
+    mission_service.LEASE_PUMP_ENABLED = True
     import orca.sovereign_mission.store as mission_store
 
     mission_store._READY.clear()
@@ -1061,6 +1063,51 @@ def test_live_cancel_revoke_and_crash_do_not_claim_success(auth_db):
             _await_stopped(path)
 
 
+@pytest.mark.skipif(not _chrome_ready(), reason="real Chrome binary is not available; browser mission was not run")
+def test_live_recover_cannot_fence_renewing_browser(auth_db):
+    import orca.sovereign_mission.service as mission_service
+
+    _RELEASE.clear()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Site)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        user, _token, engine = _user("lease-chrome@example.com")
+        mission = engine.create(user, "hold the slow page")
+        planned = engine.save_plan(
+            user,
+            mission["id"],
+            [{
+                "tool": "browser",
+                "arguments": {
+                    "url": f"http://127.0.0.1:{port}/slow",
+                    "actions": ["navigate", "read"],
+                    "expect": "slow",
+                },
+            }],
+        )
+        engine.request_approval(user, mission["id"])
+        step_id = planned["steps"][0]["id"]
+        engine.approve(user, mission["id"], step_id, ttl_seconds=60, now=_live_now())
+        started = _dispatch_later(engine, user, mission["id"], step_id)
+        time.sleep(mission_service.LEASE_GRACE_SECONDS + 0.7)
+        spectator = SovereignMission()
+        with pytest.raises(MissionError) as active:
+            spectator.recover(user, mission["id"])
+        assert active.value.code == "worker_lease_active"
+        _RELEASE.set()
+        box = _join_dispatch(started)
+        assert box["result"]["state"] == "COMPLETED_UNVERIFIED"
+        assert box["result"]["claim"] == "unverified"
+        leftover = [thread for thread in threading.enumerate() if thread.name.startswith("orneur-lease-")]
+        assert leftover == []
+        _await_stopped(_profile(auth_db, user.id, mission["id"]))
+    finally:
+        _RELEASE.set()
+        server.shutdown()
+        _RELEASE.clear()
+
+
 def _sql(auth_db: Path):
     import sqlite3
 
@@ -1169,6 +1216,237 @@ def test_expired_lease_recovery_fences_stale_worker(auth_db):
     with pytest.raises(MissionError) as duplicate:
         operator.dispatch(owner, mission_id, step_id, now=_NOW)
     assert duplicate.value.code == "duplicate_effect_refused"
+
+
+def test_boundary_heartbeats_lose_a_worker_blocked_past_grace(auth_db, monkeypatch):
+    """Failing-before: operation-boundary heartbeats are not a live lease.
+
+    On defb0c5 a blocked marker past LEASE_GRACE_SECONDS was recoverable
+    even though the worker was still inside the effect. This test disables
+    the pump to keep that reproduction.
+    """
+    import orca.sovereign_mission.service as mission_service
+
+    monkeypatch.setattr(mission_service, "LEASE_PUMP_ENABLED", False)
+    owner, _token, engine = _user("stale-block@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="blocked-past-grace")
+    original = mission_service._run_marker
+    started = threading.Event()
+
+    def _block(user_id, mission, arguments, worker_id=None, generation=None):
+        started.set()
+        time.sleep(mission_service.LEASE_GRACE_SECONDS + 1.2)
+        return original(user_id, mission, arguments, worker_id, generation)
+
+    monkeypatch.setattr(mission_service, "_run_marker", _block)
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, mission_id, step_id, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert started.wait(3)
+    time.sleep(mission_service.LEASE_GRACE_SECONDS + 0.7)
+    spectator = SovereignMission()
+    fenced = spectator.recover(owner, mission_id)
+    assert fenced["state"] in {"OUTCOME_UNKNOWN", "INTERRUPTED_UNKNOWN"}
+    assert fenced["claim"] == "unknown"
+    worker.join(5)
+    assert not worker.is_alive()
+    assert "error" in box
+    assert box["error"].code == "execution_fenced"
+    with pytest.raises(MissionError) as duplicate:
+        spectator.dispatch(owner, mission_id, step_id, now=_NOW)
+    assert duplicate.value.code == "duplicate_effect_refused"
+
+
+def test_lease_pump_keeps_a_blocked_worker_past_grace(auth_db, monkeypatch):
+    """Passing-after: a renewing worker cannot be fenced while it is blocked."""
+    import orca.sovereign_mission.service as mission_service
+
+    owner, _token, engine = _user("live-block@example.com")
+    other, _other, _other_engine = _user("live-block-other@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="still-running")
+    original = mission_service._run_marker
+    started = threading.Event()
+
+    def _block(user_id, mission, arguments, worker_id=None, generation=None):
+        started.set()
+        time.sleep(mission_service.LEASE_GRACE_SECONDS + 1.2)
+        return original(user_id, mission, arguments, worker_id, generation)
+
+    monkeypatch.setattr(mission_service, "_run_marker", _block)
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, mission_id, step_id, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    before = {thread.name for thread in threading.enumerate()}
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert started.wait(3)
+    time.sleep(mission_service.LEASE_GRACE_SECONDS + 0.7)
+    spectator = SovereignMission()
+    with pytest.raises(MissionError) as active:
+        spectator.recover(owner, mission_id)
+    assert active.value.code == "worker_lease_active"
+    with pytest.raises(MissionError) as denied:
+        spectator.recover(other, mission_id)
+    assert denied.value.code == "access_denied"
+    worker.join(5)
+    assert not worker.is_alive()
+    assert box["result"]["state"] == "COMPLETED_VERIFIED"
+    assert box["result"]["claim"] == "verified"
+    leftover = [
+        thread for thread in threading.enumerate()
+        if thread.name.startswith("orneur-lease-") and thread.name not in before
+    ]
+    assert leftover == []
+    assert (auth_db / "sovereign" / owner.id / mission_id / "marker.txt").read_text(encoding="utf-8") == "still-running"
+
+
+def test_simultaneous_recover_cancel_revoke_dispatch_shutdown(auth_db):
+    owner, _token, engine = _user("control-owner@example.com")
+    other, other_token, _other_engine = _user("control-other@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="control-plane")
+    entered = threading.Event()
+    release = threading.Event()
+    original = engine._execute
+
+    def _hold(user, mission, step, now, generation=0):
+        entered.set()
+        assert release.wait(5)
+        return original(user, mission, step, now, generation)
+
+    engine._execute = _hold
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, mission_id, step_id, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert entered.wait(3)
+    spectator = SovereignMission()
+    seen: dict = {}
+
+    def _recover():
+        try:
+            spectator.recover(owner, mission_id)
+            seen["recover"] = "ok"
+        except MissionError as exc:
+            seen["recover"] = exc.code
+
+    def _other_cancel():
+        try:
+            engine.request_cancel(other, mission_id)
+            seen["other_cancel"] = "ok"
+        except MissionError as exc:
+            seen["other_cancel"] = exc.code
+
+    def _other_revoke():
+        try:
+            engine.revoke(other, mission_id)
+            seen["other_revoke"] = "ok"
+        except MissionError as exc:
+            seen["other_revoke"] = exc.code
+
+    def _other_dispatch():
+        try:
+            engine.dispatch(other, mission_id, step_id, now=_NOW)
+            seen["other_dispatch"] = "ok"
+        except MissionError as exc:
+            seen["other_dispatch"] = exc.code
+
+    racing = [
+        threading.Thread(target=_recover),
+        threading.Thread(target=_other_cancel),
+        threading.Thread(target=_other_revoke),
+        threading.Thread(target=_other_dispatch),
+    ]
+    for thread in racing:
+        thread.start()
+    for thread in racing:
+        thread.join(3)
+    assert seen["recover"] == "worker_lease_active"
+    assert seen["other_cancel"] == "access_denied"
+    assert seen["other_revoke"] == "access_denied"
+    assert seen["other_dispatch"] == "access_denied"
+    from orca.sovereign_mission.routes import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    forged = client.post(
+        f"/api/sovereign/missions/{mission_id}/recover",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert forged.status_code == 403
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert box["result"]["state"] == "COMPLETED_VERIFIED"
+    restarted = SovereignMission()
+    assert restarted.get(owner, mission_id)["state"] == "COMPLETED_VERIFIED"
+    assert restarted.shutdown() == []
+    idle = engine.shutdown()
+    assert mission_id not in idle
+
+
+def test_stale_worker_cannot_renew_after_generation_fence(auth_db):
+    owner, _token, engine = _user("token-fence@example.com")
+    mission_id, step_id = _marker_mission(engine, owner, text="must-not-renew")
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _after_effect(user, mission, step, now, generation=0):
+        engine._begin_external(mission["id"], step["id"], generation)
+        entered.set()
+        assert release.wait(5)
+        engine._heartbeat(mission["id"], generation)
+        return {
+            "tool": "local_marker",
+            "completion": "verified",
+            "matched": True,
+            "witness": "application_observed",
+            "authority_class": "independent_receipt",
+            "content_sha256": "x",
+        }
+
+    engine._execute = _after_effect
+    box: dict = {}
+
+    def _run():
+        try:
+            box["result"] = engine.dispatch(owner, mission_id, step_id, now=_NOW)
+        except MissionError as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run)
+    worker.start()
+    assert entered.wait(3)
+    operator = SovereignMission()
+    fenced = operator.recover(owner, mission_id, lease_grace_seconds=0)
+    assert fenced["state"] == "OUTCOME_UNKNOWN"
+    release.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert box["error"].code == "execution_fenced"
+    with pytest.raises(MissionError) as duplicate:
+        engine.dispatch(owner, mission_id, step_id, now=_NOW)
+    assert duplicate.value.code == "duplicate_effect_refused"
+    leftover = [thread for thread in threading.enumerate() if thread.name.startswith("orneur-lease-")]
+    assert leftover == []
 
 
 def test_approval_scope_binds_complete_intent(auth_db):
