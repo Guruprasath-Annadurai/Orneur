@@ -33,7 +33,7 @@ Also `FAILED`, `CANCELLED`, `REVOKED`, `INTERRUPTED_UNKNOWN`, and `OUTCOME_UNKNO
 
 `COMPLETED_VERIFIED` is reachable only from `VERIFYING` with an intact evidence hash and an independent receipt (`local_marker` file bytes). `COMPLETED_UNVERIFIED` is the honest terminal when the only observation is untrusted DOM text or a DOM mutation. `INTERRUPTED_UNKNOWN` and `OUTCOME_UNKNOWN` cannot become either completed state.
 
-Ordinary construction of `SovereignMission` does not sweep `EXECUTING` rows. Each instance has a worker id, takes a lease at dispatch, and heartbeats while it holds execution authority. A second live instance cannot recover a mission whose lease is still fresh. Recovery is `POST /missions/{id}/recover` (owner session only) or `shutdown()` for this worker's own leases. An expired lease is fenced and recorded as unknown; it is not proof the previous worker has stopped, and it is not a retry. A fenced worker cannot commit `COMPLETED_VERIFIED`. SQLite on one host is not a multi-host lock.
+Ordinary construction of `SovereignMission` does not sweep `EXECUTING` rows. Each instance has a worker id, takes a lease at dispatch, and a dedicated pump renews that lease (worker id, lease token, and generation) while execution is blocked. Recovery is `POST /missions/{id}/recover` (owner session only) or `shutdown()` for this worker's own leases. Recover refuses a heartbeat newer than `LEASE_GRACE_SECONDS` (2s) with a compare-and-swap on `lease_heartbeat_at`. An expired lease is fenced and recorded as unknown; it is not proof the previous worker has stopped, and it is not a retry. A fenced worker cannot renew or commit `COMPLETED_VERIFIED`. SQLite on one host is not a multi-host lock.
 
 Claims:
 
@@ -105,9 +105,10 @@ These are not independently enforced here:
 - Tenant isolation is the service check `owner_user_id == tenant_id == authenticated user`. Both users share the service OS account. Mode `0600` evidence does not stop that account.
 - A database writer who replaces `record_json`, `record_sha256`, and `evidence_sha256` together is not detected. A partial edit is `withheld`.
 - Browser `COMPLETED_UNVERIFIED` is still not an external transaction witness. Independent receipts for browser effects are not implemented on the local fixture. The grant still cannot grow.
-- Worker leases are SQLite-local. Tests do not establish multi-host readiness. Lease grace is 45 seconds so a slow Chrome DevTools handshake is not treated as a dead worker.
-- Recovery of an expired lease fences commit authority; it does not prove the previous process is dead.
-- Chrome has CPU and open-file limits and no memory cap. The mission path refuses a binary whose bytes contain `--no-sandbox` because the browser engine does. The live crash test checked the mission Chrome command line. Chrome profiles are under `/tmp/orneur-chrome/<scope>/c` so the DevTools singleton socket fits `AF_UNIX`; a nested mission workspace path was observed to make Chrome exit before CDP was ready.
+- Worker leases are SQLite-local. Tests do not establish multi-host readiness. A pump thread renews the lease every 250ms; grace is two seconds of missed heartbeats. That is not a distributed lock.
+- Recovery of an expired lease fences commit authority; it does not prove the previous process is dead. The pump does not stop an in-flight write or Chrome process; it only stops the fenced worker from committing a verified outcome.
+- Same-UID Chrome isolation is the hashed profile directory and the grant. Another process as the same OS user can still read `/tmp/orneur-chrome` and `/proc`.
+- Chrome has CPU and open-file limits and no memory cap. Profile contents are not a filesystem jail. The mission path refuses a binary whose bytes contain `--no-sandbox` because the browser engine does. The live crash test checked the mission Chrome command line. Chrome profiles are under `/tmp/orneur-chrome/<scope>/c` so the DevTools singleton socket fits `AF_UNIX`; a nested mission workspace path was observed to make Chrome exit before CDP was ready.
 - There is no pause or resume.
 - An unknown outcome is not retried. That prevents a duplicate effect; it also leaves a mission that never reached the peer stuck.
 - `effect_started` is committed immediately before the external call. A crash in that window is unknown even if the peer saw nothing.
