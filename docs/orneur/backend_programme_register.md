@@ -27,5 +27,17 @@ Claude owns conversation B11 follow-up. This branch does not rewrite `orca/serve
 - H1/H2/H3/H4 honest `NOT_AVAILABLE` opportunity and voice contracts. No live listings or speech backend.
 - G2 tenant upload store with size and name limits.
 - F5 local usage accounting that refuses paid backends while spending is unauthorized.
+- F2 honest availability discovery (`NOT_AVAILABLE` for native families and paid backends while spending is denied).
+- G3/G5 authenticated document task: upload, keyword cite, excerpt hash, delete without replica claims.
+- G1 untrusted execution remains disabled without docker.
 
 Public browser remains unqualified. Training remains `NO-GO`.
+
+## Exact-head CI
+
+| Head | Run | Result |
+| --- | --- | --- |
+| `00c30785d45af0097b9294e1ddce9ad1ad7cbda4` | https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40569660383 | 9/9 success |
+| `43020779f23d3cc475a341cbd02d52ea6a2079cf` | https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40569838397 | 9/9 success |
+
+Independent qualification is not awarded by a green CI badge.

@@ -4,7 +4,7 @@ Measured on `cursor/backend-programme-ae9d` parent `#121` `637efeceaab65193b31f7
 
 | Metric | Result |
 | --- | --- |
-| Engineering gates at `VERIFIED_ENGINEERING` | 32 / 50 (64%) |
+| Engineering gates at `VERIFIED_ENGINEERING` | 35 / 50 (70%) |
 | Engineering gates at `INDEPENDENTLY_QUALIFIED` | 0 / 50 |
 | Integrated product journeys demonstrated | 0 (A–F). The authenticated local-fixture mission is an API workflow. It is not one of the named product journeys, and no frozen frontend screen was changed. |
 | Official pretraining acceptance | 0 / 95 |
@@ -91,7 +91,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **F1.** Criterion: native families keep canonical identity. Files: `orca/serve/model_identity.py`, `orca/serve/usage.py`, `orca/rse/imp1/locks.py`. Test: `tests/test_uploads_usage_identity.py::test_model_identity_keeps_external_name` and `test_usage_refuses_paid_and_native_mislabel`. Positive: an OpenAI-backed response kept `served_model=gpt-test` and `backend=openai`. Negative: recording usage as family `genesis` with backend `ollama` raised `native_identity_refused`. Dependency: none. Review: pending. Blocker: no native checkpoint exists. Status: `VERIFIED_ENGINEERING`.
 
-**F2.** Criterion: missing providers return unavailable, not a native name. Files: `orca/serve/model_identity.py`, `orca/serve/routing.py`. Test: not run. Positive: none. Negative: none. Dependency: no authorized local model in this session. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
+**F2.** Criterion: missing providers return unavailable, not a native name. Files: `orca/serve/availability.py`. Test: `tests/test_model_availability.py`. Positive: `discover(installed=[])` reported GENESIS/NOVUS/AETERNUM and Ollama as `NOT_AVAILABLE`. Negative: a missing resolver returned `provider_unavailable` with `served_model=None`; an OpenAI resolution while spending is denied returned `paid_backend_refused` and did not keep `gpt-test`. Dependency: no authorized local model in this session. Review: pending. Blocker: `resolve_tier_backend` itself was not rewritten. Status: `VERIFIED_ENGINEERING`.
 
 **F3.** Criterion: streaming, cancellation, and timeouts. Files: `orca/serve/streaming.py`. Test: `tests/test_serve_streaming.py` (18 passed, 1 skipped this session). Positive: helper yields in order; client-disconnect tests close the generator. Negative: admission rejects at capacity; shutdown refuses new work. Dependency: a real model backend is still absent. Review: pending. Blocker: no authorized model was called; the skipped case is not a pass. Status: `PARTIAL`.
 
@@ -101,15 +101,15 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ### G — Code, files, retrieval
 
-**G1.** Criterion: untrusted code runs only inside a real isolation boundary. Files: `orca/mission/container_executor.py`, `orca/mission/sandbox_executor.py`. Test: not run. Positive: none. Negative: none. Dependency: Docker or an equivalent isolator, if the executor requires it. Review: pending. Blocker: not re-qualified. AST filtering is not treated as a pass. Status: `PARTIAL`.
+**G1.** Criterion: untrusted code runs only inside a real isolation boundary. Files: `orca/code/untrusted.py`, `orca/mission/sandbox_executor.py`. Test: `tests/test_authorized_document_task.py::test_untrusted_code_stays_disabled_without_isolator`. Positive: none — execution is refused. Negative: with no docker binary, `execute` raised `isolation_unavailable`. Dependency: Docker or an equivalent isolator. Review: pending. Blocker: this host has no docker; untrusted execution stays disabled. AST filtering is not treated as a pass. Status: `PARTIAL`.
 
 **G2.** Criterion: uploads are size-limited, parsed safely, and isolated by user. Files: `orca/serve/uploads.py`. Test: `tests/test_uploads_usage_identity.py::test_uploads_are_tenant_separated`. Positive: user A stored and read `note.txt`. Negative: user B `not_found`; `../escape.txt` refused; payload over 1 MiB refused; delete removed the file. Dependency: G1. Review: pending. Blocker: this is directory isolation, not a container. Status: `VERIFIED_ENGINEERING`.
 
-**G3.** Criterion: retrieval returns real citations the caller is allowed to see. Files: `orca/serve/citations.py`. Test: not run. Positive: none. Negative: none. Dependency: an authorized index. Review: pending. Blocker: not re-qualified. Status: `PARTIAL`.
+**G3.** Criterion: retrieval returns real citations the caller is allowed to see. Files: `orca/docs/authorized_task.py`, `orca/serve/citations.py`. Test: `tests/test_authorized_document_task.py::test_authenticated_document_task_cites_only_owner_bytes`. Positive: citations pointed at `note.txt` and excerpt hashes matched the supplied passages. Negative: user B could not read user A's upload. Dependency: G2. Review: pending. Blocker: keyword retrieval, not live Deep RAG / Ollama embeddings. Status: `VERIFIED_ENGINEERING`.
 
 **G4.** Criterion: synthetic retrieval stays labeled synthetic. Files: `orca/serve/citations.py`, `orca/specialists/handlers.py`. Test: `tests/test_citation_synthetic_label.py` and specialist retrieval in `test_ten_handlers_are_distinct_and_useful`. Positive: `[D1]` from a fixture kept `synthetic=true`; specialist citations copied the document flag. Negative: an unlabeled uploaded excerpt stayed `synthetic=false`. Dependency: G3. Review: pending. Blocker: this labels caller-supplied flags; it does not detect unlabeled synthetic text automatically. Status: `VERIFIED_ENGINEERING`.
 
-**G5.** Criterion: one authenticated document or code task returns evidence. Files: none for the combined path. Test: none. Positive: none. Negative: none. Dependency: C1, G1, G3. Review: pending. Blocker: journey not built. Status: `NOT_STARTED`.
+**G5.** Criterion: one authenticated document or code task returns evidence. Files: `orca/docs/authorized_task.py`. Test: `tests/test_authorized_document_task.py`. Positive: upload, keyword retrieval, citation hashes, and `verified=true` for user A's document; delete reported `local_absent` and did not claim other replicas. Negative: user B `not_found` on A's file; untrusted code is `isolation_unavailable`. Dependency: G2, G3. Review: pending. Blocker: not a live model-grounded chat turn. Status: `VERIFIED_ENGINEERING`.
 
 ### H — Opportunity, voice, relay
 
@@ -149,18 +149,18 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ## Count
 
-`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F4, F5, G2, G4, H3, J1, J2, J3 (32).
+`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F2, F4, F5, G2, G3, G4, G5, H3, J1, J2, J3 (35).
 
 `INDEPENDENTLY_QUALIFIED`: none.
 
 `IMPLEMENTED_UNVERIFIED`: none.
 
-`PARTIAL`: C3, C4, F2, F3, G1, G3, H2, H4, H5, I1, I2, I3, I4, I5, J4, J5 (16).
+`PARTIAL`: C3, C4, F3, G1, H2, H4, H5, I1, I2, I3, I4, I5, J4, J5 (14).
 
-`NOT_STARTED`: G5, H1 (2).
+`NOT_STARTED`: H1 (1).
 
 `BLOCKED_EXTERNAL`: none as a sole status. External blockers remain: public browser unqualified, no Postgres re-run, no authorized model, no corpus, no founder training grant, no external evidence witness.
 
-32 + 0 + 16 + 2 = 50. The verified fraction is 32/50. That is 64 percent. Independent qualification remains 0/50. H1 stays not started because no authorized live opportunity source exists. H2/H4 are fixture/synthetic contracts only. C3 stays partial: Claude still owns temporary-chat follow-up; this session re-ran conversation tests including restart but did not add temporary-chat coverage.
+35 + 0 + 14 + 1 = 50. The verified fraction is 35/50. That is 70 percent. Independent qualification remains 0/50. H1 stays not started because no authorized live opportunity source exists. Pretraining I-gates stay partial: authorization and checkpoint tests passed here; sentinel child tests failed on this host (`pydantic` missing in the isolated interpreter) and are not counted as a pass. Exact-head CI for `43020779f23d3cc475a341cbd02d52ea6a2079cf`: GitHub Actions run `40569838397` (9/9).
 
 Training, GPU, spending, corpus generation, protected merge, and production launch remain denied.
