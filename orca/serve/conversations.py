@@ -80,18 +80,64 @@ def _iter_file(p: Path) -> Iterator[dict]:
         return
 
 
+def _shown(session_id: str, rec: dict) -> tuple[str, dict]:
+    """Active version text when one exists. The JSONL line is not rewritten."""
+    meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+    message_id = meta.get("message_id")
+    extra: dict = {}
+    if isinstance(message_id, str):
+        extra["message_id"] = message_id
+        try:
+            from orca.serve import message_versions
+
+            view = message_versions.active_view(session_id, message_id)
+        except Exception:
+            view = None
+        if view is not None:
+            extra["version_id"] = view["version_id"]
+            extra["version_count"] = view["version_count"]
+            extra["edited"] = view["edited"]
+            return view["content"], extra
+    return rec["content"], extra
+
+
+def find_message(session_id: str, message_id: str) -> dict | None:
+    for rec in _iter_file(_path(session_id)):
+        meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+        if meta.get("message_id") == message_id:
+            return rec
+    return None
+
+
+def preceding_user_message(session_id: str, message_id: str) -> dict | None:
+    previous = None
+    for rec in _iter_file(_path(session_id)):
+        if rec.get("role") == "user":
+            previous = rec
+        meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+        if meta.get("message_id") == message_id:
+            return previous if rec.get("role") == "assistant" else None
+    return None
+
+
 def transcript(session_id: str, *, limit: int = 200, offset: int = 0) -> dict:
     limit = max(1, min(int(limit), 1000))
     offset = max(0, int(offset))
     msgs = list(_iter_file(_path(session_id)))
     page = msgs[offset: offset + limit]
+    rendered = []
+    for i, message in enumerate(page):
+        content, extra = _shown(session_id, message)
+        item = {"index": offset + i, "role": message["role"], "content": content, "timestamp": message.get("ts"), **extra}
+        if message.get("meta"):
+            item["meta"] = message["meta"]
+        rendered.append(item)
     return {
         "session_id": session_id,
         "total": len(msgs),
         "offset": offset,
         "limit": limit,
-        "messages": [{"index": offset + i, "role": m["role"], "content": m["content"], "timestamp": m.get("ts"), **({"meta": m["meta"]} if m.get("meta") else {})}
-                     for i, m in enumerate(page)],
+        "messages": rendered,
     }
 
 
@@ -130,12 +176,13 @@ def search(session_ids: list[str], titles: dict[str, str], query: str, *, limit:
             matches += 1
             first = ("title", title, title.casefold().index(q))
         for m in _iter_file(_path(sid)):
-            c = m["content"].casefold()
+            content, _extra = _shown(sid, m)
+            c = content.casefold()
             n = c.count(q)
             if n:
                 matches += n
                 if first is None:
-                    first = (m["role"], m["content"], c.index(q))
+                    first = (m["role"], content, c.index(q))
         if matches:
             where, text, idx = first
             results.append({"session_id": sid, "title": title, "matches": matches, "snippet": _snippet(text, idx, len(q)), "in": where,
@@ -148,7 +195,8 @@ def export_markdown(session_id: str, title: str) -> str:
     lines = [f"# {title}", f"\n_Exported from ORNEUR — {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}_\n", "---\n"]
     for m in _iter_file(_path(session_id)):
         who = {"user": "**You**", "assistant": "**ORNEUR**"}.get(m["role"], f"**{m['role']}**")
-        lines.append(f"{who}\n\n{m['content']}\n")
+        content, _extra = _shown(session_id, m)
+        lines.append(f"{who}\n\n{content}\n")
         meta = m.get("meta") or {}
         ident = meta.get("model_identity") or {}
         if m["role"] == "assistant" and ident.get("served_model"):

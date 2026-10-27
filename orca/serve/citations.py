@@ -55,17 +55,20 @@ def build_sources(*, answer: str, session_id: str | None, rag_result=None, evide
         text = info.get("text", "") or ""
         idx = int(info.get("chunk_idx", 0) or 0)
         filename = info.get("filename", "") or ""
-        sources.append({
+        source = {
             "ref": ref,
             "kind": "uploaded_document",
             "filename": filename,
-            "doc_id": _doc_id_for(session_id, filename),
+            "doc_id": info.get("doc_id") or _doc_id_for(session_id, filename),
             "locator": {"type": "chunk", "chunk_index": idx},
             "excerpt": text[:_EXCERPT_CHARS],
             "excerpt_sha256": hashlib.sha256(text.encode()).hexdigest(),
             "retrieved_at": when,
             "cited_in_answer": bool(re.search(rf"\[{re.escape(ref)}\]", answer or "")),
-        })
+        }
+        if info.get("content_sha256"):
+            source["content_sha256"] = info["content_sha256"]
+        sources.append(source)
 
     for ev in evidence_passages or []:                       # Truth Fabric path: the passages it really supplied, in [D#] order
         text = ev.get("text", "") or ""
@@ -101,8 +104,17 @@ def build_sources(*, answer: str, session_id: str | None, rag_result=None, evide
         "retrieved_at": when if retrieval_performed else None,
     }
     if rag_result is not None:
-        summary["retrieval"] = {"method": "deep_rag", "rounds": rag_result.retrieval_rounds, "sufficiency_confidence": rag_result.sufficiency_confidence,
-                                "used_fallback": rag_result.used_fallback}
+        authorized_method = getattr(rag_result, "authorized_method", None)
+        retrieval = {
+            "method": authorized_method or "deep_rag",
+            "rounds": rag_result.retrieval_rounds,
+            "sufficiency_confidence": rag_result.sufficiency_confidence,
+            "used_fallback": rag_result.used_fallback,
+        }
+        if authorized_method:
+            retrieval["production_neural"] = bool(getattr(rag_result, "production_neural", False))
+            retrieval["tool_grant"] = False
+        summary["retrieval"] = retrieval
     if evidence_state is not None:
         summary["evidence_state"] = evidence_state
         if citation_coverage is not None:
