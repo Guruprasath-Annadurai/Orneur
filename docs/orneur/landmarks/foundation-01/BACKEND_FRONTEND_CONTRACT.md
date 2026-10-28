@@ -1,8 +1,19 @@
 # Backend ↔ Frontend Contract — FOUNDATION LANDMARK-01
 
 Canonical contract for Claude’s browser-facing LANDMARK-01 integration.  
-**Backend tip (engineering):** see `FOUNDATION_01_ANTIGRAVITY_HANDOFF.md` for the exact SHA.  
-**Cursor does not redesign `conversation.html`.** Frontend changes required by this contract are Claude’s.
+**Backend tip:** see `FOUNDATION_01_TIP_SHA.txt` / PR #132 HEAD.  
+**Cursor does not redesign `conversation.html` or Claude’s frontend branch.** Frontend changes required by this contract are Claude’s.
+
+## Claude — copyable handoff (required FE changes)
+
+1. **Before generation:** `fetch`/`XHR` to `POST /api/stream`. If `status` is not 200 **or** `Content-Type` is not `text/event-stream`, parse **JSON body** as an admission error (`auth_required` 401, `model_access_denied` 402, `content_refused` 400, `not_found` 404, `quota_exceeded` 429). Do **not** attach an EventSource/SSE parser.
+2. **After admission:** parse SSE events (`session` → `generation` → `model` → `stream` → `chunk*` → `done`).
+3. **Persistence:** delivered `chunk` text ≠ SQLite commit. On `done`, if `user_message_id` is null/missing, treat history as unconfirmed; always reload `GET /api/session/{session_id}/messages` for SoT.
+4. Use server `session_id`, `generation_id`, `message_id`, `user_message_id`, and `model_identity` — never invent client-side authority for ownership or model entitlement.
+5. Edits: `POST /api/session/{session_id}/messages/{message_id}/edits` then refresh context from messages API.
+6. Logout: `POST /api/auth/logout` (or logout-all); clear bearer; subsequent calls with old token must surface 401.
+7. Temporary chat: create via temporary session API; on close/expiry do not expect transcript resurrection.
+8. Retries: prefer `Idempotency-Key` / consumed `request_id` replay rules; do not double-submit blindly after uncertain network.
 
 ## Authentication
 
@@ -62,7 +73,7 @@ When admission fails **before** generation starts, the response is ordinary JSON
 | `not_found` (foreign/unowned session) | 404 |
 | `auth_required` | 401 |
 
-Claude should check `response.status` / `Content-Type` before attaching an EventSource parser. Zero model dispatch on these refusals.
+Claude **must** inspect HTTP status and `Content-Type` before parsing SSE. Zero model dispatch on these refusals.
 
 ### Successful stream (`text/event-stream`)
 
@@ -97,6 +108,7 @@ Rules:
 - Owner only.
 - Creates a new message version; subsequent model context uses active version and drops invalidated tail after the edit point.
 - Idempotency key supported when provided by client headers (see route).
+- After edit, reload messages API before next generation.
 
 ## Transcript retrieval
 
@@ -111,11 +123,11 @@ Rules:
 { "error": { "code": "quota_exceeded", "message": "...", "used": 50, "limit": 50 } }
 ```
 
-Concurrent admits at the limit: only the permitted count succeed. Consumed `request_id` replay returns stored response without redispatch when fingerprint matches.
+On stream, quota may also arrive as HTTP JSON **429** before SSE starts. Concurrent admits at the limit: only the permitted count succeed. Consumed `request_id` replay returns stored response without redispatch when fingerprint matches.
 
 ## Model identity
 
-- Server-assigned identity object is authoritative.
+- Server-assigned `model_identity` is authoritative (includes resolved provider/backend facts the server chooses to expose).
 - Client `model_variant` is a request hint, not an entitlement proof.
 - GENESIS / NOVUS / AETERNUM are native programmes — not Ollama aliases. Unauthorized native identities must be refused.
 - Ollama tags with colons (e.g. `llama3.2:1b`) are preserved via colon-safe deployment ids.
@@ -133,9 +145,12 @@ Concurrent admits at the limit: only the permitted count succeed. Consumed `requ
 
 ## Persistence confirmation
 
-- Durable truth is SQLite commit success.
-- `done` / chat response after persist attempt; treat history reload from messages API as SoT after refresh.
-- Redis is advisory cache; never the sole commit authority.
+- Durable truth is SQLite `commit_turn` success (fencing epoch + fence token).
+- Redis `persist_to_redis` is advisory cache only — never sole commit authority.
+- JSONL / episodic files are derived; do not treat them as SoT.
+- `/api/chat` returns model text after a best-effort `_persist_turn`; it does **not** emit a `saved: true` claim. On commit failure the HTTP body still carries delivered text — reload `GET /api/session/{id}/messages` for authoritative history.
+- `/api/stream` `done` always carries the generation `message_id`. `user_message_id` is present only when SQLite commit succeeded; `null`/`omitted` means commit did not confirm — reload messages API.
+- Delivered SSE chunks ≠ confirmed persistence.
 
 ## Retry semantics
 

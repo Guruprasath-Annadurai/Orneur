@@ -1,6 +1,6 @@
 # REAL_OLLAMA_AND_SERVING_REPORT
 
-**Tip:** `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c`
+**Functional tip:** `2b6b6de8eccb2acbfaa5ece7ba52cebee8c357c8` (audit PR #132 HEAD after evidence freeze)
 
 ## Environment (this Cloud Agent run)
 
@@ -8,9 +8,9 @@
 |---|---|
 | Ubuntu | Available (container/VM) |
 | Python 3.12 + project venv | Installed via `uv sync --extra dev --extra redis --extra postgres` |
-| Real Redis | Not proven running for this tip’s soak |
+| Real Redis | **Not available** (`redis-cli` missing; soak unverified) |
 | SQLite | Used in-process for tests |
-| Real Ollama + `llama3.2:1b` | **Not available in this environment at report time** |
+| Real Ollama + `llama3.2:1b` | **Not available** (no daemon on `:11434`) |
 | Docker | Available for CI-style smoke; not used for live model here |
 
 ## Unit / fixture evidence (not live Ollama latency claims)

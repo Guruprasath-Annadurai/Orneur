@@ -1,71 +1,75 @@
 # FOUNDATION_01_FINAL_ENGINEERING_REPORT
 
 **Milestone:** FOUNDATION LANDMARK-01 — Secure and Reliable ORNEUR Runtime  
-**Owner:** Cursor (engineering). **Independent qualification:** Antigravity (not claimed here).  
+**Owner:** Cursor (engineering). **Independent qualification:** Antigravity (not claimed).  
 **Branch:** `cursor/foundation-landmark-01-backend-closure-1cdf`  
-**Exact SHA:** `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c` (docs tip; code equivalent `7c8f7b0` + landmark docs)  
+**Draft PR:** https://github.com/Guruprasath-Annadurai/Orneur/pull/132  
+**Functional CI tip (product + CI recovery):** `2b6b6de8eccb2acbfaa5ece7ba52cebee8c357c8`  
+**Authoritative audit target:** GitHub PR #132 HEAD after evidence-freeze commit (see `FOUNDATION_01_TIP_SHA.txt`)  
 **Date:** 28 October 2026 (Asia/Calcutta)
 
-## Starting baseline
+## Engineering verdict
 
-Refreshed open PRs at assignment:
+**`VERIFIED_ENGINEERING`** at functional tip `2b6b6de…` — mandatory exact-head CI green.  
+**Not** independently qualified. **Not** production-ready.
 
-| PR | Tip SHA | CI (refreshed) |
-|---|---|---|
-| #125 | `9298b15…` | 9/9 SUCCESS |
-| #126 | `7ea44ae…` | 9/9 SUCCESS |
-| #127 | `2222508…` | 9/9 SUCCESS |
-| #128 | `a6def68…` | 9/9 SUCCESS |
-| #129 | `485ca95…` | 9/9 SUCCESS; merge CONFLICTING |
-| #130 | `497073d…` | 8 SUCCESS + Deterministic pending at refresh |
-| #131 | `040d694…` | 9/9 SUCCESS |
-
-`main` remains far behind (`20a8546`, PR #51 merge) — work continues on isolated Cursor stacks, not protected merges.
+Full corrective narrative: `FOUNDATION_01_CORRECTIVE_CLOSURE_REPORT.md`.
 
 ## Selected architecture
 
-**SQLite fencing epochs (PR #130).** Redis is advisory. JSONL is derived. See `AUTHORITATIVE_STORAGE_DECISION.md`.
+**SQLite fencing epochs (PR #130).** Redis advisory. JSONL derived. Competing Redis-callback SoT (#131) rejected. See `AUTHORITATIVE_STORAGE_DECISION.md`.
 
-## Completed implementation (this tip)
+## Completed implementation
 
-1. Consolidated PR #126 (multi-turn context, Ollama colon-safe IDs, temporary chat, message versions) onto #130 fencing base.
-2. Fixed `get_current_user_optional` — invalid credentials fail closed (401).
-3. Added `orca/serve/admission.py` — unified admit_serving for chat/stream/ultra/vision.
-4. Replaced unsafe check-then-increment on chatbot routes with atomic reservation + consume/release.
-5. SQLite turn meta carries `user_message_id` for edit overlays; `find_message` reads SQLite.
-6. Temporary-chat lock unlink after flock release.
-7. Landmark docs under `docs/orneur/landmarks/foundation-01/`.
+1. Consolidated PR #126 (multi-turn, colon-safe Ollama IDs, temporary chat, message versions) onto #130 fencing.
+2. `get_current_user_optional` fail-closed — present invalid credentials → **401**.
+3. `orca/serve/admission.py` — `admit_serving` for chat / stream / ultra / vision / cognitive.
+4. Atomic reservation + consume / release / replay (no check-then-increment race on those routes).
+5. Stream pre-dispatch refusals as HTTP JSON (401/402/400/404/429) before SSE.
+6. StreamRedactor DLP retained; ownership → non-leaking 404; temp-chat privacy tests.
+7. CI recovery: G006 revoked-key 401; S2 stream HTTP JSON expectations; contract update.
 
-## Defect corrections (actual)
+## Corrected CI failures (this closeout)
 
-- Invalid bearer → anonymous inference (middleware).
-- Dual transcript SoT (#130 vs #131) — decision + single engine on branch.
-- Chat/stream quota race — atomic admission.
-- Missing multi-turn context on fencing branch — merge #126.
-- Stream DLP preserved through merge (StreamRedactor retained).
+| Failed SHA | Runs | Cause | Fix SHA |
+|---|---|---|---|
+| `1ffb7b8562de0dd819833c93471599692946f666` | `40719785862`, `40719797352` | Obsolete G006/S2 expectations vs stronger auth + stream admission | `2b6b6de8eccb2acbfaa5ece7ba52cebee8c357c8` |
 
-## Test summary (this environment)
+## Exact-head CI (functional tip `2b6b6de…`)
+
+| Workflow | Run ID | Result |
+|---|---|---|
+| Test Suite (push) | [40733516543](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40733516543) | **9/9 SUCCESS** |
+| Test Suite (PR) | [40733526194](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40733526194) | **9/9 SUCCESS** |
+| Eval Static Checks | [40733526200](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40733526200) | **SUCCESS** |
+| Deterministic Unit Tests | (within PR Test Suite) | **8941 passed, 372 skipped, 75 deselected, 7 xfailed** |
+
+Document-bearing commits after `2b6b6de` create a new HEAD — verify that HEAD’s CI separately before Antigravity starts.
+
+## Local foundation package (same functional tip)
 
 ```
-53 passed, 4 skipped  (targeted foundation package)
+145 passed, 2 skipped, 2 xfailed
 ```
 
-Commands: see Antigravity handoff.
+- Skips: real Redis required (`test_p0_transcript_integrity`).
+- XFails: G-020 agent tool confinement (known open, not waived as pass).
 
-## CI results
-
-Exact-head CI for this tip: started after push; record conclusion in handoff updates when green. Do not treat ancestor PR CI as this tip’s CI.
+Commands: see Antigravity handoff / corrective report.
 
 ## Real-service evidence
 
-- SQLite + Python unit: yes  
-- Real Redis two-worker soak: not completed here  
-- Real Ollama `llama3.2:1b`: **not available** — evidence gap recorded  
+| Capability | Status |
+|---|---|
+| SQLite + deterministic unit | Yes |
+| Real Redis two-worker soak | **Unverified** (no Redis in this environment) |
+| Live Ollama `llama3.2:1b` | **Unverified** (Ollama not available) |
+| Browser integration | Claude owns FE; Cursor did not change FE branch |
 
-## Known limitations / remaining blockers
+## Known limitations
 
-See `FOUNDATION_01_BLOCKER_REGISTER.md` (B07 cognitive route, B08/B09 live distributed/Ollama, B11 Antigravity).
+See `FOUNDATION_01_BLOCKER_REGISTER.md` (B08, B09, B10, B11, B12 persistence UX, G-020).
 
 ## Production readiness
 
-**Not production-ready.** Not independently qualified. Draft PR only — no merge, no deploy, no paid infra.
+**Not production-ready.** Draft PR only — no protected merge, no deploy, no paid infra, no model training.

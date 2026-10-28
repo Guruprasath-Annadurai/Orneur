@@ -1,7 +1,7 @@
 # DISTRIBUTED_CONCURRENCY_REPORT
 
-**Tip:** `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c`  
-**Label:** VERIFIED_ENGINEERING for unit/multiprocess fixtures; not a cloud multi-node soak.
+**Functional tip:** `2b6b6de8eccb2acbfaa5ece7ba52cebee8c357c8` (audit PR #132 HEAD after evidence freeze)  
+**Label:** VERIFIED_ENGINEERING for unit/multiprocess fixtures; not a cloud multi-node soak. Real Redis two-worker still **unverified** in Cursor closeout VM.
 
 ## Architecture under test
 
