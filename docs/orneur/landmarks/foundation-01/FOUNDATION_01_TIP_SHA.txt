@@ -1,0 +1,23 @@
+FOUNDATION LANDMARK-01 — tip freeze (evidence closeout)
+
+FUNCTIONAL_CI_TIP (product + CI recovery; mandatory CI green):
+2b6b6de8eccb2acbfaa5ece7ba52cebee8c357c8
+
+Push Test Suite:  https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40733516543  (9/9 SUCCESS)
+PR Test Suite:    https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40733526194  (9/9 SUCCESS)
+Eval Static:      https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40733526200  (SUCCESS)
+Deterministic:    8941 passed, 372 skipped, 75 deselected, 7 xfailed
+
+AUTHORITATIVE_AUDIT_TARGET:
+  GitHub PR #132 HEAD after this evidence-freeze documentation commit.
+  The document-bearing commit advances HEAD; that HEAD must show its own
+  mandatory CI green before Antigravity starts. Do not invent a second
+  tip-pin loop — record the actual PR head from GitHub metadata.
+
+Branch: cursor/foundation-landmark-01-backend-closure-1cdf
+Draft PR: https://github.com/Guruprasath-Annadurai/Orneur/pull/132
+
+Prior failed head (CTO review): 1ffb7b8562de0dd819833c93471599692946f666
+Prior functional tip (cognitive admit): 799a3d32a2b2080695107ebc429f0696b6a399de
+
+Do not treat green engineering CI as independent qualification (G13).

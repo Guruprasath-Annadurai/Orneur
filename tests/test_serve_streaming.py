@@ -120,7 +120,7 @@ def _stub_session(gen):
     return SimpleNamespace(
         id="s-1", model_variant="nano", memory=memory, doc_store=doc_store, agent=agent,
         explain_store=MagicMock(), knowledge_graph=MagicMock(), brain=MagicMock(),
-        persist_to_redis=lambda: None,
+        persist_to_redis=lambda *a, **k: None,
     )
 
 

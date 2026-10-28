@@ -333,3 +333,27 @@ def isolated_home():
     importlib.reload(privacy)
 
     shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.fixture()
+def ollama_fixture(isolated_home):
+    """Shared synthetic Ollama for inference isolation tests in other modules."""
+    from http.server import ThreadingHTTPServer
+    from threading import Thread
+
+    from orca.auth.db import init_db
+    from orca.serve.inference import reset_for_tests
+    from orca.serve.usage import reset_for_tests as reset_usage
+    from tests.test_inference_gateway import _Ollama
+
+    init_db()
+    reset_for_tests()
+    reset_usage()
+    _Ollama.delay_s = 0.0
+    _Ollama.calls = 0
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Ollama)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host = f"http://127.0.0.1:{server.server_address[1]}"
+    yield host
+    server.shutdown()

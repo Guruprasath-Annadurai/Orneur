@@ -82,6 +82,52 @@ def test_session_owner_can_still_read_their_own_session(isolated_home):
     assert resp.json()["session_id"] == session_id
 
 
+def test_chat_and_stream_do_not_run_kernel_for_foreign_session(isolated_home, monkeypatch):
+    from orca.auth.routes import _make_response
+    from orca.auth.store import create_user, record_user_session
+    from orca.serve import api as api_module
+    from orca.serve.api import app
+
+    called = {"n": 0}
+
+    async def boom(*_a, **_k):
+        called["n"] += 1
+        raise AssertionError("kernel must not run for a foreign session")
+
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", boom)
+    client = TestClient(app, raise_server_exceptions=False)
+    user_a = create_user(f"own-a-{uuid.uuid4().hex[:12]}@example.com", "correcthorsebatterystaple", "A")
+    user_b = create_user(f"own-b-{uuid.uuid4().hex[:12]}@example.com", "correcthorsebatterystaple", "B")
+    token_a = _make_response(user_a)["token"]
+    token_b = _make_response(user_b)["token"]
+    session_id = str(uuid.uuid4())
+    record_user_session(user_a.id, session_id)
+
+    resp = client.post(
+        "/api/chat",
+        json={"message": "hi", "session_id": session_id},
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert resp.status_code == 404, resp.text
+    assert called["n"] == 0
+
+    resp2 = client.post(
+        "/api/stream",
+        json={"message": "hi", "session_id": session_id},
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert resp2.status_code == 404, resp2.text
+    assert called["n"] == 0
+    # Owner is still allowed past the ownership gate (kernel is stubbed to explode).
+    resp_owner = client.post(
+        "/api/chat",
+        json={"message": "hi", "session_id": session_id},
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert called["n"] == 1
+    assert resp_owner.status_code != 404
+
+
 def test_anonymous_session_remains_accessible_without_a_token(isolated_home):
     """Preserves existing anonymous-chat behavior: a session never
     recorded via record_user_session() (created with no bearer token)

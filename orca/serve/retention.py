@@ -1,7 +1,7 @@
 """Per-user conversation retention (Workstream B).
 
 A user chooses `retention_days` (0 = keep until I delete, else 1..3650). `purge_expired_conversations()` deletes every session of every user whose last activity
-(transcript mtime; session creation time if there is no transcript) is older than that user's cutoff, through the SAME cascade account deletion uses (episodic memory,
+(authoritative SQLite turn ``created_at``; session creation time if there is no transcript) is older than that user's cutoff, through the SAME cascade account deletion uses (episodic memory,
 vector memory, documents, knowledge graph, Redis state, semantic facts, memory-continuum records, transcript), then releases the ownership claim and the title.
 It is conservative: a user with retention 0 is never touched; an error on one session never aborts the rest.
 
