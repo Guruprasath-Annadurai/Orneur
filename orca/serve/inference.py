@@ -18,7 +18,16 @@ import threading
 import time
 import uuid
 
-from orca.auth.store import QuotaError, claim_session, mark_quota_consumed, release_quota, reserve_quota
+from orca.auth.store import (
+    QuotaError,
+    claim_session,
+    get_committed_response,
+    mark_quota_consumed,
+    release_quota,
+    request_fingerprint,
+    reserve_quota,
+    touch_reservation,
+)
 from orca.gateway.contracts import InferenceRequest
 from orca.gateway.errors import DeploymentUnavailableError, GenerationTimeoutError, RequestCancelledError
 from orca.gateway.ollama_runtime import OllamaRuntime
@@ -29,6 +38,7 @@ from orca.serve.model_catalog import CatalogError, authorize_model
 from orca.serve.model_identity import model_identity
 from orca.serve.moderation import check_input
 from orca.serve.stream_dlp import StreamRedactor, redact_structure
+from orca.serve.turn_commit import TurnCommitError, commit_turn, message_count
 from orca.serve.usage import NATIVE_FAMILIES, PAID_BACKENDS, record_usage
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -93,24 +103,32 @@ def authorize_serving(*, user: object, message: str, model: str, model_variant: 
     return uid
 
 
-def _admit_quota(*, user: object, request_id: str) -> str:
+def _admit_quota(*, user: object, request_id: str, fingerprint: str = "") -> dict:
     try:
         reservation = reserve_quota(
             _user_id(user),
             getattr(user, "tier", "free") or "free",
             "message",
             request_id=request_id,
+            fingerprint=fingerprint or None,
         )
     except QuotaError as exc:
         raise InferenceError(exc.code) from exc
+    status = reservation.get("status")
+    if status == "consumed":
+        raise InferenceError("request_already_consumed")
+    if status in ("foreign", "fingerprint_mismatch"):
+        raise InferenceError("request_id_rejected")
+    if reservation.get("in_progress"):
+        raise InferenceError("request_in_progress")
     if not reservation["ok"]:
         raise InferenceError("quota_exceeded")
-    return reservation["request_id"]
+    return reservation
 
 
-def _consume_quota(request_id: str) -> None:
+def _consume_quota(request_id: str, *, user_id: str | None = None, fingerprint: str = "", response: dict | None = None) -> None:
     try:
-        mark_quota_consumed(request_id)
+        mark_quota_consumed(request_id, response=response, user_id=user_id, fingerprint=fingerprint or None)
     except QuotaError as exc:
         raise InferenceError(exc.code) from exc
 
@@ -172,24 +190,28 @@ def _identity(served: str) -> dict:
     )
 
 
-def _persist(*, user_id: str, session_id: str, message: str, text: str, identity: dict, model: str, model_variant: str | None = None, fence_token: str | None = None) -> str:
+def _persist(*, user_id: str, session_id: str, message: str, text: str, identity: dict, model: str, model_variant: str | None = None, fence_token: str | None = None, commit_id: str | None = None) -> str:
     from orca.serve.dlp import scan_output
     from orca.serve.model_catalog import lookup
 
     safe = scan_output(text or "")["safe_text"]
-    conversations.append(session_id, "user", message)
-    conversations.append(session_id, "assistant", safe, meta={"model_identity": identity})
-    _state, rev = session_store.load_session_state_with_revision(session_id)
     entry = lookup(model)
     stored_tier = (entry.tier if entry else None) or model_variant or "nano"
-    session_store.save_session_state(
-        session_id,
-        stored_tier,
-        _session_messages(session_id),
-        expected_revision=rev,
-        fence_token=fence_token,
-    )
-    session_store.touch_session(session_id)
+    expected = message_count(session_id)
+    try:
+        commit_turn(
+            user_id=user_id,
+            session_id=session_id,
+            user_message=message,
+            assistant_message=safe,
+            assistant_meta={"model_identity": identity},
+            expected_version=expected,
+            fence_token=fence_token,
+            commit_id=commit_id or uuid.uuid4().hex,
+            model_variant=stored_tier,
+        )
+    except TurnCommitError as exc:
+        raise InferenceError(exc.code) from exc
     return safe
 
 
@@ -247,7 +269,21 @@ def _complete_locked(
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_generate is None:
         raise InferenceError("provider_unavailable")
-    rid = _admit_quota(user=user, request_id=request_id or uuid.uuid4().hex)
+    rid = request_id or uuid.uuid4().hex
+    fp = request_fingerprint(user_id=uid, session_id=sid, message=message.strip(), model=model)
+    if request_id:
+        prior = get_committed_response(request_id, uid)
+        if prior is not None:
+            return {**prior, "replayed": True}
+    try:
+        reservation = _admit_quota(user=user, request_id=rid, fingerprint=fp)
+    except InferenceError as exc:
+        if exc.code == "request_already_consumed":
+            prior = get_committed_response(rid, uid)
+            if prior is not None:
+                return {**prior, "replayed": True}
+        raise
+    rid = reservation["request_id"]
     consumed = False
     prompt = _prompt_with_session(sid, message.strip())
     t0 = time.monotonic()
@@ -283,8 +319,6 @@ def _complete_locked(
         tokens_out = int(data.get("eval_count") or 0)
         identity = _identity(served)
         record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        _consume_quota(rid)
-        consumed = True
         safe = _persist(
             user_id=uid,
             session_id=sid,
@@ -294,8 +328,9 @@ def _complete_locked(
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            commit_id=rid,
         )
-        return {
+        body = {
             "text": safe,
             "model": served,
             "backend": "ollama",
@@ -310,6 +345,9 @@ def _complete_locked(
             "session_id": sid,
             "request_id": rid,
         }
+        _consume_quota(rid, user_id=uid, fingerprint=fp, response=body)
+        consumed = True
+        return body
     finally:
         if not consumed:
             try:
@@ -376,7 +414,10 @@ def _stream_complete_locked(
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_stream is None:
         raise InferenceError("provider_unavailable")
-    rid = _admit_quota(user=user, request_id=uuid.uuid4().hex)
+    rid = uuid.uuid4().hex
+    fp = request_fingerprint(user_id=uid, session_id=sid, message=message.strip(), model=model)
+    reservation = _admit_quota(user=user, request_id=rid, fingerprint=fp)
+    rid = reservation["request_id"]
     consumed = False
     redactor = StreamRedactor()
     chunks: list[str] = []
@@ -396,6 +437,10 @@ def _stream_complete_locked(
                     piece = redactor.push(delta)
                     if piece:
                         chunks.append(piece)
+                try:
+                    touch_reservation(rid)
+                except QuotaError:
+                    pass
             if not cancelled:
                 finished = True
         else:
@@ -427,6 +472,10 @@ def _stream_complete_locked(
                             safe_piece = redactor.push(piece)
                             if safe_piece:
                                 chunks.append(safe_piece)
+                        try:
+                            touch_reservation(rid)
+                        except QuotaError:
+                            pass
                         if payload.get("done"):
                             tokens_in = int(payload.get("prompt_eval_count") or 0)
                             tokens_out = int(payload.get("eval_count") or 0)
@@ -439,7 +488,7 @@ def _stream_complete_locked(
         if cancelled:
             redactor.cancel()
             if chunks:
-                _consume_quota(rid)
+                _consume_quota(rid, user_id=uid, fingerprint=fp)
                 consumed = True
             return {
                 "text": "",
@@ -457,6 +506,7 @@ def _stream_complete_locked(
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "handlers_forcibly_stopped": False,
+                "request_id": rid,
             }
         if not finished:
             raise InferenceError("provider_unavailable")
@@ -465,11 +515,10 @@ def _stream_complete_locked(
         tail = redactor.finish()
         if tail:
             chunks.append(tail)
-        text = "".join(chunks)
+        # Persist only the redactor aggregate — never raw provider deltas.
+        text = redactor.safe_text() or "".join(chunks)
         identity = _identity(served)
         record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        _consume_quota(rid)
-        consumed = True
         text = _persist(
             user_id=uid,
             session_id=sid,
@@ -479,8 +528,9 @@ def _stream_complete_locked(
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            commit_id=rid,
         )
-        return {
+        body = {
             "text": text,
             "chunks": chunks,
             "cancelled": False,
@@ -496,7 +546,11 @@ def _stream_complete_locked(
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "handlers_forcibly_stopped": False,
+            "request_id": rid,
         }
+        _consume_quota(rid, user_id=uid, fingerprint=fp, response=body)
+        consumed = True
+        return body
     finally:
         if not consumed:
             try:
@@ -562,13 +616,16 @@ async def _stream_via_gateway_locked(
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable":
         raise InferenceError("provider_unavailable")
-    rid = _admit_quota(user=user, request_id=uuid.uuid4().hex)
+    rid = uuid.uuid4().hex
+    fp = request_fingerprint(user_id=uid, session_id=sid, message=message.strip(), model=model)
+    reservation = _admit_quota(user=user, request_id=rid, fingerprint=fp)
+    rid = reservation["request_id"]
     consumed = False
     redactor = StreamRedactor()
-    request_id = uuid.uuid4().hex
+    gateway_request_id = uuid.uuid4().hex
     runtime = runtime_for(host, timeout_s=timeout_s)
     request = InferenceRequest(
-        request_id=request_id,
+        request_id=gateway_request_id,
         model_id=model,
         model_version=model,
         messages=_messages_with_session(sid, message.strip()),
@@ -587,7 +644,7 @@ async def _stream_via_gateway_locked(
         try:
             async for chunk in runtime.stream(request):
                 if cancel is not None and cancel.is_set():
-                    await runtime.cancel(request_id)
+                    await runtime.cancel(gateway_request_id)
                     cancelled = True
                     redactor.cancel()
                     yield {
@@ -602,6 +659,10 @@ async def _stream_via_gateway_locked(
                     if safe_delta:
                         chunks.append(safe_delta)
                         yield {"type": "chunk", "text": safe_delta, "path": "/api/chat", "backend": "ollama", "session_id": sid}
+                try:
+                    touch_reservation(rid)
+                except QuotaError:
+                    pass
                 if chunk.finish_reason == "cancelled":
                     cancelled = True
                     redactor.cancel()
@@ -627,7 +688,7 @@ async def _stream_via_gateway_locked(
             raise InferenceError("provider_unavailable") from exc
         if cancelled:
             if chunks:
-                _consume_quota(rid)
+                _consume_quota(rid, user_id=uid, fingerprint=fp)
                 consumed = True
             return
         if not finished:
@@ -636,11 +697,9 @@ async def _stream_via_gateway_locked(
         if tail:
             chunks.append(tail)
             yield {"type": "chunk", "text": tail, "path": "/api/chat", "backend": "ollama", "session_id": sid}
-        text = "".join(chunks)
+        text = redactor.safe_text() or "".join(chunks)
         record_usage(user_id=uid, model=model, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
         identity = _identity(model)
-        _consume_quota(rid)
-        consumed = True
         text = _persist(
             user_id=uid,
             session_id=sid,
@@ -650,8 +709,9 @@ async def _stream_via_gateway_locked(
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            commit_id=rid,
         )
-        yield {
+        body = {
             "type": "done",
             "text": text,
             "model": model,
@@ -666,7 +726,11 @@ async def _stream_via_gateway_locked(
             "tokens_out": tokens_out,
             "finish_reason": "stop",
             "handlers_forcibly_stopped": False,
+            "request_id": rid,
         }
+        _consume_quota(rid, user_id=uid, fingerprint=fp, response=body)
+        consumed = True
+        yield body
     finally:
         if not consumed:
             try:

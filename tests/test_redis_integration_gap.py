@@ -122,3 +122,66 @@ def test_cross_process_quota_against_shared_sqlite(isolated_home, tmp_path):
         p.wait(timeout=30)
     assert sum(1 for b in bodies if b.get("ok")) == 1
     AUTH_DB  # keep path used
+
+
+@_needs_redis
+def test_stale_fence_commit_does_not_mutate_jsonl():
+    """A3: expired lease cannot append authoritative transcript after Redis CAS refuse."""
+    import importlib
+
+    import redis as redis_lib
+
+    from orca.auth.db import init_db
+    from orca.auth.store import claim_session
+    from orca.serve import conversations
+    from orca.serve.turn_commit import TurnCommitError, commit_turn, message_count
+
+    redis_lib.from_url(REDIS_URL).flushdb()
+    prev = os.environ.get("ORNEUR_REDIS_URL")
+    os.environ["ORNEUR_REDIS_URL"] = REDIS_URL
+    import orca.serve.session_store as store
+
+    importlib.reload(store)
+    try:
+        init_db()
+        sid = "jsonl-" + uuid.uuid4().hex[:12]
+        claim_session(sid, "redis-owner")
+        assert store.acquire_session_lease(sid, "old-fence", ttl_ms=50)
+        time.sleep(0.08)
+        assert store.acquire_session_lease(sid, "new-fence", ttl_ms=5_000)
+        before = message_count(sid)
+        with pytest.raises(TurnCommitError) as exc:
+            commit_turn(
+                user_id="redis-owner",
+                session_id=sid,
+                user_message="stale-user",
+                assistant_message="stale-assistant",
+                assistant_meta=None,
+                expected_version=before,
+                fence_token="old-fence",
+                commit_id="stale-commit",
+            )
+        assert exc.value.code in ("session_busy", "session_conflict")
+        assert message_count(sid) == before
+        assert all(
+            m["content"] not in ("stale-user", "stale-assistant")
+            for m in conversations.transcript(sid)["messages"]
+        )
+        # Fresh fence can commit.
+        commit_turn(
+            user_id="redis-owner",
+            session_id=sid,
+            user_message="fresh-user",
+            assistant_message="fresh-assistant",
+            assistant_meta=None,
+            expected_version=before,
+            fence_token="new-fence",
+            commit_id="fresh-commit",
+        )
+        assert message_count(sid) == before + 2
+    finally:
+        if prev is None:
+            os.environ.pop("ORNEUR_REDIS_URL", None)
+        else:
+            os.environ["ORNEUR_REDIS_URL"] = prev
+        importlib.reload(store)
