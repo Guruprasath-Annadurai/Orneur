@@ -29,6 +29,6 @@ Tip under test: `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c`
 | `/api/inference/*` | required | yes | yes | `reserve_quota` | StreamRedactor | SQLite fencing |
 | `/api/ultra` | optional* | session | yes | `admit_serving` | output scan | best-effort |
 | `/api/vision` | optional* | session | yes | `admit_serving` | output scan | n/a |
-| `/api/cognitive/execute` | optional | n/a | partial | **check_quota (legacy)** | — | — |
+| `/api/cognitive/execute` | optional* | n/a | yes | `admit_serving` | — | n/a |
 
 \* Invalid credentials always 401; missing credentials follow route anonymous policy.

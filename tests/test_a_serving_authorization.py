@@ -217,7 +217,7 @@ REQUIRED = {"admit_serving"}
 INLINE_REVIEWED = {
     "/api/chat": REQUIRED,
     "/api/stream": REQUIRED,
-    "/api/cognitive/execute": {"check_quota", "check_input"},
+    "/api/cognitive/execute": REQUIRED,
 }
 
 

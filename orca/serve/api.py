@@ -1345,29 +1345,37 @@ async def cognitive_execute(
     """
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="cognitive")
 
-    if user:
-        allowed, used, limit = check_quota(user.id, user.tier, "message")
-        if not allowed:
-            e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
-            return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve.admission import admit_serving, consume_admission, release_admission
 
-    mod_result = check_input(req.objective)
-    metrics.record_moderation_action(mod_result.action)
-    if mod_result.action == "block":
-        audit.log("input_moderation_blocked", user_id=user.id if user else None,
-                  detail={"categories": mod_result.flagged_categories, "endpoint": "cognitive_execute"})
-        e = coded_error("content_refused")
-        return JSONResponse(e.as_json(), status_code=e.status)
+    admission = admit_serving(
+        user=user,
+        message=req.objective,
+        model="nano",
+        session_id="",
+        route="/api/cognitive/execute",
+        allow_anonymous=True,
+        require_ownership=False,
+    )
+    if admission.refusal is not None:
+        return JSONResponse(admission.refusal.as_json(), status_code=admission.refusal.status)
+    if admission.replay is not None:
+        return {**dict(admission.replay), "replayed": True, "request_id": admission.request_id}
 
     from orca.cognitive.contracts import CognitiveRequest
     from orca.cognitive.wiring import get_shared_kernel
 
     kernel = get_shared_kernel()
     cog_request = CognitiveRequest(objective=req.objective, session_id=None)
-    result = await kernel.execute(cog_request)
+    try:
+        result = await kernel.execute(cog_request)
+    except Exception:
+        release_admission(admission)
+        raise
 
-    if user and result.output is not None:
-        increment_usage(user.id, "message")
+    if result.output is not None:
+        consume_admission(admission, response={"route": "/api/cognitive/execute", "status": result.status.value})
+    else:
+        release_admission(admission)
 
     audit.log("cognitive_execute", user_id=user.id if user else None, detail={
         "status": result.status.value, "resolved_model": result.resolved_model,
