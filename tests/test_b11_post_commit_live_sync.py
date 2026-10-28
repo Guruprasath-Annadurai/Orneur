@@ -208,3 +208,37 @@ def test_the_live_sync_failure_is_audit_logged_not_silently_swallowed(client, fa
     matching = [c for c in calls if c[0] == "message_edit_live_sync_failed"]
     assert matching, "a live-sync failure after a committed edit must produce an audit-visible record, not just a swallowed exception"
     assert matching[0][1]["detail"]["session_id"] == sid
+
+
+def test_save_session_state_treats_redis_disabled_as_a_no_op_not_a_failure():
+    """Direct regression guard for a real bug this fix itself introduced
+    and caught, in this session, via the broader regression suite (not
+    by this file's own Redis-enabled tests, which never exercise the
+    disabled path): session_store.save_session_state() must return True
+    when Redis is simply not configured (REDIS_URL unset -- the default
+    for this whole test suite, and for any single-instance deployment),
+    never False. Conflating "nothing to worry about, no shared cache in
+    play" with "a write genuinely failed" would make EVERY edit on a
+    Redis-disabled deployment trip the live-sync failure path -- evicting
+    the session, disclosing live_sync: false -- for a condition that was
+    never actually a problem."""
+    import orca.serve.session_store as ss
+    assert ss.enabled() is False, "this test asserts the DEFAULT (disabled) state -- it is not inside the real-Redis fixture used by the rest of this file"
+    assert ss.save_session_state("disabled-redis-sid", "core", [{"role": "user", "content": "x"}]) is True
+
+
+def test_a_plain_edit_with_redis_disabled_is_not_treated_as_a_live_sync_failure(client, fake):
+    """End-to-end version of the same regression: the overwhelmingly
+    common case (no Redis configured at all) must report live_sync: true
+    and must NOT evict the session -- exactly the scenario that broke in
+    test_audit_cursor_backend_adversarial.py::test_b11_security_and_failure_semantics
+    before this fix."""
+    import orca.serve.api as api_module
+    assert api_module.session_store.enabled() is False
+    headers, sid, message_id, _user_id = _setup_message(client, fake)
+
+    r = client.post(f"/api/session/{sid}/messages/{message_id}/edits",
+                     json={"content": "edited with no Redis configured at all"}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["live_sync"] is True, "Redis simply not being configured must never be reported as a live-sync failure"
+    assert sid in api_module._sessions, "the session must NOT be evicted when there was never a shared cache to worry about in the first place"

@@ -62,10 +62,32 @@ def _key(session_id: str) -> str:
     return f"orca:session:{session_id}"
 
 
-def save_session_state(session_id: str, model_variant: str, history: list[dict]) -> None:
-    """Persist just enough to reconstruct this session on any instance."""
+def save_session_state(session_id: str, model_variant: str, history: list[dict]) -> bool:
+    """Persist just enough to reconstruct this session on any instance.
+
+    Never raises -- Redis being down must never break the chat request --
+    but CTO closeout review, issue 2 (2026-10-28): a caller that silently
+    swallows this too loses the one signal that distinguishes "wrote the
+    new value" from "left whatever was there before untouched" -- the
+    difference between a cold cache and a STALE one holding a pre-edit
+    value under its own still-live TTL, readable by any other instance.
+
+    Returns True when there is genuinely nothing to worry about -- either
+    the write succeeded, OR Redis is not configured at all (single-
+    instance/local-dev, the default for this whole test suite and for
+    any deployment that never set REDIS_URL): with no shared cache in
+    play, there is no OTHER instance that could ever read a stale entry,
+    so this is not a failure from a caller's point of view, just a no-op.
+    Returns False ONLY when Redis IS configured but the write itself
+    could not be confirmed (unreachable, timed out, or raised) -- the one
+    case where a stale value genuinely could be left behind for another
+    instance to load. A caller that only ever wanted "fire and forget"
+    is unaffected by ignoring this either way; a caller that needs to
+    react specifically to a genuine, actionable failure (post-commit-edit
+    live sync) can now tell the two apart.
+    """
     if not enabled():
-        return
+        return True
     try:
         payload = json.dumps({
             "model_variant": model_variant,
@@ -73,8 +95,9 @@ def save_session_state(session_id: str, model_variant: str, history: list[dict])
             "saved_at": time.time(),
         })
         _client().set(_key(session_id), payload, ex=SESSION_TTL_SECONDS)
+        return True
     except Exception:
-        pass  # Redis being down must never break the chat request
+        return False  # Redis being down must never break the chat request
 
 
 def load_session_state(session_id: str) -> Optional[dict]:
@@ -100,13 +123,22 @@ def touch_session(session_id: str) -> None:
         pass
 
 
-def delete_session(session_id: str) -> None:
+def delete_session(session_id: str) -> bool:
+    """Evict a cached session's Redis entry. Never raises. Returns True
+    only on a confirmed delete (including "there was nothing to delete" --
+    a no-op success, since the end state the caller wants, no poisoned
+    entry under this key, is achieved either way); False means the
+    attempt itself failed (Redis unreachable), which a caller that needs
+    to know "is this key definitely gone now" (e.g. before reporting a
+    post-commit live-sync failure as resolved) should treat as
+    unresolved, not as success."""
     if not enabled():
-        return
+        return True  # nothing to delete, and nothing can read a stale value from a disabled store either
     try:
         _client().delete(_key(session_id))
+        return True
     except Exception:
-        pass
+        return False
 
 
 def ping() -> bool:

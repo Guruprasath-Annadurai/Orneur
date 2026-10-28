@@ -534,7 +534,20 @@ def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: s
                 if item.get("role") == role and item.get("content") == previous:
                     item["content"] = new_text
                     break
-            sess.persist_to_redis()
+            # CTO CLOSEOUT REVIEW, issue 2: persist_to_redis() ->
+            # save_session_state() deliberately never raises on a Redis
+            # failure (so a normal chat turn's persistence never crashes
+            # the request) -- which means a silent write failure here
+            # would otherwise be invisible to this function's own
+            # try/except, leaving the OLD (pre-edit) value sitting in
+            # Redis under its still-live TTL for another instance to
+            # load as if it were current. Raising explicitly on a
+            # reported False routes this into the same evict + audit-log
+            # handling as any other failure below -- a silent Redis
+            # failure is no longer silent to the one caller (this
+            # function) that actually needs to know.
+            if not sess.persist_to_redis():
+                raise RuntimeError("Redis session-state write did not complete")
         for msg in sess.memory.short._messages:
             if msg.role == role and msg.content == previous:
                 msg.content = new_text
@@ -553,12 +566,21 @@ def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: s
         # which _Session.__init__ now consults -- see below), never
         # replay the stale pre-edit text from either cache.
         _logger.warning("live conversation sync failed after a committed edit; evicting cached session state for repair on next access", exc_info=True)
-        audit.log("message_edit_live_sync_failed", user_id=sess.user_id, detail={"session_id": session_id, "role": role})
         _sessions.pop(session_id, None)
-        try:
-            session_store.delete_session(session_id)
-        except Exception:
-            pass
+        # delete_session() never raises (see its own docstring) and its
+        # bool return is the one way to know whether the stale Redis
+        # entry was actually cleared or merely attempted -- if the
+        # attempt itself failed (e.g. Redis unreachable for the same
+        # reason the write above failed), the pre-edit value may still
+        # be sitting there under its original TTL for another instance
+        # to load. That residual risk is audit-logged explicitly rather
+        # than assumed resolved just because this function tried.
+        redis_cleared = session_store.delete_session(session_id)
+        audit.log(
+            "message_edit_live_sync_failed",
+            user_id=sess.user_id,
+            detail={"session_id": session_id, "role": role, "redis_entry_cleared": redis_cleared},
+        )
         return False
 
 
@@ -980,9 +1002,14 @@ class _Session:
     def touch(self):
         self.last_active = time.time()
 
-    def persist_to_redis(self):
-        """Save current conversation history so any instance can pick this session back up."""
-        session_store.save_session_state(self.id, self.model_variant, self.agent.get_history())
+    def persist_to_redis(self) -> bool:
+        """Save current conversation history so any instance can pick this session back up.
+
+        Returns whether the write genuinely happened (see
+        session_store.save_session_state()'s own docstring) -- existing
+        callers that only fired this for its side effect are unaffected
+        by ignoring the return value."""
+        return session_store.save_session_state(self.id, self.model_variant, self.agent.get_history())
 
 
 _sessions: dict[str, _Session] = {}
@@ -2699,6 +2726,14 @@ async def explain_answer(session_id: str, message_id: str, user: User | None = D
     for a specific assistant message.
     """
     sess = _get_session(session_id, user_id=user.id if user else None)
+    # CTO CLOSEOUT REVIEW, issue 1: same terminal-state gap as the main
+    # transcript route above -- explain_store is purely in-memory and
+    # disappears when _delete_contents() evicts the _Session object, but
+    # only once expiry is actually enforced. Without this guard, hitting
+    # this route alone would never trigger that enforcement.
+    temporary_block = _temporary_block(sess.id)
+    if temporary_block is not None:
+        return temporary_block
     record = sess.explain_store.get(message_id)
     if record is None:
         return JSONResponse(
@@ -2742,6 +2777,18 @@ async def session_messages(session_id: str, limit: int = 200, offset: int = 0, u
     if user is None:
         e = coded_error("auth_required")
         return JSONResponse(e.as_json(), status_code=e.status)
+    # CTO CLOSEOUT REVIEW, issue 1 (2026-10-28): this is the MAIN
+    # transcript-read route -- the version-history/edit/regenerate routes
+    # already carry this guard (see PRIORITY 2 above), but this one,
+    # which every client actually calls to render the conversation, was
+    # missed. Same gap, same consequence: expiry is lazy (only
+    # _temporary_block()/enforce() triggers it), so a temporary chat past
+    # its TTL but never touched through any other guarded route would
+    # never actually expire or delete its transcript as long as only this
+    # route was used to read it.
+    temporary_block = _temporary_block(session_id)
+    if temporary_block is not None:
+        return temporary_block
     from orca.serve import conversations
 
     return conversations.transcript(session_id, limit=limit, offset=offset)

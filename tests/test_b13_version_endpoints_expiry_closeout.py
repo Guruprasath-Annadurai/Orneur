@@ -222,3 +222,40 @@ def test_expired_content_cannot_be_recovered_via_version_read_even_via_a_concurr
     r = client.get(f"/api/session/{sid}/messages/{message_id}/versions", headers=headers)
     assert r.status_code == 409
     assert r.json()["code"] == "temporary_expired"
+
+
+def test_the_main_transcript_read_route_is_refused_after_genuine_expiry_and_actually_triggers_the_real_deletion(client, fake):
+    """CTO closeout review, issue 1: session_messages() (GET .../messages)
+    -- the MAIN transcript-read route, not just the version/edit/regenerate
+    routes already fixed -- was never audited for the same terminal-state
+    gap. Reproduced first (this test fails against the unpatched route),
+    then fixed by adding the same _temporary_block() guard."""
+    token, _user = _signup(client)
+    headers = _hdr(token)
+    sid = _open_temporary(client, headers)
+    _chat(client, headers, "transcript content before expiry", sid=sid)
+    assert _versions_dir(sid).exists() and _transcript_path(sid).exists()
+
+    _force_ttl_elapsed_without_triggering_enforce(sid)
+
+    r = client.get(f"/api/session/{sid}/messages", headers=headers)
+    assert r.status_code == 409, r.text
+    assert r.json()["code"] == "temporary_expired"
+    assert not _transcript_path(sid).exists(), "hitting the transcript-read route past the TTL must itself trigger the real deletion cascade"
+    assert not _versions_dir(sid).exists()
+
+
+def test_explain_answer_is_refused_after_genuine_expiry(client, fake):
+    """Same audit, adjacent route: /api/explain/{session_id}/{message_id}
+    reads session-scoped reasoning-trace content and had the same gap."""
+    token, _user = _signup(client)
+    headers = _hdr(token)
+    sid = _open_temporary(client, headers)
+    _chat(client, headers, "explain-gated content before expiry", sid=sid)
+    message_id = _msgs(client, headers, sid)["messages"][0]["message_id"]
+
+    _force_ttl_elapsed_without_triggering_enforce(sid)
+
+    r = client.get(f"/api/explain/{sid}/{message_id}", headers=headers)
+    assert r.status_code == 409, r.text
+    assert r.json()["code"] == "temporary_expired"

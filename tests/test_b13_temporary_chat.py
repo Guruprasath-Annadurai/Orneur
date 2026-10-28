@@ -100,8 +100,15 @@ def test_close_deletes_the_transcript_before_reporting_closed(client, fake):
     assert closed.json()["deleted"] is True
     assert not transcript.exists()
     assert not versions.exists()
+    # PR #111 CTO closeout review, issue 1 (2026-10-28): session_messages()
+    # now carries the same _temporary_block() terminal-state guard every
+    # other owned-session route already had, so a closed temporary chat's
+    # transcript route correctly refuses (409 temporary_closed) instead of
+    # degrading to an empty 200 -- the dedicated /temporary status route
+    # below is the correct, already-existing way to confirm "this was
+    # closed". Either way, the deleted content is never readable.
     messages = client.get(f"/api/session/{sid}/messages", headers=headers)
-    assert messages.status_code == 200 and messages.json()["total"] == 0
+    assert messages.status_code == 409 and messages.json()["code"] == "temporary_closed"
     assert "temporary words" not in messages.text
     status = client.get(f"/api/session/{sid}/temporary", headers=headers)
     assert status.status_code == 200 and status.json()["state"] == "closed"
