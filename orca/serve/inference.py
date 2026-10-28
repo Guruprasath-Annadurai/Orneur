@@ -158,12 +158,12 @@ def _session_lock(session_id: str) -> threading.Lock:
 
 
 def _session_messages(session_id: str) -> list[dict]:
-    body = conversations.transcript(session_id, limit=1000, offset=0)
-    total = int(body.get("total") or 0)
-    rows = body.get("messages") or []
-    if total > len(rows):
-        offset = max(0, total - _MAX_CONTEXT)
-        rows = conversations.transcript(session_id, limit=_MAX_CONTEXT, offset=offset).get("messages") or []
+    """Build LLM context from SQLite-committed turns only.
+
+    Never falls back to JSONL: uncommitted / phantom export lines must not
+    contaminate subsequent prompts.
+    """
+    rows = conversations.committed_messages(session_id, limit=_MAX_CONTEXT)
     return [{"role": row["role"], "content": row["content"]} for row in rows[-_MAX_CONTEXT:]]
 
 
@@ -209,26 +209,32 @@ def _persist(
     model_variant: str | None = None,
     fence_token: str | None = None,
 ) -> str:
-    """Authoritative turn commit: fence claim → atomic turn → Redis stamp.
+    """Authoritative turn commit under SQLite + lease authority.
 
-    JSONL alone cannot enforce lease/revision atomicity. The protocol is:
-    1. Load expected conversation revision.
-    2. ``claim_turn_commit`` verifies the worker fence and bumps revision
-       (stale workers whose lease expired receive None and write nothing).
-    3. ``conversations.commit_turn`` writes the SQLite authoritative turn
-       and a single JSONL export of both messages (no split pair).
-    4. Redis session payload is stamped with the claimed revision under the
-       same fence. Failure here does not roll back the durable turn; readers
-       rebuild from the transcript.
+    Protocol:
+    1. ``conversations.commit_turn`` takes ``BEGIN IMMEDIATE``, re-checks the
+       Redis lease fence *inside* the transaction, allocates the next
+       monotonic SQLite revision, inserts the turn, then commits.
+    2. JSONL export runs only after SQLite commit (never inside the txn).
+    3. Redis revision / session payload are stamped to the SQLite head under
+       the same fence. Failure here does not roll back the durable turn;
+       readers rebuild from SQLite.
+    Stale workers that lose the lease after an earlier Redis claim cannot
+    insert: authority is enforced at SQLite commit time.
     """
     from orca.serve.dlp import scan_output
     from orca.serve.model_catalog import lookup
 
     safe = scan_output(text or "")["safe_text"]
-    _state, rev = session_store.load_session_state_with_revision(session_id)
-    new_rev = session_store.claim_turn_commit(session_id, fence_token or "", rev)
-    if new_rev is None:
-        raise InferenceError("stale_worker")
+    fence = fence_token or ""
+
+    def _authority() -> bool:
+        if not session_store.enabled():
+            return True
+        if not fence:
+            return False
+        return session_store.lease_held(session_id, fence)
+
     turn_id = uuid.uuid4().hex
     committed = conversations.commit_turn(
         session_id,
@@ -236,18 +242,23 @@ def _persist(
         safe,
         user_id=user_id,
         turn_id=turn_id,
-        revision=int(new_rev),
+        revision=None,
         meta={"model_identity": identity},
+        authority_check=_authority,
     )
     if not committed.ok:
+        if committed.reason == "stale_worker":
+            raise InferenceError("stale_worker")
         raise InferenceError("persist_failed")
+    new_rev = int(committed.revision)
+    session_store.sync_turn_revision(session_id, new_rev, fence)
     entry = lookup(model)
     stored_tier = (entry.tier if entry else None) or model_variant or "nano"
     session_store.save_session_state(
         session_id,
         stored_tier,
         _session_messages(session_id),
-        expected_revision=int(new_rev),
+        expected_revision=new_rev,
         fence_token=fence_token,
     )
     session_store.touch_session(session_id)

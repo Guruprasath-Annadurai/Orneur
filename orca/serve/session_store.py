@@ -351,12 +351,13 @@ def claim_turn_commit(
     fence_token: str,
     expected_revision: Optional[int] = None,
 ) -> Optional[int]:
-    """Claim durable authority to commit one user/assistant turn.
+    """Soft preflight: verify lease + peek next Redis revision ticket.
 
-    Returns the new conversation revision on success, or None when the
-    caller's fence is stale / revision moved / Redis refused the claim.
-    When Redis is disabled, the next revision is taken from the
-    authoritative turns table (process lock serializes callers).
+    Authoritative commit authority and monotonic revisions are enforced
+    inside ``conversations.commit_turn`` (SQLite IMMEDIATE + lease check).
+    This helper remains for callers that want an early refusal before
+    generating a reply; a successful claim is NOT a license to write after
+    the lease is lost.
     """
     if not enabled():
         from orca.serve import conversations
@@ -383,6 +384,39 @@ def claim_turn_commit(
         return rev if rev > 0 else None
     except Exception:
         return None
+
+
+# After SQLite commits a turn, stamp Redis revision to the SQLite head so
+# session payload CAS aligns with the durable SoT. Lease must still match.
+_SYNC_TURN_REV_LUA = """
+local owner = redis.call('GET', KEYS[2])
+if (not owner) or owner ~= ARGV[1] then return -2 end
+redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+redis.call('DEL', KEYS[3])
+return 1
+"""
+
+
+def sync_turn_revision(session_id: str, revision: int, fence_token: str) -> bool:
+    """Best-effort Redis alignment to the SQLite-authoritative head revision."""
+    if not enabled():
+        return True
+    if not fence_token or int(revision) <= 0:
+        return False
+    try:
+        res = _client().eval(
+            _SYNC_TURN_REV_LUA,
+            3,
+            _rev_key(session_id),
+            _lease_key(session_id),
+            _key(session_id),
+            fence_token,
+            int(revision),
+            _REV_TTL_SECONDS,
+        )
+        return int(res) == 1
+    except Exception:
+        return False
 
 
 def ping() -> bool:

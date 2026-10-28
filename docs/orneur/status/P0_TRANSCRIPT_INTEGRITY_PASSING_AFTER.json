@@ -1,0 +1,32 @@
+{
+  "expect_fixed": true,
+  "defects_observed": 0,
+  "results": [
+    {
+      "name": "jsonl_phantom_after_sqlite_rollback",
+      "jsonl_or_auto_total": 2,
+      "committed_total": 0,
+      "sqlite_turns": 0,
+      "prompt_contents": [],
+      "defect_observed": false
+    },
+    {
+      "name": "prompt_contamination_from_jsonl",
+      "sqlite_turns": 0,
+      "prompt_contents": [],
+      "defect_observed": false
+    },
+    {
+      "name": "stale_worker_commit_after_lease_takeover",
+      "worker_a_claim": 1793199410620155,
+      "worker_a_persist_ok": false,
+      "worker_a_persist_reason": "stale_worker",
+      "worker_a_direct_ok": false,
+      "worker_a_direct_reason": "stale_worker",
+      "sqlite_turn_users": [
+        "from-B"
+      ],
+      "defect_observed": false
+    }
+  ]
+}
