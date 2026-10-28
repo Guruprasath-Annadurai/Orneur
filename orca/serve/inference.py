@@ -1,30 +1,35 @@
 """Authenticated local inference through the Ollama adapter.
 
-Does not impersonate GENESIS, NOVUS, or AETERNUM. Live Ollama is used when
-the host answers /api/generate and /api/chat. Unreachable providers stay
-unavailable. Fixture HTTP servers used in tests must set synthetic_provider.
+Conversation truth is the canonical per-session transcript
+(`orca.serve.conversations`) plus Redis session_store when enabled.
+This module does not keep a second user-global history.
+
+Does not impersonate GENESIS, NOVUS, or AETERNUM. Serving policy
+(quota, entitlement, moderation, DLP, spending) runs before every
+provider call.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import re
 import threading
 import time
 import uuid
-from pathlib import Path
 
+from orca.auth.store import check_quota, claim_session, increment_usage, model_access_allowed
 from orca.gateway.contracts import InferenceRequest
 from orca.gateway.errors import DeploymentUnavailableError, GenerationTimeoutError, RequestCancelledError
 from orca.gateway.ollama_runtime import OllamaRuntime
 from orca.rse.imp1.locks import spending_authorized
+from orca.serve import conversations, dlp, session_store
 from orca.serve.availability import probe_ollama
 from orca.serve.model_identity import model_identity
+from orca.serve.moderation import check_input
 from orca.serve.usage import NATIVE_FAMILIES, PAID_BACKENDS, record_usage
 
-_LOCK = threading.Lock()
-_TEST_DB: Path | None = None
-_MAX_TURNS = 20
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_MAX_CONTEXT = 40
 _NATIVE_PREFIXES = ("genesis", "novus", "aeternum", "orneur-genesis", "orneur-novus", "orneur-aeternum")
 
 
@@ -50,82 +55,70 @@ def _native_refused(name: str) -> bool:
     return any(n == p or n.startswith(p + ":") or n.startswith(p + "-") for p in _NATIVE_PREFIXES)
 
 
-def set_history_path(path: Path | None) -> None:
-    global _TEST_DB
-    _TEST_DB = path
+def _session_id(session_id: str | None) -> str:
+    if not isinstance(session_id, str) or not _SESSION_ID_RE.fullmatch(session_id):
+        raise InferenceError("session_required")
+    return session_id
 
 
-def _db_path() -> Path:
-    if _TEST_DB is not None:
-        return _TEST_DB
-    from orca.config import ORCA_HOME
-
-    return ORCA_HOME / "inference_turns.sqlite"
-
-
-def _connect() -> sqlite3.Connection:
-    path = _db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS turns (user_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, ts REAL NOT NULL)"
-    )
-    return conn
+def bind_session(*, user_id: str, session_id: str) -> str:
+    sid = _session_id(session_id)
+    if not claim_session(sid, user_id):
+        raise InferenceError("session_not_found")
+    return sid
 
 
-def history(user_id: str) -> list[dict]:
-    with _LOCK:
-        conn = _connect()
-        try:
-            rows = conn.execute(
-                "SELECT role, content FROM turns WHERE user_id = ? ORDER BY ts ASC, rowid ASC",
-                (user_id,),
-            ).fetchall()
-        finally:
-            conn.close()
-    return [{"role": role, "content": content} for role, content in rows]
+def authorize_serving(*, user: object, message: str, model: str, model_variant: str = "nano") -> str:
+    uid = _user_id(user)
+    if not isinstance(message, str) or not message.strip():
+        raise InferenceError("prompt_refused")
+    if not isinstance(model, str) or not model.strip():
+        raise InferenceError("model_refused")
+    if _native_refused(model) or _native_refused(model_variant):
+        raise InferenceError("native_identity_refused")
+    variant = (model_variant or "nano").removeprefix("orca-")
+    allowed, _used, _limit = check_quota(uid, getattr(user, "tier", "free") or "free", "message")
+    if not allowed:
+        raise InferenceError("quota_exceeded")
+    ok, _reason = model_access_allowed(user, variant)
+    if not ok:
+        raise InferenceError("model_access_denied")
+    if check_input(message).action == "block":
+        raise InferenceError("content_refused")
+    lowered = model.strip().lower()
+    if any(lowered.startswith(p) for p in ("gpt-", "claude", "gemini", "openai", "anthropic")):
+        refuse_paid(backend="openai")
+    if not spending_authorized() and lowered in PAID_BACKENDS:
+        refuse_paid(backend=lowered)
+    return uid
+
+
+def _session_messages(session_id: str) -> list[dict]:
+    page = conversations.transcript(session_id, limit=1, offset=0)
+    total = int(page.get("total") or 0)
+    offset = max(0, total - _MAX_CONTEXT)
+    body = conversations.transcript(session_id, limit=_MAX_CONTEXT, offset=offset)
+    return [{"role": row["role"], "content": row["content"]} for row in body.get("messages") or []]
+
+
+def history(*, user: object, session_id: str) -> list[dict]:
+    uid = _user_id(user)
+    sid = bind_session(user_id=uid, session_id=session_id)
+    return _session_messages(sid)
 
 
 def reset_for_tests() -> None:
-    with _LOCK:
-        conn = _connect()
-        try:
-            conn.execute("DELETE FROM turns")
-            conn.commit()
-        finally:
-            conn.close()
+    return
 
 
-def _append(user_id: str, role: str, content: str) -> None:
-    with _LOCK:
-        conn = _connect()
-        try:
-            conn.execute(
-                "INSERT INTO turns (user_id, role, content, ts) VALUES (?, ?, ?, ?)",
-                (user_id, role, content, time.time()),
-            )
-            conn.execute(
-                """
-                DELETE FROM turns WHERE user_id = ? AND rowid NOT IN (
-                    SELECT rowid FROM turns WHERE user_id = ? ORDER BY ts DESC, rowid DESC LIMIT ?
-                )
-                """,
-                (user_id, user_id, _MAX_TURNS * 2),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-
-def _prompt_with_history(user_id: str, message: str) -> str:
-    parts = [f"{row['role']}: {row['content']}" for row in history(user_id)]
+def _prompt_with_session(session_id: str, message: str) -> str:
+    parts = [f"{row['role']}: {row['content']}" for row in _session_messages(session_id)]
     parts.append(f"user: {message}")
     return "\n".join(parts)
 
 
-def _messages_with_history(user_id: str, message: str) -> list[dict]:
-    rows = history(user_id)
-    return [*rows, {"role": "user", "content": message}]
+def _messages_with_session(session_id: str, message: str) -> list[dict]:
+    return [*_session_messages(session_id), {"role": "user", "content": message}]
 
 
 def _identity(served: str) -> dict:
@@ -138,27 +131,35 @@ def _identity(served: str) -> dict:
     )
 
 
+def _persist(*, user_id: str, session_id: str, message: str, text: str, identity: dict, model_variant: str) -> str:
+    scanned = dlp.scan_output(text)
+    safe = scanned["safe_text"]
+    conversations.append(session_id, "user", message)
+    conversations.append(session_id, "assistant", safe, meta={"model_identity": identity})
+    session_store.save_session_state(session_id, model_variant or "nano", _session_messages(session_id))
+    session_store.touch_session(session_id)
+    increment_usage(user_id, "message")
+    return safe
+
+
 def complete(
     *,
     user: object,
     message: str,
     model: str,
     host: str,
+    session_id: str,
+    model_variant: str = "nano",
     transport_generate=None,
     synthetic_provider: bool = False,
     timeout_s: float = 30.0,
 ) -> dict:
-    uid = _user_id(user)
-    if not isinstance(message, str) or not message.strip():
-        raise InferenceError("prompt_refused")
-    if not isinstance(model, str) or not model.strip():
-        raise InferenceError("model_refused")
-    if _native_refused(model):
-        raise InferenceError("native_identity_refused")
+    uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
+    sid = bind_session(user_id=uid, session_id=session_id)
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_generate is None:
         raise InferenceError("provider_unavailable")
-    prompt = _prompt_with_history(uid, message.strip())
+    prompt = _prompt_with_session(sid, message.strip())
     t0 = time.monotonic()
     if transport_generate is not None:
         data = transport_generate(host, model, prompt)
@@ -191,10 +192,9 @@ def complete(
     tokens_out = int(data.get("eval_count") or 0)
     identity = _identity(served)
     record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-    _append(uid, "user", message.strip())
-    _append(uid, "assistant", text)
+    safe = _persist(user_id=uid, session_id=sid, message=message.strip(), text=text, identity=identity, model_variant=model_variant)
     return {
-        "text": text,
+        "text": safe,
         "model": served,
         "backend": "ollama",
         "identity": identity,
@@ -205,6 +205,7 @@ def complete(
         "synthetic_provider": bool(synthetic_provider),
         "native_family": None,
         "path": "/api/generate",
+        "session_id": sid,
         "request_id": uuid.uuid4().hex,
     }
 
@@ -219,16 +220,15 @@ def stream_complete(
     message: str,
     model: str,
     host: str,
+    session_id: str,
+    model_variant: str = "nano",
     transport_stream=None,
     cancel: threading.Event | None = None,
     synthetic_provider: bool = False,
     timeout_s: float = 30.0,
 ) -> dict:
-    uid = _user_id(user)
-    if not isinstance(message, str) or not message.strip():
-        raise InferenceError("prompt_refused")
-    if _native_refused(model):
-        raise InferenceError("native_identity_refused")
+    uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
+    sid = bind_session(user_id=uid, session_id=session_id)
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_stream is None:
         raise InferenceError("provider_unavailable")
@@ -237,7 +237,7 @@ def stream_complete(
     tokens_in = 0
     tokens_out = 0
     served = model
-    messages = _messages_with_history(uid, message.strip())
+    messages = _messages_with_session(sid, message.strip())
     if transport_stream is not None:
         for delta in transport_stream(host, model, message.strip()):
             if cancel is not None and cancel.is_set():
@@ -286,8 +286,7 @@ def stream_complete(
     identity = _identity(served)
     if not cancelled:
         record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        _append(uid, "user", message.strip())
-        _append(uid, "assistant", text)
+        text = _persist(user_id=uid, session_id=sid, message=message.strip(), text=text, identity=identity, model_variant=model_variant)
     return {
         "text": text,
         "chunks": chunks,
@@ -300,6 +299,7 @@ def stream_complete(
         "synthetic_provider": bool(synthetic_provider),
         "native_family": None,
         "path": "/api/chat",
+        "session_id": sid,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "handlers_forcibly_stopped": False,
@@ -312,16 +312,15 @@ async def stream_via_gateway(
     message: str,
     model: str,
     host: str,
+    session_id: str,
+    model_variant: str = "nano",
     cancel: threading.Event | None = None,
     synthetic_provider: bool = False,
     timeout_s: float = 30.0,
 ):
     """Yield SSE dicts from OllamaRuntime.stream (/api/chat). Cooperative cancel only."""
-    uid = _user_id(user)
-    if not isinstance(message, str) or not message.strip():
-        raise InferenceError("prompt_refused")
-    if _native_refused(model):
-        raise InferenceError("native_identity_refused")
+    uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
+    sid = bind_session(user_id=uid, session_id=session_id)
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable":
         raise InferenceError("provider_unavailable")
@@ -331,10 +330,11 @@ async def stream_via_gateway(
         request_id=request_id,
         model_id=model,
         model_version=model,
-        messages=_messages_with_history(uid, message.strip()),
+        messages=_messages_with_session(sid, message.strip()),
         max_tokens=64,
         temperature=0.0,
         tenant_id=uid,
+        session_id=sid,
         timeout_s=timeout_s,
     )
     chunks: list[str] = []
@@ -350,17 +350,19 @@ async def stream_via_gateway(
                     "type": "cancelled",
                     "finish_reason": "cancelled",
                     "handlers_forcibly_stopped": False,
+                    "session_id": sid,
                 }
                 break
             if chunk.delta:
                 chunks.append(chunk.delta)
-                yield {"type": "chunk", "text": chunk.delta, "path": "/api/chat", "backend": "ollama"}
+                yield {"type": "chunk", "text": chunk.delta, "path": "/api/chat", "backend": "ollama", "session_id": sid}
             if chunk.finish_reason == "cancelled":
                 cancelled = True
                 yield {
                     "type": "cancelled",
                     "finish_reason": "cancelled",
                     "handlers_forcibly_stopped": False,
+                    "session_id": sid,
                 }
                 break
             if chunk.finish_reason == "stop":
@@ -369,7 +371,7 @@ async def stream_via_gateway(
                 break
     except RequestCancelledError:
         cancelled = True
-        yield {"type": "cancelled", "finish_reason": "cancelled", "handlers_forcibly_stopped": False}
+        yield {"type": "cancelled", "finish_reason": "cancelled", "handlers_forcibly_stopped": False, "session_id": sid}
     except GenerationTimeoutError as exc:
         raise InferenceError("provider_timeout") from exc
     except DeploymentUnavailableError as exc:
@@ -377,18 +379,19 @@ async def stream_via_gateway(
     text = "".join(chunks)
     if not cancelled:
         record_usage(user_id=uid, model=model, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        _append(uid, "user", message.strip())
-        _append(uid, "assistant", text)
+        identity = _identity(model)
+        text = _persist(user_id=uid, session_id=sid, message=message.strip(), text=text, identity=identity, model_variant=model_variant)
         yield {
             "type": "done",
             "text": text,
             "model": model,
             "backend": "ollama",
-            "identity": _identity(model),
+            "identity": identity,
             "native_family": None,
             "live": not synthetic_provider,
             "synthetic_provider": bool(synthetic_provider),
             "path": "/api/chat",
+            "session_id": sid,
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "finish_reason": "stop",

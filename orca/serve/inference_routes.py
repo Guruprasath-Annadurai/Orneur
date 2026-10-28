@@ -1,11 +1,17 @@
-"""HTTP inference. Owner is the session user. Unavailable providers stay unavailable."""
+"""HTTP inference. Owner is the session user. Unavailable providers stay unavailable.
+
+Frozen frontend chat remains `/api/chat` with its existing `session_id`.
+These routes keep the same response fields and add `session_id` so two
+conversations of one user cannot share a transcript.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -19,15 +25,25 @@ router = APIRouter(prefix="/api/inference", tags=["inference"])
 
 _STATUS = {
     "unauthenticated": 401,
+    "session_required": 400,
+    "session_not_found": 404,
     "provider_unavailable": 503,
     "provider_timeout": 504,
     "paid_backend_refused": 403,
+    "quota_exceeded": 429,
+    "model_access_denied": 403,
+    "content_refused": 403,
+    "native_identity_refused": 409,
+    "prompt_refused": 400,
+    "model_refused": 400,
 }
 
 
 class CompleteBody(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     model: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    model_variant: str = Field(default="nano", max_length=32)
 
 
 def _http(exc: InferenceError) -> HTTPException:
@@ -38,7 +54,15 @@ def _http(exc: InferenceError) -> HTTPException:
 async def inference_complete(body: CompleteBody, request: Request, user: User = Depends(get_current_user)):
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="inference_complete")
     try:
-        return complete(user=user, message=body.message, model=body.model, host=CONFIG.ollama.host)
+        return await asyncio.to_thread(
+            complete,
+            user=user,
+            message=body.message,
+            model=body.model,
+            host=CONFIG.ollama.host,
+            session_id=body.session_id,
+            model_variant=body.model_variant,
+        )
     except InferenceError as exc:
         raise _http(exc) from exc
 
@@ -55,6 +79,8 @@ async def inference_stream(body: CompleteBody, request: Request, user: User = De
                 message=body.message,
                 model=body.model,
                 host=CONFIG.ollama.host,
+                session_id=body.session_id,
+                model_variant=body.model_variant,
                 cancel=cancel,
             ):
                 yield f"data: {json.dumps(item)}\n\n"
@@ -69,6 +95,13 @@ async def inference_stream(body: CompleteBody, request: Request, user: User = De
 
 
 @router.get("/history")
-async def inference_history(request: Request, user: User = Depends(get_current_user)):
+async def inference_history(
+    request: Request,
+    session_id: str = Query(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]{1,64}$"),
+    user: User = Depends(get_current_user),
+):
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="inference_history")
-    return {"user_id": user.id, "messages": history(user.id)}
+    try:
+        return {"user_id": user.id, "session_id": session_id, "messages": history(user=user, session_id=session_id)}
+    except InferenceError as exc:
+        raise _http(exc) from exc
