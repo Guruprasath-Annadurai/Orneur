@@ -247,7 +247,7 @@ test('doLogout() invalidates BOTH domains via the full-account-reset routine (in
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _logoutInFlight = false;\nvar _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${revokeSrc}\n${outcomeSrc}\n${doLogoutSrc}`,
+    `var _logoutInFlightToken = null;\nvar _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${revokeSrc}\n${outcomeSrc}\n${doLogoutSrc}`,
     sandbox,
   );
   await sandbox.doLogout();

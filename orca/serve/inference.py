@@ -148,7 +148,9 @@ def _acquire_turn(session_id: str, user_id: str) -> tuple[str, int]:
     ``(fence_token, epoch)`` must be presented to ``commit_turn``.
     """
     fence = uuid.uuid4().hex
-    if not session_store.acquire_session_lease(session_id, fence, ttl_ms=45_000):
+    # Redis is advisory coordination; the SQLite fence is the authority. "held by another turn" refuses, but "Redis cannot be reached" degrades
+    # to SQLite-only instead of refusing every request (same rule as the canonical routes).
+    if session_store.lease_acquire_state(session_id, fence, ttl_ms=45_000) == "held":
         raise InferenceError("session_busy")
     auth = conversations.acquire_authority(session_id, user_id, fence, ttl_s=45.0)
     if auth is None:
@@ -340,9 +342,9 @@ def _complete_locked(
         return replay
     rid = admission["request_id"]
     consumed = False
-    prompt = _prompt_with_session(sid, msg, user_id=uid)
     t0 = time.monotonic()
     try:
+        prompt = _prompt_with_session(sid, msg, user_id=uid)          # inside the try: a failure here must refund the reservation
         if transport_generate is not None:
             data = transport_generate(host, model, prompt)
         else:
@@ -488,8 +490,8 @@ def _stream_complete_locked(
     tokens_in = 0
     tokens_out = 0
     served = model
-    messages = _messages_with_session(sid, msg, user_id=uid)
     try:
+        messages = _messages_with_session(sid, msg, user_id=uid)      # inside the try: a failure here must refund the reservation
         if transport_stream is not None:
             for delta in transport_stream(host, model, msg):
                 if cancel is not None and cancel.is_set():
@@ -687,23 +689,23 @@ async def _stream_via_gateway_locked(
     redactor = StreamRedactor()
     request_id = uuid.uuid4().hex
     runtime = runtime_for(host, timeout_s=timeout_s)
-    request = InferenceRequest(
-        request_id=request_id,
-        model_id=model,
-        model_version=model,
-        messages=_messages_with_session(sid, msg, user_id=uid),
-        max_tokens=64,
-        temperature=0.0,
-        tenant_id=uid,
-        session_id=sid,
-        timeout_s=timeout_s,
-    )
     chunks: list[str] = []
     cancelled = False
     finished = False
     tokens_in = 0
     tokens_out = 0
     try:
+        request = InferenceRequest(
+            request_id=request_id,
+            model_id=model,
+            model_version=model,
+            messages=_messages_with_session(sid, msg, user_id=uid),   # inside the try: a failure here must refund the reservation
+            max_tokens=64,
+            temperature=0.0,
+            tenant_id=uid,
+            session_id=sid,
+            timeout_s=timeout_s,
+        )
         try:
             async for chunk in runtime.stream(request):
                 if cancel is not None and cancel.is_set():

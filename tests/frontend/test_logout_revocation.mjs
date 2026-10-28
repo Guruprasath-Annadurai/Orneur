@@ -59,7 +59,7 @@ function build({ responses, token = 'SECRET-TOKEN-1' }) {
   };
   vm.createContext(sandbox);
   vm.runInContext([
-    'var _logoutInFlight = false;',
+    'var _logoutInFlightToken = null;',
     extract('function _clearAuthStateAndShowSignIn(message) {'),
     extract('async function _revokeServerSession(token) {'),
     extract('function _logoutOutcomeMessage(outcome) {'),
@@ -146,5 +146,40 @@ test('the page never claims "signed out everywhere" and never logs or echoes the
 });
 
 test('another tab signing out ends this tab\'s in-memory session too', () => {
-  assert.match(source, /addEventListener\('storage'[\s\S]{0,200}orneur_token[\s\S]{0,200}_clearAuthStateAndShowSignIn/);
+  assert.match(source, /addEventListener\('storage'[\s\S]{0,600}orneur_token[\s\S]{0,700}_clearAuthStateAndShowSignIn/);
+});
+
+
+test('a NEWER sign-in is never blocked by an older logout whose revocation is still pending', async () => {
+  const s = build({ responses: [200] });
+  s._authToken = 'tokenA';
+  const first = s.doLogout();                  // revocation for tokenA is in flight (not awaited)
+  s._authToken = 'tokenB';                      // the user signs in again immediately
+  const second = s.doLogout();                  // ...and signs out again: must NOT be swallowed by the pending tokenA logout
+  await Promise.all([first, second]);
+  const posts = s.events.filter((e) => e.fetch === '/api/auth/logout');
+  assert.deepEqual(posts.map((e) => e.auth), ['Bearer tokenA', 'Bearer tokenB']);
+});
+
+test('a double-click on the SAME session sends one revocation', async () => {
+  const s = build({ responses: [200] });
+  s._authToken = 'tokenA';
+  const first = s.doLogout();
+  const second = s.doLogout();
+  await Promise.all([first, second]);
+  assert.equal(s.events.filter((e) => e.fetch === '/api/auth/logout').length, 1);
+});
+
+test('a late storage event about an OLDER token does not sign out a newer session in this tab', () => {
+  const handlerSrc = source.slice(source.indexOf("window.addEventListener('storage'"));
+  const cleared = [];
+  const sandbox = { _authToken: 'tokenB', _clearAuthStateAndShowSignIn: (m) => cleared.push(m), window: { addEventListener: (type, fn) => { sandbox.handler = fn; } } };
+  vm.createContext(sandbox);
+  vm.runInContext(handlerSrc.slice(0, handlerSrc.indexOf('});') + 3).replace(/^window\./, 'window.'), sandbox);
+  sandbox.handler({ key: 'orneur_token', newValue: null, oldValue: 'tokenA' });
+  assert.deepEqual(cleared, [], 'an event about tokenA must not clear tokenB');
+  sandbox.handler({ key: 'orneur_token', newValue: null, oldValue: 'tokenB' });
+  assert.equal(cleared.length, 1, 'removal of THIS tab\'s token signs it out');
+  sandbox.handler({ key: 'orneur_token', newValue: null, oldValue: null });
+  assert.equal(cleared.length, 2, 'a cleared store signs it out');
 });

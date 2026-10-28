@@ -3724,7 +3724,7 @@ function _clearAuthStateAndShowSignIn(message) {
 // claims more than a confirmed revocation of THIS session (there is no
 // "signed out everywhere" wording anywhere on this page; logout-all is a
 // separate, explicit server action this page does not offer).
-let _logoutInFlight = false;
+let _logoutInFlightToken = null; // the token whose server-side revocation is still pending (keyed by token so a NEWER sign-in can always sign out)
 async function _revokeServerSession(token) {
   // 'revoked'         200 -- the server confirmed this session is ended
   // 'already_invalid' 401 -- the server no longer recognises the token
@@ -3752,10 +3752,10 @@ function _logoutOutcomeMessage(outcome) {
   return 'You are signed out on this device, but the server did not confirm that this session was ended. It may remain valid until it expires.';
 }
 async function doLogout() {
-  if (_logoutInFlight) return;
   const token = _authToken;
   if (!token) { _clearAuthStateAndShowSignIn(); return; }
-  _logoutInFlight = true;
+  if (_logoutInFlightToken === token) return; // a double-click on the SAME session; a different (newer) session is never blocked
+  _logoutInFlightToken = token;
   const revocation = _revokeServerSession(token); // issued with the live token before it is discarded
   _clearAuthStateAndShowSignIn();
   try {
@@ -3766,13 +3766,15 @@ async function doLogout() {
       if (errEl) errEl.textContent = _logoutOutcomeMessage(outcome);
     }
   } finally {
-    _logoutInFlight = false;
+    if (_logoutInFlightToken === token) _logoutInFlightToken = null;
   }
 }
 // Another tab signed out (it removed the shared stored token): this tab's
 // in-memory session must not keep showing private content.
 window.addEventListener('storage', (e) => {
-  if (e.key === 'orneur_token' && !e.newValue && _authToken) {
+  // Only when the token that was REMOVED is the one this tab holds (or the whole store was cleared): a late event about an older token
+  // must not sign out a newer session in this tab.
+  if (e.key === 'orneur_token' && !e.newValue && _authToken && (!e.oldValue || e.oldValue === _authToken)) {
     _clearAuthStateAndShowSignIn('You were signed out in another tab.');
   }
 });

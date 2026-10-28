@@ -163,11 +163,21 @@ def append(session_id: str, role: str, content: str, *, meta: dict | None = None
             return
         fd = os.open(p, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
-            os.write(fd, line)
+            _write_all(fd, line)
         finally:
             os.close(fd)
     except OSError:
         return
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    """os.write may write fewer bytes than asked (full disk, signals). A short write must not be treated as a complete export."""
+    view = memoryview(data)
+    while view:
+        n = os.write(fd, view)
+        if n <= 0:
+            raise OSError("short write")
+        view = view[n:]
 
 
 def acquire_authority(
@@ -198,13 +208,18 @@ def acquire_authority(
                 (session_id,),
             ).fetchone()
             if row is None:
+                # Seed from the turns already committed for this session: an authority row can be missing while turns exist (an older database,
+                # a row removed by hand). Starting at 0 made every later commit collide with revision 1 and fail forever.
+                seeded = int(conn.execute(
+                    "SELECT COALESCE(MAX(revision), 0) AS r FROM conversation_turns WHERE session_id=?", (session_id,),
+                ).fetchone()["r"])
                 conn.execute(
                     "INSERT INTO session_authority "
                     "(session_id, owner_user_id, fence_token, epoch, expires_at, committed_revision, updated_at) "
-                    "VALUES (?,?,?,?,?,0,?)",
-                    (session_id, user_id, fence_token, 1, expires, ts),
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (session_id, user_id, fence_token, 1, expires, seeded, ts),
                 )
-                return Authority(session_id, user_id, fence_token, 1, 0, expires)
+                return Authority(session_id, user_id, fence_token, 1, seeded, expires)
             if row["owner_user_id"] != user_id:
                 return None
             same = row["fence_token"] == fence_token
@@ -697,7 +712,7 @@ def _export_jsonl_from_sqlite(session_id: str) -> bool:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
             if payload:
-                os.write(fd, payload)
+                _write_all(fd, payload)
             os.fsync(fd)
         finally:
             os.close(fd)
