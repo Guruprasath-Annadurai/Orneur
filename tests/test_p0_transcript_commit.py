@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests._redis_guard import safe_flush
+
 import time
 import uuid
 
@@ -28,7 +30,7 @@ def _enable_redis(monkeypatch):
 
     from orca.serve import session_store as store
 
-    redis_lib.from_url(REDIS_URL).flushdb()
+    safe_flush(redis_lib.from_url(REDIS_URL))
     monkeypatch.setenv("ORNEUR_REDIS_URL", REDIS_URL)
     monkeypatch.setattr(store, "REDIS_URL", REDIS_URL)
     monkeypatch.setattr(store, "_redis_client", None)

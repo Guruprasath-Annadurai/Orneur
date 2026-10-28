@@ -8,6 +8,8 @@ Skips if Redis is unreachable.
 """
 from __future__ import annotations
 
+from tests._redis_guard import safe_flush
+
 import json
 import os
 import subprocess
@@ -52,7 +54,7 @@ class Worker:
 @pytest.fixture
 def workers(tmp_path):
     import redis
-    redis.from_url(REDIS_URL).flushdb()
+    safe_flush(redis.from_url(REDIS_URL))
     made = []
 
     def make(name):
@@ -63,7 +65,7 @@ def workers(tmp_path):
     yield make
     for w in made:
         w.close()
-    redis.from_url(REDIS_URL).flushdb()
+    safe_flush(redis.from_url(REDIS_URL))
 
 
 HIST = [{"role": "user", "content": "original message text"}, {"role": "assistant", "content": "ok"}]

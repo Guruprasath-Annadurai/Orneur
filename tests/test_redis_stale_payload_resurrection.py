@@ -11,6 +11,8 @@ revision. Real Redis (db 15) required; skips otherwise.
 """
 from __future__ import annotations
 
+from tests._redis_guard import safe_flush
+
 import time
 
 import pytest
@@ -138,7 +140,7 @@ def test_revision_counter_never_reissues_a_value_after_restart_or_expiry(client,
     ss = two_workers.ss
     sid = "aba-sid"
     first = ss.bump_revision(sid)
-    ss.get_client().flushdb()  # simulated restart: all state gone
+    safe_flush(ss.get_client())  # simulated restart: all state gone
     second = ss.bump_revision(sid)
     assert second > first
 
@@ -149,7 +151,7 @@ def test_edit_after_redis_restart_evicts_worker_with_pre_restart_cache(client, f
     a = two_workers.api._sessions[sid]
     a.agent.load_history([{"role": "user", "content": "original message text"}])
     two_workers.api._get_session(sid, user_id=user_id)
-    two_workers.ss.get_client().flushdb()  # Redis restart, nothing persisted
+    safe_flush(two_workers.ss.get_client())  # Redis restart, nothing persisted
     two_workers.as_worker_b()
     assert client.post(f"/api/session/{sid}/messages/{message_id}/edits",
                        json={"content": "EDITED after restart"}, headers=headers).status_code == 200

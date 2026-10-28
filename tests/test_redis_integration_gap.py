@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests._redis_guard import safe_flush
+
 import json
 import os
 import subprocess
@@ -35,7 +37,7 @@ def test_expired_lease_cannot_cas_save():
 
     import redis as redis_lib
 
-    redis_lib.from_url(REDIS_URL).flushdb()
+    safe_flush(redis_lib.from_url(REDIS_URL))
     prev = os.environ.get("ORNEUR_REDIS_URL")
     os.environ["ORNEUR_REDIS_URL"] = REDIS_URL
     import orca.serve.session_store as store
@@ -62,7 +64,7 @@ def test_expired_lease_cannot_cas_save():
 def test_two_os_workers_session_lease_exclusion():
     import redis as redis_lib
 
-    redis_lib.from_url(REDIS_URL).flushdb()
+    safe_flush(redis_lib.from_url(REDIS_URL))
     sid = "inf-" + uuid.uuid4().hex[:12]
     env = dict(os.environ, ORNEUR_REDIS_URL=REDIS_URL)
     cwd = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

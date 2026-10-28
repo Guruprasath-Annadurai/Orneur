@@ -29,6 +29,8 @@ Run with: pytest tests/test_redis_post_commit_consistency.py -q
 """
 from __future__ import annotations
 
+from tests._redis_guard import safe_flush
+
 import importlib
 import os
 
@@ -69,9 +71,9 @@ def _use_real_redis_db15():
     importlib.reload(ss)
     import orca.serve.api as api_module
     importlib.reload(api_module)  # api.py's `from orca.serve import session_store` must see the reloaded module's new REDIS_URL/enabled() state
-    ss.get_client().flushdb()  # a clean db 15 for every test -- no cross-test leakage
+    safe_flush(ss.get_client())  # a clean db 15 for every test -- no cross-test leakage
     yield api_module
-    ss.get_client().flushdb()
+    safe_flush(ss.get_client())
     if prev is not None:
         os.environ["ORNEUR_REDIS_URL"] = prev
     else:

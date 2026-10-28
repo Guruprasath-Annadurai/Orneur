@@ -31,6 +31,8 @@ Run with: pytest tests/test_multiworker_edit_consistency.py -q
 """
 from __future__ import annotations
 
+from tests._redis_guard import safe_flush
+
 import importlib
 import os
 
@@ -71,7 +73,7 @@ def two_workers(client, monkeypatch):
     importlib.reload(ss)
     import orca.serve.api as api_module
     importlib.reload(api_module)
-    ss.get_client().flushdb()
+    safe_flush(ss.get_client())
 
     class TwoWorkers:
         def __init__(self):
@@ -96,7 +98,7 @@ def two_workers(client, monkeypatch):
 
     yield TwoWorkers()
 
-    ss.get_client().flushdb()
+    safe_flush(ss.get_client())
     if prev is not None:
         os.environ["ORNEUR_REDIS_URL"] = prev
     else:
