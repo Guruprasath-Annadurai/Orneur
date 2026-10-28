@@ -9,10 +9,10 @@
 | Field | Value |
 |---|---|
 | Branch | `cursor/foundation-landmark-01-backend-closure-1cdf` |
-| Exact SHA | `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c` |
-| Prior engineering SHA | `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c` (code freeze before docs commit; qualification restarts for tip) |
+| Functional engineering tip | `9f5cbc804d6cf983d3d55412514b388c080b484f` (see `FOUNDATION_01_TIP_SHA.txt`) |
+| Docs pin commit (may be PR HEAD) | checkout PR head; if advanced past tip file, qualification restarts |
 | Base lineage | PR #130 fencing (`497073d`) + merged PR #126 context + Landmark-01 admission/auth fixes |
-| Draft PR | (opened by Cursor; do not merge without founder authorization) |
+| Draft PR | https://github.com/Guruprasath-Annadurai/Orneur/pull/132 |
 
 If this tip advances, **qualification must restart** for the new head. Record the new SHA explicitly.
 
