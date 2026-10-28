@@ -275,7 +275,7 @@ def test_a_stale_persisted_legacy_record_is_overwritten_with_the_truthful_lifecy
     brain = _brain(monkeypatch, world, odd, digests={}, viewer=None)
     from orca.gateway.wiring import stable_deployment_id
 
-    dep_id = stable_deployment_id("ollama", "orca-core-combined-v2")
+    dep_id = stable_deployment_id("ollama", "orca-core-combined-v2", "orneur-genesis")
     dep = brain._gateway._deployments[dep_id]
     assert dep.lifecycle == "EXPERIMENTAL" and not _routable(brain)
     assert ModelDeployment.load(dep_id).lifecycle == "EXPERIMENTAL"

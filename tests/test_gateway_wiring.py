@@ -48,7 +48,7 @@ def test_deployment_is_registered_as_experimental_not_production():
     brain = wiring.brain_for_tier_resolution(resolution)
     from orca.gateway.wiring import stable_deployment_id
 
-    deployment = brain._gateway._deployments[stable_deployment_id("ollama", "orca-core-combined-v2")]
+    deployment = brain._gateway._deployments[stable_deployment_id("ollama", "orca-core-combined-v2", "orneur-novus")]
     assert deployment.lifecycle == LifecycleState.EXPERIMENTAL.value
     assert brain.allow_experimental is True
 
@@ -69,7 +69,7 @@ def test_frontier_resolution_registers_a_frontier_runtime_and_deployment():
     assert "openai" in brain._gateway._runtimes
     from orca.gateway.wiring import stable_deployment_id
 
-    deployment = brain._gateway._deployments[stable_deployment_id("openai", "gpt-4o")]
+    deployment = brain._gateway._deployments[stable_deployment_id("openai", "gpt-4o", "orneur-novus")]
     assert deployment.runtime == "openai"
     assert deployment.hardware_profile == "cloud-api"
 

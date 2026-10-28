@@ -512,9 +512,10 @@ class _TurnAuthority:
     Anonymous callers have no durable transcript: they hold only the Redis lease (``epoch == 0``).
     """
 
-    TTL_S = 45.0
-    HEARTBEAT_S = 10.0
-    LEASE_MS = 120_000
+    # Operators/tests may shorten these (a hung-worker takeover is otherwise a two-minute wait); the defaults are the production values.
+    TTL_S = float(os.environ.get("ORNEUR_TURN_AUTHORITY_TTL_S", "45"))
+    HEARTBEAT_S = float(os.environ.get("ORNEUR_TURN_HEARTBEAT_S", "10"))
+    LEASE_MS = int(os.environ.get("ORNEUR_TURN_LEASE_MS", "120000"))
 
     def __init__(self, session_id: str, user_id: str | None, fence: str, epoch: int):
         self.session_id = session_id
