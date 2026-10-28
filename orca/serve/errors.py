@@ -99,6 +99,7 @@ ERROR_CATALOG: dict[str, tuple[int, str]] = {
     "not_found": (404, "Not found."),
     "conflict": (409, "The request conflicts with the current state."),
     "session_busy": (409, "This conversation is busy with another request. Wait for it to finish and try again."),
+    "history_unavailable": (503, "Conversation history is temporarily unavailable, so this request was not started. Nothing was lost; please retry shortly."),
     "turn_superseded": (409, "This conversation moved on while the reply was being generated, so it was not saved."),
     "capability_disabled": (403, "This capability is not available in this environment."),
     "model_unavailable": (503, "This model is not available right now. Please choose another model or try again later."),

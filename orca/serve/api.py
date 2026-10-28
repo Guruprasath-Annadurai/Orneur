@@ -497,6 +497,10 @@ class _QuotaTicket:
             _logger.warning("quota refund could not be recorded", exc_info=True)
 
 
+class HistoryUnavailable(Exception):
+    """The authoritative conversation store (SQLite) cannot be reached: fail closed, tell the user, serve nothing."""
+
+
 class _TurnAuthority:
     """Authority over ONE conversation turn, held from before generation until after the durable commit.
 
@@ -538,6 +542,8 @@ class _TurnAuthority:
         auth = conversations.acquire_authority(session_id, user.id, fence, ttl_s=cls.TTL_S)
         if auth is None:
             session_store.release_session_lease(session_id, fence)
+            if not conversations.store_available():
+                raise HistoryUnavailable()        # the durable store is down: say so, do not call it "busy"
             return None
         # lease == "unavailable": Redis is advisory; the SQLite fence above is what protects the transcript, so a Redis outage degrades
         # cross-worker coordination to SQLite-only instead of refusing every signed-in turn.
@@ -601,7 +607,10 @@ def _hold_turn(request: Request, session_id: str, user) -> "PublicError | None":
     """Take (once per request) the turn authority for ``session_id``. Returns the error to send when the conversation is busy."""
     if getattr(request.state, "turn_authority", None) is not None:
         return None
-    ta = _TurnAuthority.acquire(session_id, user)
+    try:
+        ta = _TurnAuthority.acquire(session_id, user)
+    except HistoryUnavailable:
+        return coded_error("history_unavailable")
     if ta is None:
         return coded_error("session_busy")
     ta.start_heartbeat()
@@ -614,6 +623,74 @@ def _release_turn(request: Request) -> None:
     if ta is not None:
         ta.release()
         request.state.turn_authority = None
+
+
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event)}\n\n"
+
+
+def _idem_begin_stream(req: "ChatRequest", request: Request, user):
+    """Duplicate-delivery protection for /api/stream (the browser sends a fresh Idempotency-Key per attempt).
+
+    Same key + same payload: the stored answer is replayed with NO model call, NO quota charge and NO second turn. A concurrent duplicate is
+    refused while the first is running; the same key with a different payload is refused. Returns a StreamingResponse to send, or None to proceed.
+    """
+    key = request.headers.get("idempotency-key")
+    if not key or user is None:
+        return None
+    from orca.serve import idempotency
+
+    def _one(event: dict) -> StreamingResponse:
+        async def _gen():
+            yield _sse(event)
+        return StreamingResponse(_gen(), media_type="text/event-stream")
+
+    if not idempotency.valid_key(key):
+        return _one(coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.").as_sse())
+    state, cached = idempotency.begin(user.id, key, idempotency.request_hash(req.model_dump()))
+    if state == "in_progress":
+        return _one(coded_error("conflict", message="A request with this Idempotency-Key is still being processed.").as_sse())
+    if state == "mismatch":
+        return _one(coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.").as_sse())
+    if state == "done":
+        async def _replay():
+            yield _sse({"type": "session", "session_id": cached.get("session_id")})
+            if cached.get("model_identity"):
+                yield _sse({"type": "model", "identity": cached["model_identity"]})
+            yield _sse({"type": "stream", "delivery": "replayed", "cancellable": False})
+            yield _sse({"type": "chunk", "text": cached.get("response", ""), "replayed": True})
+            yield _sse({**(cached.get("done") or {"type": "done"}), "type": "done", "idempotent_replay": True})
+        return StreamingResponse(_replay(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Idempotent-Replay": "true"})
+    request.state.idem = {"user_id": user.id, "key": key, "completed": False}
+    return None
+
+
+def _idem_complete_stream(request: Request, session_id: str, response_text: str, done_event: dict) -> None:
+    state = getattr(request.state, "idem", None)
+    if not state or state["completed"]:
+        return
+    from orca.serve import idempotency
+
+    state["completed"] = True
+    try:
+        idempotency.complete(state["user_id"], state["key"], {
+            "session_id": session_id, "response": response_text, "done": done_event, "model_identity": done_event.get("model_identity"),
+        })
+    except Exception:
+        _logger.warning("could not store the idempotent stream result", exc_info=True)
+
+
+def _idem_abort_if_unfinished(request: Request) -> None:
+    state = getattr(request.state, "idem", None)
+    if state and not state["completed"]:
+        from orca.serve import idempotency
+
+        state["completed"] = True
+        try:
+            idempotency.abort(state["user_id"], state["key"])
+        except Exception:
+            _logger.debug("idempotency abort failed", exc_info=True)
 
 
 def _swap_last_assistant_in_window(sess: "_Session", raw: str, safe: str) -> None:
@@ -635,6 +712,11 @@ def _admit_message_quota(user, request: Request):
     """
     if user is None:
         return None
+    from orca.serve import conversations
+
+    if not conversations.store_available():
+        # Checked BEFORE the model runs: a signed-in turn that cannot be committed must not be generated, charged, or presented as saved.
+        return coded_error("history_unavailable")
     from orca.auth.store import QuotaError, reserve_quota
 
     try:
@@ -689,40 +771,47 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         if src:
             meta["source_summary"] = src["summary"]
             meta["sources"] = [{k: s.get(k) for k in ("ref", "kind", "filename", "url", "locator", "cited_in_answer")} for s in src["sources"]]
-        held = authority if (authority is not None and authority.session_id == session_id and authority.epoch) else None
-        if held is not None:
-            # The authority was taken BEFORE generation and renewed throughout: commit_turn proves it is still ours inside the transaction.
-            if held.lost:
-                _logger.warning("turn authority lost before commit; turn not persisted")
+        from orca.serve import temporary_chat
+
+        # The commit and the version seed are one unit with respect to a temporary-chat closure (see temporary_chat.commit_guard).
+        with temporary_chat.commit_guard(session_id) as _may_commit:
+            if not _may_commit:
+                _logger.info("turn not persisted: temporary chat is no longer active")
                 return None
-            committed = conversations.commit_turn(
-                session_id, user_text, assistant_text,
-                user_id=user.id, turn_id=uuid.uuid4().hex,
-                fence_token=held.fence, epoch=held.epoch, meta=meta,
-            )
-        else:
-            # No pre-generation authority (new session id, frontier pass-through, legacy callers): acquire for the commit only.
-            fence = uuid.uuid4().hex
-            auth = conversations.acquire_authority(session_id, user.id, fence, ttl_s=30.0)
-            if auth is None:
-                _logger.warning("conversation authority unavailable; turn not persisted")
-                return None
-            try:
+            held = authority if (authority is not None and authority.session_id == session_id and authority.epoch) else None
+            if held is not None:
+                # The authority was taken BEFORE generation and renewed throughout: commit_turn proves it is still ours inside the transaction.
+                if held.lost:
+                    _logger.warning("turn authority lost before commit; turn not persisted")
+                    return None
                 committed = conversations.commit_turn(
                     session_id, user_text, assistant_text,
                     user_id=user.id, turn_id=uuid.uuid4().hex,
-                    fence_token=fence, epoch=auth.epoch, meta=meta,
+                    fence_token=held.fence, epoch=held.epoch, meta=meta,
                 )
-            finally:
-                conversations.release_authority(session_id, fence, auth.epoch)
-        if not committed.ok:
-            _logger.warning("conversation commit refused: %s", committed.reason)
-            return None
-        try:
-            message_versions.seed(session_id, user.id, user_message_id, "user", user_text)
-            message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_text)
-        except Exception:
-            _logger.debug("message version seed failed", exc_info=True)
+            else:
+                # No pre-generation authority (new session id, frontier pass-through, legacy callers): acquire for the commit only.
+                fence = uuid.uuid4().hex
+                auth = conversations.acquire_authority(session_id, user.id, fence, ttl_s=30.0)
+                if auth is None:
+                    _logger.warning("conversation authority unavailable; turn not persisted")
+                    return None
+                try:
+                    committed = conversations.commit_turn(
+                        session_id, user_text, assistant_text,
+                        user_id=user.id, turn_id=uuid.uuid4().hex,
+                        fence_token=fence, epoch=auth.epoch, meta=meta,
+                    )
+                finally:
+                    conversations.release_authority(session_id, fence, auth.epoch)
+            if not committed.ok:
+                _logger.warning("conversation commit refused: %s", committed.reason)
+                return None
+            try:
+                message_versions.seed(session_id, user.id, user_message_id, "user", user_text)
+                message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_text)
+            except Exception:
+                _logger.debug("message version seed failed", exc_info=True)
         return {"user_message_id": user_message_id, "message_id": assistant_message_id}
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
@@ -1963,13 +2052,18 @@ async def stream_chat(
     def _release_all() -> None:
         _release_message_quota(request)
         _release_turn(request)
+        _idem_abort_if_unfinished(request)
 
+    early = _idem_begin_stream(req, request, user)
+    if early is not None:
+        return early
     try:
         response = await _stream_dispatch(req, request, user)
     except BaseException:
         _release_all()
         raise
-    if _quota_ticket(request) is None and getattr(request.state, "turn_authority", None) is None:
+    if (_quota_ticket(request) is None and getattr(request.state, "turn_authority", None) is None
+            and getattr(request.state, "idem", None) is None):
         return response
     if not isinstance(response, StreamingResponse):
         _release_all()
@@ -2350,7 +2444,10 @@ async def _stream_dispatch(
             sess.explain_store.add(explain_record)
             user_message_id = (persisted or {}).get("user_message_id")
 
-            yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'user_message_id': user_message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'persisted': persist_status, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
+            _done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'user_message_id': user_message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'persisted': persist_status, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
+            if persist_status != "failed":
+                _idem_complete_stream(request, sess.id, full, _done_event)     # a turn that was NOT saved is not cached: a retry must be a real retry
+            yield f"data: {json.dumps(_done_event)}\n\n"
         finally:
             _release_turn(request)
 

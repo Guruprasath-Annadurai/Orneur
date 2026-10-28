@@ -67,6 +67,8 @@ def _turns_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), isolation_level="IMMEDIATE", check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # A deleted conversation (temporary-chat closure, account deletion) must not survive as readable bytes in free pages: overwrite on delete.
+    conn.execute("PRAGMA secure_delete=ON")
     conn.execute(
         "CREATE TABLE IF NOT EXISTS conversation_turns ("
         "turn_id TEXT PRIMARY KEY,"
@@ -245,6 +247,24 @@ def acquire_authority(
             )
     except Exception:
         return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def store_available() -> bool:
+    """True when the authoritative SQLite store can be opened and read. Lets a caller tell "busy/not yours" from "the store is down"."""
+    try:
+        conn = _turns_conn()
+    except Exception:
+        return False
+    try:
+        conn.execute("SELECT 1 FROM session_authority LIMIT 1").fetchall()
+        return True
+    except Exception:
+        return False
     finally:
         try:
             conn.close()
@@ -801,13 +821,16 @@ def transcript(session_id: str, *, limit: int = 200, offset: int = 0) -> dict:
     }
 
 
-def last_activity(session_id: str) -> float | None:
+def last_activity(session_id: str, *, strict: bool = False) -> float | None:
+    """Time of the newest committed turn (or JSONL mtime). ``strict=True`` raises when SQLite cannot be read instead of reporting "no activity"
+    -- deletion verification must never mistake an unreadable store for an empty one."""
     try:
         turns = turns_for_session(session_id)
         if turns:
             return float(turns[-1]["created_at"])
     except Exception:
-        pass
+        if strict:
+            raise
     try:
         return _path(session_id).stat().st_mtime
     except (FileNotFoundError, ValueError):
@@ -830,10 +853,17 @@ def delete(session_id: str) -> bool:
                 conn.execute("DELETE FROM conversation_turns WHERE session_id=?", (session_id,))
                 conn.execute("DELETE FROM session_authority WHERE session_id=?", (session_id,))
                 conn.execute("DELETE FROM session_export_state WHERE session_id=?", (session_id,))
+            try:
+                # Fold the WAL (which still holds the old page images) back into the main file and truncate it. Best effort: a busy
+                # checkpoint does not make the logical deletion fail.
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
         finally:
             conn.close()
     except Exception:
-        pass
+        # The authoritative rows may still exist: report the deletion as NOT done so callers keep the closure pending / failed.
+        ok = False
     return ok
 
 

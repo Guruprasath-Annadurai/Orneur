@@ -17,6 +17,8 @@ class FakeOllama:
         self.fail_status: int | None = None          # when set, /api/chat answers with this HTTP status
         self.requests: list[dict] = []                # every /api/chat payload received
         self.chunks_sent = 0
+        self.malformed = False                        # answer /api/chat with a 200 whose body is not Ollama JSON at all
+        self.truncate_after: int | None = None        # streaming only: hang up after N chunks WITHOUT the final {"done": true} line
         self.pre_response_delay = 0.0                 # seconds to hold EVERY /api/chat request before answering (slow-generation scenarios)
         self.stream_aborted = threading.Event()       # set when a client hangs up mid-stream
         fake = self
@@ -49,6 +51,14 @@ class FakeOllama:
                     time.sleep(fake.pre_response_delay)
                 if fake.fail_status:
                     return self._json(fake.fail_status, {"error": "fake backend failure"})
+                if fake.malformed:
+                    junk = b"<html>this is not ollama</html>"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.send_header("Content-Length", str(len(junk)))
+                    self.end_headers()
+                    self.wfile.write(junk)
+                    return
                 model = payload.get("model", "orca-core")
                 if not payload.get("stream", True):
                     return self._json(200, {"model": model, "message": {"role": "assistant", "content": fake.reply}, "done": True,
@@ -58,7 +68,10 @@ class FakeOllama:
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
                 try:
-                    for piece in fake.chunks:
+                    for n, piece in enumerate(fake.chunks):
+                        if fake.truncate_after is not None and n >= fake.truncate_after:
+                            self.close_connection = True
+                            return
                         line = json.dumps({"model": model, "message": {"role": "assistant", "content": piece}, "done": False}).encode() + b"\n"
                         self.wfile.write(f"{len(line):x}\r\n".encode() + line + b"\r\n")
                         self.wfile.flush()

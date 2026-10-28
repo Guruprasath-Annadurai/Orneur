@@ -21,6 +21,7 @@ from pathlib import Path
 MIN_TTL_SECONDS = 60
 MAX_TTL_SECONDS = 24 * 60 * 60
 _TERMINAL = {"expired", "closed", "failed"}
+_CLOSING = "closing"          # closure requested, deletion not yet confirmed: no turn may run, and a crash here is resumed, never forgotten
 _SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -77,17 +78,61 @@ def _lock_path(session_id: str) -> Path:
 
 @contextmanager
 def _lock(session_id: str):
+    """Exclusive per-session lock that stays correct even though ``_unlink_lock`` removes the file at the end of a closure.
+
+    flock() binds to the inode, not the path. If the holder unlinks the lock file, a process that already opened the OLD inode would acquire it
+    while a newcomer creates and locks a NEW file at the same path -- two simultaneous "owners". After acquiring we therefore confirm that the
+    inode we hold is still the one at the path; if not (the file was unlinked while we waited) we retry on the current file.
+    """
     path = _path(session_id)
     lock_path = _lock_path(session_id)
-    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o600)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        yield path
-    finally:
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    while True:
+        fd = os.open(lock_path, flags, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            try:
+                same = os.fstat(fd).st_ino == os.stat(lock_path).st_ino
+            except FileNotFoundError:
+                same = False
+            if not same:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                continue
+            try:
+                yield path
+            finally:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            return
         finally:
             os.close(fd)
+
+
+@contextmanager
+def commit_guard(session_id: str):
+    """Serialize a transcript commit against the closure of a temporary chat.
+
+    ``finish()`` holds the same per-session lock for the whole deletion, so either the commit lands first (and the closure then deletes it) or
+    the closure runs first and the commit is REFUSED here -- a turn finishing after a close can never resurrect deleted content. Yields True
+    when the commit may proceed. A session with no temporary record is an ordinary conversation: no lock is taken (and no lock file is made).
+    """
+    try:
+        path = _path(session_id)
+    except TemporaryChatDenied:
+        yield True
+        return
+    if not path.exists():
+        yield True
+        return
+    with _lock(session_id):
+        record = _read(path)
+        if record is None:
+            yield True
+            return
+        live = record.get("state") == "active" and time.time() < float(record.get("expires_at") or 0)
+        yield bool(live)
 
 
 def _unlink_lock(session_id: str) -> None:
@@ -174,7 +219,7 @@ def activate(session_id: str, user_id: str, ttl_seconds: int, *, now: float | No
                 view = _public(existing)
                 view["created"] = False
                 return view
-            if existing.get("state") in _TERMINAL:
+            if existing.get("state") in _TERMINAL or existing.get("state") == _CLOSING:
                 raise TemporaryChatDenied("temporary chat is already finished", "temporary_finished")
         from orca.serve import conversations
 
@@ -213,7 +258,7 @@ def _transcript_gone(session_id: str) -> bool:
     from orca.serve import conversations
 
     try:
-        return conversations.last_activity(session_id) is None
+        return conversations.last_activity(session_id, strict=True) is None
     except Exception:
         return False
 
@@ -267,9 +312,14 @@ def finish(session_id: str, user_id: str, final_state: str, *, now: float | None
             raise TemporaryChatDenied("temporary chat was not found", "temporary_not_found")
         if record.get("state") in _TERMINAL:
             return _public(record)
-        record["intended_state"] = final_state
-        record["transitions"] = list(record.get("transitions") or []) + [{"state": "closing", "at": moment}]
-        _write(path, record)
+        if record.get("state") == _CLOSING:
+            # Resuming a closure that a crash interrupted: keep the ORIGINAL intent (an expiry stays an expiry).
+            final_state = record.get("intended_state") if record.get("intended_state") in {"closed", "expired"} else final_state
+        else:
+            record["intended_state"] = final_state
+            record["state"] = _CLOSING
+            record["transitions"] = list(record.get("transitions") or []) + [{"state": "closing", "at": moment}]
+            _write(path, record)
         try:
             _delete_contents(session_id, user_id)
         except Exception:
@@ -356,6 +406,16 @@ def enforce(session_id: str, *, now: float | None = None) -> dict | None:
     moment = time.time() if now is None else now
     state = record.get("state")
     user_id = record.get("user_id")
+    if state == _CLOSING and isinstance(user_id, str):
+        # A closure was started and never finished (crash / concurrent close in flight): finish it now, never serve a turn meanwhile.
+        finished = finish(session_id, user_id, record.get("intended_state") or "closed", now=moment)
+        done_state = finished.get("state")
+        return {
+            "error": "temporary chat is closed" if done_state == "closed" else ("temporary chat has expired" if done_state == "expired" else "temporary chat could not be deleted"),
+            "code": {"closed": "temporary_closed", "expired": "temporary_expired"}.get(done_state, "temporary_deletion_incomplete"),
+            "state": done_state,
+            "user_id": user_id,
+        }
     if state == "active" and moment >= float(record.get("expires_at") or 0) and isinstance(user_id, str):
         finished = finish(session_id, user_id, "expired", now=moment)
         return {
@@ -378,9 +438,9 @@ def expire_due(*, now: float | None = None) -> dict:
     expired, failed = [], []
     for path in list(_dir().glob("*.json")):
         record = _read(path)
-        if not isinstance(record, dict) or record.get("state") != "active":
+        if not isinstance(record, dict) or record.get("state") not in ("active", _CLOSING):
             continue
-        if moment < float(record.get("expires_at") or 0):
+        if record.get("state") == "active" and moment < float(record.get("expires_at") or 0):
             continue
         session_id = record.get("session_id")
         user_id = record.get("user_id")
