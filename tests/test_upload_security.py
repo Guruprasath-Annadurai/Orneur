@@ -18,9 +18,19 @@ def test_store_for_requires_user_object(tmp_path, monkeypatch):
     with pytest.raises(UploadError) as exc:
         store_for(object(), "note.txt", b"hello")  # type: ignore[arg-type]
     assert exc.value.code == "unauthenticated"
+    with pytest.raises(UploadError) as exc:
+        store_for("user-a", "note.txt", b"hello")  # type: ignore[arg-type]
+    assert exc.value.code == "unauthenticated"
     stored = store_for(_user("user-a"), "note.txt", b"hello")
     assert stored["isolation"] == "directory_hash_not_os"
     assert read("user-a", "note.txt") == b"hello"
+
+    class Reloaded:
+        def __init__(self):
+            self.id = "user-b"
+
+    store_for(Reloaded(), "other.txt", b"hello")  # type: ignore[arg-type]
+    assert read("user-b", "other.txt") == b"hello"
 
 
 def test_symlink_destination_is_refused(tmp_path, monkeypatch):

@@ -31,7 +31,10 @@ def _chunks(text: str, size: int = 400) -> list[str]:
 
 
 def _user(user) -> User:
-    if not isinstance(user, User) or not user.id:
+    if isinstance(user, (str, bytes, bytearray, dict)):
+        raise DocumentTaskError("unauthenticated")
+    uid = getattr(user, "id", None)
+    if not isinstance(uid, str) or not uid.strip():
         raise DocumentTaskError("unauthenticated")
     return user
 

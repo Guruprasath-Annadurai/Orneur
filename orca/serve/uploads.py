@@ -29,10 +29,16 @@ class UploadError(Exception):
         super().__init__(code)
 
 
-def _require_user(user: User) -> str:
-    if not isinstance(user, User) or not user.id:
+def _require_user(user: object) -> str:
+    # Identity is the authenticated object's id. Do not use isinstance(User):
+    # the full suite can reload orca.auth.store, after which a valid session
+    # User fails that check and becomes a false unauthenticated.
+    if isinstance(user, (str, bytes, bytearray, dict)):
         raise UploadError("unauthenticated")
-    return user.id
+    uid = getattr(user, "id", None)
+    if not isinstance(uid, str) or not uid.strip():
+        raise UploadError("unauthenticated")
+    return uid
 
 
 def _root(user_id: str) -> Path:
