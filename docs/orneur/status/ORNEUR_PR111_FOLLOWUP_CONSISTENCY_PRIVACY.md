@@ -89,7 +89,7 @@ A full, whole-repository run (~9,500+ tests, ~20–25 min) was not re-executed t
 
 ### Exact-head CI
 
-<!-- CI_RESULTS_PLACEHOLDER -->
+Triggered on push to `01c4aa00db8ca43b673ec1b8bced532c7658835d` (run https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40656046360). At time of writing: 4 of 10 checks completed green (`SSE Diagnostics`, `RSE dependency lock and vulnerability scan`, `Dependency Vulnerability Scan`, `Conversation Shell Frontend`), the remaining 6 (including the full `Deterministic Unit Tests` workflow) still in progress — not polled to completion in this session, per this session's own standing policy against self-polling CI. See the run URL above for final status.
 
 ## Security limitations and unresolved risks
 
@@ -100,7 +100,7 @@ A full, whole-repository run (~9,500+ tests, ~20–25 min) was not re-executed t
 
 ## Handoff
 
-- **New head**: `claude/pr111-closeout-2026-10-27` @ <!-- SHA_PLACEHOLDER -->.
+- **New head**: `claude/pr111-closeout-2026-10-27` @ `01c4aa00db8ca43b673ec1b8bced532c7658835d`.
 - **Diff this round**: `orca/serve/api.py` (revision-fencing publish/consume), `orca/serve/session_store.py` (`bump_revision`/`get_revision`), `orca/serve/organization.py` (share-creation check), `tests/test_multiworker_edit_consistency.py` (new, 5 tests), `tests/test_temporary_chat_privacy_boundary.py` (new, 7 tests).
 - No protected merge, deployment, paid infrastructure, model training, or UI/UX change occurred. PR #111's SHA and history are unchanged.
 - **This report does not declare PR #111 production-ready.** It is delivered for independent Antigravity qualification against the exact commit SHA above.
