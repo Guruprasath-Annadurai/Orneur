@@ -1,7 +1,10 @@
-# Antigravity handoff — PR #128 transcript integrity (corrective)
+# Antigravity handoff — PR #130 transcript integrity (corrective)
 
+**PR:** https://github.com/Guruprasath-Annadurai/Orneur/pull/130  
 **Branch:** `cursor/inference-transcript-integrity-c12b`  
+**Tip SHA:** `9eddbc267c55e7a8583c4268a4b16a7aca7782d5`  
 **Parent candidate (preserve):** PR #127 @ `22225086873cba5274d3ad44aab9e7ef5a913230` (exact-head CI 9/9; Antigravity **FAILED_QUALIFICATION**)  
+**Base:** `cursor/inference-p0-security-closure-c12b`  
 **Scope:** Corrective isolation of the conversation-commit protocol only. Do not treat green CI alone as qualification.
 
 ## Consistency contract
