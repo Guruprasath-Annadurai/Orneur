@@ -215,6 +215,16 @@ REQUIRED = {"check_quota", "check_input"}
 INLINE_REVIEWED = {"/api/chat": REQUIRED | {"model_access_allowed"}, "/api/stream": REQUIRED | {"model_access_allowed"}, "/api/cognitive/execute": REQUIRED}
 
 
+def test_inference_subsystem_applies_the_standard_gates():
+    """PR #122 originally spent Ollama without quota/moderation/DLP/session claim."""
+    inf = (Path(__file__).resolve().parents[1] / "orca" / "serve" / "inference.py").read_text()
+    routes = (Path(__file__).resolve().parents[1] / "orca" / "serve" / "inference_routes.py").read_text()
+    for token in ("check_quota", "model_access_allowed", "check_input", "scan_output", "spending_authorized", "claim_session"):
+        assert token in inf, token
+    assert "asyncio.to_thread" in routes
+    assert "session_id" in routes
+
+
 def test_every_route_that_spends_inference_applies_the_standard_gates():
     src = (Path(__file__).resolve().parents[1] / "orca" / "serve" / "api.py").read_text()
     tree = ast.parse(src)
