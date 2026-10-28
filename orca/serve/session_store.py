@@ -62,29 +62,77 @@ def _key(session_id: str) -> str:
     return f"orca:session:{session_id}"
 
 
-def save_session_state(session_id: str, model_variant: str, history: list[dict]) -> bool:
+# Stored value is '<revision>|<json>'; anything else (e.g. legacy bare
+# JSON) fails validation. Revision-stamped payloads (Antigravity FAILED_QUALIFICATION, 2026-10-28).
+# A cached history payload is only ever trusted if the revision it was
+# stamped with equals the session's CURRENT shared revision. Every
+# decision is made inside one Lua script so it is atomic against
+# concurrent edits on other workers:
+#   * save: compare-and-set -- writes only if the writer's known revision
+#     still equals the current one (stale writers are refused).
+#   * load: returns the payload only if its stamp equals the current
+#     revision; legacy/unstamped/mismatched payloads are never trusted.
+#   * bump: INCR the revision and DELETE the payload in one step.
+_SAVE_LUA = """
+local cur = redis.call('GET', KEYS[2]) or '0'
+local expected = ARGV[1]
+if expected == '' then expected = cur end
+if cur ~= expected then return -1 end
+redis.call('SET', KEYS[1], cur .. '|' .. ARGV[2], 'EX', ARGV[3])
+redis.call('EXPIRE', KEYS[2], ARGV[4])
+return 1
+"""
+
+# Revisions are compared as strings: they are ~1e15 and Lua's number->string
+# conversion would round them.
+_LOAD_LUA = """
+local cur = redis.call('GET', KEYS[2]) or '0'
+local raw = redis.call('GET', KEYS[1])
+if not raw then return {cur, false} end
+local sep = string.find(raw, '|', 1, true)
+if not sep or string.sub(raw, 1, sep - 1) ~= cur then return {cur, false} end
+return {cur, string.sub(raw, sep + 1)}
+"""
+
+_BUMP_LUA = """
+local prev = redis.call('GET', KEYS[2]) or '0'
+if prev == '0' then
+  -- (Re)initialise from the server clock in microseconds, so a counter
+  -- that vanished (Redis restart without persistence, key expiry) can
+  -- never re-issue a revision a worker may still hold from before.
+  local t = redis.call('TIME')
+  redis.call('SET', KEYS[2], t[1] .. string.format('%06d', tonumber(t[2])))
+end
+local rev = redis.call('INCR', KEYS[2])
+redis.call('EXPIRE', KEYS[2], ARGV[1])
+redis.call('DEL', KEYS[1])
+return {rev, prev}
+"""
+
+# The revision counter outlives the payload so a payload can never
+# outlive the counter that fences it (see touch_session()).
+_REV_TTL_SECONDS = SESSION_TTL_SECONDS * 2
+
+
+def save_session_state(session_id: str, model_variant: str, history: list[dict],
+                       expected_revision: Optional[int] = None) -> bool:
     """Persist just enough to reconstruct this session on any instance.
 
-    Never raises -- Redis being down must never break the chat request --
-    but CTO closeout review, issue 2 (2026-10-28): a caller that silently
-    swallows this too loses the one signal that distinguishes "wrote the
-    new value" from "left whatever was there before untouched" -- the
-    difference between a cold cache and a STALE one holding a pre-edit
-    value under its own still-live TTL, readable by any other instance.
+    Never raises -- Redis being down must never break the chat request.
 
-    Returns True when there is genuinely nothing to worry about -- either
-    the write succeeded, OR Redis is not configured at all (single-
-    instance/local-dev, the default for this whole test suite and for
-    any deployment that never set REDIS_URL): with no shared cache in
-    play, there is no OTHER instance that could ever read a stale entry,
-    so this is not a failure from a caller's point of view, just a no-op.
-    Returns False ONLY when Redis IS configured but the write itself
-    could not be confirmed (unreachable, timed out, or raised) -- the one
-    case where a stale value genuinely could be left behind for another
-    instance to load. A caller that only ever wanted "fire and forget"
-    is unaffected by ignoring this either way; a caller that needs to
-    react specifically to a genuine, actionable failure (post-commit-edit
-    live sync) can now tell the two apart.
+    The write is a revision-fenced compare-and-set: `expected_revision` is
+    the shared revision the caller's history is known to reflect. If the
+    shared revision has moved on (an edit committed elsewhere), the write
+    is REFUSED and False is returned, so a stale writer can never
+    re-publish pre-edit history. `None` means "stamp with whatever the
+    current revision is" and is only for callers that have no cached
+    revision notion (tests/legacy); the API always passes its own.
+
+    Returns True when there is nothing to worry about -- the write
+    succeeded, OR Redis is not configured (no shared cache, so no other
+    instance can read a stale entry). Returns False when Redis is
+    configured but the write was refused as stale or could not be
+    confirmed.
     """
     if not enabled():
         return True
@@ -94,23 +142,42 @@ def save_session_state(session_id: str, model_variant: str, history: list[dict])
             "history": history,
             "saved_at": time.time(),
         })
-        _client().set(_key(session_id), payload, ex=SESSION_TTL_SECONDS)
-        return True
+        res = _client().eval(
+            _SAVE_LUA, 2, _key(session_id), _rev_key(session_id),
+            "" if expected_revision is None else int(expected_revision),
+            payload, SESSION_TTL_SECONDS, _REV_TTL_SECONDS,
+        )
+        return int(res) == 1
     except Exception:
         return False  # Redis being down must never break the chat request
 
 
 def load_session_state(session_id: str) -> Optional[dict]:
-    """Returns {'model_variant': str, 'history': list[dict], 'saved_at': float} or None."""
+    """Returns {'model_variant', 'history', 'saved_at', 'revision'} or None.
+
+    None also covers a payload whose revision stamp does not equal the
+    current shared revision (stale, legacy/unstamped, or the counter
+    expired): the caller must rebuild from the authoritative transcript."""
+    state, _rev = load_session_state_with_revision(session_id)
+    return state
+
+
+def load_session_state_with_revision(session_id: str) -> tuple[Optional[dict], Optional[int]]:
+    """(validated payload or None, current revision or None if unknown).
+    Both come from one atomic read, so the revision returned is exactly
+    the one the payload was validated against."""
     if not enabled():
-        return None
+        return None, None
     try:
-        raw = _client().get(_key(session_id))
+        rev, raw = _client().eval(_LOAD_LUA, 2, _key(session_id), _rev_key(session_id))
+        rev = int(rev)
         if not raw:
-            return None
-        return json.loads(raw)
+            return None, rev
+        state = json.loads(raw)
+        state["revision"] = rev
+        return state, rev
     except Exception:
-        return None
+        return None, None
 
 
 def touch_session(session_id: str) -> None:
@@ -119,6 +186,7 @@ def touch_session(session_id: str) -> None:
         return
     try:
         _client().expire(_key(session_id), SESSION_TTL_SECONDS)
+        _client().expire(_rev_key(session_id), _REV_TTL_SECONDS)
     except Exception:
         pass
 
@@ -146,6 +214,12 @@ def _rev_key(session_id: str) -> str:
 
 
 def bump_revision(session_id: str) -> Optional[int]:
+    """New revision only; see bump_revision_with_previous()."""
+    res = bump_revision_with_previous(session_id)
+    return res[0] if res else None
+
+
+def bump_revision_with_previous(session_id: str) -> Optional[tuple[int, int]]:
     """CTO follow-up, Priority 1 (2026-10-28): the one cross-worker
     fencing primitive this module provides. A committed message edit
     calls this UNCONDITIONALLY -- regardless of whether the worker that
@@ -167,9 +241,9 @@ def bump_revision(session_id: str) -> Optional[int]:
     if not enabled():
         return None
     try:
-        new_rev = _client().incr(_rev_key(session_id))
-        _client().expire(_rev_key(session_id), SESSION_TTL_SECONDS)
-        return int(new_rev)
+        # Atomic: advance the revision AND drop the (now stale) payload.
+        new, prev = _client().eval(_BUMP_LUA, 2, _key(session_id), _rev_key(session_id), _REV_TTL_SECONDS)
+        return int(new), int(prev)
     except Exception:
         return None
 

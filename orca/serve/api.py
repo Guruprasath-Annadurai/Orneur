@@ -543,8 +543,21 @@ def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: s
     # when behind -- so no worker's NEXT inference turn can silently
     # consume stale content, whether or not THIS function found anything
     # to patch locally.
-    new_revision = session_store.bump_revision(session_id)
+    bumped = session_store.bump_revision_with_previous(session_id)
+    new_revision, previous_revision = bumped if bumped else (None, None)
     sess = _sessions.get(session_id)
+    if sess is not None and session_store.enabled():
+        # Our local copy can only be patched in place if it reflected every
+        # earlier edit (known == new-1). Otherwise, or if no fencing signal
+        # was published, drop it: the next access rebuilds from the
+        # authoritative transcript rather than trusting a possibly-stale copy.
+        if new_revision is None or sess._known_revision != previous_revision:
+            _sessions.pop(session_id, None)
+            if new_revision is None:
+                session_store.delete_session(session_id)
+                audit.log("message_edit_live_sync_unconfirmed", user_id=sess.user_id, detail={"session_id": session_id, "role": role, "reason": "revision_bump_unconfirmed_local_session_evicted"})
+                return False
+            return True
     if sess is None:
         # Nothing local to patch. The revision bump above is the entire
         # mechanism for this case -- but it is honest about when that
@@ -567,6 +580,10 @@ def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: s
                 if item.get("role") == role and item.get("content") == previous:
                     item["content"] = new_text
                     break
+            if new_revision is not None:
+                # Adopt the published revision BEFORE persisting: the CAS
+                # write is fenced on it.
+                sess._known_revision = new_revision
             # CTO CLOSEOUT REVIEW, issue 2: persist_to_redis() ->
             # save_session_state() deliberately never raises on a Redis
             # failure (so a normal chat turn's persistence never crashes
@@ -934,7 +951,13 @@ class _Session:
         # the caller wins over the persisted one (user actively switching
         # models mid-conversation should be respected); Redis only fills in
         # when the caller didn't specify (session_id known, variant omitted).
-        redis_state = session_store.load_session_state(session_id)
+        # One atomic read validates the payload's revision stamp against the
+        # current shared revision (stale/legacy/unstamped payloads come back
+        # as None and the history is rebuilt from the authoritative
+        # transcript instead). `redis_revision` is the revision this
+        # session is known to be caught up to; None = Redis disabled or
+        # unreachable (cannot confirm).
+        redis_state, redis_revision = session_store.load_session_state_with_revision(session_id)
         self._restored_history = None
         if redis_state:
             model_variant = model_variant or redis_state.get("model_variant")
@@ -950,7 +973,7 @@ class _Session:
         # disabled/unreachable -- see _get_session()'s fencing check,
         # which treats None as "nothing to compare against," never as
         # "stale."
-        self._known_revision = session_store.get_revision(session_id)
+        self._known_revision = redis_revision
 
         self.model_variant = model_variant or "core"
         self.memory = MemoryEngine(session_id=session_id)
@@ -974,6 +997,7 @@ class _Session:
         self.explain_store = ExplainStore()
         self.knowledge_graph = KnowledgeGraph(session_id=session_id)
         self.last_active = time.time()
+        self.context_freshness: str | None = None
 
     def _ensure_agent(self):
         if self._agent is not None:
@@ -1060,10 +1084,33 @@ class _Session:
         session_store.save_session_state()'s own docstring) -- existing
         callers that only fired this for its side effect are unaffected
         by ignoring the return value."""
-        return session_store.save_session_state(self.id, self.model_variant, self.agent.get_history())
+        if session_store.enabled() and self._known_revision is None:
+            # Built while the revision was unknowable: cannot prove this
+            # history is current, so it must not be published.
+            return False
+        return session_store.save_session_state(
+            self.id, self.model_variant, self.agent.get_history(),
+            expected_revision=self._known_revision,
+        )
 
 
 _sessions: dict[str, _Session] = {}
+
+
+def _context_freshness(sess: "_Session") -> str:
+    """What this request may honestly claim about its conversation context.
+
+    single_instance -- no shared Redis; no other worker can have edited it.
+    confirmed       -- built/validated against the current shared revision.
+    rebuilt_authoritative -- revision unknowable (Redis down) so the history
+                      was rebuilt from the durable transcript, not a cache.
+    unconfirmed     -- cannot be verified (anonymous session, Redis down).
+    """
+    if not session_store.enabled():
+        return "single_instance"
+    if sess._known_revision is not None:
+        return "confirmed"
+    return "rebuilt_authoritative" if sess.user_id else "unconfirmed"
 
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -1199,6 +1246,7 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
         else:
             raise HTTPException(status_code=503, detail="could not allocate a session")
 
+    cache_check_failed = False  # cached session kept although Redis could not confirm freshness
     if sid in _sessions:
         # CTO FOLLOW-UP, Priority 1: cross-worker staleness fencing. A
         # committed edit -- on THIS worker or any other -- advances the
@@ -1214,15 +1262,28 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
         # make the cache MORE conservative when Redis is healthy, never
         # less reliable than before when it is not.
         current_revision = session_store.get_revision(sid)
-        if current_revision is not None and current_revision > (_sessions[sid]._known_revision or 0):
+        known = _sessions[sid]._known_revision
+        # `!=`, not `>`: a revision that went BACKWARD (counter expired) or a
+        # session built while the revision was unknown (None) cannot be
+        # proven current either -- rebuild from the authoritative transcript.
+        # Freshness cannot be confirmed (Redis enabled but unreadable): a
+        # user session has an authoritative transcript, so rebuild from it
+        # rather than trust a cache that may predate an edit committed
+        # elsewhere. Anonymous sessions cannot be edited (no transcript), so
+        # their cache cannot be stale and is kept.
+        unconfirmable = current_revision is None and session_store.enabled() and _sessions[sid].user_id
+        if unconfirmable or (current_revision is not None and current_revision != known):
             _logger.info(
                 "session cache behind the shared revision -- evicting for a fresh rebuild",
                 extra={"session_id": sid, "cached_revision": _sessions[sid]._known_revision, "current_revision": current_revision},
             )
             del _sessions[sid]
+        elif current_revision is None and session_store.enabled():
+            cache_check_failed = True
     if sid not in _sessions:
         _sessions[sid] = _Session(sid, model_variant, user_id=user_id)
     _sessions[sid].touch()
+    _sessions[sid].context_freshness = "unconfirmed" if cache_check_failed else _context_freshness(_sessions[sid])
     session_store.touch_session(sid)  # refresh Redis TTL — no-op if Redis disabled
 
     # Evict idle sessions (>2h) to save memory
@@ -1927,6 +1988,7 @@ async def _chat_impl(
         "sources": _src["sources"],
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
+        "context_freshness": getattr(sess, "context_freshness", None),
     }
     _auth_meta = _authorized_metadata(authorized, rag_result)
     if _auth_meta is not None:
