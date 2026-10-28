@@ -1247,6 +1247,7 @@ async function uploadAttachment(file) {
     // this upload was in flight.
     if (!mySidAtStart && sessionId === null) {
       sessionId = data.session_id;
+      _rememberActiveConversation(sessionId);
       showActiveView(document.getElementById('conv-title').textContent);
     }
     // AUDIT-B16-FIX (the confirmed identity defect): this is the single
@@ -1583,6 +1584,7 @@ document.getElementById('temp-mode-start').addEventListener('click', async () =>
     _abandonActiveStream();
     sessionId = data.session_id;
     _isTemporarySession = true;
+    _forgetActiveConversation(); // a temporary chat is never restored after a reload
     _tempSessionExpiresAt = data.expires_at || null;
     delete document.getElementById('temp-mode-close-chat').dataset.permanentlyFailed; // a fresh session's own Close button starts clean
     _draftsByConversation.clear();
@@ -2146,6 +2148,30 @@ function showActiveView(title) {
   mountComposer('composer-active-slot');
 }
 
+/* ── Active-conversation memory (per TAB, per account) ───────────────
+   A reload must put the user back in the conversation they were reading,
+   without ever restoring a temporary chat, another account's conversation
+   or a conversation that no longer exists. sessionStorage is per-tab, so a
+   second tab starts clean; the record is keyed to the account id, cleared
+   by every identity change (they all pass through newConversation()), and
+   a stale id is dropped after the server refuses it. */
+const _ACTIVE_CONV_KEY = 'orneur_active_conversation';
+function _rememberActiveConversation(sid, title) {
+  try {
+    if (!sid || _isTemporarySession || !_authUser || !_authUser.id) { sessionStorage.removeItem(_ACTIVE_CONV_KEY); return; }
+    sessionStorage.setItem(_ACTIVE_CONV_KEY, JSON.stringify({ u: _authUser.id, s: sid, t: title || '' }));
+  } catch (e) {}
+}
+function _forgetActiveConversation() {
+  try { sessionStorage.removeItem(_ACTIVE_CONV_KEY); } catch (e) {}
+}
+async function _restoreActiveConversation() {
+  let rec = null;
+  try { rec = JSON.parse(sessionStorage.getItem(_ACTIVE_CONV_KEY) || 'null'); } catch (e) {}
+  if (!rec || typeof rec.s !== 'string' || !_authUser || rec.u !== _authUser.id || sessionId) return;
+  await openSession(rec.s, rec.t || undefined);
+}
+
 function newConversation() {
   // AUDIT-B04: a derelict draft-workspace dialog (and the taller
   // focused-expanded composer state) must not silently survive starting
@@ -2180,6 +2206,7 @@ function newConversation() {
   // new conversation earlier, got interrupted, and came back).
   _saveCurrentDraft();
   sessionId = null;
+  _forgetActiveConversation();
   _restoreDraftFor(null);
   loadAttachmentsForSession(); // AUDIT-B16: sessionId is now null -- clears the chip list (a "new conversation" starts with none)
   document.getElementById('reading-container').innerHTML = '';
@@ -2915,6 +2942,7 @@ async function sendMessage(runId) {
         const ev = JSON.parse(line.slice(6));
         if (ev.type === 'session') {
           sessionId = ev.session_id;
+          _rememberActiveConversation(sessionId);
           // The sidebar is refreshed on the `done` event, once the server
           // confirms the turn is persisted -- listing it here would race
           // the persistence and render "No conversations yet".
@@ -3468,6 +3496,7 @@ async function openSession(sid, title) {
   // server-persisted (see _draftsByConversation's own comment).
   _saveCurrentDraft();
   sessionId = sid;
+  _rememberActiveConversation(sid, title);
   _restoreDraftFor(sid);
   loadAttachmentsForSession(); // AUDIT-B16: this conversation's own real attachments, never a carried-over list
   highlightSelectedRecent(sid);
@@ -3478,7 +3507,7 @@ async function openSession(sid, title) {
     const r = await fetch(`/api/session/${encodeURIComponent(sid)}/messages`, { headers: _authHeaders() });
     if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     if (r.status === 401) { _handleSessionExpired(); return; }
-    if (!r.ok) throw new Error('load failed');
+    if (!r.ok) { _forgetActiveConversation(); throw new Error('load failed'); } // a removed / foreign conversation is not remembered
     const data = await r.json();
     if (!_messageResponseStillOwns(myEpoch, myToken) || sessionId !== mySid) return;
     container.innerHTML = '';
@@ -3842,6 +3871,7 @@ async function tryRestoreSession() {
     updateAccountUI();
     loadSessions();
     loadModels();
+    _restoreActiveConversation(); // put the user back where this tab was (same account only)
     return true;
   } catch (e) {
     return false;

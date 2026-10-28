@@ -226,6 +226,7 @@ jobs:
           node --test tests/frontend/test_logout_revocation.mjs
           node --test tests/frontend/test_b11_inline_edit.mjs
           node --test tests/frontend/test_view_ownership_epoch.mjs
+          node --test tests/frontend/test_active_conversation.mjs
 
       - name: Set up Python (to actually serve the static file, not just read it off disk)
         uses: actions/setup-python@v5

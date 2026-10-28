@@ -205,6 +205,7 @@ test('newConversation() invalidates ONLY the message domain, not history (the CT
     },
     highlightSelectedRecent: () => {},
     showEmptyView: () => {},
+    _forgetActiveConversation: () => {}, // LANDMARK-01: newConversation() also clears the remembered active conversation
   };
   vm.createContext(sandbox);
   vm.runInContext(
@@ -435,6 +436,7 @@ test('tryRestoreSession() still restores normally when nothing else wins the rac
     updateAccountUI: () => {},
     loadSessions: () => {},
     loadModels: () => {},
+    _restoreActiveConversation: () => {}, // LANDMARK-01: a successful restore also reopens this tab's conversation
     _abandonAllViewsForAccountChange: () => {},
     fetch: async () => ({ ok: true, json: async () => ({ user: { name: 'Alice' } }) }),
   };

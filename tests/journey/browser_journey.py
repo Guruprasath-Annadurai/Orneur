@@ -202,9 +202,14 @@ with sync_playwright() as pw:
     def c1():
         page.reload()
         page.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
+        # The tab is put back in the conversation it was reading WITHOUT any click (per-tab, per-account memory).
+        page.wait_for_selector(".msg-user .sample-q", timeout=20000)
+        assert "sea" in page.locator(".msg-user .sample-q").first.inner_text(), "reload did not restore the active conversation"
+        assert page.locator("#recents-list .rec.selected").count() == 1, "the restored conversation is not highlighted in the sidebar"
         page.wait_for_selector("#recents-list .rec-row", timeout=20000)
-        page.locator("#recents-list .rec-row").first.click()
+        page.locator("#recents-list .rec-row").first.click()                 # ...and selecting it from the sidebar still works
         page.wait_for_selector(".msg-user .sample-q", timeout=15000)
+        assert page.locator(".msg-user .sample-q").count() == 1, "re-opening the same conversation duplicated its messages"
         assert "sea" in page.locator(".msg-user .sample-q").first.inner_text()
         assert page.locator(".answer .msg-body").last.inner_text().strip(), "assistant answer missing after reload"
         shot(page, "C1_reloaded_conversation_light")
