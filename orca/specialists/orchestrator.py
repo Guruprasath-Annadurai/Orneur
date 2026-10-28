@@ -1,9 +1,15 @@
-"""Bounded DAG dispatch over the specialist registry. Not a mission engine."""
+"""Bounded DAG dispatch over the specialist registry. Not a mission engine.
+
+Thread-pool handlers are not forcibly killed. A deadline or cancel sets a
+flag; a blocked thread may keep running. The result never claims those
+threads were terminated.
+"""
 
 from __future__ import annotations
 
 import threading
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Callable
 
 from orca.specialists.contracts import SpecialistError, SpecialistResult, TaskNode
@@ -25,12 +31,15 @@ class Orchestrator:
             raise SpecialistError("tenant_required")
         if max_workers < 1 or max_workers > 8:
             raise SpecialistError("concurrency_refused")
+        if deadline_s <= 0 or deadline_s > 120:
+            raise SpecialistError("deadline_refused")
         self.tenant_id = tenant_id
         self.capabilities = capabilities
         self.registry = registry or default_registry()
         self.max_workers = max_workers
         self.deadline_s = deadline_s
         self._cancel = threading.Event()
+        self._started: dict[str, float] = {}
 
     def cancel(self) -> None:
         self._cancel.set()
@@ -54,6 +63,11 @@ class Orchestrator:
         errors: dict[str, str] = {}
         pending = set(by_id)
         inflight: dict = {}
+        still_running: list[str] = []
+        deadline_at = time.monotonic() + self.deadline_s
+
+        def remaining() -> float:
+            return deadline_at - time.monotonic()
 
         def invoke(task: TaskNode) -> SpecialistResult:
             if self._cancel.is_set():
@@ -78,63 +92,90 @@ class Orchestrator:
             handler: Callable = self.registry.handler(task.role)
             return handler(payload)
 
-        with ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="orneur-spec") as pool:
+        def abort(code: str) -> None:
+            self._cancel.set()
+            for future, task_id in list(inflight.items()):
+                future.cancel()
+                if future.running():
+                    still_running.append(task_id)
+            err = SpecialistError(code)
+            err.still_running = list(still_running)
+            err.handlers_forcibly_stopped = False
+            err.partial_results = {key: _as_dict(results[key]) for key in results}
+            raise err
+
+        pool = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="orneur-spec")
+        try:
             while pending or inflight:
+                if remaining() <= 0:
+                    abort("deadline_exceeded")
                 if self._cancel.is_set():
-                    for future in inflight:
-                        future.cancel()
-                    raise SpecialistError("cancelled")
+                    abort("cancelled")
                 ready = [
                     task_id
                     for task_id in list(pending)
-                    if all(dep in results and results[dep].status in {"completed", "verified", "empty", "fixture_only", "unavailable"} for dep in by_id[task_id].depends_on)
+                    if all(
+                        dep in results
+                        and results[dep].status in {"completed", "verified", "empty", "fixture_only", "unavailable"}
+                        for dep in by_id[task_id].depends_on
+                    )
                     and all(dep not in errors for dep in by_id[task_id].depends_on)
                 ]
                 blocked = [
                     task_id
                     for task_id in list(pending)
-                    if any(dep in errors or (dep in results and results[dep].status in {"failed", "refused", "unverified", "unknown"}) for dep in by_id[task_id].depends_on)
+                    if any(
+                        dep in errors
+                        or (dep in results and results[dep].status in {"failed", "refused", "unverified", "unknown"})
+                        for dep in by_id[task_id].depends_on
+                    )
                 ]
                 for task_id in blocked:
                     pending.remove(task_id)
                     errors[task_id] = "dependency_failed"
-                launched = 0
                 while ready and len(inflight) < self.max_workers:
                     task_id = ready.pop(0)
                     pending.remove(task_id)
                     future = pool.submit(invoke, by_id[task_id])
                     inflight[future] = task_id
-                    launched += 1
+                    self._started[task_id] = time.monotonic()
                 if not inflight:
                     if pending:
                         raise SpecialistError("cycle_refused")
                     break
-                done, _ = wait(inflight, timeout=self.deadline_s, return_when=FIRST_COMPLETED)
+                wait_s = remaining()
+                if wait_s <= 0:
+                    abort("deadline_exceeded")
+                done, _ = wait(inflight, timeout=wait_s, return_when=FIRST_COMPLETED)
                 if not done:
-                    self._cancel.set()
-                    raise SpecialistError("deadline_exceeded")
+                    abort("deadline_exceeded")
                 for future in done:
                     task_id = inflight.pop(future)
                     try:
                         result = future.result()
                     except SpecialistError as exc:
                         if exc.code in {"tenant_mismatch", "privilege_escalation", "cancelled"}:
-                            raise
+                            abort(exc.code)
                         errors[task_id] = exc.code
                         continue
                     results[task_id] = result
                     if result.status in {"failed", "refused", "unverified", "unknown"}:
                         errors[task_id] = result.error or result.status
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
         if self._cancel.is_set():
-            raise SpecialistError("cancelled")
+            abort("cancelled")
         evidence = [results[key].evidence for key in sorted(results)]
         return {
             "tenant_id": self.tenant_id,
             "registry_version": self.registry.version,
             "results": {key: _as_dict(results[key]) for key in sorted(results)},
             "errors": errors,
-            "cancelled": self._cancel.is_set(),
+            "cancelled": False,
+            "cancel_requested": False,
+            "handlers_forcibly_stopped": False,
+            "handlers_still_running": [],
             "evidence_sha256": digest({"evidence": evidence}),
             "evidence": evidence,
         }

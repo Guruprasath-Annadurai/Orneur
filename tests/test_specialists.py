@@ -216,5 +216,39 @@ def test_cancel_during_dispatch_is_observed():
             )
         stopper.join()
         assert exc.value.code == "cancelled"
+        assert getattr(exc.value, "handlers_forcibly_stopped", False) is False
+    finally:
+        handlers_mod.HANDLERS["data_analysis"] = original
+
+
+def test_deadline_is_absolute_and_does_not_claim_killed_threads():
+    original = HANDLERS["data_analysis"]
+
+    def sleepy(payload):
+        time.sleep(2.0)
+        return original(payload)
+
+    from orca.specialists import handlers as handlers_mod
+
+    handlers_mod.HANDLERS["data_analysis"] = sleepy
+    try:
+        orch = Orchestrator(tenant_id=TENANT, capabilities=_caps("data.read"), max_workers=1, deadline_s=0.2)
+        t0 = time.monotonic()
+        with pytest.raises(SpecialistError) as exc:
+            orch.run(
+                [
+                    TaskNode(
+                        "stats",
+                        "data_analysis",
+                        {"column": "n", "rows": [{"n": 1}, {"n": 2}, {"n": 3}]},
+                        capabilities=_caps("data.read"),
+                    )
+                ]
+            )
+        elapsed = time.monotonic() - t0
+        assert exc.value.code == "deadline_exceeded"
+        assert exc.value.handlers_forcibly_stopped is False
+        assert "stats" in getattr(exc.value, "still_running", [])
+        assert elapsed < 1.5
     finally:
         handlers_mod.HANDLERS["data_analysis"] = original

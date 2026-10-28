@@ -41,3 +41,24 @@ Public browser remains unqualified. Training remains `NO-GO`.
 | `43020779f23d3cc475a341cbd02d52ea6a2079cf` | https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40569838397 | 9/9 success |
 
 Independent qualification is not awarded by a green CI badge.
+
+## CTO continuation (after `0ef5fb8`)
+
+- Uploads: exclusive temp + `os.link` publish, nofollow/lstat, write-failure cleanup, `User`-typed `store_for`.
+- Document task: extract-before-persist; split claims (upload / excerpt / grounding / external).
+- Orchestrator: absolute deadline; cancel does not claim threads killed.
+- Availability: live tags probe is `reachable_not_inferred`, never inference.
+- HTTP `/api/documents` and `/api/specialists/run` bind owner from the session.
+- Memory `require_consent` helper exists; existing writers are not all gated.
+
+## Remaining (authorized but unfinished)
+
+- Official A–F UI journeys: 0. Do not mark complete without frozen frontend.
+- C3 temporary-chat: Claude B11. Do not rewrite conversations.py.
+- F3 live streaming against a real local model: blocked if Ollama generate is absent.
+- G1 untrusted execution: docker absent.
+- H1 live opportunity source: absent.
+- I2/I5 tokenizer/family eval foundations.
+- Do not merge #111 or #115 into this PR.
+
+Resume from the branch head after push; re-run exact-head CI before any handover report.
