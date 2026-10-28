@@ -137,7 +137,7 @@ def test_inference_has_no_second_user_global_history_store():
     assert "inference_turns" not in src
     assert "set_history_path" not in src
     assert "CREATE TABLE" not in src
-    assert "conversations.append" in src
+    assert "commit_turn" in src
     assert "claim_session" in src
     assert "reserve_quota" in src
     assert "check_input" in src
@@ -459,7 +459,8 @@ def test_stream_chunks_and_cooperative_cancel(ollama_fixture):
         session_id="cancel-a",
         synthetic_provider=True,
     )
-    assert body["chunks"] == ["pong-", "ok"]
+    # Chunk boundaries may shift under stateful DLP hold; the aggregate must match.
+    assert "".join(body["chunks"]) == "pong-ok"
     assert body["text"] == "pong-ok"
     assert body["finish_reason"] == "stop"
     assert body["handlers_forcibly_stopped"] is False

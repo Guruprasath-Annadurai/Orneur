@@ -99,15 +99,23 @@ CREATE TABLE IF NOT EXISTS usage_daily (
 );
 
 CREATE TABLE IF NOT EXISTS usage_reservations (
-    request_id TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL,
-    kind       TEXT NOT NULL,
-    date       TEXT NOT NULL,
-    status     TEXT NOT NULL,
-    created_at REAL NOT NULL
+    request_id  TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    date        TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    fingerprint TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created
     ON usage_reservations(status, created_at);
+CREATE TABLE IF NOT EXISTS usage_reservation_results (
+    request_id    TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    fingerprint   TEXT NOT NULL,
+    response_json TEXT NOT NULL,
+    created_at    REAL NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS user_sessions (
     user_id    TEXT NOT NULL,
@@ -315,15 +323,23 @@ CREATE TABLE IF NOT EXISTS usage_daily (
 );
 
 CREATE TABLE IF NOT EXISTS usage_reservations (
-    request_id TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL,
-    kind       TEXT NOT NULL,
-    date       TEXT NOT NULL,
-    status     TEXT NOT NULL,
-    created_at REAL NOT NULL
+    request_id  TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    date        TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    created_at  DOUBLE PRECISION NOT NULL,
+    fingerprint TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created
     ON usage_reservations(status, created_at);
+CREATE TABLE IF NOT EXISTS usage_reservation_results (
+    request_id    TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    fingerprint   TEXT NOT NULL,
+    response_json TEXT NOT NULL,
+    created_at    DOUBLE PRECISION NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS user_sessions (
     user_id    TEXT NOT NULL,
@@ -736,12 +752,22 @@ def init_db() -> None:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS usage_reservations ("
                 "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
-                "date TEXT NOT NULL, status TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL)"
+                "date TEXT NOT NULL, status TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL, "
+                "fingerprint TEXT NOT NULL DEFAULT '')"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created "
                 "ON usage_reservations(status, created_at)"
             )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS usage_reservation_results ("
+                "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, fingerprint TEXT NOT NULL, "
+                "response_json TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL)"
+            )
+            try:
+                conn.execute("ALTER TABLE usage_reservations ADD COLUMN IF NOT EXISTS fingerprint TEXT NOT NULL DEFAULT ''")
+            except Exception:
+                pass
             # Contains $$ ... $$ function bodies with semicolons inside them —
             # must go through execute_sql_block(), not executescript(), which
             # would break on the naive ';' split (see its docstring).
@@ -779,12 +805,22 @@ def init_db() -> None:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS usage_reservations ("
             "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
-            "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL)"
+            "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL, "
+            "fingerprint TEXT NOT NULL DEFAULT '')"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created "
             "ON usage_reservations(status, created_at)"
         )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS usage_reservation_results ("
+            "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, fingerprint TEXT NOT NULL, "
+            "response_json TEXT NOT NULL, created_at REAL NOT NULL)"
+        )
+        try:
+            conn.execute("ALTER TABLE usage_reservations ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
         _mark_legacy_owner(conn)
 
 

@@ -345,11 +345,22 @@ def _ensure_reservations(conn) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS usage_reservations ("
         "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
-        "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL)"
+        "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL, "
+        "fingerprint TEXT NOT NULL DEFAULT '')"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created "
         "ON usage_reservations(status, created_at)"
+    )
+    # Additive migration for installs that created the table before fingerprint.
+    try:
+        conn.execute("ALTER TABLE usage_reservations ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''")
+    except Exception:
+        pass
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS usage_reservation_results ("
+        "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, fingerprint TEXT NOT NULL, "
+        "response_json TEXT NOT NULL, created_at REAL NOT NULL)"
     )
 
 
@@ -379,13 +390,47 @@ def _refund_stale_locked(conn, *, now: float) -> None:
     )
 
 
-def reserve_quota(user_id: str, tier: str, kind: str = "message", request_id: str | None = None) -> dict:
-    """Atomically admit one billable unit. Idempotent on request_id."""
+def request_fingerprint(*, user_id: str, session_id: str, message: str, model: str) -> str:
+    """Immutable fingerprint binding a reservation to one authenticated request."""
+    import hashlib
+
+    raw = "\n".join(
+        [
+            "v1",
+            (user_id or "").strip(),
+            (session_id or "").strip(),
+            (model or "").strip(),
+            (message or "").strip(),
+        ]
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def reserve_quota(
+    user_id: str,
+    tier: str,
+    kind: str = "message",
+    request_id: str | None = None,
+    fingerprint: str | None = None,
+) -> dict:
+    """Atomically admit one billable unit.
+
+    Reservations are bound to ``user_id`` and an immutable ``fingerprint``.
+    Status machine:
+      * new → reserved (counter incremented)
+      * reserved + same user/fingerprint → ok duplicate in_progress (no second charge)
+      * consumed → ok=False (no new provider dispatch; caller may replay committed body)
+      * released → ok=False
+      * cross-user or fingerprint mismatch → ok=False
+    """
     if not user_id:
         raise QuotaError("unauthenticated")
     rid = request_id or uuid.uuid4().hex
     if not isinstance(rid, str) or not rid.strip() or len(rid) > 128:
         raise QuotaError("invalid_request_id")
+    fp = (fingerprint or "").strip()
+    if len(fp) > 128:
+        raise QuotaError("invalid_fingerprint")
     today = date.today().isoformat()
     col = "messages" if kind == "message" else "ultra_runs"
     limit = DAILY_LIMITS.get(tier, DAILY_LIMITS["free"]).get("messages" if kind == "message" else "ultra", 50)
@@ -399,7 +444,7 @@ def reserve_quota(user_id: str, tier: str, kind: str = "message", request_id: st
             _ensure_reservations(conn)
             _refund_stale_locked(conn, now=now)
             existing = conn.execute(
-                "SELECT status FROM usage_reservations WHERE request_id=?",
+                "SELECT status, user_id, fingerprint FROM usage_reservations WHERE request_id=?",
                 (rid,),
             ).fetchone()
             if existing:
@@ -409,9 +454,59 @@ def reserve_quota(user_id: str, tier: str, kind: str = "message", request_id: st
                     (user_id, today),
                 ).fetchone()
                 used = used_row[col] if used_row else 0
+                owner = existing["user_id"]
+                prior_fp = existing["fingerprint"] or ""
+                if owner != user_id:
+                    return {
+                        "ok": False,
+                        "request_id": rid,
+                        "used": used,
+                        "limit": limit,
+                        "status": "foreign",
+                        "duplicate": True,
+                    }
+                if fp and prior_fp and fp != prior_fp:
+                    return {
+                        "ok": False,
+                        "request_id": rid,
+                        "used": used,
+                        "limit": limit,
+                        "status": "fingerprint_mismatch",
+                        "duplicate": True,
+                    }
                 if status == "released":
-                    return {"ok": False, "request_id": rid, "used": used, "limit": limit, "status": status, "duplicate": True}
-                return {"ok": True, "request_id": rid, "used": used, "limit": limit, "status": status, "duplicate": True}
+                    return {
+                        "ok": False,
+                        "request_id": rid,
+                        "used": used,
+                        "limit": limit,
+                        "status": status,
+                        "duplicate": True,
+                    }
+                if status == "consumed":
+                    return {
+                        "ok": False,
+                        "request_id": rid,
+                        "used": used,
+                        "limit": limit,
+                        "status": "consumed",
+                        "duplicate": True,
+                    }
+                # reserved — same user, same fingerprint: in-progress duplicate
+                # Touch created_at so long streams are not refunded mid-flight.
+                conn.execute(
+                    "UPDATE usage_reservations SET created_at=? WHERE request_id=? AND status='reserved'",
+                    (now, rid),
+                )
+                return {
+                    "ok": True,
+                    "request_id": rid,
+                    "used": used,
+                    "limit": limit,
+                    "status": "reserved",
+                    "duplicate": True,
+                    "in_progress": True,
+                }
             if BACKEND == "postgres":
                 conn.execute(
                     "SELECT messages FROM usage_daily WHERE user_id=? AND date=? FOR UPDATE",
@@ -442,15 +537,15 @@ def reserve_quota(user_id: str, tier: str, kind: str = "message", request_id: st
             used = used_row[col] if used_row else 0
             if not admitted:
                 conn.execute(
-                    "INSERT INTO usage_reservations (request_id, user_id, kind, date, status, created_at) "
-                    "VALUES (?,?,?,?, 'released', ?)",
-                    (rid, user_id, kind, today, now),
+                    "INSERT INTO usage_reservations (request_id, user_id, kind, date, status, created_at, fingerprint) "
+                    "VALUES (?,?,?,?, 'released', ?, ?)",
+                    (rid, user_id, kind, today, now, fp),
                 )
                 return {"ok": False, "request_id": rid, "used": used, "limit": limit, "status": "released", "duplicate": False}
             conn.execute(
-                "INSERT INTO usage_reservations (request_id, user_id, kind, date, status, created_at) "
-                "VALUES (?,?,?,?, 'reserved', ?)",
-                (rid, user_id, kind, today, now),
+                "INSERT INTO usage_reservations (request_id, user_id, kind, date, status, created_at, fingerprint) "
+                "VALUES (?,?,?,?, 'reserved', ?, ?)",
+                (rid, user_id, kind, today, now, fp),
             )
             return {"ok": True, "request_id": rid, "used": used, "limit": limit, "status": "reserved", "duplicate": False}
     except QuotaError:
@@ -464,7 +559,8 @@ def reserve_quota(user_id: str, tier: str, kind: str = "message", request_id: st
             pass
 
 
-def mark_quota_consumed(request_id: str) -> None:
+def touch_reservation(request_id: str) -> None:
+    """Heartbeat for long-running reserved generations (extends stale-refund TTL)."""
     if not request_id:
         return
     try:
@@ -475,13 +571,93 @@ def mark_quota_consumed(request_id: str) -> None:
         with conn:
             _ensure_reservations(conn)
             conn.execute(
-                "UPDATE usage_reservations SET status='consumed' WHERE request_id=? AND status='reserved'",
-                (request_id,),
+                "UPDATE usage_reservations SET created_at=? WHERE request_id=? AND status='reserved'",
+                (time.time(), request_id),
             )
     except QuotaError:
         raise
     except Exception as exc:
         raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def mark_quota_consumed(request_id: str, *, response: dict | None = None, user_id: str | None = None, fingerprint: str | None = None) -> None:
+    if not request_id:
+        return
+    try:
+        conn = _quota_conn()
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    try:
+        import json as _json
+
+        with conn:
+            _ensure_reservations(conn)
+            conn.execute(
+                "UPDATE usage_reservations SET status='consumed' WHERE request_id=? AND status='reserved'",
+                (request_id,),
+            )
+            if response is not None and user_id:
+                payload = (
+                    request_id,
+                    user_id,
+                    (fingerprint or ""),
+                    _json.dumps(response, ensure_ascii=False, separators=(",", ":")),
+                    time.time(),
+                )
+                if BACKEND == "postgres":
+                    conn.execute(
+                        "INSERT INTO usage_reservation_results "
+                        "(request_id, user_id, fingerprint, response_json, created_at) VALUES (?,?,?,?,?) "
+                        "ON CONFLICT (request_id) DO UPDATE SET "
+                        "user_id=EXCLUDED.user_id, fingerprint=EXCLUDED.fingerprint, "
+                        "response_json=EXCLUDED.response_json, created_at=EXCLUDED.created_at",
+                        payload,
+                    )
+                else:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO usage_reservation_results "
+                        "(request_id, user_id, fingerprint, response_json, created_at) VALUES (?,?,?,?,?)",
+                        payload,
+                    )
+    except QuotaError:
+        raise
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def get_committed_response(request_id: str, user_id: str) -> dict | None:
+    """Return a previously committed response for an authorized replay, or None."""
+    if not request_id or not user_id:
+        return None
+    try:
+        conn = _quota_conn()
+    except Exception:
+        return None
+    try:
+        import json as _json
+
+        with conn:
+            _ensure_reservations(conn)
+            row = conn.execute(
+                "SELECT response_json FROM usage_reservation_results WHERE request_id=? AND user_id=?",
+                (request_id, user_id),
+            ).fetchone()
+        if not row:
+            return None
+        body = _json.loads(row["response_json"])
+        return body if isinstance(body, dict) else None
+    except Exception:
+        return None
     finally:
         try:
             conn.close()
