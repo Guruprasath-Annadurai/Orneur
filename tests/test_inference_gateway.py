@@ -138,7 +138,10 @@ def test_inference_has_no_second_user_global_history_store():
     assert "set_history_path" not in src
     assert "CREATE TABLE" not in src
     assert "conversations.commit_turn" in src
-    assert "claim_turn_commit" in src
+    assert "authority_check" in src
+    assert "sync_turn_revision" in src
+    assert "lease_held" in src
+    assert "committed_messages" in src
     assert "claim_session" in src
     assert "reserve_quota" in src
     assert "check_input" in src

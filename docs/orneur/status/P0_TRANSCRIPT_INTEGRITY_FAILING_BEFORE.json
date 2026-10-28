@@ -1,0 +1,45 @@
+{
+  "expect_fixed": false,
+  "defects_observed": 3,
+  "results": [
+    {
+      "name": "jsonl_phantom_after_sqlite_rollback",
+      "jsonl_total": 2,
+      "sqlite_turns": 0,
+      "prompt_roles": [
+        "user",
+        "assistant"
+      ],
+      "prompt_contents": [
+        "PHANTOM_USER",
+        "PHANTOM_ASSISTANT"
+      ],
+      "defect_observed": true
+    },
+    {
+      "name": "prompt_contamination_from_jsonl",
+      "sqlite_turns": 0,
+      "prompt_contents": [
+        "UNCOMMITTED_SECRET_PROMPT_POISON",
+        "should-not-be-in-context"
+      ],
+      "defect_observed": true
+    },
+    {
+      "name": "stale_worker_commit_after_lease_takeover",
+      "worker_a_claim": 1793199037606607,
+      "worker_a_commit_ok": true,
+      "sqlite_turn_users": [
+        "from-A-STALE",
+        "from-B"
+      ],
+      "jsonl_contents": [
+        "from-B",
+        "reply-B",
+        "from-A-STALE",
+        "reply-A-STALE"
+      ],
+      "defect_observed": true
+    }
+  ]
+}
