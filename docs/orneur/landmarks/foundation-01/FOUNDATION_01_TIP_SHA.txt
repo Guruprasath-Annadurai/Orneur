@@ -1,7 +1,8 @@
 FOUNDATION LANDMARK-01 backend candidate tip (exact SHA for Antigravity):
-9f5cbc804d6cf983d3d55412514b388c080b484f
+799a3d32a2b2080695107ebc429f0696b6a399de
 
 Branch: cursor/foundation-landmark-01-backend-closure-1cdf
 
-If HEAD advances past this file's recorded SHA, qualification MUST restart
-for the new head. Do not treat green CI as independent qualification.
+Prior functional tip (pre this pin): 9f5cbc804d6cf983d3d55412514b388c080b484f
+HEAD advanced — qualification MUST restart for this tip.
+Do not treat green CI as independent qualification.
