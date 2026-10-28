@@ -69,7 +69,7 @@ Resume from the branch head after push; re-run exact-head CI before any handover
 - Live on this engineering host: Ollama 0.12.6 serving `smollm:135m` (91 MB Q4_0). Generate `tokens_in=20` `tokens_out=64` `latency_ms≈1779`. Stream produced 64 chunks. Identity stayed `served_model=smollm:135m`, `backend=ollama`, `native_family=null`.
 - Fixture HTTP tests remain labeled `synthetic_provider`. Unreachable host is `provider_unavailable`, not a pass.
 - GitHub Actions: live tests skip unless the runner has Ollama and a tag. That skip is BLOCKED on CI, not a live pass.
-- Docker: **absent**. Untrusted execution stays `isolation_unavailable`.
+- Docker G1 continues on branch `cursor/g1-docker-isolation-ae9d` (does not modify PR #122 `ea9bb95`).
 - Opportunity live source: **none authorized**. `availability().required_dependency` names a licensed adapter + `ORNEUR_OPPORTUNITY_SOURCE`. H1 remains not started. PR #115 was not merged.
 - Synthetic byte tokenizer + family foundation status without official scores. GENESIS `INTERFACE_ONLY`; NOVUS/AETERNUM `NOT_AVAILABLE`; official scores null.
 - Frontend contract for the authenticated serving journey (frozen UI not edited):
@@ -78,4 +78,14 @@ Resume from the branch head after push; re-run exact-head CI before any handover
   - `POST /api/inference/stream` SSE `data: {type: chunk|done|cancelled|error, ...}`
   - `GET /api/inference/history` owner-only turns
   - Claude owns B11/B13, temporary-chat, Redis consistency. This branch did not edit `orca/serve/conversations.py`.
+
+## G1 Docker isolator (`cursor/g1-docker-isolation-ae9d`)
+
+Based on audited PR #122 `ea9bb95`. Does not rewrite inference.
+
+- Product path: `orca/code/untrusted.execute` → `docker run` with `--network none`, `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, `--user 65534:65534`, tmpfs `/workspace` and `/tmp` (uid 65534), no host binds, no docker.sock, no inherited secrets.
+- Allowlisted image: `python:3.11-alpine` digest `sha256:79440cc1dfa86a5f98d67efcd219726a8e9d8083cc0aafd27c7bef5976c38868`.
+- HTTP `POST /api/untrusted/task` requires auth and `ORNEUR_UNTRUSTED_EXECUTION=development`. `/api/code/run` stays `capability_disabled`. Path avoids G-020 `exec`/`orca.code` serve-import bans.
+- Callers cannot set privileged, image, network, or mounts.
+- Shared-kernel Docker remains disclosed. Production stays off.
 

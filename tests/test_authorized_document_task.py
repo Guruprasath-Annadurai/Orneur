@@ -56,8 +56,8 @@ def test_caller_id_string_is_not_a_user(tmp_path, monkeypatch):
 
 
 def test_untrusted_code_stays_disabled_without_isolator(monkeypatch):
-    monkeypatch.setattr("orca.code.untrusted.shutil.which", lambda name: None)
+    monkeypatch.setattr("orca.code.untrusted.daemon_usable", lambda: False)
     assert isolator() is None
     with pytest.raises(UntrustedError) as exc:
-        execute("print(1)", user_id="user-a")
+        execute("print(1)", user=_user("user-a"))
     assert exc.value.code == "isolation_unavailable"
