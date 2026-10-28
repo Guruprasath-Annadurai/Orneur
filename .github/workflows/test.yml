@@ -221,6 +221,12 @@ jobs:
       - name: Run SSE diagnostics regression suite
         run: node --test tests/frontend/test_sse_diagnostics.mjs
 
+      - name: Run conversation shell frontend suites (logout revocation, inline edit binding, view ownership epochs)
+        run: |
+          node --test tests/frontend/test_logout_revocation.mjs
+          node --test tests/frontend/test_b11_inline_edit.mjs
+          node --test tests/frontend/test_view_ownership_epoch.mjs
+
       - name: Set up Python (to actually serve the static file, not just read it off disk)
         uses: actions/setup-python@v5
         with:

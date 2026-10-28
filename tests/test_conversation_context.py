@@ -2,32 +2,52 @@ from __future__ import annotations
 
 import json
 
+import uuid
+
 from orca.serve.conversation_context import assemble_messages, MAX_CHARS
 from orca.serve import conversations, message_versions
 
 
+def _commit(sid: str, user_id: str, user_text: str, assistant_text: str, user_mid: str, assistant_mid: str) -> None:
+    """Seed one turn through the AUTHORITATIVE path (SQLite fencing). Model context is read from committed turns only: lines appended to the
+    JSONL export are derived data and never reach a prompt (PR #130 contract), so seeding them with ``conversations.append`` would prove nothing."""
+    from orca.auth.store import claim_session
+
+    assert claim_session(sid, user_id)
+    fence = uuid.uuid4().hex
+    auth = conversations.acquire_authority(sid, user_id, fence, ttl_s=30.0)
+    assert auth is not None
+    res = conversations.commit_turn(
+        sid, user_text, assistant_text, user_id=user_id, turn_id=uuid.uuid4().hex,
+        fence_token=fence, epoch=auth.epoch, meta={"message_id": assistant_mid, "user_message_id": user_mid},
+    )
+    conversations.release_authority(sid, fence, auth.epoch)
+    assert res.ok, res.reason
+
+
 def test_assemble_includes_prior_turns_and_not_duplicate_current(isolated_home):
     sid = "ctxsess01"
-    conversations.append(sid, "user", "My colour is blue.", meta={"message_id": "aaaaaaaa"})
-    conversations.append(sid, "assistant", "Noted blue.", meta={"message_id": "bbbbbbbb"})
-    msgs = assemble_messages(session_id=sid, current_user_text="What colour?")
+    _commit(sid, "u1", "My colour is blue.", "Noted blue.", "aaaaaaaa", "bbbbbbbb")
+    msgs = assemble_messages(session_id=sid, current_user_text="What colour?", user_id="u1")
     assert [m["role"] for m in msgs] == ["user", "assistant", "user"]
     assert msgs[0]["content"] == "My colour is blue."
     assert msgs[-1]["content"] == "What colour?"
+    # A line that exists only in the derived JSONL export (never committed) must not appear in the prompt.
     pending = "pendsess1"
     conversations.append(pending, "user", "only this", meta={"message_id": "hhhhhhhh"})
     again = assemble_messages(session_id=pending, current_user_text="only this")
     assert again == [{"role": "user", "content": "only this"}]
+    uncommitted = assemble_messages(session_id=pending, current_user_text="and then?")
+    assert uncommitted == [{"role": "user", "content": "and then?"}]
 
 
 def test_assemble_uses_edited_active_version_and_drops_stale_tail(isolated_home):
     sid = "editsess1"
-    conversations.append(sid, "user", "favourite fruit is pineapple", meta={"message_id": "cccccccc"})
-    conversations.append(sid, "assistant", "pineapple is tasty", meta={"message_id": "dddddddd"})
+    _commit(sid, "u1", "favourite fruit is pineapple", "pineapple is tasty", "cccccccc", "dddddddd")
     message_versions.seed(sid, "u1", "cccccccc", "user", "favourite fruit is pineapple")
     view = message_versions.edit(sid, "u1", "cccccccc", "favourite fruit is mango")
     assert view["created"] is True
-    msgs = assemble_messages(session_id=sid, current_user_text="Which fruit?")
+    msgs = assemble_messages(session_id=sid, current_user_text="Which fruit?", user_id="u1")
     sent = " ".join(m["content"] for m in msgs)
     assert "favourite fruit is mango" in sent
     assert "pineapple" not in sent
@@ -52,8 +72,7 @@ def test_assemble_refuses_another_users_session(isolated_home):
     from orca.auth.store import record_user_session
 
     sid = "ownedsess1"
-    conversations.append(sid, "user", "secret from alice", meta={"message_id": "iiiiiiii"})
-    conversations.append(sid, "assistant", "ok", meta={"message_id": "jjjjjjjj"})
+    _commit(sid, "alice", "secret from alice", "ok", "iiiiiiii", "jjjjjjjj")
     record_user_session("alice", sid)
     leaked = assemble_messages(session_id=sid, current_user_text="What did I say?", user_id="bob")
     assert leaked == [{"role": "user", "content": "What did I say?"}]
@@ -107,8 +126,7 @@ def test_kernel_inference_request_contains_history(isolated_home, monkeypatch):
     from orca.gateway.contracts import InferenceResponse
 
     sid = "kernsess1"
-    conversations.append(sid, "user", "token ALPHA-9", meta={"message_id": "ffffffff"})
-    conversations.append(sid, "assistant", "stored", meta={"message_id": "gggggggg"})
+    _commit(sid, "u1", "token ALPHA-9", "stored", "ffffffff", "gggggggg")
     captured = {}
 
     class FakeGW:

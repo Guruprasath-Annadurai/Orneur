@@ -167,3 +167,43 @@ def test_a_refused_or_failed_turn_leaves_no_residual_authority(client, fake):
     r = _chat(client, token, sid, "after failure")
     assert r.status_code == 200 and r.json()["persisted"] == "saved"
     assert _transcript(client, token, sid) == [("user", "after failure"), ("assistant", "RECOVERED")]
+
+
+def test_reading_the_transcript_never_blocks_or_strands_the_next_turn(client, fake):
+    """Regression (found by the live journey): every transcript READ used to take a 'migrate-*' authority and never release it on the
+    already-verified path, so the next real turn was refused as busy for the whole 30s TTL."""
+    token, _ = _signup(client)
+    sid = "tareads1-reads"
+    fake.reply = "FIRST"
+    assert _chat(client, token, sid, "q1").status_code == 200
+    for _ in range(3):
+        assert client.get(f"/api/session/{sid}/messages", headers=_hdr(token)).status_code == 200
+        assert client.get(f"/api/session/{sid}/export?format=md", headers=_hdr(token)).status_code == 200
+        assert client.get("/api/sessions", headers=_hdr(token)).status_code == 200
+    fake.reply = "SECOND"
+    r = _chat(client, token, sid, "q2")
+    assert r.status_code == 200 and r.json()["persisted"] == "saved", r.text
+    evs = _events(client, token, {"message": "q3", "session_id": sid, "model_variant": "nano"})
+    assert [e for e in evs if e["type"] == "done"][0]["persisted"] == "saved"
+
+
+def test_legacy_jsonl_history_is_imported_once_explicitly_and_does_not_strand_authority(client, fake):
+    from orca.auth.store import claim_session
+    from orca.serve import conversations
+
+    token, uid = _signup(client)
+    sid = "talegacy-import"
+    assert claim_session(sid, uid)
+    conversations.append(sid, "user", "legacy question", meta={"message_id": "legacym1"})
+    conversations.append(sid, "assistant", "legacy answer", meta={"message_id": "legacym2"})
+    # Unverified legacy JSONL is NOT trusted by an ordinary read of an empty authoritative store...
+    assert conversations.migration_state(sid) != "verified"
+    first = client.get(f"/api/session/{sid}/messages", headers=_hdr(token)).json()
+    assert [m["content"] for m in first["messages"]] == ["legacy question", "legacy answer"]
+    assert conversations.migration_state(sid) == "verified"
+    fake.reply = "NEW"
+    r = _chat(client, token, sid, "after import")
+    assert r.status_code == 200 and r.json()["persisted"] == "saved", r.text
+    assert [m for m in _transcript(client, token, sid)] == [
+        ("user", "legacy question"), ("assistant", "legacy answer"), ("user", "after import"), ("assistant", "NEW"),
+    ]

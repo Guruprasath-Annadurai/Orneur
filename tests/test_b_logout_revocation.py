@@ -94,9 +94,11 @@ def test_session_tokens_carry_a_unique_jti(client, account):
 
 
 def test_a_revoked_token_cannot_be_used_as_an_optional_identity_either(client, account):
-    """Routes with optional auth must treat a revoked token as ANONYMOUS, not as the user."""
+    """Routes with optional auth must REFUSE a revoked token (401): not honour it as the user, and -- since LANDMARK-01 W1 -- not silently
+    degrade it to anonymous either (an anonymous fallback keeps a logged-out client talking to every anonymous-permitted route)."""
     t = _login(client, account)
     sid = client.post("/api/remember", json={"session_id": str(uuid.uuid4()), "fact": "x"}, headers=_hdr(t)).json()["session_id"]
     client.post("/api/auth/logout", headers=_hdr(t))
     r = client.get(f"/api/session/{sid}/export", headers=_hdr(t))
-    assert r.status_code == 404                                                  # anonymous callers cannot read an owned session
+    assert r.status_code == 401                                                  # a revoked credential is refused outright
+    assert client.get(f"/api/session/{sid}/export").status_code == 404           # ...while a truly anonymous caller still cannot read an owned session

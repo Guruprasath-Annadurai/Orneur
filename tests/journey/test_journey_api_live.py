@@ -66,9 +66,16 @@ def test_B1_new_conversation_streams_a_real_ollama_answer(server, alice, tap):
     kinds = [e["type"] for e in events]
     assert kinds[0] == "session" and "generation" in kinds, kinds
     chunks = [i for i, k in enumerate(kinds) if k == "chunk"]
-    assert len(chunks) >= 2, f"not incremental: {kinds}"
     assert kinds[-1] == "done", f"stream did not end with a real done event: {kinds[-3:]}\n{server.log_tail(15)}"
-    assert arrival[chunks[-1]] > arrival[chunks[0]], "all chunks arrived at once: not streamed"
+    delivery = next(e for e in events if e["type"] == "stream")
+    if delivery["delivery"] == "upstream":
+        assert len(chunks) >= 2, f"upstream delivery must be incremental: {kinds}"
+        assert arrival[chunks[-1]] > arrival[chunks[0]], "all chunks arrived at once: not streamed"
+    else:
+        # The Cognitive Kernel answers plain chat through the NON-streaming ModelGateway.generate(); the product says so rather than
+        # faking typing: one chunk, labelled replayed, not cancellable. (Incremental delivery is proven by the controlled fixture test.)
+        assert delivery == {"type": "stream", "delivery": "replayed", "cancellable": False}, delivery
+        assert len(chunks) == 1 and events[chunks[0]].get("replayed") is True, kinds
     assert answer_of(events).strip()
     assert len(tap.requests) > before, "no request reached Ollama: this was not a real model answer"
     ident = next(e for e in events if e["type"] == "model")["identity"]
@@ -328,3 +335,49 @@ def test_E3_edit_on_server_B_is_seen_by_server_A_with_real_redis(two_servers, ta
     assert calls, "the answering call never reached Ollama"
     sent = calls[-1]
     assert "favourite fruit is mango" in sent and "pineapple" not in sent, f"server A sent the model:\n{sent[:500]}"
+
+
+# ------------------------------------------- B1b: controlled multi-chunk provider fixture (incremental delivery proof)
+
+def test_B1b_controlled_multichunk_provider_is_delivered_incrementally(tmp_path_factory):
+    """LIVE_API + FIXTURE provider. A short real model answer can legitimately arrive as one chunk, so incremental delivery is proven with a provider
+    that emits 6 chunks 0.4s apart. A loaded document routes the turn through the AgentLoop (genuinely upstream-streamed) path."""
+    import json
+    import uuid
+
+    import httpx
+
+    from tests.fake_ollama import FakeOllama
+    from tests.journey.harness import JOURNEY_MODEL, LiveServer, User
+
+    pieces = [f"piece{i} " for i in range(6)]
+    fake = FakeOllama(models=(JOURNEY_MODEL,), chunks=pieces, reply="".join(pieces), chunk_delay=0.4)
+    with fake:
+        home = tmp_path_factory.mktemp("journey-fixture-home")
+        srv = LiveServer(home, extra_env={"ORNEUR_OLLAMA_HOST": fake.host, "OLLAMA_HOST": fake.host})
+        try:
+            srv.wait_ready()
+            u = User(srv.base, "fixture")
+            sid = str(uuid.uuid4())
+            up = httpx.post(f"{srv.base}/api/docs/upload", params={"session_id": sid}, headers=u.headers,
+                            files={"file": ("note.txt", b"Orneur is a fictional architecture used for tests.", "text/plain")}, timeout=120)
+            assert up.status_code == 200, up.text
+            t0 = time.time()
+            arrival, events = [], []
+            with u.http.stream("POST", "/api/stream", headers=u.headers,
+                               json={"message": "hi", "session_id": sid, "model_variant": "core"}) as r:
+                assert r.status_code == 200
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        events.append(json.loads(line[6:]))
+                        arrival.append(time.time() - t0)
+            kinds = [e["type"] for e in events]
+            assert next(e for e in events if e["type"] == "stream")["delivery"] == "upstream", kinds
+            idx = [i for i, k in enumerate(kinds) if k == "chunk"]
+            assert len(idx) >= 4, f"expected the provider's chunks to be forwarded individually: {kinds}"
+            spread = arrival[idx[-1]] - arrival[idx[0]]
+            assert spread >= 1.2, f"chunks arrived together ({spread:.2f}s spread): the stream was buffered, not incremental"
+            assert "".join(e["text"] for e in events if e["type"] == "chunk") == "".join(pieces)
+            assert kinds[-1] == "done"
+        finally:
+            srv.stop()

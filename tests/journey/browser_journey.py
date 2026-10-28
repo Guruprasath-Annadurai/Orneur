@@ -107,6 +107,24 @@ with sync_playwright() as pw:
     api_signup(alice_email, "Alice")
     api_signup(bob_email, "Bob")
     ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    # Tee every /api/stream response into window.__sseLog (event + arrival time) so a step can assert on the delivery the BROWSER actually received.
+    ctx.add_init_script("""
+      window.__sseLog = [];
+      const __origFetch = window.fetch.bind(window);
+      window.fetch = async (...a) => {
+        const r = await __origFetch(...a);
+        try {
+          const u = typeof a[0] === 'string' ? a[0] : (a[0] && a[0].url) || '';
+          if (u.includes('/api/stream') && r.body) {
+            const c = r.clone(); const rd = c.body.getReader(); const dec = new TextDecoder(); let buf = '';
+            (async () => { for (;;) { const {done, value} = await rd.read(); if (done) break; buf += dec.decode(value, {stream: true});
+              let i; while ((i = buf.indexOf('\\n\\n')) >= 0) { const blk = buf.slice(0, i); buf = buf.slice(i + 2);
+                if (blk.startsWith('data: ')) { try { window.__sseLog.push({t: performance.now(), ev: JSON.parse(blk.slice(6))}); } catch (e) {} } } } })();
+          }
+        } catch (e) {}
+        return r;
+      };
+    """)
     page = ctx.new_page()
     console_errors = []
     page.on("pageerror", lambda e: console_errors.append(str(e)))
@@ -148,10 +166,19 @@ with sync_playwright() as pw:
             time.sleep(0.04)
         final = page.locator(".answer .msg-body").last.inner_text()
         assert final.strip(), "no answer text rendered"
-        assert len([s for s in seen if s > 0]) >= 2, f"answer appeared in one piece: {seen}"
+        log = page.evaluate("window.__sseLog")
+        kinds = [e["ev"]["type"] for e in log]
+        delivery = next((e["ev"] for e in log if e["ev"]["type"] == "stream"), None)
+        assert delivery is not None and kinds[-1] == "done", f"browser did not receive a complete stream: {kinds}"
+        chunk_evs = [e for e in log if e["ev"]["type"] == "chunk"]
+        if delivery["delivery"] == "upstream":
+            assert len(chunk_evs) >= 2 and len([s for s in seen if s > 0]) >= 2, f"upstream delivery rendered in one piece: {seen}"
+        else:
+            # Kernel direct answers come from the non-streaming gateway call: the product labels that honestly instead of faking typing.
+            assert delivery == {"type": "stream", "delivery": "replayed", "cancellable": False} and len(chunk_evs) == 1 and chunk_evs[0]["ev"].get("replayed") is True, delivery
         state["answer1"] = final
         shot(page, "B1_streamed_answer_light")
-        report("B1_new_conversation_streams_real_answer", True, f"distinct lengths seen while streaming: {seen[:12]}")
+        report("B1_new_conversation_streams_real_answer", True, f"delivery={delivery['delivery']} chunks={len(chunk_evs)} distinct lengths seen: {seen[:12]}")
 
     _lc = {"t": time.time(), "n": None}
 

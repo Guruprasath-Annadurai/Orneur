@@ -544,6 +544,32 @@ def reconcile_legacy_session(session_id: str, user_id: str) -> MigrationResult:
     if not _SESSION_ID_RE.match(session_id or "") or not user_id:
         return MigrationResult(ok=False, reason="invalid_args")
     ts = time.time()
+    # LANDMARK-01 integration fix: a READ must not take (and strand) turn authority. Previously every transcript read acquired a fresh
+    # 'migrate-*' authority (bumping the epoch) and the already-verified early return never released it, so the next real turn on that
+    # session was refused as "busy" for the full 30s TTL. Authority is needed only for an actual legacy import.
+    probe = _turns_conn()
+    try:
+        state_row = probe.execute("SELECT migration_state FROM session_export_state WHERE session_id=?", (session_id,)).fetchone()
+        existing_n = probe.execute("SELECT COUNT(*) AS n FROM conversation_turns WHERE session_id=?", (session_id,)).fetchone()["n"]
+    except Exception:
+        return MigrationResult(ok=False, reason="migration_failed")
+    finally:
+        try:
+            probe.close()
+        except Exception:
+            pass
+    if existing_n > 0 or (state_row is not None and str(state_row["migration_state"]) == "verified"):
+        if state_row is not None and str(state_row["migration_state"]) != "verified":
+            conn = _turns_conn()
+            try:
+                with conn:
+                    conn.execute("UPDATE session_export_state SET migration_state='verified', updated_at=? WHERE session_id=?", (ts, session_id))
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        return MigrationResult(ok=True, reason="already_verified", imported_turns=int(existing_n), state="verified")
     fence = "migrate-" + uuid.uuid4().hex
     auth = acquire_authority(session_id, user_id, fence, ttl_s=30)
     if auth is None:
@@ -566,6 +592,7 @@ def reconcile_legacy_session(session_id: str, user_id: str) -> MigrationResult:
                     "UPDATE session_export_state SET migration_state='verified', updated_at=? WHERE session_id=?",
                     (ts, session_id),
                 )
+                release_authority(session_id, fence, auth.epoch)
                 return MigrationResult(ok=True, reason="already_verified", imported_turns=int(existing), state="verified")
 
             # Parse legacy JSONL into paired turns. Unpaired trailing user is dropped.

@@ -2260,9 +2260,11 @@ async def _stream_dispatch(
                     from orca.serve.stream_dlp import StreamRedactor
 
                     redactor = StreamRedactor()
+                    raw_text = ""
                     async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
                         async for chunk in achunks:
                             _consume_message_quota(user, request)       # first model output spends the unit; a later disconnect must not refund it
+                            raw_text += chunk
                             safe_chunk = redactor.push(chunk)
                             if safe_chunk:
                                 full += safe_chunk
@@ -2278,6 +2280,9 @@ async def _stream_dispatch(
                         yield f"data: {json.dumps({'type': 'chunk', 'text': tail})}\n\n"
                     # Authoritative persisted text matches what the client received.
                     full = redactor.safe_text() or full
+                    if raw_text and raw_text != full:
+                        # The agent loop appended the RAW streamed text to its live window; the window is what the next turn / a Redis peer reuses.
+                        _swap_last_assistant_in_window(sess, raw_text, full)
 
                     tool_names = [tc.tool for tc in trace.tool_calls]
                     plan_action = trace.plan_action

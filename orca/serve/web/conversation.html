@@ -1069,13 +1069,10 @@ async function loadAttachmentsForSession() {
   try {
     const r = await fetch(`/api/docs/list?session_id=${encodeURIComponent(mySid)}`, { headers: _authHeaders() });
     if (myToken !== _authToken || sessionId !== mySid) return; // a different account signed in, or the conversation changed, while this was in flight
-    // AUDIT-B16-FIX: /api/docs/list uses get_current_user_optional, which
-    // never itself raises 401 (orca/auth/middleware.py:57-65) -- live-
-    // verified an invalid/expired token against an owned session_id
-    // surfaces as 404 "session not found" via _get_session's ownership
-    // check, not 401. This branch is kept for defense-in-depth /
-    // consistency with the other six authenticated call sites
-    // (ORNEUR_SESSION_EXPIRY_401_AUDIT.md), not because it fires today.
+    // AUDIT-B16-FIX: /api/docs/list uses get_current_user_optional. Since
+    // LANDMARK-01 W1 a PRESENTED but invalid/expired/revoked token is a real
+    // 401 here (absent credentials are still anonymous), so this branch now
+    // fires; a 404 "session not found" is the ownership check instead.
     // A 404 here is deliberately NOT treated as session-expiry: the same
     // 404 also covers a session simply evicted by >2h idle eviction in
     // _get_session, which is not an auth problem -- conflating the two
@@ -2875,13 +2872,11 @@ async function sendMessage(runId) {
     });
     if (!isOwner()) return; // navigated away while awaiting the response headers
     // AUDIT-B12: "A token expiring on the client must not be silently
-    // treated as backend execution failure." /api/stream shares the same
-    // get_current_user_optional backend gap documented in
-    // ORNEUR_SESSION_EXPIRY_401_AUDIT.md (it does not currently emit a
-    // real 401 for an invalid token either), but this check is added for
-    // the same defense-in-depth reason as the other six call sites: correct
-    // today if the backend ever does, and distinguishes a genuine session
-    // expiry from an undifferentiated "could not be completed" error now.
+    // treated as backend execution failure." Since LANDMARK-01 W1
+    // /api/stream answers a presented-but-invalid token with a real 401
+    // (get_current_user_optional no longer degrades it to anonymous), which
+    // is distinguished here from an undifferentiated "could not be
+    // completed" error.
     if (resp.status === 401) { thinkEl.remove(); _handleSessionExpired(); return; }
     if (resp.status === 409) {
       // INTEGRATION Phase D: a temporary chat that expired or was closed
@@ -2976,6 +2971,13 @@ async function sendMessage(runId) {
             // The conversation is now durably listed: refresh the sidebar
             // (temporary chats are never listed, so they skip it).
             if (!_isTemporarySession) loadSessions();
+          }
+          // The server states plainly when it could NOT commit the turn
+          // (superseded by another request, authority unavailable). The
+          // answer was shown, but it is not in the conversation history and
+          // cannot be edited -- say so instead of implying it was saved.
+          if (ev.persisted === 'failed') {
+            appendUnavailableNote('This reply could not be saved to your conversation history, so it may not appear after a refresh. Copy it now if you need it.');
           }
         } else if (ev.type === 'error') {
           terminalState = 'error';
