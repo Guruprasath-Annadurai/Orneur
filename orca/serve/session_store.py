@@ -328,6 +328,34 @@ def acquire_session_lease(session_id: str, fence_token: str, ttl_ms: int = 30_00
         return False
 
 
+def lease_acquire_state(session_id: str, fence_token: str, ttl_ms: int = 30_000) -> str:
+    """Like ``acquire_session_lease`` but tells "someone else holds it" apart from "Redis cannot be reached".
+
+    ``acquired`` | ``held`` (another live turn owns the lease) | ``unavailable`` (Redis error). Redis is advisory coordination only -- the
+    durable SQLite authority is the fence -- so callers may proceed on ``unavailable`` but must refuse on ``held``. Re-acquiring with the
+    same token renews the TTL.
+    """
+    if not enabled():
+        return "acquired"
+    if not fence_token or ttl_ms <= 0:
+        return "held"
+    try:
+        won = int(_client().eval(_LEASE_ACQUIRE_LUA, 1, _lease_key(session_id), fence_token, int(ttl_ms))) == 1
+    except Exception:
+        return "unavailable"
+    return "acquired" if won else "held"
+
+
+def lease_state(session_id: str, fence_token: str) -> Optional[bool]:
+    """True: lease is ours. False: someone else (or nobody) holds it. None: Redis cannot be reached."""
+    if not enabled():
+        return True
+    try:
+        return _client().get(_lease_key(session_id)) == fence_token
+    except Exception:
+        return None
+
+
 def release_session_lease(session_id: str, fence_token: str) -> bool:
     if not enabled():
         return True

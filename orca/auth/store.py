@@ -597,6 +597,40 @@ def mark_quota_consumed(request_id: str, response: dict | None = None) -> None:
             pass
 
 
+def renew_quota(request_id: str) -> bool:
+    """Heartbeat a live reservation so a long generation is not refunded as stale.
+
+    ``reserve_quota`` refunds any ``reserved`` row older than ``RESERVATION_TTL_S``
+    (a crashed worker must not hold quota forever). A healthy request that runs
+    longer than the TTL would otherwise be refunded while still generating, letting
+    the same user start another request on the unit it is still spending. Returns
+    False when the reservation is no longer ``reserved`` (already refunded/terminal).
+    """
+    if not request_id:
+        return False
+    try:
+        conn = _quota_conn()
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    try:
+        with conn:
+            _ensure_reservations(conn)
+            cur = conn.execute(
+                "UPDATE usage_reservations SET created_at=? WHERE request_id=? AND status='reserved'",
+                (time.time(), request_id),
+            )
+            return (cur.rowcount or 0) == 1
+    except QuotaError:
+        raise
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def release_quota(request_id: str) -> None:
     """Refund a reservation that never consumed the model. Idempotent."""
     if not request_id:

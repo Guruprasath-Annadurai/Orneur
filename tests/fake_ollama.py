@@ -17,6 +17,7 @@ class FakeOllama:
         self.fail_status: int | None = None          # when set, /api/chat answers with this HTTP status
         self.requests: list[dict] = []                # every /api/chat payload received
         self.chunks_sent = 0
+        self.pre_response_delay = 0.0                 # seconds to hold EVERY /api/chat request before answering (slow-generation scenarios)
         self.stream_aborted = threading.Event()       # set when a client hangs up mid-stream
         fake = self
 
@@ -44,6 +45,8 @@ class FakeOllama:
                 if self.path != "/api/chat":
                     return self._json(404, {"error": "not found"})
                 fake.requests.append(payload)
+                if fake.pre_response_delay:
+                    time.sleep(fake.pre_response_delay)
                 if fake.fail_status:
                     return self._json(fake.fail_status, {"error": "fake backend failure"})
                 model = payload.get("model", "orca-core")

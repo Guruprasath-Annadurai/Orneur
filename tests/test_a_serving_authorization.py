@@ -212,7 +212,11 @@ def test_metrics_stays_open_on_a_private_install(client, monkeypatch):
 INFERENCE_NAMES = {"complete", "stream", "_run_cognitive_kernel", "_generate_via_frontier_backend", "OrcaUltra", "_run_async", "run_deep_rag"}
 REQUIRED = {"check_quota", "check_input"}
 # routes whose inference authorization is inline and reviewed (plan gate is inside the Kernel's entitlement policy for the cognitive route)
-INLINE_REVIEWED = {"/api/chat": REQUIRED | {"model_access_allowed"}, "/api/stream": REQUIRED | {"model_access_allowed"}, "/api/cognitive/execute": REQUIRED}
+# LANDMARK-01: the canonical product routes admit quota ATOMICALLY (_admit_message_quota -> reserve_quota); the check-then-increment pair
+# (check_quota / increment_usage) is the racy shape they must no longer use (see tests/test_canonical_quota_admission.py).
+CANONICAL_REQUIRED = {"_admit_message_quota", "check_input"}
+INLINE_REVIEWED = {"/api/chat": CANONICAL_REQUIRED | {"model_access_allowed"}, "/api/stream": CANONICAL_REQUIRED | {"model_access_allowed"}, "/api/cognitive/execute": REQUIRED}
+CANONICAL_FORBIDDEN = {"check_quota", "increment_usage"}
 
 
 def test_inference_subsystem_applies_the_standard_gates():
@@ -238,12 +242,17 @@ def test_every_route_that_spends_inference_applies_the_standard_gates():
             continue
         path = deco[0].args[0].value
         names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
-        if "_chat_impl" in names:                       # /api/chat is a thin idempotency wrapper around _chat_impl: the gates live there
-            impl = next(n for n in ast.walk(tree) if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == "_chat_impl")
-            names |= {n.id for n in ast.walk(impl) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(impl) if isinstance(n, ast.Attribute)}
+        for wrapper, impls in (("_chat_impl", ("_chat_impl", "_chat_dispatch")), ("_stream_dispatch", ("_stream_dispatch",))):
+            if wrapper in names or (path == "/api/stream" and wrapper == "_stream_dispatch"):
+                # /api/chat is a thin idempotency wrapper around _chat_impl -> _chat_dispatch, /api/stream around _stream_dispatch: the gates live there
+                for impl_name in impls:
+                    impl = next(n for n in ast.walk(tree) if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == impl_name)
+                    names |= {n.id for n in ast.walk(impl) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(impl) if isinstance(n, ast.Attribute)}
         if not (names & INFERENCE_NAMES) and not ({"brain", "agent"} & names and path not in ("/api/status", "/api/session/load")):
             continue
         need = INLINE_REVIEWED.get(path, {"_authorize_inference"})
         if not need <= names:
             offenders.append((path, sorted(need - names)))
+        if path in ("/api/chat", "/api/stream") and (CANONICAL_FORBIDDEN & names):
+            offenders.append((path, ["racy check-then-increment quota:", *sorted(CANONICAL_FORBIDDEN & names)]))
     assert not offenders, offenders
