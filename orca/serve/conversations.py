@@ -269,6 +269,34 @@ def acquire_authority(
             pass
 
 
+def purge_if_empty(session_id: str) -> bool:
+    """Remove the authority / export bookkeeping rows of a session that has NO committed turns.
+
+    A worker racing a closure can recreate those (content-free) rows after the conversation was deleted; a closed temporary chat must not leave
+    anything behind but its tombstone. Never touches a session that still has turns. Fence tokens are random per turn, so resetting a purged row's
+    epoch cannot let a stale worker's fence become valid again."""
+    if not _SESSION_ID_RE.match(session_id or ""):
+        return False
+    try:
+        conn = _turns_conn()
+    except Exception:
+        return False
+    try:
+        with conn:
+            if conn.execute("SELECT 1 FROM conversation_turns WHERE session_id=? LIMIT 1", (session_id,)).fetchone():
+                return False
+            conn.execute("DELETE FROM session_authority WHERE session_id=?", (session_id,))
+            conn.execute("DELETE FROM session_export_state WHERE session_id=?", (session_id,))
+        return True
+    except Exception:
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def store_available() -> bool:
     """True when the authoritative SQLite store can be opened and read. Lets a caller tell "busy/not yours" from "the store is down"."""
     try:

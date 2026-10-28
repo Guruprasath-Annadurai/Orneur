@@ -143,3 +143,17 @@ def test_a_closed_chat_cannot_be_reopened_or_adopted(home):
     rc, out, err = _run(home, "open", sid)           # activate() must refuse to bring a finished chat back
     assert rc != 0 and "temporary_finished" in err or "already finished" in err, (rc, out, err[-300:])
     assert _db_rows(home, sid) == {"conversation_turns": 0, "session_authority": 0, "session_export_state": 0}
+
+
+def test_a_worker_that_arrives_after_the_closure_is_refused_and_leaves_no_rows_behind(home):
+    """CI found the interleaving where the racing committer ACQUIRES authority just after the closure finished: the refusal must not leave the
+    content-free authority / export rows it just re-created (deterministic version: close first, then commit)."""
+    sid = "tmpmp005-" + uuid.uuid4().hex[:8]
+    rc, out, err = _run(home, "open", sid)
+    assert rc == 0 and out[1]["commit"] == "committed", (out, err[-300:])
+    rc, out, _ = _run(home, "close", sid)
+    assert rc == 0 and out[0]["closed"]["state"] == "closed"
+    rc, steps, err = _run(home, "committer", sid)
+    assert rc == 0 and steps[0]["outcome"] == "refused", (steps, err[-300:])
+    assert _db_rows(home, sid) == {"conversation_turns": 0, "session_authority": 0, "session_export_state": 0}
+    assert _leaks(home, b"secret question") == []

@@ -132,6 +132,14 @@ def commit_guard(session_id: str):
             yield True
             return
         live = record.get("state") == "active" and time.time() < float(record.get("expires_at") or 0)
+        if not live:
+            # Refused: a worker that raced the closure may have re-created its (content-free) authority rows. Leave nothing behind.
+            try:
+                from orca.serve import conversations
+
+                conversations.purge_if_empty(session_id)
+            except Exception:
+                pass
         yield bool(live)
 
 
