@@ -706,8 +706,8 @@ def _swap_last_assistant_in_window(sess: "_Session", raw: str, safe: str) -> Non
             return
 
 
-def _admit_message_quota(user, request: Request):
-    """Reserve one message for a signed-in user. Returns ``None`` when admitted (or anonymous), else the ``PublicError`` to send.
+def _admit_message_quota(user, request: Request, kind: str = "message"):
+    """Reserve one unit (``message`` or ``ultra``) for a signed-in user. Returns ``None`` when admitted (or anonymous), else the ``PublicError`` to send.
 
     Fails CLOSED: if usage accounting is unreachable the request is refused rather than served for free.
     """
@@ -721,7 +721,7 @@ def _admit_message_quota(user, request: Request):
     from orca.auth.store import QuotaError, reserve_quota
 
     try:
-        res = reserve_quota(user.id, user.tier, "message", request_id=uuid.uuid4().hex)
+        res = reserve_quota(user.id, user.tier, kind, request_id=uuid.uuid4().hex)
     except QuotaError as exc:
         _logger.error("quota reservation unavailable: %s", exc.code)
         return coded_error("server_busy", message="Usage accounting is unavailable, so this request was not started. Please retry shortly.")
@@ -819,17 +819,13 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         return None
 
 
-def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
+def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message", request: "Request | None" = None):
     """The single authorization every inference-spending route applies BEFORE any model, session cost or tool is touched: per-user quota, per-user plan gate
     for the requested tier, and input moderation. Returns a `PublicError` to refuse, or None to proceed.
 
     Workstream A: /api/ultra relied only on the SERVER's licence tier and /api/vision had no gate at all, so an anonymous caller could spend the most
     expensive tier (or unmetered vision) on any licensed instance. A structural test (`tests/test_a_serving_authorization.py`) fails if a new inference route
     skips this helper."""
-    if user:
-        allowed, used, limit = check_quota(user.id, user.tier, quota_kind)
-        if not allowed:
-            return coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited use.", used=used, limit=limit)
     model_allowed, model_reason = model_access_allowed(user, model_variant)
     if not model_allowed:
         return coded_error("model_access_denied", message=model_reason)
@@ -840,6 +836,14 @@ def _authorize_inference(user, model_variant, message, *, route: str, quota_kind
         return coded_error("content_refused")
     if mod_result.action in ("support", "flag"):
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None, detail={"categories": mod_result.flagged_categories, "endpoint": route})
+    if user and request is not None:
+        # Atomic admission last, so a request the gates above refuse never holds a reservation. The caller consumes it (after the model answered)
+        # or releases it (every other exit) -- see _QuotaTicket.
+        return _admit_message_quota(user, request, quota_kind)
+    if user:
+        allowed, used, limit = check_quota(user.id, user.tier, quota_kind)
+        if not allowed:
+            return coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited use.", used=used, limit=limit)
     return None
 
 
@@ -1666,12 +1670,6 @@ async def cognitive_execute(
     """
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="cognitive")
 
-    if user:
-        allowed, used, limit = check_quota(user.id, user.tier, "message")
-        if not allowed:
-            e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
-            return JSONResponse(e.as_json(), status_code=e.status)
-
     mod_result = check_input(req.objective)
     metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
@@ -1680,6 +1678,16 @@ async def cognitive_execute(
         e = coded_error("content_refused")
         return JSONResponse(e.as_json(), status_code=e.status)
 
+    _quota_refusal = _admit_message_quota(user, request)
+    if _quota_refusal is not None:
+        return JSONResponse(_quota_refusal.as_json(), status_code=_quota_refusal.status)
+    try:
+        return await _cognitive_execute_dispatch(req, request, user)
+    finally:
+        _release_message_quota(request)
+
+
+async def _cognitive_execute_dispatch(req: "CognitiveExecuteRequest", request: Request, user):
     from orca.cognitive.contracts import CognitiveRequest
     from orca.cognitive.wiring import get_shared_kernel
 
@@ -1687,8 +1695,8 @@ async def cognitive_execute(
     cog_request = CognitiveRequest(objective=req.objective, session_id=None)
     result = await kernel.execute(cog_request)
 
-    if user and result.output is not None:
-        increment_usage(user.id, "message")
+    if result.output is not None:
+        _consume_message_quota(user, request)
 
     audit.log("cognitive_execute", user_id=user.id if user else None, detail={
         "status": result.status.value, "resolved_model": result.resolved_model,
@@ -2445,7 +2453,7 @@ async def _stream_dispatch(
             sess.explain_store.add(explain_record)
             user_message_id = (persisted or {}).get("user_message_id")
 
-            _done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'user_message_id': user_message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'persisted': persist_status, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
+            _done_event = {'type': 'done', 'tools': tool_names, 'message_id': message_id, 'user_message_id': user_message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'persisted': persist_status, 'context_freshness': _context_freshness(sess), 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']}
             if persist_status != "failed":
                 _idem_complete_stream(request, sess.id, full, _done_event)     # a turn that was NOT saved is not cached: a retry must be a real retry
             yield f"data: {json.dumps(_done_event)}\n\n"
@@ -2497,6 +2505,21 @@ def _anonymous_listing_allowed() -> bool:
     return not public_edge_enabled() and _count_users() == 0
 
 
+def _derived_title(session_id: str) -> str:
+    """A readable default for a conversation nobody has renamed: the opening user message (as the owner currently sees it -- after an edit, the
+    edited text), collapsed to one line. Empty when there is no committed user message. Only ever shown to the conversation's owner."""
+    try:
+        from orca.serve import conversations
+
+        first = (conversations.transcript(session_id, limit=1, offset=0).get("messages") or [None])[0]
+        if not first or first.get("role") != "user":
+            return ""
+        text = " ".join(str(first.get("content") or "").split())
+        return text if len(text) <= 60 else text[:59].rstrip() + "\u2026"
+    except Exception:
+        return ""
+
+
 @app.get("/api/sessions")
 async def list_sessions(
     limit: int = Query(50, ge=1, le=200),
@@ -2539,7 +2562,7 @@ async def list_sessions(
     page = visible[offset:offset + limit]
     nxt = offset + limit if offset + limit < total else None
     return {
-        "sessions": [{"id": s, "title": _session_titles.get(s, ""), "updated_at": activity.get(s) or None} for s in page],
+        "sessions": [{"id": s, "title": _session_titles.get(s) or _derived_title(s), "updated_at": activity.get(s) or None} for s in page],
         "total": total, "limit": limit, "offset": offset, "next_offset": nxt,
     }
 
@@ -3162,20 +3185,24 @@ async def stripe_webhook(request: Request):
 
 
 @app.post("/api/ultra")
-async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_user_optional)):
+async def ultra_run(req: UltraRequest, request: Request, user: User | None = Depends(get_current_user_optional)):
     """SSE endpoint — runs OrcaUltra multi-agent pipeline and streams progress."""
     if not has_feature("ultra"):
         async def _gate_stream():
             yield f"data: {json.dumps({'type': 'error', 'text': 'Ultra requires a Pro license. Run: orca activate <key>'})}\n\n"
         return StreamingResponse(_gate_stream(), media_type="text/event-stream")
 
-    _refusal = _authorize_inference(user, "ultra", req.task, route="/api/ultra", quota_kind="ultra")
+    _refusal = _authorize_inference(user, "ultra", req.task, route="/api/ultra", quota_kind="ultra", request=request)
     if _refusal is not None:
         async def _ultra_refused():
             yield f"data: {json.dumps(_refusal.as_sse())}\n\n"
         return StreamingResponse(_ultra_refused(), media_type="text/event-stream")
 
-    sess = _get_session(req.session_id, user_id=user.id if user else None)
+    try:
+        sess = _get_session(req.session_id, user_id=user.id if user else None)
+    except BaseException:
+        _release_message_quota(request)                 # e.g. a 404 ownership refusal must not strand the reservation
+        raise
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
     # Phase 3.1: cognitive planning must not be bypassed even for Ultra
@@ -3209,6 +3236,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         )
         ultra_brain = brain_for_tier_resolution(ultra_resolution, viewer_user_id=user.id if user else None)
     except Exception as _e:        # no installed model for the tier, or the tier is not routable: a clean coded error, never an unhandled 500
+        _release_message_quota(request)
         _unavail = public_error(_e, route="/api/ultra", user_id=user.id if user else None, code="model_unavailable")
         async def _ultra_unavailable():
             yield f"data: {json.dumps(_unavail.as_sse())}\n\n"
@@ -3222,6 +3250,13 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
             pass
 
     async def _event_stream() -> AsyncIterator[str]:
+        try:
+            async for part in _ultra_events():
+                yield part
+        finally:
+            _release_message_quota(request)          # no-op once consumed; refunds every other exit (error, disconnect, cancel)
+
+    async def _ultra_events() -> AsyncIterator[str]:
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
         yield f"data: {json.dumps({'type': 'pod_launch'})}\n\n"
 
@@ -3257,19 +3292,19 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
                 "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "ultra",
             })
         text = _dlp["safe_text"]
-        if user:
-            increment_usage(user.id, "ultra")
+        _consume_message_quota(user, request)
         chunk_size = 25
         for i in range(0, len(text), chunk_size):
             yield f"data: {json.dumps({'type': 'chunk', 'text': text[i:i+chunk_size]})}\n\n"
             await asyncio.sleep(0)
 
         # Persist to memory
+        # Redacted text only: raw model output (which may contain a leaked credential) is never written to memory or long-term memory.
         sess.memory.add_turn("user", req.task)
-        sess.memory.add_turn("assistant", pipeline.final_output)
+        sess.memory.add_turn("assistant", text)
         _persist_turn(user, sess.id, req.task, text)
         sess.memory.commit_to_long_term(
-            f"[Ultra] Q: {req.task[:200]}\nA: {pipeline.final_output[:500]}"
+            f"[Ultra] Q: {req.task[:200]}\nA: {text[:500]}"
         )
         # Note: OrcaUltra doesn't run through AgentLoop, so this turn won't
         # appear in agent.get_history() — persist_to_redis() still preserves
@@ -3459,10 +3494,16 @@ async def vision_query(
         e = coded_error("invalid_request", message="The uploaded file is not a supported image (PNG, JPEG, GIF or WebP).", status=415)
         return JSONResponse(e.as_json(), status_code=e.status)
 
-    _refusal = _authorize_inference(user, model_variant, message, route="/api/vision")
+    _refusal = _authorize_inference(user, model_variant, message, route="/api/vision", request=request)
     if _refusal is not None:
         return JSONResponse(_refusal.as_json(), status_code=_refusal.status)
+    try:
+        return await _vision_dispatch(request, message, data, session_id, model_variant, user)
+    finally:
+        _release_message_quota(request)
 
+
+async def _vision_dispatch(request: Request, message: str, data: bytes, session_id: str | None, model_variant: str | None, user):
     model_name = _model_name_for_variant(model_variant)
     if not is_vision_capable(model_name):
         return JSONResponse(
@@ -3488,8 +3529,7 @@ async def vision_query(
             "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "vision",
         })
     response = _dlp["safe_text"]
-    if user:
-        increment_usage(user.id, "message")
+    _consume_message_quota(user, request)
 
     audit.log("vision_query", user_id=user.id if user else None,
               detail={"model": model_name, "image_bytes": len(data)})

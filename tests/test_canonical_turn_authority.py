@@ -207,3 +207,37 @@ def test_legacy_jsonl_history_is_imported_once_explicitly_and_does_not_strand_au
     assert [m for m in _transcript(client, token, sid)] == [
         ("user", "legacy question"), ("assistant", "legacy answer"), ("user", "after import"), ("assistant", "NEW"),
     ]
+
+
+def test_sidebar_titles_default_to_the_opening_message_and_follow_edits(client, fake):
+    token, _ = _signup(client)
+    sid = "tatitle1-sidebar"
+    fake.reply = "ok"
+    assert _chat(client, token, sid, "  My favourite fruit\n is pineapple, which I like a lot more than any other fruit on earth  ").status_code == 200
+    rows = client.get("/api/sessions", headers=_hdr(token)).json()["sessions"]
+    title = next(r["title"] for r in rows if r["id"] == sid)
+    assert title.startswith("My favourite fruit is pineapple") and len(title) <= 60 and "\n" not in title, title
+    mid = client.get(f"/api/session/{sid}/messages", headers=_hdr(token)).json()["messages"][0]["message_id"]
+    assert client.post(f"/api/session/{sid}/messages/{mid}/edits", json={"content": "My favourite fruit is mango"}, headers=_hdr(token)).status_code == 200
+    rows = client.get("/api/sessions", headers=_hdr(token)).json()["sessions"]
+    assert next(r["title"] for r in rows if r["id"] == sid) == "My favourite fruit is mango"
+    assert client.patch(f"/api/session/{sid}/title", json={"title": "Fruit chat"}, headers=_hdr(token)).status_code == 200
+    rows = client.get("/api/sessions", headers=_hdr(token)).json()["sessions"]
+    assert next(r["title"] for r in rows if r["id"] == sid) == "Fruit chat"                  # an explicit title always wins
+
+
+def test_a_titles_never_leak_to_another_account(client, fake):
+    a, _ = _signup(client)
+    b, _ = _signup(client)
+    sid = "tatitle2-private"
+    fake.reply = "ok"
+    assert _chat(client, a, sid, "alice private opening line").status_code == 200
+    assert "alice private" not in client.get("/api/sessions", headers=_hdr(b)).text
+    assert "alice private" not in client.get("/api/sessions").text
+
+
+def test_stream_done_reports_context_freshness(client, fake):
+    token, _ = _signup(client)
+    evs = _events(client, token, {"message": "hi", "session_id": "tafresh1-done", "model_variant": "nano"})
+    done = [e for e in evs if e["type"] == "done"][0]
+    assert done["context_freshness"] in {"single_instance", "confirmed", "rebuilt_authoritative", "unconfirmed"}

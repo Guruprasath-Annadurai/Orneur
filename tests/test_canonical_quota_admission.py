@@ -177,3 +177,69 @@ def test_a_foreign_request_id_cannot_be_reused(client):
     store.reserve_quota(uid_a, "free", "message", request_id="owned-by-a-0001")
     with pytest.raises(store.QuotaError):
         store.reserve_quota(uid_b, "free", "message", request_id="owned-by-a-0001")
+
+
+# ---- the secondary inference routes use the same atomic admission (they were still check-then-increment) ----------------------------------------
+
+def test_ultra_concurrent_race_at_the_daily_limit_admits_exactly_the_remaining_units(client, fake, monkeypatch):
+    from types import SimpleNamespace
+
+    import orca.serve.api as api
+    from orca.auth.store import get_usage_today, increment_usage
+
+    runs = []
+
+    class StubUltra:
+        def __init__(self, *a, **k):
+            pass
+
+        async def _run_async(self, task, max_retries=1):
+            runs.append(task)
+            return SimpleNamespace(final_output="ULTRA-ANSWER", grade="A", iterations=1)
+
+    monkeypatch.setattr(api, "OrcaUltra", StubUltra)
+    monkeypatch.setattr(api, "has_feature", lambda feature: True)
+    monkeypatch.setattr(api, "model_access_allowed", lambda user, variant: (True, ""))
+    token, uid = _signup(client)
+    for _ in range(2):
+        increment_usage(uid, "ultra")                              # free tier allows 3 ultra runs a day: exactly one unit left
+    barrier = threading.Barrier(6)
+
+    def one(i):
+        barrier.wait()
+        with client.stream("POST", "/api/ultra", json={"task": f"plan {i}"}, headers=_hdr(token)) as r:
+            text = "".join(r.iter_text())
+        evs = [json.loads(line[6:]) for line in text.splitlines() if line.startswith("data: ")]
+        return "done" if any(e["type"] == "done" for e in evs) else ("quota" if any(e.get("code") == "quota_exceeded" for e in evs) else str(evs[-1:]))
+
+    with ThreadPoolExecutor(6) as pool:
+        outcomes = list(pool.map(one, range(6)))
+    assert outcomes.count("done") == 1 and outcomes.count("quota") == 5, outcomes
+    assert len(runs) == 1, "refused ultra requests must not start the pipeline"
+    assert get_usage_today(uid)["ultra_runs"] == 3
+
+
+def test_cognitive_execute_concurrent_race_admits_exactly_one(client, fake):
+    token, uid = _signup(client)
+    _fill(uid, 49)
+    barrier = threading.Barrier(6)
+
+    def one(i):
+        barrier.wait()
+        return client.post("/api/cognitive/execute", json={"objective": f"say hello {i}"}, headers=_hdr(token)).status_code
+
+    with ThreadPoolExecutor(6) as pool:
+        codes = list(pool.map(one, range(6)))
+    assert codes.count(429) == 5, codes
+    assert _usage(uid) == 50
+
+
+def test_a_failed_cognitive_execute_refunds(client, fake):
+    token, uid = _signup(client)
+    fake.fail_status = 500
+    try:
+        status = client.post("/api/cognitive/execute", json={"objective": "will fail"}, headers=_hdr(token)).status_code
+        assert status >= 400
+    except Exception:
+        pass                                   # this internal route lets a kernel failure surface as an unhandled 500 (TestClient re-raises it)
+    assert _usage(uid) == 0
