@@ -33,6 +33,17 @@ def test_unknown_and_native_fail_closed():
     assert exc.value.code == "native_identity_refused"
 
 
+def test_malformed_catalog_file_does_not_crash_import(tmp_path, monkeypatch):
+    bad = tmp_path / "serve_catalog.json"
+    bad.write_text("1", encoding="utf-8")
+    monkeypatch.setattr("orca.serve.model_catalog.orneur_env", lambda suffix, default="": str(bad) if suffix == "MODEL_CATALOG" else default)
+    from orca.serve.model_catalog import _load_file_catalog, lookup, reset_catalog_for_tests
+
+    _load_file_catalog()
+    reset_catalog_for_tests()
+    assert lookup("fixture-llama") is not None
+
+
 def test_alias_and_admin_mismatch(ollama_fixture):
     reset_catalog_for_tests()
     provision_model("alias-src", "nano", aliases=("alias-src:latest",), development=True)

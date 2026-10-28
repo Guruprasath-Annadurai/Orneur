@@ -75,18 +75,32 @@ def _load_file_catalog() -> None:
         raw = json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return
-    rows = raw if isinstance(raw, list) else (raw.get("models") or [])
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, dict):
+        rows = raw.get("models") or []
+    else:
+        return
+    if not isinstance(rows, list):
+        return
     for row in rows:
         if not isinstance(row, dict) or not row.get("name"):
+            continue
+        aliases = row.get("aliases") or ()
+        if isinstance(aliases, str):
+            aliases = (aliases,)
+        elif isinstance(aliases, (list, tuple)):
+            aliases = tuple(str(a) for a in aliases if isinstance(a, str))
+        else:
             continue
         try:
             provision_model(
                 str(row["name"]),
                 str(row.get("tier") or "nano"),
-                aliases=tuple(row.get("aliases") or ()),
+                aliases=aliases,
                 development=bool(row.get("development")),
             )
-        except ValueError:
+        except (ValueError, TypeError):
             continue
 
 

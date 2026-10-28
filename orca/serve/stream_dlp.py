@@ -17,6 +17,9 @@ from orca.serve.dlp import redact_secrets, scan_output
 MAX_TOKEN_CHARS = 256
 MAX_BEGIN_HEADER = 64
 MAX_HOLD_CHARS = MAX_TOKEN_CHARS + MAX_BEGIN_HEADER
+MAX_PEM_CHARS = 8_192
+_PEM_BEGIN = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
+_PEM_END = re.compile(r"-----END [A-Z ]*PRIVATE KEY-----")
 MAX_DELTA_CHARS = 8_192
 MAX_TOTAL_CHARS = 1_048_576
 
@@ -83,13 +86,20 @@ class StreamRedactor:
         self._hold += delta
         scanned = scan_output(self._hold)
         self._hold = scanned["safe_text"]
-        if len(self._hold) > MAX_HOLD_CHARS:
+        pem_at = None
+        found_begin = _PEM_BEGIN.search(self._hold)
+        if found_begin and not _PEM_END.search(self._hold, found_begin.start()):
+            pem_at = found_begin.start()
+            if len(self._hold) - pem_at > MAX_PEM_CHARS:
+                return self._fail()
+        if len(self._hold) > MAX_HOLD_CHARS and pem_at is None:
             # Unbounded token exceeded the inspection budget.
             if re.search(r"sk-[A-Za-z0-9]{20,}$", self._hold) or re.search(r"gh[pousr]_[A-Za-z0-9]{20,}$", self._hold):
                 return self._fail()
-            # Keep only the budgeted tail; emit the scanned prefix.
         n_hold = _hold_suffix_len(self._hold)
-        if n_hold > MAX_HOLD_CHARS:
+        if pem_at is not None:
+            n_hold = max(n_hold, len(self._hold) - pem_at)
+        if n_hold > max(MAX_HOLD_CHARS, MAX_PEM_CHARS):
             return self._fail()
         emit = self._hold[:-n_hold] if n_hold else self._hold
         self._hold = self._hold[-n_hold:] if n_hold else ""

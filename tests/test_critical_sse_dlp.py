@@ -49,6 +49,20 @@ def test_long_token_fail_closed_and_malformed_emits():
     assert "sk-short!" in text
 
 
+def test_pem_body_is_held_until_end_then_redacted():
+    header = "-----BEGIN RSA PRIVATE KEY-----\n"
+    body = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\n"
+    footer = "-----END RSA PRIVATE KEY-----"
+    redactor = StreamRedactor()
+    a = redactor.push(header)
+    b = redactor.push(body)
+    assert "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7" not in a + b
+    text = a + b + redactor.push(footer) + redactor.finish()
+    assert "BEGIN RSA PRIVATE KEY" not in text
+    assert "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7" not in text
+    assert "REDACTED" in text
+
+
 def test_cancel_does_not_flush_hold():
     redactor = StreamRedactor()
     redactor.push(SECRET[:10])
