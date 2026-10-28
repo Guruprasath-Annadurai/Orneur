@@ -1,0 +1,3 @@
+implementation_sha=a21e590e2cb5c1ee7443080a1a7a3406e87aceab
+qualify_branch=cursor/transcript-integrity-p03-7679
+never_resubmit=22225086873cba5274d3ad44aab9e7ef5a913230

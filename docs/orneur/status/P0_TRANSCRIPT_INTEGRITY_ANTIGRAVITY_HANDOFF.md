@@ -2,7 +2,7 @@
 
 **Branch:** `cursor/transcript-integrity-p03-7679`  
 **Base:** PR #127 branch `cursor/inference-p0-security-closure-c12b` @ `22225086873cba5274d3ad44aab9e7ef5a913230` (FAILED_QUALIFICATION for P0-3; preserved unchanged)  
-**Corrective tip SHA:** the tip of `cursor/transcript-integrity-p03-7679` (never `22225086873cba5274d3ad44aab9e7ef5a913230`). Exact value is the PR head SHA.
+**Corrective tip SHA:** exact value in \`P0_TRANSCRIPT_INTEGRITY_TIP_SHA.txt\` on the same tip commit as this handoff.
 
 P0-1 (streaming DLP) and P0-2 (quota reservation replay) remain independently qualified on #127 and are **not rewritten** here.
 
