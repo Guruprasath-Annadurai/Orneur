@@ -106,6 +106,25 @@ end
 return 0
 """
 
+# Claim exclusive authority to commit one turn: lease must match the caller's
+# fence, expected revision must still be current, then INCR. A stale worker
+# whose lease expired cannot claim; the new revision is the commit ticket.
+_CLAIM_TURN_LUA = """
+local owner = redis.call('GET', KEYS[2])
+if (not owner) or owner ~= ARGV[1] then return -2 end
+local cur = redis.call('GET', KEYS[1]) or '0'
+local expected = ARGV[2]
+if expected ~= '' and cur ~= expected then return -1 end
+if cur == '0' then
+  local t = redis.call('TIME')
+  redis.call('SET', KEYS[1], t[1] .. string.format('%06d', tonumber(t[2])))
+end
+local rev = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[3])
+redis.call('DEL', KEYS[3])
+return rev
+"""
+
 # Revisions are compared as strings: they are ~1e15 and Lua's number->string
 # conversion would round them.
 _LOAD_LUA = """
@@ -325,6 +344,45 @@ def lease_held(session_id: str, fence_token: str) -> bool:
         return _client().get(_lease_key(session_id)) == fence_token
     except Exception:
         return False
+
+
+def claim_turn_commit(
+    session_id: str,
+    fence_token: str,
+    expected_revision: Optional[int] = None,
+) -> Optional[int]:
+    """Claim durable authority to commit one user/assistant turn.
+
+    Returns the new conversation revision on success, or None when the
+    caller's fence is stale / revision moved / Redis refused the claim.
+    When Redis is disabled, the next revision is taken from the
+    authoritative turns table (process lock serializes callers).
+    """
+    if not enabled():
+        from orca.serve import conversations
+
+        turns = conversations.turns_for_session(session_id)
+        base = max((int(t["revision"]) for t in turns), default=0)
+        if expected_revision is not None and int(expected_revision) < base:
+            return None
+        return base + 1
+    if not fence_token:
+        return None
+    try:
+        res = _client().eval(
+            _CLAIM_TURN_LUA,
+            3,
+            _rev_key(session_id),
+            _lease_key(session_id),
+            _key(session_id),
+            fence_token,
+            "" if expected_revision is None else int(expected_revision),
+            _REV_TTL_SECONDS,
+        )
+        rev = int(res)
+        return rev if rev > 0 else None
+    except Exception:
+        return None
 
 
 def ping() -> bool:
