@@ -453,12 +453,18 @@ def _messages_from_turns(turns: list[dict]) -> list[dict]:
         meta = dict(t.get("meta") or {})
         meta.setdefault("turn_id", t["turn_id"])
         meta.setdefault("revision", t["revision"])
+        user_meta: dict = {"turn_id": t["turn_id"], "revision": t["revision"]}
+        # Prefer explicit user_message_id; otherwise edits of the turn_id itself
+        # (assistant id) must not be applied to the user half of the pair.
+        umid = meta.get("user_message_id")
+        if isinstance(umid, str) and umid:
+            user_meta["message_id"] = umid
         msgs.append(
             {
                 "role": "user",
                 "content": t["user_content"],
                 "ts": t.get("created_at"),
-                "meta": {"turn_id": t["turn_id"], "revision": t["revision"]},
+                "meta": user_meta,
             }
         )
         msgs.append(
@@ -704,6 +710,41 @@ def _iter_file(p: Path) -> Iterator[dict]:
         return
 
 
+def _shown(session_id: str, rec: dict) -> tuple[str, dict]:
+    """Active version text when one exists. The JSONL line is not rewritten."""
+    meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+    message_id = meta.get("message_id")
+    extra: dict = {}
+    if isinstance(message_id, str):
+        extra["message_id"] = message_id
+        try:
+            from orca.serve import message_versions
+
+            view = message_versions.active_view(session_id, message_id)
+        except Exception:
+            view = None
+        if view is not None:
+            extra["version_id"] = view["version_id"]
+            extra["version_count"] = view["version_count"]
+            extra["edited"] = view["edited"]
+            return view["content"], extra
+    return rec["content"], extra
+
+
+def find_message(session_id: str, message_id: str) -> dict | None:
+    """Locate a message by id in authoritative SQLite turns (not JSONL)."""
+    if not message_id:
+        return None
+    try:
+        for rec in _messages_from_turns(turns_for_session(session_id)):
+            meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+            if meta.get("message_id") == message_id or meta.get("turn_id") == message_id:
+                return rec
+    except Exception:
+        return None
+    return None
+
+
 def transcript(session_id: str, *, limit: int = 200, offset: int = 0) -> dict:
     """Read authoritative history from SQLite only.
 
@@ -719,21 +760,25 @@ def transcript(session_id: str, *, limit: int = 200, offset: int = 0) -> dict:
         return {"session_id": session_id, "total": 0, "offset": offset, "limit": limit, "messages": [], "error": "sqlite_unavailable"}
     msgs = _messages_from_turns(turns)
     page = msgs[offset: offset + limit]
+    rendered = []
+    for i, message in enumerate(page):
+        content, extra = _shown(session_id, message)
+        row = {
+            "index": offset + i,
+            "role": message["role"],
+            "content": content,
+            "timestamp": message.get("ts"),
+            **extra,
+        }
+        if message.get("meta"):
+            row["meta"] = message["meta"]
+        rendered.append(row)
     return {
         "session_id": session_id,
         "total": len(msgs),
         "offset": offset,
         "limit": limit,
-        "messages": [
-            {
-                "index": offset + i,
-                "role": m["role"],
-                "content": m["content"],
-                "timestamp": m.get("ts"),
-                **({"meta": m["meta"]} if m.get("meta") else {}),
-            }
-            for i, m in enumerate(page)
-        ],
+        "messages": rendered,
     }
 
 

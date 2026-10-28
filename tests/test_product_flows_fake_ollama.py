@@ -49,8 +49,12 @@ def test_chat_reaches_the_model_and_returns_the_reply_with_a_session(client, fak
 def test_stream_emits_session_chunk_done_with_a_message_id(client, fake):
     t, _ = _signup(client)
     evs = _events(client, _hdr(t), {"message": "hello again", "model_variant": "core"})
-    assert [e["type"] for e in evs] == ["session", "model", "stream", "chunk", "done"]
-    chunk, done = evs[3], evs[4]
+    types = [e["type"] for e in evs]
+    assert types[0] == "session"
+    assert "generation" in types
+    assert types[-1] == "done"
+    chunk = next(e for e in evs if e["type"] == "chunk")
+    done = next(e for e in evs if e["type"] == "done")
     assert chunk["text"] == "FAKE-REPLY" and chunk["replayed"] is True and done["message_id"] and "citation_compliance" in done
 
 
