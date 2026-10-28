@@ -821,6 +821,14 @@ function _sanitizeLinkHref(rawUrl) {
   return ALLOWED_SCHEMES.has(scheme) ? rawUrl : null;
 }
 
+function _htmlAttr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;');
+}
+
 // AUDIT-B15: citation markers ([D1], [D2], ...) are only ever turned
 // into real, clickable inline references when `sources` -- the REAL,
 // backend-returned orneur.sources/1 array (orca/serve/citations.py) --
@@ -2257,6 +2265,7 @@ function appendUserMessage(text, meta) {
     saveBtn.classList.toggle('primary-disabled', !hasId);
     saveBtn.title = hasId ? '' : 'This message hasn\'t finished saving yet -- editing becomes available once it\'s part of the conversation history.';
   }
+  div._refreshSaveEnabled = refreshSaveEnabled;
   editBtn.addEventListener('click', () => {
     const willOpen = panel.hidden;
     panel.hidden = !willOpen;
@@ -2565,6 +2574,15 @@ function _assignAssistantMessageId(answerDiv, doneMessageId) {
   if (answerDiv && doneMessageId) answerDiv.dataset.messageId = doneMessageId;
 }
 
+function _assignUserMessageId(userMessageId) {
+  if (!userMessageId) return;
+  const users = document.querySelectorAll('#reading-container .msg-user');
+  const last = users[users.length - 1];
+  if (!last || last.dataset.messageId) return;
+  last.dataset.messageId = userMessageId;
+  if (typeof last._refreshSaveEnabled === 'function') last._refreshSaveEnabled();
+}
+
 function appendThinking() {
   const container = document.getElementById('reading-container');
   const div = document.createElement('div');
@@ -2633,7 +2651,7 @@ function renderSourcesPanel(div, sources) {
     if (s.url) {
       const safeHref = _sanitizeLinkHref(s.url);
       linkOrName = safeHref
-        ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${esc(s.url)}</a>`
+        ? `<a href="${_htmlAttr(safeHref)}" target="_blank" rel="noopener noreferrer">${esc(s.url)}</a>`
         : `${esc(s.url)} [link removed: unsupported URL]`;
     } else {
       linkOrName = esc(s.filename || 'Untitled source');
@@ -2975,6 +2993,7 @@ async function sendMessage(runId) {
           // _assignAssistantMessageId()'s comment for why) -- it stays
           // honestly disabled until the conversation next reloads.
           _assignAssistantMessageId(finalAnswerDiv, ev.message_id);
+          _assignUserMessageId(ev.user_message_id);
         } else if (ev.type === 'error') {
           terminalState = 'error';
           if (answerEl) {
@@ -3712,7 +3731,13 @@ function _clearAuthStateAndShowSignIn(message) {
   }
 }
 
-function doLogout() {
+async function doLogout() {
+  const token = _authToken;
+  try {
+    if (token) {
+      await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+    }
+  } catch (e) { /* still clear local state */ }
   _clearAuthStateAndShowSignIn();
 }
 

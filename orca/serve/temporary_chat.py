@@ -200,7 +200,15 @@ def _delete_contents(session_id: str, user_id: str) -> None:
     from orca.auth.store import release_session
     import sys
 
-    _delete_session_data(session_id)
+    result = _delete_session_data(session_id)
+    try:
+        from orca.serve import message_versions
+
+        message_versions.delete_session(session_id)
+    except Exception:
+        pass
+    if result.get("conversation_transcript_error"):
+        raise RuntimeError("temporary chat transcript was not deleted")
     try:
         from orca.serve import generations
 

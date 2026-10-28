@@ -279,7 +279,10 @@ def two_servers(tmp_path_factory, tap):
     from tests.journey.harness import LiveServer, require_ollama
     url = "redis://localhost:6379/13"
     try:
-        redis.from_url(url, socket_connect_timeout=2).flushdb()
+        client = redis.from_url(url, socket_connect_timeout=2)
+        client.ping()
+        for key in client.scan_iter(match="orca:session:*", count=200):
+            client.delete(key)
     except Exception as exc:
         from tests.journey.harness import CapabilityMissing
         raise CapabilityMissing(f"capability missing: Redis at {url} ({exc!r})")
