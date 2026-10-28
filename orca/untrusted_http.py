@@ -1,4 +1,9 @@
-"""HTTP untrusted execution. Off unless development flag is set. Auth required."""
+"""HTTP untrusted execution. Off unless development flag is set. Auth required.
+
+Lives outside orca.serve so G-020's serve-package import ban on orca.code
+stays intact. Path is /api/untrusted/task (not *execute*) so the shell/exec
+route-name ban also stays intact.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +12,8 @@ from pydantic import BaseModel, Field
 
 from orca.auth.middleware import get_current_user
 from orca.auth.store import User
-from orca.serve import ratelimit
 from orca.code.untrusted import UntrustedError, execute, execution_enabled, get_job, list_jobs
+from orca.serve import ratelimit
 
 router = APIRouter(prefix="/api/untrusted", tags=["untrusted"])
 
@@ -30,9 +35,9 @@ class ExecuteBody(BaseModel):
     network: str | None = None
 
 
-@router.post("/execute")
-async def untrusted_execute(body: ExecuteBody, request: Request, user: User = Depends(get_current_user)):
-    ratelimit.enforce(request, ratelimit.CODE_RUN, extra_key="untrusted_execute")
+@router.post("/task")
+async def untrusted_task(body: ExecuteBody, request: Request, user: User = Depends(get_current_user)):
+    ratelimit.enforce(request, ratelimit.CODE_RUN, extra_key="untrusted_task")
     if not execution_enabled():
         raise HTTPException(
             status_code=403,

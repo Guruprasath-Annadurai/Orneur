@@ -28,7 +28,7 @@ from orca.code.untrusted import (
     spawn_probe_container,
     _stop_container,
 )
-from orca.code.untrusted_routes import router
+from orca.untrusted_http import router
 from orca.sovereign_mission.service import SovereignMission
 
 def _ensure_allowlisted_image() -> None:
@@ -256,10 +256,10 @@ def test_http_stays_disabled_without_development_flag(jobs, tmp_path, monkeypatc
     app = FastAPI()
     app.include_router(router)
     client = TestClient(app)
-    anon = client.post("/api/untrusted/execute", json={"source": "print(1)"})
+    anon = client.post("/api/untrusted/task", json={"source": "print(1)"})
     assert anon.status_code == 401
     denied = client.post(
-        "/api/untrusted/execute",
+        "/api/untrusted/task",
         headers={"Authorization": f"Bearer {token}"},
         json={"source": "print(1)"},
     )
@@ -279,7 +279,7 @@ def test_http_development_path_authenticates_and_isolates(jobs, tmp_path, monkey
     app.include_router(router)
     client = TestClient(app)
     ok = client.post(
-        "/api/untrusted/execute",
+        "/api/untrusted/task",
         headers={"Authorization": f"Bearer {owner}"},
         json={"source": "print('http-g1')", "task_id": "http1"},
     )
@@ -293,7 +293,7 @@ def test_http_development_path_authenticates_and_isolates(jobs, tmp_path, monkey
     owned = client.get(f"/api/untrusted/jobs/{job_id}", headers={"Authorization": f"Bearer {owner}"})
     assert owned.status_code == 200
     flags = client.post(
-        "/api/untrusted/execute",
+        "/api/untrusted/task",
         headers={"Authorization": f"Bearer {owner}"},
         json={"source": "print(1)", "privileged": True},
     )

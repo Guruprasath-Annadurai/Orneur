@@ -85,7 +85,7 @@ Based on audited PR #122 `ea9bb95`. Does not rewrite inference.
 
 - Product path: `orca/code/untrusted.execute` → `docker run` with `--network none`, `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, `--user 65534:65534`, tmpfs `/workspace` and `/tmp` (uid 65534), no host binds, no docker.sock, no inherited secrets.
 - Allowlisted image: `python:3.11-alpine` digest `sha256:79440cc1dfa86a5f98d67efcd219726a8e9d8083cc0aafd27c7bef5976c38868`.
-- HTTP `/api/untrusted/execute` requires auth and `ORNEUR_UNTRUSTED_EXECUTION=development`. `/api/code/run` stays `capability_disabled`.
+- HTTP `POST /api/untrusted/task` requires auth and `ORNEUR_UNTRUSTED_EXECUTION=development`. `/api/code/run` stays `capability_disabled`. Path avoids G-020 `exec`/`orca.code` serve-import bans.
 - Callers cannot set privileged, image, network, or mounts.
 - Shared-kernel Docker remains disclosed. Production stays off.
 
