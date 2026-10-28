@@ -216,8 +216,10 @@ def test_H4_redis_restart_mid_conversation_loses_nothing_committed(cluster, user
     sid = str(uuid.uuid4())
     fake.reply = "BEFORE-RESTART"
     assert [e for e in _events(user, {"message": "before the restart", "session_id": sid}) if e["type"] == "done"][0]["persisted"] == "saved"
-    res = subprocess.run(["docker", "restart", "orneur-redis-test"], capture_output=True, text=True, timeout=120)
-    assert res.returncode == 0, res.stderr
+    # The command is configurable because the Redis under test is a local container on a workstation and a service container in CI.
+    cmd = os.environ.get("ORNEUR_JOURNEY_REDIS_RESTART_CMD", "docker restart orneur-redis-test")
+    res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=180)
+    assert res.returncode == 0, f"{cmd!r}: {res.stderr}"
     for _ in range(60):
         try:
             _redis()

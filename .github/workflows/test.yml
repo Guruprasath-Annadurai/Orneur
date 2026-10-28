@@ -277,6 +277,58 @@ jobs:
               proc.wait(timeout=10)
           "
 
+  journeys-fixture:
+    # LANDMARK-01: the end-to-end chatbot journeys that need no real model. Real `orca serve` processes, REAL Redis (service container), REAL Chromium
+    # driving the approved /conversation page, and a controllable fixture provider for deterministic timing. The journeys that need a real Ollama
+    # (tests/journey/test_journey_api_live.py, test_journey_browser.py) stay opt-in on a workstation; their evidence is recorded in the handoff.
+    name: Journeys (real servers + real Redis + real Chromium, fixture provider)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev + memory extras)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev,mcp,memory]"
+          uv pip install --system redis httpx
+
+      - name: Install the browser driver in an isolated tools venv (the project venv gains no dependency)
+        run: |
+          python -m venv /tmp/journey-tools/.venv
+          /tmp/journey-tools/.venv/bin/pip install playwright==1.49.1
+          /tmp/journey-tools/.venv/bin/python -m playwright install --with-deps chromium
+
+      - name: Run the fixture-provider journeys (any missing capability FAILS, never skips)
+        env:
+          ORNEUR_JOURNEY_TOOLS: /tmp/journey-tools
+          ORNEUR_JOURNEY_REDIS_RESTART_CMD: docker restart $(docker ps -q --filter ancestor=redis:7-alpine)
+        run: |
+          python -m pytest tests/journey/test_journey_browser_fixture.py tests/journey/test_journey_concurrency_live.py -p no:cacheprovider -v
+
+      - name: Upload journey screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journey-artifacts-${{ github.run_number }}
+          path: /tmp/orneur-journey-artifacts
+          if-no-files-found: ignore
+
   genesis-v2-security:
     # Genesis Capability Eval V2 private-holdout security suite. Unlike the lightweight jobs, the encrypted-store tests MUST EXECUTE here:
     # `cryptography` comes from the `qualification` extra, ORNEUR_REQUIRE_CRYPTOGRAPHY=1 turns a missing package into a failure, and the
