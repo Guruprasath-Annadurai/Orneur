@@ -129,8 +129,10 @@ def test_C2_conversation_survives_a_full_server_restart(tmp_path, tap):
 
 # ------------------------------------------------ D: isolation
 
-def test_D1_another_user_cannot_read_stream_into_or_edit_a_conversation(server, alice, bob):
-    """LIVE_API"""
+def test_D1_another_user_cannot_read_stream_into_or_edit_a_conversation(server, alice, bob, tap):
+    """LIVE_API — HTTP denial is not enough; Alice's secret must never reach Ollama for Bob."""
+    import json as _json
+
     status, events = alice.stream("Alice private note: zebra-7731.")
     sid = session_id_of(events)
     mid = alice.get(f"/api/session/{sid}/messages").json()["messages"][0]["message_id"]
@@ -138,8 +140,12 @@ def test_D1_another_user_cannot_read_stream_into_or_edit_a_conversation(server, 
     assert r.status_code in (403, 404) and "zebra-7731" not in r.text, r.text
     assert "zebra-7731" not in bob.get("/api/sessions").text
     assert "zebra-7731" not in bob.get("/api/sessions/search", params={"q": "zebra"}).text
+    n = len(tap.requests)
     status, ev = bob.stream("What did Alice write?", session_id=sid)
-    assert status in (403, 404) or "zebra-7731" not in answer_of(ev), (status, ev[:3])
+    assert status in (403, 404), (status, ev[:3])
+    for req in tap.requests[n:]:
+        blob = _json.dumps(req.get("body") or {})
+        assert "zebra-7731" not in blob, blob[:500]
     assert status != 200 or sid not in [e.get("session_id") for e in ev if e.get("type") == "session"], \
         "Bob was attached to Alice's session id"
     e = bob.post(f"/api/session/{sid}/messages/{mid}/edits", json={"content": "hijacked"})

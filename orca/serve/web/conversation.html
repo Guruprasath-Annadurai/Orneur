@@ -2537,50 +2537,26 @@ function appendUserMessage(text, meta) {
   // the template's hardcoded `disabled` -- correct it immediately rather
   // than waiting for the Edit button's first open.
   refreshSaveEnabled();
+  // Same-turn editing: the server's `done` event carries the persisted user
+  // message's real id (`user_message_id`). It is bound here -- once, and
+  // never over an id already known -- and only ever from that event; no id
+  // is inferred from content, position, or a "latest message" lookup.
+  div.bindServerMessageId = (id) => {
+    if (typeof id !== 'string' || !id || div.dataset.messageId) return;
+    div.dataset.messageId = id;
+    refreshSaveEnabled();
+  };
   scrollReadingToBottom();
   return div;
 }
 
-// INTEGRATION correctness hardening (2026-10-24): the original
-// _backfillMessageIds() inferred BOTH ids by re-fetching the message
-// list and grabbing "the last user/assistant entry". Reproduced as a
-// genuine race (two concurrent requests on the SAME session -- e.g. two
-// browser tabs on one conversation): if a THIRD request's pair gets
-// persisted in the window between THIS request's own persist and this
-// fetch resolving, "last in the list" no longer refers to this
-// request's own turn -- a completed request could silently adopt a
-// DIFFERENT request's message id. The CTO directive is explicit: "Do
-// not guess message identity from text or position." Fixed by removing
-// the guess entirely, not by making it safer:
-//
-// - The ASSISTANT bubble's message_id is assigned directly from the
-//   real `done` event's own `message_id` (see the `done` handler below)
-//   -- already correct, unique, and known with zero ambiguity. No
-//   fetch, no race, no function needed for it anymore.
-// - The USER bubble's message_id has NO reliable source anywhere in
-//   this API: confirmed by reading _persist_turn() -- user_message_id
-//   IS generated server-side but is never returned on `done` or
-//   anywhere else. Editing a message in the SAME turn it was sent stays
-//   honestly disabled until the conversation reloads via openSession(),
-//   which reads every message's real id directly from
-//   GET .../messages, never inferred.
-//
-// ESCALATED to Cursor, not silently worked around: /api/stream's `done`
-// event should also return `user_message_id` (the value already exists
-// in _persist_turn() -- returning it is a small, additive change,
-// mirroring how `message_id` is already returned for the assistant
-// side). See ORNEUR_INTEGRATION_PHASE_E_CORRECTNESS_HARDENING.md.
+// INTEGRATION correctness hardening (2026-10-24): do not guess message
+// identity from text or position. The ASSISTANT bubble's message_id is
+// assigned from the `done` event's `message_id`. The USER bubble binds
+// via `bindServerMessageId` on that turn's own bubble from
+// `done.user_message_id` — never from a last-DOM-message heuristic.
 function _assignAssistantMessageId(answerDiv, doneMessageId) {
   if (answerDiv && doneMessageId) answerDiv.dataset.messageId = doneMessageId;
-}
-
-function _assignUserMessageId(userMessageId) {
-  if (!userMessageId) return;
-  const users = document.querySelectorAll('#reading-container .msg-user');
-  const last = users[users.length - 1];
-  if (!last || last.dataset.messageId) return;
-  last.dataset.messageId = userMessageId;
-  if (typeof last._refreshSaveEnabled === 'function') last._refreshSaveEnabled();
 }
 
 function appendThinking() {
@@ -2944,7 +2920,9 @@ async function sendMessage(runId) {
         const ev = JSON.parse(line.slice(6));
         if (ev.type === 'session') {
           sessionId = ev.session_id;
-          loadSessions();
+          // The sidebar is refreshed on the `done` event, once the server
+          // confirms the turn is persisted -- listing it here would race
+          // the persistence and render "No conversations yet".
         } else if (ev.type === 'generation') {
           // INTEGRATION (Phase B): real generation identity (PR #92-93).
           // cancellable is per-request -- false for a replayed Truth
@@ -2989,11 +2967,16 @@ async function sendMessage(runId) {
           // INTEGRATION correctness hardening: assign the assistant's
           // REAL, already-known message_id directly from this exact
           // done event -- never inferred, never fetched, never racy.
-          // The user bubble's message_id is NOT assigned here (see
-          // _assignAssistantMessageId()'s comment for why) -- it stays
-          // honestly disabled until the conversation next reloads.
           _assignAssistantMessageId(finalAnswerDiv, ev.message_id);
-          _assignUserMessageId(ev.user_message_id);
+          // `user_message_id` is present only when the server confirmed the
+          // turn was persisted. Absent => editing stays honestly disabled
+          // and the sidebar is not refreshed on a persistence claim.
+          if (ev.user_message_id && userDiv && userDiv.bindServerMessageId) {
+            userDiv.bindServerMessageId(ev.user_message_id);
+            // The conversation is now durably listed: refresh the sidebar
+            // (temporary chats are never listed, so they skip it).
+            if (!_isTemporarySession) loadSessions();
+          }
         } else if (ev.type === 'error') {
           terminalState = 'error';
           if (answerEl) {
@@ -3731,15 +3714,66 @@ function _clearAuthStateAndShowSignIn(message) {
   }
 }
 
-async function doLogout() {
-  const token = _authToken;
-  try {
-    if (token) {
-      await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+// Explicit Sign out. The server session is revoked with the live token
+// BEFORE the token is discarded (the request is issued first, with the
+// token captured in a local), then every piece of local state is cleared
+// synchronously so no late response can repaint signed-out content. The
+// sign-in overlay then reports what the server actually said -- it never
+// claims more than a confirmed revocation of THIS session (there is no
+// "signed out everywhere" wording anywhere on this page; logout-all is a
+// separate, explicit server action this page does not offer).
+let _logoutInFlight = false;
+async function _revokeServerSession(token) {
+  // 'revoked'         200 -- the server confirmed this session is ended
+  // 'already_invalid' 401 -- the server no longer recognises the token
+  // 'unconfirmed'     anything else (network failure, timeout, 4xx/5xx)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, signal: ctl.signal });
+      if (r.status === 200) return 'revoked';
+      if (r.status === 401) return 'already_invalid';
+      if (r.status < 500) return 'unconfirmed';
+    } catch (e) {
+      // network failure or timeout -- retry once below
+    } finally {
+      clearTimeout(timer);
     }
-  } catch (e) { /* still clear local state */ }
-  _clearAuthStateAndShowSignIn();
+    if (attempt === 0) await new Promise((res) => setTimeout(res, 800));
+  }
+  return 'unconfirmed';
 }
+function _logoutOutcomeMessage(outcome) {
+  if (outcome === 'revoked') return 'You have been signed out.';
+  if (outcome === 'already_invalid') return 'This session had already ended.';
+  return 'You are signed out on this device, but the server did not confirm that this session was ended. It may remain valid until it expires.';
+}
+async function doLogout() {
+  if (_logoutInFlight) return;
+  const token = _authToken;
+  if (!token) { _clearAuthStateAndShowSignIn(); return; }
+  _logoutInFlight = true;
+  const revocation = _revokeServerSession(token); // issued with the live token before it is discarded
+  _clearAuthStateAndShowSignIn();
+  try {
+    const outcome = await revocation;
+    // Only report while still signed out: a newer sign-in must never inherit this message.
+    if (!_authToken) {
+      const errEl = document.getElementById('si-error');
+      if (errEl) errEl.textContent = _logoutOutcomeMessage(outcome);
+    }
+  } finally {
+    _logoutInFlight = false;
+  }
+}
+// Another tab signed out (it removed the shared stored token): this tab's
+// in-memory session must not keep showing private content.
+window.addEventListener('storage', (e) => {
+  if (e.key === 'orneur_token' && !e.newValue && _authToken) {
+    _clearAuthStateAndShowSignIn('You were signed out in another tab.');
+  }
+});
 
 // AUDIT-P85-SESSEXP (Mission 3 audit): a 401 on an authenticated request
 // means the server no longer recognizes this token (expired, revoked, or
