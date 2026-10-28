@@ -352,8 +352,10 @@ from orca.specialists.routes import router as specialist_router  # noqa: E402
 app.include_router(document_router)
 app.include_router(specialist_router)
 from orca.serve.inference_routes import router as inference_router  # noqa: E402
+from orca.code.untrusted_routes import router as untrusted_router  # noqa: E402
 
 app.include_router(inference_router)
+app.include_router(untrusted_router)
 
 
 # G-023: every HTTPException / validation failure also carries a stable machine-readable `code` and an `error_id`, in the same shape the chat routes use.

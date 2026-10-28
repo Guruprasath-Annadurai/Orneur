@@ -4,7 +4,7 @@ Measured on `cursor/backend-programme-ae9d` parent `#121` `637efeceaab65193b31f7
 
 | Metric | Result |
 | --- | --- |
-| Engineering gates at `VERIFIED_ENGINEERING` | 42 / 50 (84%) |
+| Engineering gates at `VERIFIED_ENGINEERING` | 43 / 50 (86%) |
 | Engineering gates at `INDEPENDENTLY_QUALIFIED` | 0 / 50 |
 | Integrated product journeys demonstrated | 0 (A–F). The authenticated local-fixture mission is an API workflow. It is not one of the named product journeys, and no frozen frontend screen was changed. |
 | Official pretraining acceptance | 0 / 95 |
@@ -101,7 +101,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ### G — Code, files, retrieval
 
-**G1.** Criterion: untrusted code runs only inside a real isolation boundary. Files: `orca/code/untrusted.py`, `orca/mission/sandbox_executor.py`. Tests: `tests/test_untrusted_isolator_absent.py`, `tests/test_authorized_document_task.py::test_untrusted_code_stays_disabled_without_isolator`. Positive: none — execution is refused. Negative: without docker, `execute` is `isolation_unavailable`; with a docker binary but no breakout qualification, `execute` is `isolation_unqualified`. Dependency: a qualified isolator plus breakout, privilege, mount, and network-denial tests. Review: pending. Blocker: this engineering host has no docker; GitHub Actions has `/usr/bin/docker` but this branch does not run or pass container breakout tests. Subprocess isolation is not a pass. Status: `PARTIAL`.
+**G1.** Criterion: untrusted code runs only inside a real isolation boundary. Files: `orca/code/untrusted.py`, `orca/code/untrusted_routes.py`. Tests: `tests/test_untrusted_docker_g1.py`, `tests/test_untrusted_isolator_absent.py`. Positive: authorized `print('g1-ok')` ran in `python:3.11-alpine` with `status=succeeded`; inspect showed `Privileged=false`, `NetworkMode=none`, read-only root, `CapDrop=ALL`, `User=65534:65534`, no docker.sock bind. Negative: unauthenticated execute refused; other user `access_denied`; host secret path and `ORNEUR_AUTH_SECRET` absent in the container; `1.1.1.1` and `169.254.169.254` denied; PID fork bomb did not report `FORK_ALL_OK`; infinite loop `timed_out` with `container_confirmed_stopped=true` and `verified=false`; cancel stopped the container without claiming a killed handler; crash exit 7 is failed; caller `--privileged`/`image`/`network=host`/`mounts` refused; HTTP stays `capability_disabled` unless `ORNEUR_UNTRUSTED_EXECUTION=development`. Dependency: a usable Docker daemon and the allowlisted image. Review: pending. Blocker: Docker is a shared kernel. Public multi-tenant execution still needs a stronger boundary (gVisor/Kata/Firecracker or equivalent) after independent qualification. Production HTTP remains off. Status: `VERIFIED_ENGINEERING`.
 
 **G2.** Criterion: uploads are size-limited, parsed safely, and isolated by user. Files: `orca/serve/uploads.py`, `orca/serve/document_routes.py`. Tests: `tests/test_upload_security.py`, `tests/test_document_specialist_http.py`. Positive: `store_for` required a `User`; exclusive `os.link` published one winner of eight concurrent writers; HTTP owner read succeeded. Negative: a symlink destination was refused; a failed `os.write` left no object and no `.tmp`; the other user's GET was 404; delete reports `replicas_removed=unknown`. Dependency: G1. Review: pending. Blocker: hashed directories are not an OS isolation boundary. Status: `VERIFIED_ENGINEERING`.
 
@@ -149,18 +149,18 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ## Count
 
-`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F2, F3, F4, F5, G2, G3, G4, G5, H3, H5, I1, I2, I3, I4, I5, J1, J2, J3 (42).
+`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F2, F3, F4, F5, G1, G2, G3, G4, G5, H3, H5, I1, I2, I3, I4, I5, J1, J2, J3 (43).
 
 `INDEPENDENTLY_QUALIFIED`: none.
 
 `IMPLEMENTED_UNVERIFIED`: none.
 
-`PARTIAL`: C3, C4, G1, H2, H4, J4, J5 (7).
+`PARTIAL`: C3, C4, H2, H4, J4, J5 (6).
 
 `NOT_STARTED`: H1 (1).
 
 `BLOCKED_EXTERNAL`: none as a sole status. External blockers remain: public browser unqualified, no Postgres re-run, no authorized model, no corpus, no founder training grant, no external evidence witness.
 
-42 + 0 + 7 + 1 = 50. The verified fraction is 42/50. That is 84 percent. Independent qualification remains 0/50. F3 live generate ran on this host against Ollama `smollm:135m`; CI without Ollama must skip those tests. Official A–F journeys remain 0. H1 stays not started (no authorized live opportunity source). G1 stays partial (Docker absent).
+43 + 0 + 6 + 1 = 50. The verified fraction is 43/50. That is 86 percent. Independent qualification remains 0/50. G1 ran real Docker 29.1.3 containers on this engineering VM (`python:3.11-alpine`). That is not a VM TEE and not production enablement. Official A–F journeys remain 0. H1 stays not started. PR #122 (`ea9bb95`) is unchanged.
 
 Training, GPU, spending, corpus generation, protected merge, and production launch remain denied.
