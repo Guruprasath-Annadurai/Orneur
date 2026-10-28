@@ -26,9 +26,10 @@ def _reachable() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(not _reachable(), reason="needs real Redis at localhost:6379/14")
+_needs_redis = pytest.mark.skipif(not _reachable(), reason="needs real Redis at localhost:6379/14")
 
 
+@_needs_redis
 def test_expired_lease_cannot_cas_save():
     import importlib
 
@@ -57,6 +58,7 @@ def test_expired_lease_cannot_cas_save():
         importlib.reload(store)
 
 
+@_needs_redis
 def test_two_os_workers_session_lease_exclusion():
     import redis as redis_lib
 

@@ -108,6 +108,13 @@ def _admit_quota(*, user: object, request_id: str) -> str:
     return reservation["request_id"]
 
 
+def _consume_quota(request_id: str) -> None:
+    try:
+        mark_quota_consumed(request_id)
+    except QuotaError as exc:
+        raise InferenceError(exc.code) from exc
+
+
 def _acquire_turn(session_id: str) -> str:
     fence = uuid.uuid4().hex
     if not session_store.acquire_session_lease(session_id, fence, ttl_ms=45_000):
@@ -165,16 +172,19 @@ def _identity(served: str) -> dict:
     )
 
 
-def _persist(*, user_id: str, session_id: str, message: str, text: str, identity: dict, model_variant: str, fence_token: str | None = None) -> str:
+def _persist(*, user_id: str, session_id: str, message: str, text: str, identity: dict, model: str, model_variant: str | None = None, fence_token: str | None = None) -> str:
     from orca.serve.dlp import scan_output
+    from orca.serve.model_catalog import lookup
 
     safe = scan_output(text or "")["safe_text"]
     conversations.append(session_id, "user", message)
     conversations.append(session_id, "assistant", safe, meta={"model_identity": identity})
     _state, rev = session_store.load_session_state_with_revision(session_id)
+    entry = lookup(model)
+    stored_tier = (entry.tier if entry else None) or model_variant or "nano"
     session_store.save_session_state(
         session_id,
-        model_variant or "nano",
+        stored_tier,
         _session_messages(session_id),
         expected_revision=rev,
         fence_token=fence_token,
@@ -273,7 +283,7 @@ def _complete_locked(
         tokens_out = int(data.get("eval_count") or 0)
         identity = _identity(served)
         record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        mark_quota_consumed(rid)
+        _consume_quota(rid)
         consumed = True
         safe = _persist(
             user_id=uid,
@@ -281,7 +291,8 @@ def _complete_locked(
             message=message.strip(),
             text=text,
             identity=identity,
-            model_variant=model_variant or "nano",
+            model=model,
+            model_variant=model_variant,
             fence_token=fence_token,
         )
         return {
@@ -301,7 +312,10 @@ def _complete_locked(
         }
     finally:
         if not consumed:
-            release_quota(rid)
+            try:
+                release_quota(rid)
+            except QuotaError:
+                pass
 
 
 def runtime_for(host: str, timeout_s: float = 30.0) -> OllamaRuntime:
@@ -367,6 +381,7 @@ def _stream_complete_locked(
     redactor = StreamRedactor()
     chunks: list[str] = []
     cancelled = False
+    finished = False
     tokens_in = 0
     tokens_out = 0
     served = model
@@ -381,6 +396,8 @@ def _stream_complete_locked(
                     piece = redactor.push(delta)
                     if piece:
                         chunks.append(piece)
+            if not cancelled:
+                finished = True
         else:
             import httpx
 
@@ -413,6 +430,7 @@ def _stream_complete_locked(
                         if payload.get("done"):
                             tokens_in = int(payload.get("prompt_eval_count") or 0)
                             tokens_out = int(payload.get("eval_count") or 0)
+                            finished = True
                             break
             except httpx.TimeoutException as exc:
                 raise InferenceError("provider_timeout") from exc
@@ -421,7 +439,7 @@ def _stream_complete_locked(
         if cancelled:
             redactor.cancel()
             if chunks:
-                mark_quota_consumed(rid)
+                _consume_quota(rid)
                 consumed = True
             return {
                 "text": "",
@@ -440,6 +458,8 @@ def _stream_complete_locked(
                 "tokens_out": tokens_out,
                 "handlers_forcibly_stopped": False,
             }
+        if not finished:
+            raise InferenceError("provider_unavailable")
         if _native_refused(served):
             raise InferenceError("native_identity_refused")
         tail = redactor.finish()
@@ -448,7 +468,7 @@ def _stream_complete_locked(
         text = "".join(chunks)
         identity = _identity(served)
         record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        mark_quota_consumed(rid)
+        _consume_quota(rid)
         consumed = True
         text = _persist(
             user_id=uid,
@@ -456,7 +476,8 @@ def _stream_complete_locked(
             message=message.strip(),
             text=text,
             identity=identity,
-            model_variant=model_variant or "nano",
+            model=model,
+            model_variant=model_variant,
             fence_token=fence_token,
         )
         return {
@@ -478,7 +499,10 @@ def _stream_complete_locked(
         }
     finally:
         if not consumed:
-            release_quota(rid)
+            try:
+                release_quota(rid)
+            except QuotaError:
+                pass
 
 
 async def stream_via_gateway(
@@ -498,24 +522,26 @@ async def stream_via_gateway(
     sid = bind_session(user_id=uid, session_id=session_id)
     lock = _session_lock(sid)
     await asyncio.to_thread(lock.acquire)
-    fence = _acquire_turn(sid)
     try:
-        async for item in _stream_via_gateway_locked(
-            uid=uid,
-            sid=sid,
-            message=message,
-            model=model,
-            host=host,
-            model_variant=model_variant,
-            cancel=cancel,
-            synthetic_provider=synthetic_provider,
-            timeout_s=timeout_s,
-            user=user,
-            fence_token=fence,
-        ):
-            yield redact_structure(item)
+        fence = _acquire_turn(sid)
+        try:
+            async for item in _stream_via_gateway_locked(
+                uid=uid,
+                sid=sid,
+                message=message,
+                model=model,
+                host=host,
+                model_variant=model_variant,
+                cancel=cancel,
+                synthetic_provider=synthetic_provider,
+                timeout_s=timeout_s,
+                user=user,
+                fence_token=fence,
+            ):
+                yield redact_structure(item)
+        finally:
+            session_store.release_session_lease(sid, fence)
     finally:
-        session_store.release_session_lease(sid, fence)
         lock.release()
 
 
@@ -554,6 +580,7 @@ async def _stream_via_gateway_locked(
     )
     chunks: list[str] = []
     cancelled = False
+    finished = False
     tokens_in = 0
     tokens_out = 0
     try:
@@ -588,6 +615,7 @@ async def _stream_via_gateway_locked(
                 if chunk.finish_reason == "stop":
                     tokens_in = int(chunk.prompt_tokens or 0)
                     tokens_out = int(chunk.completion_tokens or 0)
+                    finished = True
                     break
         except RequestCancelledError:
             cancelled = True
@@ -599,9 +627,11 @@ async def _stream_via_gateway_locked(
             raise InferenceError("provider_unavailable") from exc
         if cancelled:
             if chunks:
-                mark_quota_consumed(rid)
+                _consume_quota(rid)
                 consumed = True
             return
+        if not finished:
+            raise InferenceError("provider_unavailable")
         tail = redactor.finish()
         if tail:
             chunks.append(tail)
@@ -609,7 +639,7 @@ async def _stream_via_gateway_locked(
         text = "".join(chunks)
         record_usage(user_id=uid, model=model, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
         identity = _identity(model)
-        mark_quota_consumed(rid)
+        _consume_quota(rid)
         consumed = True
         text = _persist(
             user_id=uid,
@@ -617,7 +647,8 @@ async def _stream_via_gateway_locked(
             message=message.strip(),
             text=text,
             identity=identity,
-            model_variant=model_variant or "nano",
+            model=model,
+            model_variant=model_variant,
             fence_token=fence_token,
         )
         yield {
@@ -638,7 +669,10 @@ async def _stream_via_gateway_locked(
         }
     finally:
         if not consumed:
-            release_quota(rid)
+            try:
+                release_quota(rid)
+            except QuotaError:
+                pass
 
 
 def refuse_paid(*, backend: str) -> None:

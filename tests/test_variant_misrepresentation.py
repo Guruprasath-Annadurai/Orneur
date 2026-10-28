@@ -59,3 +59,25 @@ def test_alias_and_admin_mismatch(ollama_fixture):
             synthetic_provider=True,
         )
     assert exc.value.code == "unknown_model"
+
+
+def test_omitted_variant_persists_catalog_tier(monkeypatch, ollama_fixture):
+    captured: dict[str, str] = {}
+
+    def _save(session_id, model_variant, history, expected_revision=None, fence_token=None):
+        captured["variant"] = model_variant
+        return True
+
+    monkeypatch.setattr("orca.serve.session_store.save_session_state", _save)
+    monkeypatch.setattr("orca.serve.session_store.load_session_state_with_revision", lambda sid: (None, None))
+    reset_catalog_for_tests()
+    complete(
+        user=_user("pro"),
+        message="hi",
+        model="pro-llama",
+        host=ollama_fixture,
+        session_id="var-tier",
+        model_variant=None,
+        synthetic_provider=True,
+    )
+    assert captured["variant"] == "ultra"

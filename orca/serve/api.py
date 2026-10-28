@@ -754,7 +754,10 @@ class _Session:
             if self.user_id:
                 try:
                     from orca.serve import conversations as _conversations
-                    page = _conversations.transcript(self.id, limit=1000)
+                    head = _conversations.transcript(self.id, limit=1, offset=0)
+                    total = int(head.get("total") or 0)
+                    offset = max(0, total - 1000)
+                    page = _conversations.transcript(self.id, limit=1000, offset=offset)
                     rebuilt = [{"role": m["role"], "content": m["content"]} for m in page.get("messages", [])]
                 except Exception:
                     rebuilt = []

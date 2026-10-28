@@ -356,15 +356,17 @@ def _refund_stale_locked(conn, *, now: float) -> None:
         (cutoff,),
     ).fetchall()
     for row in rows:
+        claimed = conn.execute(
+            "UPDATE usage_reservations SET status='released' WHERE request_id=? AND status='reserved'",
+            (row["request_id"],),
+        )
+        if (claimed.rowcount or 0) != 1:
+            continue
         col = "messages" if row["kind"] == "message" else "ultra_runs"
         conn.execute(
             f"UPDATE usage_daily SET {col}=CASE WHEN {col}>0 THEN {col}-1 ELSE 0 END "
             "WHERE user_id=? AND date=?",
             (row["user_id"], row["date"]),
-        )
-        conn.execute(
-            "UPDATE usage_reservations SET status='released' WHERE request_id=? AND status='reserved'",
-            (row["request_id"],),
         )
 
 
@@ -495,15 +497,17 @@ def release_quota(request_id: str) -> None:
             ).fetchone()
             if not row or row["status"] != "reserved":
                 return
+            claimed = conn.execute(
+                "UPDATE usage_reservations SET status='released' WHERE request_id=? AND status='reserved'",
+                (request_id,),
+            )
+            if (claimed.rowcount or 0) != 1:
+                return
             col = "messages" if row["kind"] == "message" else "ultra_runs"
             conn.execute(
                 f"UPDATE usage_daily SET {col}=CASE WHEN {col}>0 THEN {col}-1 ELSE 0 END "
                 "WHERE user_id=? AND date=?",
                 (row["user_id"], row["date"]),
-            )
-            conn.execute(
-                "UPDATE usage_reservations SET status='released' WHERE request_id=? AND status='reserved'",
-                (request_id,),
             )
     except QuotaError:
         raise
@@ -733,6 +737,7 @@ def delete_account_rows(conn, user_id: str) -> None:
     The ``api_keys`` table must already exist (see ``delete_user_account_records``)."""
     conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM usage_reservations WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM user_settings WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM idempotency_keys WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM revoked_tokens WHERE user_id=?", (user_id,))
