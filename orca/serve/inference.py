@@ -141,11 +141,28 @@ def _consume_quota(request_id: str, response: dict | None = None) -> None:
         raise InferenceError(exc.code) from exc
 
 
-def _acquire_turn(session_id: str) -> str:
+def _acquire_turn(session_id: str, user_id: str) -> tuple[str, int]:
+    """Acquire Redis advisory lease + durable SQLite fencing authority.
+
+    Redis alone never authorizes a later SQLite insert. The returned
+    ``(fence_token, epoch)`` must be presented to ``commit_turn``.
+    """
     fence = uuid.uuid4().hex
     if not session_store.acquire_session_lease(session_id, fence, ttl_ms=45_000):
         raise InferenceError("session_busy")
-    return fence
+    auth = conversations.acquire_authority(session_id, user_id, fence, ttl_s=45.0)
+    if auth is None:
+        session_store.release_session_lease(session_id, fence)
+        raise InferenceError("session_busy")
+    return fence, int(auth.epoch)
+
+
+def _release_turn(session_id: str, fence: str, epoch: int) -> None:
+    try:
+        conversations.release_authority(session_id, fence, epoch)
+    except Exception:
+        pass
+    session_store.release_session_lease(session_id, fence)
 
 
 def _session_lock(session_id: str) -> threading.Lock:
@@ -208,27 +225,28 @@ def _persist(
     model: str,
     model_variant: str | None = None,
     fence_token: str | None = None,
+    epoch: int | None = None,
 ) -> str:
-    """Authoritative turn commit: fence claim → atomic turn → Redis stamp.
+    """Authoritative turn commit under durable SQLite fencing.
 
-    JSONL alone cannot enforce lease/revision atomicity. The protocol is:
-    1. Load expected conversation revision.
-    2. ``claim_turn_commit`` verifies the worker fence and bumps revision
-       (stale workers whose lease expired receive None and write nothing).
-    3. ``conversations.commit_turn`` writes the SQLite authoritative turn
-       and a single JSONL export of both messages (no split pair).
-    4. Redis session payload is stamped with the claimed revision under the
-       same fence. Failure here does not roll back the durable turn; readers
-       rebuild from the transcript.
+    Contract: SQLite ``session_authority`` + ``conversation_turns`` are the
+    source of truth. Redis lease/revision is advisory cache only. A Redis
+    claim alone never authorizes the insert — ``commit_turn`` re-validates
+    fence, epoch, expiry, ownership and committed_revision inside the same
+    SQLite transaction as the insert. JSONL is rebuilt only after COMMIT.
     """
     from orca.serve.dlp import scan_output
     from orca.serve.model_catalog import lookup
 
     safe = scan_output(text or "")["safe_text"]
-    _state, rev = session_store.load_session_state_with_revision(session_id)
-    new_rev = session_store.claim_turn_commit(session_id, fence_token or "", rev)
-    if new_rev is None:
+    if not fence_token or not epoch:
         raise InferenceError("stale_worker")
+    # Best-effort renew so a just-expired authority is not racing the commit
+    # window; commit_turn still re-checks expiry inside its transaction.
+    conversations.renew_authority(session_id, fence_token, int(epoch), ttl_s=45.0)
+    # Advisory Redis revision claim (Claude fencing). Never authorizes SQLite
+    # insert alone — commit_turn re-validates fence/epoch/expiry/ownership.
+    session_store.claim_turn_commit(session_id, fence_token)
     turn_id = uuid.uuid4().hex
     committed = conversations.commit_turn(
         session_id,
@@ -236,18 +254,22 @@ def _persist(
         safe,
         user_id=user_id,
         turn_id=turn_id,
-        revision=int(new_rev),
+        fence_token=fence_token,
+        epoch=int(epoch),
         meta={"model_identity": identity},
     )
     if not committed.ok:
+        if committed.reason in {"stale_authority", "authority_expired", "ownership_mismatch", "authority_missing"}:
+            raise InferenceError("stale_worker")
         raise InferenceError("persist_failed")
     entry = lookup(model)
     stored_tier = (entry.tier if entry else None) or model_variant or "nano"
+    # Advisory Redis stamp — failure does not roll back the durable turn.
     session_store.save_session_state(
         session_id,
         stored_tier,
         _session_messages(session_id),
-        expected_revision=int(new_rev),
+        expected_revision=None,
         fence_token=fence_token,
     )
     session_store.touch_session(session_id)
@@ -270,7 +292,7 @@ def complete(
     uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
     sid = bind_session(user_id=uid, session_id=session_id)
     with _session_lock(sid):
-        fence = _acquire_turn(sid)
+        fence, epoch = _acquire_turn(sid, uid)
         try:
             return _complete_locked(
                 uid=uid,
@@ -284,10 +306,11 @@ def complete(
                 timeout_s=timeout_s,
                 request_id=request_id,
                 fence_token=fence,
+                epoch=epoch,
                 user=user,
             )
         finally:
-            session_store.release_session_lease(sid, fence)
+            _release_turn(sid, fence, epoch)
 
 
 def _complete_locked(
@@ -303,6 +326,7 @@ def _complete_locked(
     timeout_s: float,
     request_id: str | None,
     fence_token: str,
+    epoch: int,
     user: object,
 ) -> dict:
     probe = probe_ollama(host=host, timeout_s=2.0)
@@ -361,6 +385,7 @@ def _complete_locked(
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            epoch=epoch,
         )
         result = {
             "text": safe,
@@ -408,7 +433,7 @@ def stream_complete(
     uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
     sid = bind_session(user_id=uid, session_id=session_id)
     with _session_lock(sid):
-        fence = _acquire_turn(sid)
+        fence, epoch = _acquire_turn(sid, uid)
         try:
             return _stream_complete_locked(
                 uid=uid,
@@ -423,9 +448,10 @@ def stream_complete(
                 timeout_s=timeout_s,
                 user=user,
                 fence_token=fence,
+                epoch=epoch,
             )
         finally:
-            session_store.release_session_lease(sid, fence)
+            _release_turn(sid, fence, epoch)
 
 
 def _stream_complete_locked(
@@ -442,6 +468,7 @@ def _stream_complete_locked(
     timeout_s: float,
     user: object,
     fence_token: str,
+    epoch: int,
 ) -> dict:
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_stream is None:
@@ -555,6 +582,7 @@ def _stream_complete_locked(
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            epoch=epoch,
         )
         # Persist already applied DLP; keep emitted chunks consistent with stored text.
         if text != "".join(chunks):
@@ -606,7 +634,7 @@ async def stream_via_gateway(
     lock = _session_lock(sid)
     await asyncio.to_thread(lock.acquire)
     try:
-        fence = _acquire_turn(sid)
+        fence, epoch = _acquire_turn(sid, uid)
         try:
             async for item in _stream_via_gateway_locked(
                 uid=uid,
@@ -620,10 +648,11 @@ async def stream_via_gateway(
                 timeout_s=timeout_s,
                 user=user,
                 fence_token=fence,
+                epoch=epoch,
             ):
                 yield redact_structure(item)
         finally:
-            session_store.release_session_lease(sid, fence)
+            _release_turn(sid, fence, epoch)
     finally:
         lock.release()
 
@@ -641,6 +670,7 @@ async def _stream_via_gateway_locked(
     timeout_s: float,
     user: object,
     fence_token: str,
+    epoch: int,
 ):
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable":
@@ -740,6 +770,7 @@ async def _stream_via_gateway_locked(
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            epoch=epoch,
         )
         done = {
             "type": "done",
