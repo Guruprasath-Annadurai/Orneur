@@ -69,6 +69,7 @@ def _ok(run, step):
     "G1_logout_clears_ui_and_revokes_token",
     "D1_second_user_sees_none_of_the_first_users_conversations",
     "T1_dark_theme_renders_logged_in_shell",
+    "T2_accessibility_smoke_names_labels_landmarks",
 ])
 def test_browser_step(run, step):
     _ok(run, step)

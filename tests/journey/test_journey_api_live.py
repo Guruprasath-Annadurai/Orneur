@@ -12,7 +12,9 @@ Run:  pytest tests/journey -m journey_live -p no:cacheprovider -v
 """
 from __future__ import annotations
 
+import json
 import time
+import uuid
 
 import pytest
 
@@ -381,3 +383,38 @@ def test_B1b_controlled_multichunk_provider_is_delivered_incrementally(tmp_path_
             assert kinds[-1] == "done"
         finally:
             srv.stop()
+
+
+# ------------------------------------------------ E5: the canary challenge, asserted on the bytes the model was actually sent
+
+def test_E5_pineapple_peach_mango_canary(server, alice, tap):
+    """LIVE_API + recorded Ollama requests. Turn 1 plants a unique pineapple canary, turn 2 a peach canary; turn 1 is edited to mango; turn 3 asks
+    about the fact. The outbound request for turn 3 must contain mango, exclude pineapple and exclude the history the edit invalidated."""
+    tag = uuid.uuid4().hex[:6]
+    t1 = f"Remember this code word for later: pineapple-{tag}."
+    t2 = f"Also remember this second code word: peach-{tag}."
+    t3 = f"Which code word did I give you first? Answer with just the word. ({tag})"
+    _, e1 = alice.stream(t1)
+    sid = session_id_of(e1)
+    n1 = len(tap.requests)
+    _, e2 = alice.stream(t2, session_id=sid)
+    # --- before the edit the second turn really was built from the first
+    ctx2 = tap.answer_contexts(t2, n1)[-1]
+    assert f"pineapple-{tag}" in ctx2 and t1 in ctx2, f"turn 2 was not sent turn 1:\n{ctx2[:600]}"
+    first = alice.get(f"/api/session/{sid}/messages").json()["messages"][0]
+    edit = alice.post(f"/api/session/{sid}/messages/{first['message_id']}/edits", json={"content": f"Remember this code word for later: mango-{tag}."})
+    assert edit.status_code == 200 and edit.json()["created"] is True, edit.text
+    n2 = len(tap.requests)
+    status, e3 = alice.stream(t3, session_id=sid)
+    assert status == 200 and e3[-1]["type"] == "done" and e3[-1]["persisted"] == "saved", e3[-2:]
+    sent = tap.answer_contexts(t3, n2)
+    assert sent, "the answering call never reached Ollama"
+    ctx3 = sent[-1]
+    assert f"mango-{tag}" in ctx3, f"the edited message was not sent:\n{ctx3[:700]}"
+    assert f"pineapple-{tag}" not in ctx3, f"the PRE-EDIT message was sent:\n{ctx3[:700]}"
+    assert f"peach-{tag}" not in ctx3, f"history invalidated by the edit was still sent:\n{ctx3[:700]}"
+    roles = [line.split(":", 1)[0] for line in ctx3.splitlines() if line.split(":", 1)[0] in ("user", "assistant", "system")]
+    assert roles[-1] == "user" and ctx3.count(t3) == 1, "the current message must be appended exactly once"
+    # --- the read path (what a reload shows) agrees with what the model was sent
+    shown = alice.get(f"/api/session/{sid}/messages").json()["messages"]
+    assert shown[0]["edited"] is True and f"mango-{tag}" in shown[0]["content"] and f"pineapple-{tag}" not in shown[0]["content"], shown[0]

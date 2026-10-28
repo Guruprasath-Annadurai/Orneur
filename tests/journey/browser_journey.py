@@ -325,6 +325,27 @@ with sync_playwright() as pw:
         report("T1_dark_theme_renders_logged_in_shell", True, "")
     t1()
 
+    @step("T2_accessibility_smoke_names_labels_landmarks")
+    def t2():
+        problems = page.evaluate("""() => {
+          const out = [];
+          const visible = el => { if (el.closest('[aria-hidden=true]')) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+          const nameOf = el => (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title') || el.textContent || '').trim();
+          document.querySelectorAll('button, [role=button], a[href]').forEach(el => { if (visible(el) && !nameOf(el)) out.push('unnamed ' + el.tagName + '#' + (el.id || el.className)); });
+          document.querySelectorAll('input:not([type=hidden]), textarea, select').forEach(el => {
+            if (!visible(el)) return;
+            const labelled = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title') || el.getAttribute('placeholder') || (el.id && document.querySelector('label[for="' + el.id + '"]'));
+            if (!labelled) out.push('unlabelled ' + el.tagName + '#' + (el.id || el.name));
+          });
+          document.querySelectorAll('img').forEach(el => { if (visible(el) && !el.hasAttribute('alt')) out.push('img without alt: ' + (el.src || '').slice(-30)); });
+          if (!document.documentElement.lang) out.push('html has no lang');
+          if (!document.querySelector('main, [role=main]')) out.push('no main landmark');
+          return out;
+        }""")
+        assert not problems, problems
+        report("T2_accessibility_smoke_names_labels_landmarks", True, "")
+    t2()
+
     if console_errors:
         report("PAGE_ERRORS", False, "; ".join(console_errors[:5]))
     browser.close()
