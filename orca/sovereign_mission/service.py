@@ -252,6 +252,7 @@ class SovereignMission:
                     states.PLANNED,
                     states.AWAITING_APPROVAL,
                     states.AUTHORIZED,
+                    states.PAUSED,
                     states.EXECUTING,
                 }
             ):
@@ -286,8 +287,8 @@ class SovereignMission:
                 self._set_state(unit, mission, states.OUTCOME_UNKNOWN)
             elif not external and mission["state"] == states.EXECUTING:
                 self._set_state(unit, mission, states.REVOKED)
-            elif mission["state"] in {states.AUTHORIZED, states.AWAITING_APPROVAL, states.PLANNED, states.CREATED}:
-                target = states.REVOKED if mission["state"] == states.AUTHORIZED else states.CANCELLED
+            elif mission["state"] in {states.AUTHORIZED, states.PAUSED, states.AWAITING_APPROVAL, states.PLANNED, states.CREATED}:
+                target = states.REVOKED if mission["state"] in {states.AUTHORIZED, states.PAUSED} else states.CANCELLED
                 self._set_state(unit, mission, target)
             unit.commit()
         except Exception:
@@ -296,6 +297,50 @@ class SovereignMission:
         finally:
             unit.close()
         self._arm_stop(mission_id, "revoked")
+        return self.get(user, mission_id)
+
+    def pause(self, user: User, mission_id: str) -> dict:
+        """Hold an authorized mission before any side effect. EXECUTING cannot pause."""
+        unit = Unit()
+        try:
+            mission = self._owned(unit, user, mission_id)
+            started = self._step_effects(unit, mission_id)
+            if any(row["effect_started"] for row in started):
+                raise MissionError("pause_unsafe")
+            if mission["state"] == states.EXECUTING:
+                raise MissionError("pause_unsafe")
+            if mission["state"] != states.AUTHORIZED:
+                raise MissionError("pause_refused")
+            self._set_state(unit, mission, states.PAUSED)
+            unit.commit()
+        except Exception:
+            unit.rollback()
+            raise
+        finally:
+            unit.close()
+        return self.get(user, mission_id)
+
+    def resume(self, user: User, mission_id: str) -> dict:
+        """Return a paused mission to AUTHORIZED. Does not replay effects."""
+        unit = Unit()
+        try:
+            mission = self._owned(unit, user, mission_id)
+            if mission["revoked"]:
+                raise MissionError("revoked")
+            if mission["cancel_requested"]:
+                raise MissionError("cancelled")
+            if mission["state"] != states.PAUSED:
+                raise MissionError("resume_refused")
+            started = self._step_effects(unit, mission_id)
+            if any(row["effect_started"] for row in started):
+                raise MissionError("resume_unsafe")
+            self._set_state(unit, mission, states.AUTHORIZED)
+            unit.commit()
+        except Exception:
+            unit.rollback()
+            raise
+        finally:
+            unit.close()
         return self.get(user, mission_id)
 
     def recover(self, user: User, mission_id: str, *, lease_grace_seconds: float | None = None) -> dict:

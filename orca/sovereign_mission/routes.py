@@ -81,6 +81,16 @@ async def dispatch(mission_id: str, body: DispatchBody, user: User = Depends(get
     return _call(lambda: _service().dispatch(user, mission_id, body.step_id))
 
 
+@router.post("/missions/{mission_id}/pause")
+async def pause(mission_id: str, user: User = Depends(get_current_user)):
+    return _call(lambda: _service().pause(user, mission_id))
+
+
+@router.post("/missions/{mission_id}/resume")
+async def resume(mission_id: str, user: User = Depends(get_current_user)):
+    return _call(lambda: _service().resume(user, mission_id))
+
+
 @router.post("/missions/{mission_id}/cancel")
 async def cancel(mission_id: str, user: User = Depends(get_current_user)):
     return _call(lambda: _service().request_cancel(user, mission_id))

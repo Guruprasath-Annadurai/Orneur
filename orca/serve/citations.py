@@ -65,6 +65,7 @@ def build_sources(*, answer: str, session_id: str | None, rag_result=None, evide
             "excerpt_sha256": hashlib.sha256(text.encode()).hexdigest(),
             "retrieved_at": when,
             "cited_in_answer": bool(re.search(rf"\[{re.escape(ref)}\]", answer or "")),
+            "synthetic": bool(info.get("synthetic")),
         })
 
     for ev in evidence_passages or []:                       # Truth Fabric path: the passages it really supplied, in [D#] order
@@ -83,6 +84,7 @@ def build_sources(*, answer: str, session_id: str | None, rag_result=None, evide
             "excerpt_sha256": hashlib.sha256(text.encode()).hexdigest(),
             "retrieved_at": ev.get("retrieved_at") or when,
             "cited_in_answer": bool(re.search(rf"\[{re.escape(ref)}\]", answer or "")),
+            "synthetic": bool(ev.get("synthetic")),
         })
 
     if sources:
