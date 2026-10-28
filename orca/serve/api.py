@@ -433,13 +433,20 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
 
 
 def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> None:
-    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request."""
+    """Durable turn commit for SIGNED-IN users via SQLite fencing (same SoT as inference).
+
+    Anonymous sessions are not persisted. Best-effort: history must never fail a
+    request. Uses a short-lived authority acquire → commit_turn → release so
+    ``/api/chat`` and ``/api/stream`` share the same authoritative store as
+    ``/api/inference/*`` (see docs/orneur/status/P0_TRANSCRIPT_INTEGRITY_HANDOFF.md).
+    """
     if not user or not session_id:
         return
     try:
+        import uuid as _uuid
+
         from orca.serve import conversations
 
-        conversations.append(session_id, "user", user_text)
         meta: dict = {}
         if identity:
             meta["model_identity"] = identity
@@ -448,7 +455,24 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
             meta["sources"] = [{k: s.get(k) for k in ("ref", "kind", "filename", "url", "locator", "cited_in_answer")} for s in src["sources"]]
         if message_id:
             meta["message_id"] = message_id
-        conversations.append(session_id, "assistant", assistant_text, meta=meta or None)
+        fence = _uuid.uuid4().hex
+        auth = conversations.acquire_authority(session_id, user.id, fence, ttl_s=30.0)
+        if auth is None:
+            _logger.debug("conversation authority unavailable; turn not persisted")
+            return
+        try:
+            conversations.commit_turn(
+                session_id,
+                user_text,
+                assistant_text,
+                user_id=user.id,
+                turn_id=message_id or _uuid.uuid4().hex,
+                fence_token=fence,
+                epoch=auth.epoch,
+                meta=meta or None,
+            )
+        finally:
+            conversations.release_authority(session_id, fence, auth.epoch)
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
 
@@ -754,6 +778,7 @@ class _Session:
             if self.user_id:
                 try:
                     from orca.serve import conversations as _conversations
+                    _conversations.reconcile_legacy_session(self.id, self.user_id)
                     head = _conversations.transcript(self.id, limit=1, offset=0)
                     total = int(head.get("total") or 0)
                     offset = max(0, total - 1000)
@@ -2100,6 +2125,8 @@ async def session_messages(session_id: str, limit: int = 200, offset: int = 0, u
         return JSONResponse(e.as_json(), status_code=e.status)
     from orca.serve import conversations
 
+    # Explicit legacy JSONL → SQLite migration; empty SQLite never auto-trusts JSONL.
+    conversations.reconcile_legacy_session(session_id, user.id)
     return conversations.transcript(session_id, limit=limit, offset=offset)
 
 
