@@ -132,13 +132,9 @@ def _session_lock(session_id: str) -> threading.Lock:
 
 
 def _session_messages(session_id: str) -> list[dict]:
-    body = conversations.transcript(session_id, limit=1000, offset=0)
-    total = int(body.get("total") or 0)
-    rows = body.get("messages") or []
-    if total > len(rows):
-        offset = max(0, total - _MAX_CONTEXT)
-        rows = conversations.transcript(session_id, limit=_MAX_CONTEXT, offset=offset).get("messages") or []
-    return [{"role": row["role"], "content": row["content"]} for row in rows[-_MAX_CONTEXT:]]
+    from orca.serve.conversation_context import assemble_messages
+
+    return assemble_messages(session_id=session_id, current_user_text="")
 
 
 def history(*, user: object, session_id: str) -> list[dict]:
@@ -159,7 +155,9 @@ def _prompt_with_session(session_id: str, message: str) -> str:
 
 
 def _messages_with_session(session_id: str, message: str) -> list[dict]:
-    return [*_session_messages(session_id), {"role": "user", "content": message}]
+    from orca.serve.conversation_context import assemble_messages
+
+    return assemble_messages(session_id=session_id, current_user_text=message)
 
 
 def _identity(served: str) -> dict:

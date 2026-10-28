@@ -60,11 +60,14 @@ def test_deployment_is_persisted_once_not_on_every_call(tmp_path, monkeypatch):
 
     resolution = _FakeResolution(tier="nano", backend="ollama", model="orca-nano-v7")
     wiring_mod.brain_for_tier_resolution(resolution)
-    saved_at_first = (tmp_path / "ollama-orca-nano-v7.json").stat().st_mtime
+    from orca.gateway.wiring import stable_deployment_id
+
+    dep_file = tmp_path / f"{stable_deployment_id('ollama', 'orca-nano-v7')}.json"
+    saved_at_first = dep_file.stat().st_mtime
 
     wiring_mod.brain_for_tier_resolution(resolution)
     wiring_mod.brain_for_tier_resolution(resolution)
-    saved_at_third = (tmp_path / "ollama-orca-nano-v7.json").stat().st_mtime
+    saved_at_third = dep_file.stat().st_mtime
 
     assert saved_at_first == saved_at_third  # not rewritten on repeated calls
 
