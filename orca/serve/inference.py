@@ -11,6 +11,7 @@ provider call.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import threading
@@ -31,6 +32,8 @@ from orca.serve.usage import NATIVE_FAMILIES, PAID_BACKENDS, record_usage
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _MAX_CONTEXT = 40
 _NATIVE_PREFIXES = ("genesis", "novus", "aeternum", "orneur-genesis", "orneur-novus", "orneur-aeternum")
+_TURN_LOCKS: dict[str, threading.Lock] = {}
+_TURN_LOCKS_GUARD = threading.Lock()
 
 
 class InferenceError(Exception):
@@ -93,12 +96,27 @@ def authorize_serving(*, user: object, message: str, model: str, model_variant: 
     return uid
 
 
+def _session_lock(session_id: str) -> threading.Lock:
+    with _TURN_LOCKS_GUARD:
+        lock = _TURN_LOCKS.get(session_id)
+        if lock is None:
+            lock = threading.Lock()
+            _TURN_LOCKS[session_id] = lock
+        return lock
+
+
+def _safe_text(text: str) -> str:
+    return dlp.scan_output(text or "")["safe_text"]
+
+
 def _session_messages(session_id: str) -> list[dict]:
-    page = conversations.transcript(session_id, limit=1, offset=0)
-    total = int(page.get("total") or 0)
-    offset = max(0, total - _MAX_CONTEXT)
-    body = conversations.transcript(session_id, limit=_MAX_CONTEXT, offset=offset)
-    return [{"role": row["role"], "content": row["content"]} for row in body.get("messages") or []]
+    body = conversations.transcript(session_id, limit=1000, offset=0)
+    total = int(body.get("total") or 0)
+    rows = body.get("messages") or []
+    if total > len(rows):
+        offset = max(0, total - _MAX_CONTEXT)
+        rows = conversations.transcript(session_id, limit=_MAX_CONTEXT, offset=offset).get("messages") or []
+    return [{"role": row["role"], "content": row["content"]} for row in rows[-_MAX_CONTEXT:]]
 
 
 def history(*, user: object, session_id: str) -> list[dict]:
@@ -108,7 +126,8 @@ def history(*, user: object, session_id: str) -> list[dict]:
 
 
 def reset_for_tests() -> None:
-    return
+    with _TURN_LOCKS_GUARD:
+        _TURN_LOCKS.clear()
 
 
 def _prompt_with_session(session_id: str, message: str) -> str:
@@ -132,8 +151,7 @@ def _identity(served: str) -> dict:
 
 
 def _persist(*, user_id: str, session_id: str, message: str, text: str, identity: dict, model_variant: str) -> str:
-    scanned = dlp.scan_output(text)
-    safe = scanned["safe_text"]
+    safe = _safe_text(text)
     conversations.append(session_id, "user", message)
     conversations.append(session_id, "assistant", safe, meta={"model_identity": identity})
     session_store.save_session_state(session_id, model_variant or "nano", _session_messages(session_id))
@@ -156,6 +174,32 @@ def complete(
 ) -> dict:
     uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
     sid = bind_session(user_id=uid, session_id=session_id)
+    with _session_lock(sid):
+        return _complete_locked(
+            uid=uid,
+            sid=sid,
+            message=message,
+            model=model,
+            host=host,
+            model_variant=model_variant,
+            transport_generate=transport_generate,
+            synthetic_provider=synthetic_provider,
+            timeout_s=timeout_s,
+        )
+
+
+def _complete_locked(
+    *,
+    uid: str,
+    sid: str,
+    message: str,
+    model: str,
+    host: str,
+    model_variant: str,
+    transport_generate,
+    synthetic_provider: bool,
+    timeout_s: float,
+) -> dict:
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_generate is None:
         raise InferenceError("provider_unavailable")
@@ -229,6 +273,34 @@ def stream_complete(
 ) -> dict:
     uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
     sid = bind_session(user_id=uid, session_id=session_id)
+    with _session_lock(sid):
+        return _stream_complete_locked(
+            uid=uid,
+            sid=sid,
+            message=message,
+            model=model,
+            host=host,
+            model_variant=model_variant,
+            transport_stream=transport_stream,
+            cancel=cancel,
+            synthetic_provider=synthetic_provider,
+            timeout_s=timeout_s,
+        )
+
+
+def _stream_complete_locked(
+    *,
+    uid: str,
+    sid: str,
+    message: str,
+    model: str,
+    host: str,
+    model_variant: str,
+    transport_stream,
+    cancel: threading.Event | None,
+    synthetic_provider: bool,
+    timeout_s: float,
+) -> dict:
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_stream is None:
         raise InferenceError("provider_unavailable")
@@ -244,7 +316,7 @@ def stream_complete(
                 cancelled = True
                 break
             if delta:
-                chunks.append(delta)
+                chunks.append(_safe_text(delta))
     else:
         import httpx
 
@@ -271,7 +343,7 @@ def stream_complete(
                     served = payload.get("model") or served
                     piece = (payload.get("message") or {}).get("content") or payload.get("response") or ""
                     if piece:
-                        chunks.append(piece)
+                        chunks.append(_safe_text(piece))
                     if payload.get("done"):
                         tokens_in = int(payload.get("prompt_eval_count") or 0)
                         tokens_out = int(payload.get("eval_count") or 0)
@@ -321,6 +393,37 @@ async def stream_via_gateway(
     """Yield SSE dicts from OllamaRuntime.stream (/api/chat). Cooperative cancel only."""
     uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
     sid = bind_session(user_id=uid, session_id=session_id)
+    lock = _session_lock(sid)
+    await asyncio.to_thread(lock.acquire)
+    try:
+        async for item in _stream_via_gateway_locked(
+            uid=uid,
+            sid=sid,
+            message=message,
+            model=model,
+            host=host,
+            model_variant=model_variant,
+            cancel=cancel,
+            synthetic_provider=synthetic_provider,
+            timeout_s=timeout_s,
+        ):
+            yield item
+    finally:
+        lock.release()
+
+
+async def _stream_via_gateway_locked(
+    *,
+    uid: str,
+    sid: str,
+    message: str,
+    model: str,
+    host: str,
+    model_variant: str,
+    cancel: threading.Event | None,
+    synthetic_provider: bool,
+    timeout_s: float,
+):
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable":
         raise InferenceError("provider_unavailable")
@@ -354,8 +457,9 @@ async def stream_via_gateway(
                 }
                 break
             if chunk.delta:
-                chunks.append(chunk.delta)
-                yield {"type": "chunk", "text": chunk.delta, "path": "/api/chat", "backend": "ollama", "session_id": sid}
+                safe_delta = _safe_text(chunk.delta)
+                chunks.append(safe_delta)
+                yield {"type": "chunk", "text": safe_delta, "path": "/api/chat", "backend": "ollama", "session_id": sid}
             if chunk.finish_reason == "cancelled":
                 cancelled = True
                 yield {

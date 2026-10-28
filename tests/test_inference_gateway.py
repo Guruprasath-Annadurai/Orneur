@@ -378,6 +378,53 @@ def test_quota_gate_runs_before_provider(ollama_fixture, monkeypatch):
     assert _Ollama.calls == 0
 
 
+def test_overlapping_same_session_turns_do_not_interleave(ollama_fixture):
+    _Ollama.delay_s = 0.15
+    owner = _user("user-a")
+    sid = _sid()
+    errors: list[BaseException] = []
+
+    def _run(message: str):
+        try:
+            complete(
+                user=owner,
+                message=message,
+                model="fixture-llama",
+                host=ollama_fixture,
+                session_id=sid,
+                synthetic_provider=True,
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    first = Thread(target=_run, args=("first-turn-aaa",))
+    second = Thread(target=_run, args=("second-turn-bbb",))
+    first.start()
+    time.sleep(0.03)
+    second.start()
+    first.join()
+    second.join()
+    assert errors == []
+    roles = [row["role"] for row in history(user=owner, session_id=sid)]
+    assert roles == ["user", "assistant", "user", "assistant"]
+
+
+def test_stream_dlp_redacts_secret_deltas(ollama_fixture):
+    secret = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
+    body = stream_complete(
+        user=_user("user-a"),
+        message="hello",
+        model="fixture-llama",
+        host=ollama_fixture,
+        session_id=_sid(),
+        transport_stream=lambda host, model, msg: iter([secret]),
+        synthetic_provider=True,
+    )
+    assert secret not in "".join(body["chunks"])
+    assert secret not in body["text"]
+    assert "REDACTED" in body["text"]
+
+
 def test_dlp_redacts_secret_shaped_output_before_persist(ollama_fixture):
     owner = _user("user-a")
     result = complete(

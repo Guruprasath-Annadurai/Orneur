@@ -102,6 +102,7 @@ async def inference_history(
 ):
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="inference_history")
     try:
-        return {"user_id": user.id, "session_id": session_id, "messages": history(user=user, session_id=session_id)}
+        messages = await asyncio.to_thread(history, user=user, session_id=session_id)
+        return {"user_id": user.id, "session_id": session_id, "messages": messages}
     except InferenceError as exc:
         raise _http(exc) from exc
