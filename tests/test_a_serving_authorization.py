@@ -210,9 +210,15 @@ def test_metrics_stays_open_on_a_private_install(client, monkeypatch):
 # ── structural invariant ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 INFERENCE_NAMES = {"complete", "stream", "_run_cognitive_kernel", "_generate_via_frontier_backend", "OrcaUltra", "_run_async", "run_deep_rag"}
-REQUIRED = {"check_quota", "check_input"}
+# Foundation Landmark-01: chat/stream use the unified admit_serving boundary
+# (identity policy + ownership + entitlement + moderation + atomic reservation).
+REQUIRED = {"admit_serving"}
 # routes whose inference authorization is inline and reviewed (plan gate is inside the Kernel's entitlement policy for the cognitive route)
-INLINE_REVIEWED = {"/api/chat": REQUIRED | {"model_access_allowed"}, "/api/stream": REQUIRED | {"model_access_allowed"}, "/api/cognitive/execute": REQUIRED}
+INLINE_REVIEWED = {
+    "/api/chat": REQUIRED,
+    "/api/stream": REQUIRED,
+    "/api/cognitive/execute": {"check_quota", "check_input"},
+}
 
 
 def test_inference_subsystem_applies_the_standard_gates():

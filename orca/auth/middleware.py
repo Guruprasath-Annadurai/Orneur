@@ -57,9 +57,13 @@ async def get_current_user(
 async def get_current_user_optional(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> Optional[User]:
+    """Optional auth for routes that allow missing credentials.
+
+    Missing Authorization → None (anonymous, subject to the route policy).
+    Present but invalid / expired / revoked / wrong-type credentials → 401.
+    Never downgrade a failed credential presentation to anonymous.
+    """
     if not creds:
         return None
-    try:
-        return await get_current_user(creds)
-    except HTTPException:
-        return None
+    # Intentionally do not swallow HTTPException: invalid credentials must fail.
+    return await get_current_user(creds)

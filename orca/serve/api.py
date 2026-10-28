@@ -485,28 +485,47 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
         return None
 
 
-def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
-    """The single authorization every inference-spending route applies BEFORE any model, session cost or tool is touched: per-user quota, per-user plan gate
-    for the requested tier, and input moderation. Returns a `PublicError` to refuse, or None to proceed.
+def _authorize_inference(
+    user,
+    model_variant,
+    message,
+    *,
+    route: str,
+    quota_kind: str = "message",
+    session_id: str = "",
+    request_id: str | None = None,
+    allow_anonymous: bool = False,
+):
+    """Single serving-admission gate before any model, session cost or tool is touched.
 
-    Workstream A: /api/ultra relied only on the SERVER's licence tier and /api/vision had no gate at all, so an anonymous caller could spend the most
-    expensive tier (or unmetered vision) on any licensed instance. A structural test (`tests/test_a_serving_authorization.py`) fails if a new inference route
-    skips this helper."""
-    if user:
-        allowed, used, limit = check_quota(user.id, user.tier, quota_kind)
-        if not allowed:
-            return coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited use.", used=used, limit=limit)
-    model_allowed, model_reason = model_access_allowed(user, model_variant)
-    if not model_allowed:
-        return coded_error("model_access_denied", message=model_reason)
-    mod_result = check_input(message)
-    metrics.record_moderation_action(mod_result.action)
-    if mod_result.action == "block":
-        audit.log("input_moderation_blocked", user_id=user.id if user else None, detail={"categories": mod_result.flagged_categories, "endpoint": route})
-        return coded_error("content_refused")
-    if mod_result.action in ("support", "flag"):
-        audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None, detail={"categories": mod_result.flagged_categories, "endpoint": route})
-    return None
+    Uses atomic quota reservation (not check-then-increment). Returns
+    ``(refusal, admission)`` — refusal is a PublicError to return, or None
+    when the caller may proceed. Callers must ``consume_admission`` on success
+    or ``release_admission`` on failure after a fresh reservation.
+
+    Workstream A: /api/ultra relied only on the SERVER's licence tier and
+    /api/vision had no gate at all. A structural test
+    (`tests/test_a_serving_authorization.py`) fails if a new inference route
+    skips this helper.
+    """
+    from orca.serve.admission import admit_serving
+
+    admission = admit_serving(
+        user=user,
+        message=message or "",
+        model=model_variant or "nano",
+        session_id=session_id or "",
+        route=route,
+        quota_kind=quota_kind,
+        request_id=request_id,
+        allow_anonymous=allow_anonymous,
+        require_ownership=bool(session_id),
+    )
+    if admission.refusal is not None:
+        return admission.refusal, admission
+    if admission.replay is not None:
+        return None, admission
+    return None, admission
 
 
 def _resolve_backend_for_chat(variant: str | None):
@@ -1433,32 +1452,28 @@ async def _chat_impl(
             status_code=501,
         )
 
-    if user:
-        allowed, used, limit = check_quota(user.id, user.tier, "message")
-        if not allowed:
-            e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
-            return JSONResponse(e.as_json(), status_code=e.status)
+    # Unified admission: ownership, entitlement, moderation, atomic quota.
+    # Invalid credentials already 401 via get_current_user_optional.
+    from orca.serve.admission import admit_serving, consume_admission, release_admission
 
-    model_allowed, model_reason = model_access_allowed(user, req.model_variant)
-    if not model_allowed:
-        e = coded_error("model_access_denied", message=model_reason)
-        return JSONResponse(e.as_json(), status_code=e.status)
-
-    # Input moderation — checked before the message ever reaches the model.
-    # BLOCK: hard refusal, generation never happens. SUPPORT (self-harm):
-    # never blocked — crisis resources get injected into context instead,
-    # since refusing someone in crisis is the opposite of good practice.
-    # FLAG: logged for visibility, generation proceeds unchanged.
+    admission = admit_serving(
+        user=user,
+        message=req.message,
+        model=req.model_variant or "nano",
+        session_id=req.session_id or "",
+        route="/api/chat",
+        allow_anonymous=True,
+        require_ownership=True,
+    )
+    if admission.refusal is not None:
+        return JSONResponse(admission.refusal.as_json(), status_code=admission.refusal.status)
+    if admission.replay is not None:
+        replay = dict(admission.replay)
+        replay["replayed"] = True
+        replay["request_id"] = admission.request_id
+        return replay
+    # Support/flag moderation still shapes crisis context after admission.
     mod_result = check_input(req.message)
-    metrics.record_moderation_action(mod_result.action)
-    if mod_result.action == "block":
-        audit.log("input_moderation_blocked", user_id=user.id if user else None,
-                  detail={"categories": mod_result.flagged_categories})
-        e = coded_error("content_refused")
-        return JSONResponse(e.as_json(), status_code=e.status)
-    if mod_result.action in ("support", "flag"):
-        audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
-                  detail={"categories": mod_result.flagged_categories})
 
     # Backend resolution happens BEFORE session construction: the existing
     # _Session/AgentLoop path is Ollama-specific (tool-use, memory, redis
@@ -1479,6 +1494,7 @@ async def _chat_impl(
     if req.session_id:
         blocked = _temporary_block(req.session_id)
         if blocked is not None:
+            release_admission(admission)
             return blocked
 
     try:
@@ -1495,6 +1511,7 @@ async def _chat_impl(
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
         e2 = public_error(e, route="/api/chat", user_id=user.id if user else None)
+        release_admission(admission)
         return JSONResponse(e2.as_json(), status_code=500)
 
     if cognitive_result.status == CognitiveState.ABSTAINED:
@@ -1504,6 +1521,7 @@ async def _chat_impl(
         reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
         e = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
                         reason=(reason_key or "UNSPECIFIED").lower())
+        release_admission(admission)
         return JSONResponse(e.as_json(), status_code=e.status)
 
     backend_resolution = _resolve_backend_for_chat(req.model_variant)
@@ -1523,10 +1541,10 @@ async def _chat_impl(
             )
         except Exception as e:
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            release_admission(admission)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
 
-        if user:
-            increment_usage(user.id, "message")
+        consume_admission(admission, response={"route": "/api/chat", "backend": backend_resolution.backend})
 
         audit.log("chat", user_id=user.id if user else None, detail={
             "model": backend_resolution.model, "backend": backend_resolution.backend,
@@ -1566,11 +1584,13 @@ async def _chat_impl(
             "data_left_infrastructure": result.data_left_infrastructure,
             "escalated_by_cost_router": routing_decision.escalated,
             "routing_reason": routing_decision.reason if routing_decision.escalated else None,
+            "request_id": admission.request_id,
         }
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
     blocked = _temporary_block(sess.id)
     if blocked is not None:
+        release_admission(admission)
         return blocked
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
@@ -1598,6 +1618,7 @@ async def _chat_impl(
         except Exception as e:
             # Never answer as if the uploaded documents had been consulted when retrieval failed.
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            release_admission(admission)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
         if rag_result.context_block:
             enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
@@ -1614,12 +1635,12 @@ async def _chat_impl(
             final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
         except Exception as e:
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            release_admission(admission)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
         used_tools = [tc.tool for tc in trace.tool_calls]
         plan_action = trace.plan_action
 
-    if user:
-        increment_usage(user.id, "message")
+    consume_admission(admission, response={"route": "/api/chat", "backend": "ollama", "plan": plan_action})
 
     sess.memory.add_turn("user", req.message)
     sess.memory.add_turn("assistant", final)
@@ -1690,33 +1711,30 @@ async def stream_chat(
             yield f"data: {json.dumps({'type': 'error', 'text': _lens_msg, 'intent': gen_intent})}\n\n"
         return StreamingResponse(_lens_not_available(), media_type="text/event-stream")
 
-    if user:
-        allowed, used, limit = check_quota(user.id, user.tier, "message")
-        if not allowed:
-            _q = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro.", used=used, limit=limit)
-            async def _quota_err():
-                yield f"data: {json.dumps(_q.as_sse())}\n\n"
-            return StreamingResponse(_quota_err(), media_type="text/event-stream")
+    from orca.serve.admission import admit_serving, consume_admission, release_admission
 
-    model_allowed, model_reason = model_access_allowed(user, req.model_variant)
-    if not model_allowed:
-        _g = coded_error("model_access_denied", message=model_reason)
-        async def _model_gate_err():
-            yield f"data: {json.dumps(_g.as_sse())}\n\n"
-        return StreamingResponse(_model_gate_err(), media_type="text/event-stream")
-
+    admission = admit_serving(
+        user=user,
+        message=req.message,
+        model=req.model_variant or "nano",
+        session_id=req.session_id or "",
+        route="/api/stream",
+        allow_anonymous=True,
+        require_ownership=True,
+    )
+    if admission.refusal is not None:
+        _ref = admission.refusal
+        async def _admit_refused():
+            yield f"data: {json.dumps(_ref.as_sse())}\n\n"
+        return StreamingResponse(_admit_refused(), media_type="text/event-stream")
+    if admission.replay is not None:
+        _rep = dict(admission.replay)
+        async def _admit_replay():
+            yield f"data: {json.dumps({'type': 'session', 'session_id': req.session_id or ''})}\n\n"
+            yield f"data: {json.dumps({'type': 'chunk', 'text': _rep.get('text') or _rep.get('response') or '', 'replayed': True})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'replayed': True, 'request_id': admission.request_id})}\n\n"
+        return StreamingResponse(_admit_replay(), media_type="text/event-stream")
     mod_result = check_input(req.message)
-    metrics.record_moderation_action(mod_result.action)
-    if mod_result.action == "block":
-        audit.log("input_moderation_blocked", user_id=user.id if user else None,
-                  detail={"categories": mod_result.flagged_categories})
-        _m = coded_error("content_refused")
-        async def _mod_block():
-            yield f"data: {json.dumps(_m.as_sse())}\n\n"
-        return StreamingResponse(_mod_block(), media_type="text/event-stream")
-    if mod_result.action in ("support", "flag"):
-        audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
-                  detail={"categories": mod_result.flagged_categories})
 
     # Phase 3.1: Cognitive Kernel is now AUTHORITATIVE for planning and,
     # where possible, direct execution -- see
@@ -1728,6 +1746,7 @@ async def stream_chat(
     if req.session_id:
         blocked = _temporary_block(req.session_id)
         if blocked is not None:
+            release_admission(admission)
             return blocked
 
     try:
@@ -1736,6 +1755,7 @@ async def stream_chat(
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
         _f = public_error(e, route="/api/stream", user_id=user.id if user else None)
+        release_admission(admission)
         async def _fail_stream():
             yield f"data: {json.dumps(_f.as_sse())}\n\n"
         return StreamingResponse(_fail_stream(), media_type="text/event-stream")
@@ -1747,6 +1767,7 @@ async def stream_chat(
         reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
         _a = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
                          reason=(reason_key or "UNSPECIFIED").lower())
+        release_admission(admission)
         async def _abstain_stream():
             yield f"data: {json.dumps(_a.as_sse())}\n\n"
         return StreamingResponse(_abstain_stream(), media_type="text/event-stream")
@@ -1782,6 +1803,7 @@ async def stream_chat(
                     _generate_via_frontier_backend, backend_resolution, persona_system, req.message, session_id, user.id if user else None
                 )
             except Exception as e:
+                release_admission(admission)
                 yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
 
@@ -1797,8 +1819,7 @@ async def stream_chat(
             yield f"data: {json.dumps({'type': 'chunk', 'text': dlp_result['safe_text'], 'replayed': True})}\n\n"
             _persist_turn(user, session_id, req.message, dlp_result["safe_text"], identity=_identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user), message_id=message_id)
 
-            if user:
-                increment_usage(user.id, "message")
+            consume_admission(admission, response={"route": "/api/stream", "backend": backend_resolution.backend})
 
             audit.log("stream_chat", user_id=user.id if user else None, detail={
                 "model": backend_resolution.model, "backend": backend_resolution.backend,
@@ -1945,13 +1966,16 @@ async def stream_chat(
                 except streaming.StreamingUnavailable as e:
                     err = public_error(e, route="/api/stream", user_id=user.id if user else None,
                                        code="server_busy", message="The server is at capacity. Please retry shortly.")
+                    release_admission(admission)
                     yield f"data: {json.dumps(err.as_sse())}\n\n"
                     return
                 except Exception as e:
+                    release_admission(admission)
                     yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                     return
 
             if not _stream_may_publish(sess.id, fence):
+                release_admission(admission)
                 return
             # Persist
             sess.memory.add_turn("user", req.message)
@@ -1961,8 +1985,7 @@ async def stream_chat(
                 from orca.memory.turn_ingest import maybe_ingest_turn
                 maybe_ingest_turn(sess.id, req.message, full)
             sess.persist_to_redis(fence_token=fence)
-            if user:
-                increment_usage(user.id, "message")
+            consume_admission(admission, response={"route": "/api/stream", "backend": "ollama"})
 
             from orca.serve import temporary_chat
             if not temporary_chat.is_hidden(sess.id):
@@ -2722,7 +2745,17 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
             yield f"data: {json.dumps({'type': 'error', 'text': 'Ultra requires a Pro license. Run: orca activate <key>'})}\n\n"
         return StreamingResponse(_gate_stream(), media_type="text/event-stream")
 
-    _refusal = _authorize_inference(user, "ultra", req.task, route="/api/ultra", quota_kind="ultra")
+    from orca.serve.admission import consume_admission, release_admission
+
+    _refusal, _admission = _authorize_inference(
+        user,
+        "ultra",
+        req.task,
+        route="/api/ultra",
+        quota_kind="ultra",
+        session_id=req.session_id or "",
+        allow_anonymous=True,  # anonymous hits model_access_denied (plan gate), not auth_required
+    )
     if _refusal is not None:
         async def _ultra_refused():
             yield f"data: {json.dumps(_refusal.as_sse())}\n\n"
@@ -2800,6 +2833,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         try:
             pipeline = pipeline_task.result()
         except Exception as e:
+            release_admission(_admission)
             yield f"data: {json.dumps(public_error(e, route='/api/ultra').as_sse())}\n\n"
             return
 
@@ -2810,8 +2844,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
                 "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "ultra",
             })
         text = _dlp["safe_text"]
-        if user:
-            increment_usage(user.id, "ultra")
+        consume_admission(_admission, response={"route": "/api/ultra"})
         chunk_size = 25
         for i in range(0, len(text), chunk_size):
             yield f"data: {json.dumps({'type': 'chunk', 'text': text[i:i+chunk_size]})}\n\n"
@@ -3012,12 +3045,22 @@ async def vision_query(
         e = coded_error("invalid_request", message="The uploaded file is not a supported image (PNG, JPEG, GIF or WebP).", status=415)
         return JSONResponse(e.as_json(), status_code=e.status)
 
-    _refusal = _authorize_inference(user, model_variant, message, route="/api/vision")
+    from orca.serve.admission import consume_admission, release_admission
+
+    _refusal, _admission = _authorize_inference(
+        user,
+        model_variant,
+        message,
+        route="/api/vision",
+        session_id=session_id or "",
+        allow_anonymous=True,  # anonymous hits model_access_denied (plan gate)
+    )
     if _refusal is not None:
         return JSONResponse(_refusal.as_json(), status_code=_refusal.status)
 
     model_name = _model_name_for_variant(model_variant)
     if not is_vision_capable(model_name):
+        release_admission(_admission)
         return JSONResponse(
             {"error": f"Model '{model_name}' does not appear to be vision-capable. "
                       f"Pull a vision model (e.g. `ollama pull llava` or `ollama pull llama3.2-vision`) "
@@ -3032,6 +3075,7 @@ async def vision_query(
     try:
         response = await asyncio.to_thread(sess.brain.complete, [vision_message])
     except Exception as e:
+        release_admission(_admission)
         _err = public_error(e, route="/api/vision", user_id=user.id if user else None)
         return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
 
@@ -3041,13 +3085,12 @@ async def vision_query(
             "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "vision",
         })
     response = _dlp["safe_text"]
-    if user:
-        increment_usage(user.id, "message")
+    consume_admission(_admission, response={"route": "/api/vision", "model": model_name})
 
     audit.log("vision_query", user_id=user.id if user else None,
               detail={"model": model_name, "image_bytes": len(data)})
 
-    return {"response": response, "session_id": sess.id, "model": model_name}
+    return {"response": response, "session_id": sess.id, "model": model_name, "request_id": _admission.request_id}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

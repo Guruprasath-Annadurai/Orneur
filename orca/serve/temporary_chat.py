@@ -71,10 +71,15 @@ def _read(path: Path) -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _lock_path(session_id: str) -> Path:
+    return _path(session_id).with_suffix(".lock")
+
+
 @contextmanager
 def _lock(session_id: str):
     path = _path(session_id)
-    fd = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o600)
+    lock_path = _lock_path(session_id)
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield path
@@ -83,6 +88,21 @@ def _lock(session_id: str):
             fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
+
+
+def _unlink_lock(session_id: str) -> None:
+    """Best-effort lock file cleanup after a terminal finish.
+
+    Unlink only after the flock is released (callers invoke this outside
+    ``_lock``). A concurrent opener recreates the inode safely; we never
+    unlink while holding the descriptor.
+    """
+    try:
+        _lock_path(session_id).unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
 
 
 def _public(record: dict) -> dict:
@@ -219,9 +239,12 @@ def _delete_contents(session_id: str, user_id: str) -> None:
     if result.get("conversation_transcript_error"):
         raise RuntimeError("temporary chat transcript was not deleted")
     try:
-        from orca.serve import generations
+        from orca.serve import generations  # type: ignore
 
-        generations.delete_for_session(session_id, user_id)
+        if hasattr(generations, "delete_for_session"):
+            generations.delete_for_session(session_id, user_id)
+    except ImportError:
+        pass
     except Exception:
         pass
     _remove_session_title(session_id)
@@ -229,6 +252,7 @@ def _delete_contents(session_id: str, user_id: str) -> None:
     if isinstance(live, dict):
         live.pop(session_id, None)
     release_session(session_id, user_id)
+    _unlink_lock(session_id)
 
 
 def finish(session_id: str, user_id: str, final_state: str, *, now: float | None = None) -> dict:
