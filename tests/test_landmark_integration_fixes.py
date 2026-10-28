@@ -96,3 +96,55 @@ def test_inference_proceeds_on_sqlite_authority_when_redis_is_unreachable(isolat
     user = User(id=uid, email=f"{uid}@example.com", name=uid, tier="free", verified=True)
     out = inference.complete(user=user, message="hello", model="fixture-llama", host=ollama_fixture, session_id=uuid.uuid4().hex)
     assert out["text"]
+
+
+def test_a_generation_longer_than_the_authority_ttl_still_commits_on_the_inference_routes(isolated_home, monkeypatch):
+    """B-03: /api/inference/* granted 45 s of authority and renewed it only once, just before the commit -- a healthy generation that outlived the
+    TTL lost the right to commit its own answer. The heartbeat keeps it alive; a superseded worker still cannot commit (renew needs the same fence+epoch)."""
+    import time
+
+    from orca.auth.store import User
+    from orca.serve import inference
+
+    monkeypatch.setattr(inference, "_AUTH_TTL_S", 1.0)
+    monkeypatch.setattr(inference, "_AUTH_BEAT_S", 0.2)
+    uid = "u-longgen-" + uuid.uuid4().hex[:6]
+    user = User(id=uid, email=f"{uid}@example.com", name=uid, tier="free", verified=True)
+    sid = uuid.uuid4().hex
+
+    def slow(host, model, prompt):
+        time.sleep(2.5)                                    # 2.5x the authority TTL
+        return {"response": "slow but healthy", "model": model, "prompt_eval_count": 1, "eval_count": 1}
+
+    out = inference.complete(user=user, message="hello", model="fixture-llama", host="http://127.0.0.1:9", session_id=sid,
+                             transport_generate=slow, synthetic_provider=True)
+    assert out["text"] == "slow but healthy"
+    assert [t["assistant_content"] for t in conversations.turns_for_session(sid)] == ["slow but healthy"]
+
+
+def test_a_superseded_inference_worker_still_cannot_commit_despite_the_heartbeat(isolated_home, monkeypatch):
+    import time
+
+    from orca.auth.store import User
+    from orca.serve import inference
+
+    monkeypatch.setattr(inference, "_AUTH_TTL_S", 1.0)
+    monkeypatch.setattr(inference, "_AUTH_BEAT_S", 0.2)
+    uid = "u-super-" + uuid.uuid4().hex[:6]
+    user = User(id=uid, email=f"{uid}@example.com", name=uid, tier="free", verified=True)
+    sid = uuid.uuid4().hex
+
+    def hijacked(host, model, prompt):
+        # while this worker generates, another worker force-takes the session (epoch bump) -- the heartbeat must not "renew" the old fence
+        conn = conversations._turns_conn()
+        with conn:
+            conn.execute("UPDATE session_authority SET fence_token='intruder', epoch=epoch+1, expires_at=? WHERE session_id=?", (time.time() + 60, sid))
+        conn.close()
+        time.sleep(0.8)
+        return {"response": "stale answer", "model": model, "prompt_eval_count": 1, "eval_count": 1}
+
+    with pytest.raises(inference.InferenceError) as exc:
+        inference.complete(user=user, message="hello", model="fixture-llama", host="http://127.0.0.1:9", session_id=sid,
+                           transport_generate=hijacked, synthetic_provider=True)
+    assert exc.value.code == "stale_worker"
+    assert conversations.turns_for_session(sid) == []

@@ -7,11 +7,11 @@ No P0 is known to remain. "Owner" is the engineering owner proposed for the fix,
 |---|---|---|
 | B-01 | P1 | Plain-chat answers are delivered as one *labelled replay*, not token-by-token |
 | B-02 | P1 | Nothing in this milestone is independently qualified |
-| B-03 | P2 | `/api/inference/*` routes have no authority heartbeat (generations > 45 s fail to commit) |
+| B-03 | CLOSED | `/api/inference/*` authority heartbeat (was: generations > 45 s failed to commit) |
 | B-04 | P2 | Real-Ollama journeys are workstation-only, not in CI |
 | B-05 | P2 | Physical reclamation of deleted vector/graph data is best-effort |
-| B-06 | P2 | When a session has documents but no evidence plan, the Kernel's direct answer is discarded and the model is called a second time |
-| B-07 | P2 | In-process session cache can be stale across workers while Redis is down |
+| B-06 | P2 | When a session has documents but no evidence plan, the Kernel's direct answer is discarded and the model is called again (≥ 2 answering calls per turn) |
+| B-07 | P3 | After a severed connection the page cannot know whether the server committed the turn |
 | B-08 | P3 | `/api/cognitive/execute` surfaces a kernel failure as an unhandled 500 |
 | B-09 | P3 | Sign-up has no email verification; anonymous callers have IP rate limits but no per-user quota |
 | B-10 | P3 | Persisted deployment records under old ids are orphaned after the family-aware id change |
@@ -39,15 +39,11 @@ No P0 is known to remain. "Owner" is the engineering owner proposed for the fix,
 * **Fix:** freeze the SHA in the draft PR, run Antigravity's consolidated qualification, including the earlier vulnerabilities (stale-writer, JSONL phantom turns, prompt contamination, DLP chunk split, reservation theft, replay).
 * **Acceptance:** an Antigravity report naming the exact SHA.
 
-## B-03 — P2 — `/api/inference/*` has no authority heartbeat
+## B-03 — CLOSED in this milestone — `/api/inference/*` authority heartbeat
 
-* **File / function:** `orca/serve/inference.py::_persist` (one best-effort `renew_authority` immediately before the commit) and `_acquire_turn` (45 s TTL).
-* **Reproduction:** a generation on `/api/inference/complete|stream` that takes longer than 45 s: `commit_turn` returns `authority_expired` ⇒ `InferenceError("stale_worker")`; the answer is lost.
-* **Expected:** same behaviour as the canonical routes (`_TurnAuthority` heartbeat).
-* **Impact:** only long generations on the secondary inference API. The browser does not use these routes.
-* **Owner:** Cursor (PR #125/#127 lineage).
-* **Minimal fix:** share `_TurnAuthority` (or a thread-based heartbeat) with `inference.py`.
-* **Acceptance test:** like `test_canonical_turn_authority.py` with `ORNEUR_TURN_AUTHORITY_TTL_S=2` and a 5 s fixture generation: the turn commits.
+* Was: `orca/serve/inference.py::_persist` renewed authority once, immediately before the commit, on a 45 s TTL — a healthy generation that outlived the TTL lost the right to commit (`stale_worker`).
+* Fix: `_authority_heartbeat` keeps the Redis lease and SQLite authority alive for the duration of `complete`, `stream_complete` and `stream_via_gateway`; renewal only succeeds for the same fence + epoch, so a superseded worker still fails.
+* Evidence: `tests/test_landmark_integration_fixes.py::test_a_generation_longer_than_the_authority_ttl_still_commits_on_the_inference_routes` (**fails with `stale_worker` when the heartbeat is disabled**) and `…::test_a_superseded_inference_worker_still_cannot_commit_despite_the_heartbeat`.
 
 ## B-04 — P2 — real-Ollama journeys are not in CI
 
@@ -64,12 +60,14 @@ No P0 is known to remain. "Owner" is the engineering owner proposed for the fix,
 ## B-06 — P2 — discarded Kernel answer when a session has documents
 
 * **File / function:** `orca/serve/api.py` (`use_kernel_direct = cognitive_result.output is not None and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)`).
-* **Observed:** with documents loaded and no evidence state, the Kernel has already called the model, its output is dropped, and the AgentLoop calls the model again. One quota unit is charged, but the compute is doubled.
+* **Observed (measured with the fixture provider):** with a document loaded the provider receives the Kernel's answering call, then the Deep-RAG call, then the streamed AgentLoop call (plus knowledge-graph extraction). The Kernel's output is dropped. One quota unit is charged, but compute is multiplied.
 * **Minimal fix:** pass "documents present" into the Kernel request so it skips `_answer_directly`. **Acceptance:** one provider dispatch per turn for a document session.
 
-## B-07 — P2 — stale in-process session cache while Redis is down
+## B-07 — P3 — outcome unknown after a severed connection
 
-* `_sessions` (live agent window) is revalidated against Redis revisions; with Redis unreachable, a user session is rebuilt from the authoritative transcript (`context_freshness: rebuilt_authoritative`) and **model prompts are built from SQLite**, so the answer is not stale — but the AgentLoop's own window on another worker can lag until its next rebuild. Verified honest by `test_H5`. **Owner:** Cursor/Claude. **Fix:** drop the cache entry when `lease_state` is `None`.
+* **Where:** `conversation.html` stream error handling (`markMessageInterrupted`).
+* **Observed:** when the connection vanishes mid-stream the page shows "Response interrupted"; whether the server went on to commit the turn depends on whether it noticed the disconnect first. The browser journey (`S4`) accepts either outcome and asserts the invariants that matter — no partial assistant message is ever committed, and the conversation is immediately usable — but the page does not poll to tell the user which happened. A reload shows the authoritative transcript.
+* **Fix:** on an interrupted stream, re-read `/messages` once and reconcile the DOM (or show "this reply was saved / not saved"). **Acceptance:** extend `S4` to assert the badge text matches the server state.
 
 ## B-08 — P3 — `/api/cognitive/execute`
 

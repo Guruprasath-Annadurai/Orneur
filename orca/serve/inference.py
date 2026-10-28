@@ -12,7 +12,9 @@ provider call.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
 import re
 import threading
 import time
@@ -141,6 +143,38 @@ def _consume_quota(request_id: str, response: dict | None = None) -> None:
         raise InferenceError(exc.code) from exc
 
 
+# Same knobs as the canonical routes' _TurnAuthority (api.py): the defaults are the production values.
+_AUTH_TTL_S = float(os.environ.get("ORNEUR_TURN_AUTHORITY_TTL_S", "45"))
+_AUTH_BEAT_S = float(os.environ.get("ORNEUR_TURN_HEARTBEAT_S", "10"))
+_LEASE_MS = int(os.environ.get("ORNEUR_TURN_LEASE_MS", "45000"))
+
+
+@contextlib.contextmanager
+def _authority_heartbeat(session_id: str, fence: str, epoch: int):
+    """Keep the turn's durable authority (and Redis lease) alive for as long as the generation runs.
+
+    ``_acquire_turn`` grants a short TTL so a crashed worker is superseded quickly; without renewal a healthy generation that outlived it lost
+    the right to commit its own answer (``stale_worker``). Renewal never extends authority that was already taken over: ``renew_authority`` only
+    succeeds for the same fence + epoch, so a superseded worker keeps failing its commit."""
+    stop = threading.Event()
+
+    def beat() -> None:
+        while not stop.wait(_AUTH_BEAT_S):
+            try:
+                if not conversations.renew_authority(session_id, fence, epoch, ttl_s=_AUTH_TTL_S):
+                    return
+                session_store.lease_acquire_state(session_id, fence, ttl_ms=_LEASE_MS)
+            except Exception:
+                return
+
+    thread = threading.Thread(target=beat, name="turn-authority-heartbeat", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+
+
 def _acquire_turn(session_id: str, user_id: str) -> tuple[str, int]:
     """Acquire Redis advisory lease + durable SQLite fencing authority.
 
@@ -150,9 +184,9 @@ def _acquire_turn(session_id: str, user_id: str) -> tuple[str, int]:
     fence = uuid.uuid4().hex
     # Redis is advisory coordination; the SQLite fence is the authority. "held by another turn" refuses, but "Redis cannot be reached" degrades
     # to SQLite-only instead of refusing every request (same rule as the canonical routes).
-    if session_store.lease_acquire_state(session_id, fence, ttl_ms=45_000) == "held":
+    if session_store.lease_acquire_state(session_id, fence, ttl_ms=_LEASE_MS) == "held":
         raise InferenceError("session_busy")
-    auth = conversations.acquire_authority(session_id, user_id, fence, ttl_s=45.0)
+    auth = conversations.acquire_authority(session_id, user_id, fence, ttl_s=_AUTH_TTL_S)
     if auth is None:
         session_store.release_session_lease(session_id, fence)
         raise InferenceError("session_busy")
@@ -243,7 +277,7 @@ def _persist(
         raise InferenceError("stale_worker")
     # Best-effort renew so a just-expired authority is not racing the commit
     # window; commit_turn still re-checks expiry inside its transaction.
-    conversations.renew_authority(session_id, fence_token, int(epoch), ttl_s=45.0)
+    conversations.renew_authority(session_id, fence_token, int(epoch), ttl_s=_AUTH_TTL_S)
     # Advisory Redis revision claim (Claude fencing). Never authorizes SQLite
     # insert alone — commit_turn re-validates fence/epoch/expiry/ownership.
     session_store.claim_turn_commit(session_id, fence_token)
@@ -294,21 +328,22 @@ def complete(
     with _session_lock(sid):
         fence, epoch = _acquire_turn(sid, uid)
         try:
-            return _complete_locked(
-                uid=uid,
-                sid=sid,
-                message=message,
-                model=model,
-                host=host,
-                model_variant=model_variant,
-                transport_generate=transport_generate,
-                synthetic_provider=synthetic_provider,
-                timeout_s=timeout_s,
-                request_id=request_id,
-                fence_token=fence,
-                epoch=epoch,
-                user=user,
-            )
+            with _authority_heartbeat(sid, fence, epoch):
+                return _complete_locked(
+                    uid=uid,
+                    sid=sid,
+                    message=message,
+                    model=model,
+                    host=host,
+                    model_variant=model_variant,
+                    transport_generate=transport_generate,
+                    synthetic_provider=synthetic_provider,
+                    timeout_s=timeout_s,
+                    request_id=request_id,
+                    fence_token=fence,
+                    epoch=epoch,
+                    user=user,
+                )
         finally:
             _release_turn(sid, fence, epoch)
 
@@ -435,21 +470,22 @@ def stream_complete(
     with _session_lock(sid):
         fence, epoch = _acquire_turn(sid, uid)
         try:
-            return _stream_complete_locked(
-                uid=uid,
-                sid=sid,
-                message=message,
-                model=model,
-                host=host,
-                model_variant=model_variant,
-                transport_stream=transport_stream,
-                cancel=cancel,
-                synthetic_provider=synthetic_provider,
-                timeout_s=timeout_s,
-                user=user,
-                fence_token=fence,
-                epoch=epoch,
-            )
+            with _authority_heartbeat(sid, fence, epoch):
+                return _stream_complete_locked(
+                    uid=uid,
+                    sid=sid,
+                    message=message,
+                    model=model,
+                    host=host,
+                    model_variant=model_variant,
+                    transport_stream=transport_stream,
+                    cancel=cancel,
+                    synthetic_provider=synthetic_provider,
+                    timeout_s=timeout_s,
+                    user=user,
+                    fence_token=fence,
+                    epoch=epoch,
+                )
         finally:
             _release_turn(sid, fence, epoch)
 
@@ -636,21 +672,22 @@ async def stream_via_gateway(
     try:
         fence, epoch = _acquire_turn(sid, uid)
         try:
-            async for item in _stream_via_gateway_locked(
-                uid=uid,
-                sid=sid,
-                message=message,
-                model=model,
-                host=host,
-                model_variant=model_variant,
-                cancel=cancel,
-                synthetic_provider=synthetic_provider,
-                timeout_s=timeout_s,
-                user=user,
-                fence_token=fence,
-                epoch=epoch,
-            ):
-                yield redact_structure(item)
+            with _authority_heartbeat(sid, fence, epoch):
+                async for item in _stream_via_gateway_locked(
+                    uid=uid,
+                    sid=sid,
+                    message=message,
+                    model=model,
+                    host=host,
+                    model_variant=model_variant,
+                    cancel=cancel,
+                    synthetic_provider=synthetic_provider,
+                    timeout_s=timeout_s,
+                    user=user,
+                    fence_token=fence,
+                    epoch=epoch,
+                ):
+                    yield redact_structure(item)
         finally:
             _release_turn(sid, fence, epoch)
     finally:
