@@ -55,18 +55,21 @@ def require_valid_credentials(user: Optional[User], *, allow_anonymous: bool) ->
 
 
 def enforce_session_ownership(session_id: str | None, user: Optional[User]) -> Any:
-    """Refuse when a session id is present but the caller does not own it."""
+    """Refuse when a session id is present but the caller does not own it.
+
+    Always ``not_found`` (404): do not reveal whether the session exists.
+    """
     if not session_id:
         return None
     if user is None:
-        return coded_error("session_forbidden", message="Session access denied")
+        return coded_error("not_found", message="Session not found")
     try:
         from orca.auth.store import check_session_access
 
         if not check_session_access(session_id, user.id):
-            return coded_error("session_forbidden", message="Session access denied")
+            return coded_error("not_found", message="Session not found")
     except Exception:
-        return coded_error("session_forbidden", message="Session access denied")
+        return coded_error("not_found", message="Session not found")
     return None
 
 

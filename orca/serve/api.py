@@ -1724,6 +1724,10 @@ async def stream_chat(
     )
     if admission.refusal is not None:
         _ref = admission.refusal
+        # Ownership/auth refusals are HTTP errors (not SSE 200) so clients and
+        # isolation tests observe the correct status without consuming a stream.
+        if _ref.code in {"not_found", "auth_required", "forbidden", "model_access_denied", "quota_exceeded", "content_refused"}:
+            return JSONResponse(_ref.as_json(), status_code=_ref.status)
         async def _admit_refused():
             yield f"data: {json.dumps(_ref.as_sse())}\n\n"
         return StreamingResponse(_admit_refused(), media_type="text/event-stream")

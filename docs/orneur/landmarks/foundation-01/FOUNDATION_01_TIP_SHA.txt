@@ -1,0 +1,7 @@
+FOUNDATION LANDMARK-01 backend candidate tip (exact SHA for Antigravity):
+16ee75092bfae621df18fe10feebf2cc845d82f4
+
+Branch: cursor/foundation-landmark-01-backend-closure-1cdf
+
+If HEAD advances past this file's recorded SHA, qualification MUST restart
+for the new head. Do not treat green CI as independent qualification.
