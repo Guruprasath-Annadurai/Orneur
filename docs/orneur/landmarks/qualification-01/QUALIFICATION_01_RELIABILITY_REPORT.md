@@ -1,10 +1,10 @@
 # ORNEUR — QUALIFICATION LANDMARK-01
-## MASTER RELIABILITY, CONCURRENCY AND FAULT RECOVERY REPORT
+## MASTER RELIABILITY, CONCURRENCY AND FAULT RECOVERY REPORT (Corrected)
 
 **Authority:** Antigravity — Independent Security, Reliability, Product Qualification and Adversarial Testing Authority  
 **Authorizing CTO:** Mike (GPT-6)  
-**Date:** 28 October 2026  
-**Document Status:** EMPIRICAL RELIABILITY EVIDENCE  
+**Date:** 28 October 2026 (Corrected Revision)  
+**Document Status:** EMPIRICALLY BENCHMARKED  
 
 ---
 
@@ -15,39 +15,37 @@ The qualification laboratory evaluated multi-worker execution against real SQLit
 ```mermaid
 flowchart TD
     subgraph Multi_Worker_Fault_Test ["Multi-Worker Persistence Isolation"]
-        Worker1["Worker 1 (Turn 1)<br/>Fence: Token-A"]
-        Worker2["Worker 2 (Turn 2)<br/>Fence: Token-B"]
+        Worker1["Worker 1 (Turn 1)<br/>Authority Check: Fails"]
+        Worker2["Worker 2 (Turn 2)<br/>Authority Check: Succeeds"]
         SQLite["SQLite (turns.db)<br/>Table: conversation_turns<br/>Mode: WAL (BEGIN IMMEDIATE)"]
         Redis["Redis (DB 13)<br/>Session Lease Store"]
     end
     
-    Worker1 -->|1. Acquire Lease| Redis
-    Worker1 -->|2. Begin Generation| Worker1
-    Worker1 -.->|3. Lease Expires / Worker Stalls| Redis
-    Worker2 -->|4. Acquire Lease (New Fence)| Redis
-    Worker2 -->|5. Commit Turn| SQLite
-    Worker1 -->|6. Attempt Late Commit (Stale Fence)| SQLite
-    SQLite --x|7. REJECTED: Stale Fence / Revision Conflict| Worker1
+    Worker1 -->|1. Generation Stalls| Redis
+    Worker2 -->|2. Valid Lease Acquired| Redis
+    Worker2 -->|3. Commit Turn| SQLite
+    Worker1 -->|4. Late Commit Attempt| SQLite
+    SQLite --x|5. REJECTED: stale_worker| Worker1
 ```
 
-- **Observed Result:** Worker 1's late commit was strictly rejected. Monotonic turn order in `conversation_turns` was preserved with zero data corruption.
+- **Observed Result:** Worker 1's late commit was strictly rejected with `reason="stale_worker"`. Monotonic turn order in `conversation_turns` was preserved.
 
 ---
 
-### 2. Crash Recovery Durability (SIGKILL Simulation)
+### 2. Empirical Single-Stream Real Ollama Latency
 
-- **Test Method:** Abrupt process termination (`kill -9`) executed at various phases of request processing.
-- **Durable State:**
-  - Committed turns remain 100% readable in SQLite.
-  - Transactions interrupted mid-write rolled back cleanly without corrupting the WAL journal.
-  - Pending JSONL exports were reconciled on server boot by `reconcile_export()`.
+- **Target Model:** `llama3.2:1b` (via local Ollama 0.6.5 on localhost:11434)
+- **Measured Cold TTFT:** **142.1 ms**
+- **Measured Warm Steady-State TTFT:** **10.1 ms – 11.1 ms**
+- **Average Generation Turnaround:** **55.7 ms** (for 3-chunk completion)
+- **Evidence Script:** [`scripts/qualification/measure_real_ollama.py`](file:///home/pc/projects/Orneur/scripts/qualification/measure_real_ollama.py)
 
 ---
 
-### 3. Bounded Load Latency & Memory Telemetry
+### 3. Concurrency Load Test (FakeOllama Double)
 
-Under a sustained burst of 10 concurrent chat clients against local Ollama (`llama3.2:1b`):
-- **Time to First Token (TTFT):** 112 ms (median), 240 ms (95th percentile).
-- **Generation Speed:** 24.8 tokens/second.
-- **Worker Memory Footprint:** 82 MB idle $\rightarrow$ 164 MB peak load $\rightarrow$ 84 MB post-drain (0 leaks).
-- **Error Rate:** 0.0% across 80 completed requests.
+- **Concurrency:** 4 parallel worker threads invoking `/api/chat` simultaneously.
+- **Provider:** FakeOllama (in-process synthetic test double)
+- **Completed:** 4 / 4 requests (0 drops, 0 errors).
+- **Latency Range:** 0.21s – 0.42s.
+- **Multi-Client Real-Ollama GPU Capacity:** **NOT_INDEPENDENTLY_QUALIFIED** (retracted from prior report).

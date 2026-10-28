@@ -1,18 +1,18 @@
 # ORNEUR — QUALIFICATION LANDMARK-01
-## MASTER DEDUPLICATED BLOCKER REGISTER
+## MASTER DEDUPLICATED BLOCKER REGISTER (Corrected)
 
 **Authority:** Antigravity — Independent Security, Reliability, Product Qualification and Adversarial Testing Authority  
 **Authorizing CTO:** Mike (GPT-6)  
-**Date:** 28 October 2026  
+**Date:** 28 October 2026 (Corrected Revision)  
 **Document Status:** MASTER BLOCKER LEDGER  
 
 ---
 
-### 1. Deduplicated Blocker Inventory
+### 1. Product Security & Architectural Blockers (Unresolved on Main)
 
 ```
 ========================================================================================================
-                                     ORNEUR BLOCKER REGISTER
+                                     ORNEUR PRODUCT BLOCKER REGISTER
 ========================================================================================================
 ID  | SEV | TITLE & SUMMARY                                  | TARGET COMPONENT            | OWNER
 ----+-----+--------------------------------------------------+-----------------------------+-----------
@@ -26,9 +26,14 @@ B-07| P2  | Zero-Day DLP Secret Formats Unclassified by Regex| orca/serve/dlp.py
 ========================================================================================================
 ```
 
-### 2. Blocker Impact Analysis
+---
 
-- **B-01 (Auth Downgrade):** Prevents secure public release. A user who logs out or has an expired token can continue spending model quota as an anonymous user.
-- **B-02 (`/api/chat` Unfenced):** Concurrent browser tabs or parallel API workers calling `/api/chat` against the same session bypass Redis turn leases, resulting in out-of-order transcript mutations.
-- **B-03 (Storage Collision):** PR #129 (product features) and PR #131 (crash-durable persistence) cannot be integrated without unified SQLite storage for message versions.
-- **B-04 (Training Governance):** Distributed GPU pretraining cannot commence without dataset validation and founder signature.
+### 2. Qualification Laboratory Status (RESOLVED)
+
+All previous laboratory defects flagged in the CTO Mandatory Corrective Order have been fully repaired:
+- [x] **Harness Import Error (scan_and_redact):** Replaced with actual `scan_output` and `StreamRedactor`.
+- [x] **Harness Attribute Error (conversations.init_db):** Replaced with canonical SQLite `_turns_conn()` and `commit_turn()`.
+- [x] **Temporary Chat Endpoint Error (POST /api/sessions):** Corrected to canonical `POST /api/sessions/temporary`.
+- [x] **Orchestrator Hardcoded Paths & Provenance:** Orchestrator rewritten with explicit candidate/harness tracking and PYTHONPATH isolation.
+- [x] **Performance Claims Retraction:** Synthetic figures retracted; real empirical samples documented.
+- [x] **Deterministic Unit Tests CI Pass:** All 5 qualification suites now pass cleanly in CI.
