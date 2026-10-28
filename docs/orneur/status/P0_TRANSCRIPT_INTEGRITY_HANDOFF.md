@@ -2,7 +2,8 @@
 
 **PR:** https://github.com/Guruprasath-Annadurai/Orneur/pull/130  
 **Branch:** `cursor/inference-transcript-integrity-c12b`  
-**Tip SHA:** `9eddbc267c55e7a8583c4268a4b16a7aca7782d5`  
+**Protocol fix SHA:** `908c5f4b62313ae04815d6a13922bcbef24487e6`  
+**Qualify exact branch HEAD:** `git rev-parse origin/cursor/inference-transcript-integrity-c12b`  
 **Parent candidate (preserve):** PR #127 @ `22225086873cba5274d3ad44aab9e7ef5a913230` (exact-head CI 9/9; Antigravity **FAILED_QUALIFICATION**)  
 **Base:** `cursor/inference-p0-security-closure-c12b`  
 **Scope:** Corrective isolation of the conversation-commit protocol only. Do not treat green CI alone as qualification.
