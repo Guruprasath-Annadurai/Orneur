@@ -48,10 +48,12 @@ def test_atomic_quota_49_of_50_three_simultaneous(isolated_home, ollama_fixture)
 def test_idempotent_request_id_and_provider_outage_refund(isolated_home, ollama_fixture):
     init_db()
     uid = "qid"
-    first = reserve_quota(uid, "free", "message", request_id="same-req")
-    second = reserve_quota(uid, "free", "message", request_id="same-req")
-    assert first["ok"] and second["ok"] and second["duplicate"] is True
+    first = reserve_quota(uid, "free", "message", request_id="same-req", fingerprint="fp-a")
+    second = reserve_quota(uid, "free", "message", request_id="same-req", fingerprint="fp-a")
+    assert first["ok"] is True
+    assert second["ok"] is False and second["status"] == "in_progress" and second["duplicate"] is True
     assert get_usage_today(uid)["messages"] == 1
+    release_quota("same-req")
     with pytest.raises(InferenceError) as exc:
         complete(
             user=_user(uid),
@@ -63,7 +65,7 @@ def test_idempotent_request_id_and_provider_outage_refund(isolated_home, ollama_
     assert exc.value.code == "provider_unavailable"
     # outage reserved then released
     after = get_usage_today(uid)["messages"]
-    assert after == 1
+    assert after == 0
 
 
 def test_release_is_idempotent_and_never_negative(isolated_home):

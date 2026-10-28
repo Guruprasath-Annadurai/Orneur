@@ -1841,14 +1841,26 @@ async def stream_chat(
                 # disconnected client's backend generator is only closed
                 # whenever Python eventually garbage-collects it, leaking
                 # the worker thread and the backend connection until then.
+                from orca.serve.stream_dlp import StreamRedactor
+
+                redactor = StreamRedactor()
                 async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
                     async for chunk in achunks:
-                        full += chunk
-                        yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                        safe_chunk = redactor.push(chunk)
+                        if safe_chunk:
+                            full += safe_chunk
+                            yield f"data: {json.dumps({'type': 'chunk', 'text': safe_chunk})}\n\n"
                         if await request.is_disconnected():
+                            redactor.cancel()
                             audit.log("stream_client_disconnected", user_id=user.id if user else None,
                                       detail={"chars_sent": len(full)})
                             return
+                tail = redactor.finish()
+                if tail:
+                    full += tail
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': tail})}\n\n"
+                # Authoritative persisted text matches what the client received.
+                full = redactor.safe_text() or full
 
                 tool_names = [tc.tool for tc in trace.tool_calls]
                 plan_action = trace.plan_action
