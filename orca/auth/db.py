@@ -98,6 +98,15 @@ CREATE TABLE IF NOT EXISTS usage_daily (
     PRIMARY KEY (user_id, date)
 );
 
+CREATE TABLE IF NOT EXISTS usage_reservations (
+    request_id TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    date       TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_sessions (
     user_id    TEXT NOT NULL,
     session_id TEXT NOT NULL,
@@ -301,6 +310,15 @@ CREATE TABLE IF NOT EXISTS usage_daily (
     messages   INTEGER NOT NULL DEFAULT 0,
     ultra_runs INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS usage_reservations (
+    request_id TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    date       TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    created_at REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS user_sessions (
@@ -711,6 +729,11 @@ def init_db() -> None:
                 "(a.created_at > b.created_at OR (a.created_at = b.created_at AND a.user_id > b.user_id))"
             )
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_session ON user_sessions(session_id)")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS usage_reservations ("
+                "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
+                "date TEXT NOT NULL, status TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL)"
+            )
             # Contains $$ ... $$ function bodies with semicolons inside them —
             # must go through execute_sql_block(), not executescript(), which
             # would break on the naive ';' split (see its docstring).
@@ -745,6 +768,11 @@ def init_db() -> None:
             "(SELECT MIN(rowid) FROM user_sessions GROUP BY session_id)"
         )
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_session ON user_sessions(session_id)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS usage_reservations ("
+            "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
+            "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL)"
+        )
         _mark_legacy_owner(conn)
 
 

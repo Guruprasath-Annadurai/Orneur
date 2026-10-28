@@ -695,11 +695,12 @@ class _Session:
         # the caller wins over the persisted one (user actively switching
         # models mid-conversation should be respected); Redis only fills in
         # when the caller didn't specify (session_id known, variant omitted).
-        redis_state = session_store.load_session_state(session_id)
+        redis_state, redis_revision = session_store.load_session_state_with_revision(session_id)
         self._restored_history = None
         if redis_state:
             model_variant = model_variant or redis_state.get("model_variant")
             self._restored_history = redis_state.get("history")
+        self._known_revision = redis_revision
 
         self.model_variant = model_variant or "core"
         self.memory = MemoryEngine(session_id=session_id)
@@ -723,6 +724,7 @@ class _Session:
         self.explain_store = ExplainStore()
         self.knowledge_graph = KnowledgeGraph(session_id=session_id)
         self.last_active = time.time()
+        self.context_freshness: str | None = None
 
     def _ensure_agent(self):
         if self._agent is not None:
@@ -748,16 +750,23 @@ class _Session:
         if self._restored_history:
             self._agent.load_history(self._restored_history)
         else:
-            # Fallback: no exact turn history available (fresh session, or
-            # Redis disabled/empty) — reconstruct rough context from the
-            # long-term summary store instead. Less precise than Redis's
-            # exact history, only used when that's unavailable.
-            prior = self.memory.load_prior_context()
-            if prior:
-                self._agent.load_history([
-                    {"role": "user", "content": f"[Prior context]\n{prior}"},
-                    {"role": "assistant", "content": "Context loaded."},
-                ])
+            rebuilt: list[dict] = []
+            if self.user_id:
+                try:
+                    from orca.serve import conversations as _conversations
+                    page = _conversations.transcript(self.id, limit=1000)
+                    rebuilt = [{"role": m["role"], "content": m["content"]} for m in page.get("messages", [])]
+                except Exception:
+                    rebuilt = []
+            if rebuilt:
+                self._agent.load_history(rebuilt)
+            else:
+                prior = self.memory.load_prior_context()
+                if prior:
+                    self._agent.load_history([
+                        {"role": "user", "content": f"[Prior context]\n{prior}"},
+                        {"role": "assistant", "content": "Context loaded."},
+                    ])
 
     @property
     def agent(self):
@@ -777,12 +786,71 @@ class _Session:
     def touch(self):
         self.last_active = time.time()
 
-    def persist_to_redis(self):
+    def persist_to_redis(self) -> bool:
         """Save current conversation history so any instance can pick this session back up."""
-        session_store.save_session_state(self.id, self.model_variant, self.agent.get_history())
+        if session_store.enabled() and self._known_revision is None:
+            return False
+        return session_store.save_session_state(
+            self.id, self.model_variant, self.agent.get_history(),
+            expected_revision=self._known_revision,
+        )
 
 
 _sessions: dict[str, _Session] = {}
+
+
+def _context_freshness(sess: "_Session") -> str:
+    if not session_store.enabled():
+        return "single_instance"
+    if sess._known_revision is not None:
+        return "confirmed"
+    return "rebuilt_authoritative" if sess.user_id else "unconfirmed"
+
+
+def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: str) -> bool:
+    """Keep live in-memory windows in step with a committed transcript edit."""
+    if previous == new_text:
+        return True
+    bumped = session_store.bump_revision_with_previous(session_id)
+    new_revision, previous_revision = bumped if bumped else (None, None)
+    sess = _sessions.get(session_id)
+    if sess is not None and session_store.enabled():
+        if new_revision is None or sess._known_revision != previous_revision:
+            _sessions.pop(session_id, None)
+            if new_revision is None:
+                session_store.delete_session(session_id)
+                audit.log("message_edit_live_sync_unconfirmed", user_id=sess.user_id, detail={"session_id": session_id, "role": role, "reason": "revision_bump_unconfirmed_local_session_evicted"})
+                return False
+            return True
+    if sess is None:
+        if new_revision is None and session_store.enabled():
+            audit.log("message_edit_live_sync_unconfirmed", user_id=None, detail={"session_id": session_id, "role": role, "reason": "no_local_session_and_revision_bump_unconfirmed"})
+            return False
+        return True
+    try:
+        agent = sess._agent
+        if agent is not None:
+            for item in agent._history:
+                if item.get("role") == role and item.get("content") == previous:
+                    item["content"] = new_text
+                    break
+            if new_revision is not None:
+                sess._known_revision = new_revision
+            if not sess.persist_to_redis():
+                raise RuntimeError("Redis session-state write did not complete")
+        for msg in sess.memory.short._messages:
+            if msg.role == role and msg.content == previous:
+                msg.content = new_text
+                break
+        if new_revision is not None:
+            sess._known_revision = new_revision
+        return True
+    except Exception:
+        _logger.warning("live conversation sync failed after a committed edit; evicting cached session state", exc_info=True)
+        _sessions.pop(session_id, None)
+        redis_cleared = session_store.delete_session(session_id)
+        audit.log("message_edit_live_sync_failed", user_id=sess.user_id, detail={"session_id": session_id, "role": role, "redis_entry_cleared": redis_cleared})
+        return False
 
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -850,9 +918,23 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
         else:
             raise HTTPException(status_code=503, detail="could not allocate a session")
 
+    cache_check_failed = False
+    if sid in _sessions:
+        current_revision = session_store.get_revision(sid)
+        known = _sessions[sid]._known_revision
+        unconfirmable = current_revision is None and session_store.enabled() and _sessions[sid].user_id
+        if unconfirmable or (current_revision is not None and current_revision != known):
+            _logger.info(
+                "session cache behind the shared revision -- evicting for a fresh rebuild",
+                extra={"session_id": sid, "cached_revision": _sessions[sid]._known_revision, "current_revision": current_revision},
+            )
+            del _sessions[sid]
+        elif current_revision is None and session_store.enabled():
+            cache_check_failed = True
     if sid not in _sessions:
         _sessions[sid] = _Session(sid, model_variant, user_id=user_id)
     _sessions[sid].touch()
+    _sessions[sid].context_freshness = "unconfirmed" if cache_check_failed else _context_freshness(_sessions[sid])
     session_store.touch_session(sid)  # refresh Redis TTL — no-op if Redis disabled
 
     # Evict idle sessions (>2h) to save memory
@@ -1510,6 +1592,7 @@ async def _chat_impl(
         "sources": _src["sources"],
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
+        "context_freshness": getattr(sess, "context_freshness", None),
     }
 
 
