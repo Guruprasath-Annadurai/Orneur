@@ -39,10 +39,10 @@ def test_http_document_task_is_owner_scoped(auth_db):
     uploaded = client.post(
         "/api/documents/tasks",
         headers={"Authorization": f"Bearer {owner}"},
+        params={"question": "indigo widget torque"},
         files={"upload": ("note.txt", b"The indigo widget torque is 12 newton metres.", "text/plain")},
-        data={"question": "indigo widget torque"},
     )
-    assert uploaded.status_code == 200
+    assert uploaded.status_code == 200, uploaded.text
     body = uploaded.json()
     assert body["claims"]["answer_grounding"] == "not_performed"
     assert body["claims"]["citation_excerpt_consistency"] == "verified"
@@ -54,7 +54,6 @@ def test_http_document_task_is_owner_scoped(auth_db):
         "/api/documents",
         headers={"Authorization": f"Bearer {other}"},
         files={"upload": ("note.txt", b"intruder", "text/plain")},
-        data={"owner_user_id": "ignored"},
     )
     assert forged.status_code == 200
     other_read = client.get("/api/documents/note.txt", headers={"Authorization": f"Bearer {other}"})

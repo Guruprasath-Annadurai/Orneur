@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from orca.auth.middleware import get_current_user
 from orca.auth.store import User
@@ -37,12 +37,16 @@ async def upload_document(upload: UploadFile = File(...), user: User = Depends(g
 @router.post("/tasks")
 async def document_task(
     upload: UploadFile = File(...),
-    question: str = Form(...),
+    question: str | None = Query(None),
+    form_question: str | None = Form(None),
     user: User = Depends(get_current_user),
 ):
+    asked = (question or form_question or "").strip()
+    if not asked:
+        raise HTTPException(status_code=422, detail={"error": "query_refused", "code": "query_refused"})
     data = await upload.read()
     try:
-        return run(user=user, filename=upload.filename or "upload.txt", data=data, question=question)
+        return run(user=user, filename=upload.filename or "upload.txt", data=data, question=asked)
     except (DocumentTaskError, UploadError) as exc:
         _raise(exc)
 
