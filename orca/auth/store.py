@@ -319,6 +319,7 @@ def check_quota(user_id: str, tier: str, kind: str = "message") -> tuple[bool, i
 
 
 RESERVATION_TTL_S = 120
+TERMINAL_RETENTION_S = 86400
 _QUOTA_UNAVAILABLE = "quota_unavailable"
 
 
@@ -346,6 +347,10 @@ def _ensure_reservations(conn) -> None:
         "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
         "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created "
+        "ON usage_reservations(status, created_at)"
+    )
 
 
 def _refund_stale_locked(conn, *, now: float) -> None:
@@ -368,6 +373,10 @@ def _refund_stale_locked(conn, *, now: float) -> None:
             "WHERE user_id=? AND date=?",
             (row["user_id"], row["date"]),
         )
+    conn.execute(
+        "DELETE FROM usage_reservations WHERE status IN ('consumed','released') AND created_at < ?",
+        (now - TERMINAL_RETENTION_S,),
+    )
 
 
 def reserve_quota(user_id: str, tier: str, kind: str = "message", request_id: str | None = None) -> dict:

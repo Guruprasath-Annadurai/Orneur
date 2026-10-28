@@ -5,7 +5,7 @@ import threading
 import pytest
 
 from orca.auth.db import init_db
-from orca.auth.store import User, get_usage_today, increment_usage, release_quota, reserve_quota
+from orca.auth.store import User, get_usage_today, increment_usage, mark_quota_consumed, release_quota, reserve_quota
 from orca.serve.inference import InferenceError, complete
 
 
@@ -81,3 +81,22 @@ def test_stale_reservation_crash_recovery(isolated_home, monkeypatch):
     assert get_usage_today("u-crash")["messages"] == 1
     reserve_quota("u-crash", "free", "message", request_id="new-after-crash")
     assert get_usage_today("u-crash")["messages"] == 1
+
+
+def test_terminal_reservations_are_pruned(isolated_home, monkeypatch):
+    import sqlite3
+
+    from orca.auth.db import AUTH_DB
+
+    init_db()
+    monkeypatch.setattr("orca.auth.store.TERMINAL_RETENTION_S", 0)
+    rid = reserve_quota("u-prune", "free", "message", request_id="keep-then-drop")["request_id"]
+    mark_quota_consumed(rid)
+    reserve_quota("u-prune", "free", "message", request_id="next-admit")
+    conn = sqlite3.connect(str(AUTH_DB))
+    left = conn.execute(
+        "SELECT COUNT(*) FROM usage_reservations WHERE request_id=?",
+        ("keep-then-drop",),
+    ).fetchone()[0]
+    conn.close()
+    assert left == 0
