@@ -67,7 +67,10 @@ def _ok(run, step):
     "F1_temporary_chat_via_ui",
     "F2_closing_a_temporary_chat_in_the_ui_deletes_the_transcript",
     "G1_logout_clears_ui_and_revokes_token",
+    "G2_logout_with_server_unreachable_is_reported_honestly",
     "D1_second_user_sees_none_of_the_first_users_conversations",
+    "E4_two_tabs_edit_their_own_messages_by_authoritative_id",
+    "C2_each_new_conversation_appears_in_the_sidebar_without_reload",
     "T1_dark_theme_renders_logged_in_shell",
 ])
 def test_browser_step(run, step):

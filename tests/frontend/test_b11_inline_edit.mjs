@@ -780,3 +780,40 @@ test('Cancel on a FRESH draft that was never submitted (no pending key) still ab
   editBtn._on_click();
   assert.equal(textarea.value, 'original text', 'with no outstanding ambiguity, reopening must show the real current text, not the abandoned draft');
 });
+
+// --- Same-turn editing (frontend journey remediation, FE-2): the server's own `user_message_id` ---
+
+test('bindServerMessageId() enables Save for a just-sent message using only the id the server returned', () => {
+  const { sandbox, container } = buildSandbox();
+  loadFns(sandbox);
+  const div = sandbox.appendUserMessage('just sent');
+  const saveBtn = div.querySelector('[data-action="save"]');
+  assert.equal(saveBtn.disabled, true, 'disabled until the server has confirmed the id');
+  div.bindServerMessageId('srv-user-id-1');
+  assert.equal(div.dataset.messageId, 'srv-user-id-1');
+  assert.equal(saveBtn.disabled, false);
+  assert.equal(saveBtn.title, '');
+});
+
+test('bindServerMessageId() never overwrites a known id and ignores empty / non-string values', () => {
+  const { sandbox } = buildSandbox();
+  loadFns(sandbox);
+  const div = sandbox.appendUserMessage('loaded', { messageId: 'real-id-1' });
+  div.bindServerMessageId('different-id');
+  assert.equal(div.dataset.messageId, 'real-id-1');
+  const fresh = sandbox.appendUserMessage('fresh');
+  for (const bad of [undefined, null, '', 0, 42, {}, []]) fresh.bindServerMessageId(bad);
+  assert.equal(fresh.dataset.messageId, '');
+  assert.equal(fresh.querySelector('[data-action="save"]').disabled, true);
+});
+
+test('the done handler binds ONLY ev.user_message_id: no content / position / last-message inference', () => {
+  const idx = source.indexOf("if (ev.user_message_id && userDiv");
+  assert.ok(idx !== -1, 'the done handler must bind the server-provided user_message_id to this turn\'s own user bubble');
+  const handler = source.slice(idx, idx + 700);
+  assert.ok(handler.includes('userDiv.bindServerMessageId(ev.user_message_id)'));
+  const sendSrc = extractBalancedFunction(source, 'async function sendMessage(runId) {').text;
+  const code = sendSrc.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  assert.ok(!/querySelectorAll\(['"]\.msg-user/.test(code) && !/\.msg-user['"]\)\s*\.pop|lastElementChild|\.at\(-1\)/.test(code), 'must not locate the user bubble by position');
+  assert.ok(!code.includes('/messages') || !/fetch\([^)]*\/messages/.test(code), 'must not fetch the transcript to learn the id');
+});

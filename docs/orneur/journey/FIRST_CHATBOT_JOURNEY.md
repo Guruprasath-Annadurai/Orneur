@@ -99,3 +99,23 @@ uv venv /home/pc/projects/.journey-tools/.venv && uv pip install --python /home/
 A missing capability FAILS with `capability missing: ...` (never skips). The tests are opt-in (`-m journey_live`, `ORNEUR_JOURNEY=1`, or
 naming `tests/journey`), and carry `live_ollama_smoke` so `scripts/ci/run_deterministic_tests.sh` excludes them. Screenshots go to
 `$ORNEUR_JOURNEY_ARTIFACTS` (default `/tmp/orneur-journey-artifacts`).
+
+
+---
+
+## 7. Frontend remediation (branch `claude/frontend-journey-remediation-2026-10-28`)
+
+Scope: `orca/serve/web/conversation.html` only (behaviour; no markup, copy-of-record, layout, logo or theme change) plus tests.
+Untouched by design: `orca/cognitive/kernel.py`, gateway routing, the Redis session store, Cursor's inference PR, Docker isolation.
+
+| Finding | Fix | Evidence |
+|---|---|---|
+| **FE-1 secure logout** | `doLogout()` issues `POST /api/auth/logout` with the live token *before* discarding it, clears all local state synchronously (epochs bumped, stream aborted, drafts/search/model cleared, localStorage token removed), then reports the server's answer: 200 "You have been signed out." / 401 "This session had already ended." / network or 5xx (retried once) "...did not confirm that this session was ended. It may remain valid until it expires." No "signed out everywhere" wording exists; logout-all is not offered. A late outcome never overwrites a newer sign-in. A `storage` listener signs this tab out when another tab removes the shared token. | node `test_logout_revocation.mjs` (10); browser G1 (old token -> 401 on `/api/auth/me`, `/api/sessions`, `/api/stream` by plain HTTP *and* in-page; another session of the same user stays 200) and G2 (route-aborted logout: honest message; the server still accepts the token, as the message says); API G1/G2 |
+| **FE-2 same-turn edit** | `appendUserMessage()` exposes `bindServerMessageId(id)`; the `done` handler calls it with `ev.user_message_id` only. Never overwrites a known id; ignores non-strings; no content/position/last-message inference. | node `test_b11_inline_edit.mjs` (+3); browser E0 (immediate edit), E1 (after reopen), **E4 (two tabs: each edits its own message; server transcript `['alpha edited','beta edited']`)** |
+| **FE-3 sidebar** | The `session` event no longer refreshes (it raced persistence). The `done` event refreshes once `user_message_id` confirms persistence, skipped for temporary chats. | browser C0, C2 (rows 3 -> 4 without reload), F1 (temporary chat adds no row); node `test_view_ownership_epoch.mjs` updated to the new call site |
+
+Two pre-existing node assertions pinned the old sources (`function doLogout() {` and "session event calls loadSessions()"); they were updated
+deliberately, with a comment naming this change, rather than loosened.
+
+Residual limits: if the server is unreachable at sign-out the token is not revoked (disclosed to the user; the page cannot retry after the
+token is discarded); `/api/stream` still lacks `context_freshness`; J-1 and J-2 remain red by instruction.

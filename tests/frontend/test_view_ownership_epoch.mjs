@@ -218,9 +218,13 @@ test('newConversation() invalidates ONLY the message domain, not history (the CT
   assert.equal(sandbox.sessionId, null);
 });
 
-test('doLogout() invalidates BOTH domains via the full-account-reset routine (invariant 6)', () => {
+test('doLogout() invalidates BOTH domains via the full-account-reset routine (invariant 6)', async () => {
   const clearAuthStateSrc = extractFunction(source, 'function _clearAuthStateAndShowSignIn(message) {');
-  const doLogoutSrc = extractFunction(source, 'function doLogout() {');
+  // doLogout() is now async: it first issues the server revocation with the live token
+  // (see tests/frontend/test_logout_revocation.mjs), then runs this same reset synchronously.
+  const doLogoutSrc = extractFunction(source, 'async function doLogout() {');
+  const revokeSrc = extractFunction(source, 'async function _revokeServerSession(token) {');
+  const outcomeSrc = extractFunction(source, 'function _logoutOutcomeMessage(outcome) {');
   const calls = [];
   const sandbox = {
     _authToken: 'token-alice',
@@ -238,13 +242,15 @@ test('doLogout() invalidates BOTH domains via the full-account-reset routine (in
     resetModelSelection: () => { calls.push('resetModelSelection'); },
     updateAccountUI: () => { calls.push('updateAccountUI'); },
     openAuthOverlay: () => { calls.push('openAuthOverlay'); },
+    fetch: async () => ({ status: 200 }),
+    AbortController, setTimeout, clearTimeout,
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `var _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${doLogoutSrc}`,
+    `var _logoutInFlight = false;\nvar _historyEpoch = 0;\nvar _messageEpoch = 0;\nvar _draftsByConversation = new Map();\n${abandonHistoryFn.text}\n${abandonMessageFn.text}\n${abandonAllFn.text}\n${clearAuthStateSrc}\n${revokeSrc}\n${outcomeSrc}\n${doLogoutSrc}`,
     sandbox,
   );
-  sandbox.doLogout();
+  await sandbox.doLogout();
   assert.equal(sandbox._historyEpoch, 1, 'doLogout() must invalidate the history domain (it no longer gets this for free from newConversation(), which is now message-only)');
   assert.equal(sandbox._messageEpoch, 1, 'doLogout() must invalidate the message domain');
   assert.equal(sandbox._authToken, null);
@@ -440,11 +446,16 @@ test('tryRestoreSession() still restores normally when nothing else wins the rac
   assert.equal(sandbox._identityResolved, true);
 });
 
-test('the SSE session-event loadSessions() call site exists and is the real call, not removed or renamed', () => {
+test('the sidebar refresh call site moved from the SSE session event to the persistence-confirming done event', () => {
+  // Frontend journey remediation (2026-10-28, FE-3): the `session` event fires BEFORE the turn is
+  // persisted, so refreshing there listed nothing ("No conversations yet") until a reload. The real
+  // loadSessions() call now lives on the `done` event, gated on the server's `user_message_id`
+  // (see tests/frontend/test_same_turn_edit_and_sidebar.mjs). It must still exist and be real.
   const idx = source.indexOf("if (ev.type === 'session') {");
   assert.ok(idx !== -1, "the SSE 'session' event handler must still exist");
-  const chunk = source.slice(idx, idx + 150);
-  assert.ok(chunk.includes('loadSessions()'), "the SSE 'session' event handler must still call loadSessions() -- live-verified safe under the independent-epoch design in ORNEUR_PR85_LIVENESS_CORRECTION.md");
+  assert.ok(!source.slice(idx, idx + 400).includes('loadSessions();\n'), "the `session` event must not refresh the sidebar before persistence is confirmed");
+  const doneIdx = source.indexOf('if (ev.user_message_id && userDiv');
+  assert.ok(doneIdx !== -1 && source.slice(doneIdx, doneIdx + 600).includes('loadSessions()'), 'the done event must still call the real loadSessions() once persistence is confirmed');
 });
 
 test("restoreRecentsFromSearch()'s real reload call site exists and is the real call, not removed or renamed", () => {
