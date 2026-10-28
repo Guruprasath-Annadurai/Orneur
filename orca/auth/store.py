@@ -1,12 +1,14 @@
 """User CRUD and daily usage tracking."""
 from __future__ import annotations
 
+import sqlite3
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from orca.auth.db import get_conn
+from orca.auth.db import BACKEND, get_conn
 from orca.auth.crypto import hash_password, verify_password
 
 DAILY_LIMITS: dict[str, dict[str, int]] = {
@@ -316,6 +318,217 @@ def check_quota(user_id: str, tier: str, kind: str = "message") -> tuple[bool, i
     return used < limit, used, limit
 
 
+RESERVATION_TTL_S = 120
+TERMINAL_RETENTION_S = 86400
+_QUOTA_UNAVAILABLE = "quota_unavailable"
+
+
+class QuotaError(Exception):
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
+def _quota_conn():
+    if BACKEND == "postgres":
+        return get_conn()
+    from orca.auth.db import AUTH_DB
+
+    AUTH_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(AUTH_DB), isolation_level="IMMEDIATE", check_same_thread=False, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def _ensure_reservations(conn) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS usage_reservations ("
+        "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
+        "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created "
+        "ON usage_reservations(status, created_at)"
+    )
+
+
+def _refund_stale_locked(conn, *, now: float) -> None:
+    cutoff = now - RESERVATION_TTL_S
+    rows = conn.execute(
+        "SELECT request_id, user_id, kind, date FROM usage_reservations "
+        "WHERE status='reserved' AND created_at < ?",
+        (cutoff,),
+    ).fetchall()
+    for row in rows:
+        claimed = conn.execute(
+            "UPDATE usage_reservations SET status='released' WHERE request_id=? AND status='reserved'",
+            (row["request_id"],),
+        )
+        if (claimed.rowcount or 0) != 1:
+            continue
+        col = "messages" if row["kind"] == "message" else "ultra_runs"
+        conn.execute(
+            f"UPDATE usage_daily SET {col}=CASE WHEN {col}>0 THEN {col}-1 ELSE 0 END "
+            "WHERE user_id=? AND date=?",
+            (row["user_id"], row["date"]),
+        )
+    conn.execute(
+        "DELETE FROM usage_reservations WHERE status IN ('consumed','released') AND created_at < ?",
+        (now - TERMINAL_RETENTION_S,),
+    )
+
+
+def reserve_quota(user_id: str, tier: str, kind: str = "message", request_id: str | None = None) -> dict:
+    """Atomically admit one billable unit. Idempotent on request_id."""
+    if not user_id:
+        raise QuotaError("unauthenticated")
+    rid = request_id or uuid.uuid4().hex
+    if not isinstance(rid, str) or not rid.strip() or len(rid) > 128:
+        raise QuotaError("invalid_request_id")
+    today = date.today().isoformat()
+    col = "messages" if kind == "message" else "ultra_runs"
+    limit = DAILY_LIMITS.get(tier, DAILY_LIMITS["free"]).get("messages" if kind == "message" else "ultra", 50)
+    now = time.time()
+    try:
+        conn = _quota_conn()
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    try:
+        with conn:
+            _ensure_reservations(conn)
+            _refund_stale_locked(conn, now=now)
+            existing = conn.execute(
+                "SELECT status FROM usage_reservations WHERE request_id=?",
+                (rid,),
+            ).fetchone()
+            if existing:
+                status = existing["status"]
+                used_row = conn.execute(
+                    f"SELECT {col} FROM usage_daily WHERE user_id=? AND date=?",
+                    (user_id, today),
+                ).fetchone()
+                used = used_row[col] if used_row else 0
+                if status == "released":
+                    return {"ok": False, "request_id": rid, "used": used, "limit": limit, "status": status, "duplicate": True}
+                return {"ok": True, "request_id": rid, "used": used, "limit": limit, "status": status, "duplicate": True}
+            if BACKEND == "postgres":
+                conn.execute(
+                    "SELECT messages FROM usage_daily WHERE user_id=? AND date=? FOR UPDATE",
+                    (user_id, today),
+                )
+            conn.execute(
+                f"INSERT INTO usage_daily (user_id, date, {col}) VALUES (?,?,0) "
+                "ON CONFLICT(user_id, date) DO NOTHING",
+                (user_id, today),
+            )
+            if limit == -1:
+                conn.execute(
+                    f"UPDATE usage_daily SET {col}=usage_daily.{col}+1 WHERE user_id=? AND date=?",
+                    (user_id, today),
+                )
+                admitted = True
+            else:
+                cur = conn.execute(
+                    f"UPDATE usage_daily SET {col}=usage_daily.{col}+1 "
+                    f"WHERE user_id=? AND date=? AND {col} < ?",
+                    (user_id, today, limit),
+                )
+                admitted = (cur.rowcount or 0) == 1
+            used_row = conn.execute(
+                f"SELECT {col} FROM usage_daily WHERE user_id=? AND date=?",
+                (user_id, today),
+            ).fetchone()
+            used = used_row[col] if used_row else 0
+            if not admitted:
+                conn.execute(
+                    "INSERT INTO usage_reservations (request_id, user_id, kind, date, status, created_at) "
+                    "VALUES (?,?,?,?, 'released', ?)",
+                    (rid, user_id, kind, today, now),
+                )
+                return {"ok": False, "request_id": rid, "used": used, "limit": limit, "status": "released", "duplicate": False}
+            conn.execute(
+                "INSERT INTO usage_reservations (request_id, user_id, kind, date, status, created_at) "
+                "VALUES (?,?,?,?, 'reserved', ?)",
+                (rid, user_id, kind, today, now),
+            )
+            return {"ok": True, "request_id": rid, "used": used, "limit": limit, "status": "reserved", "duplicate": False}
+    except QuotaError:
+        raise
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def mark_quota_consumed(request_id: str) -> None:
+    if not request_id:
+        return
+    try:
+        conn = _quota_conn()
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    try:
+        with conn:
+            _ensure_reservations(conn)
+            conn.execute(
+                "UPDATE usage_reservations SET status='consumed' WHERE request_id=? AND status='reserved'",
+                (request_id,),
+            )
+    except QuotaError:
+        raise
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def release_quota(request_id: str) -> None:
+    """Refund a reservation that never consumed the model. Idempotent."""
+    if not request_id:
+        return
+    try:
+        conn = _quota_conn()
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    try:
+        with conn:
+            _ensure_reservations(conn)
+            row = conn.execute(
+                "SELECT user_id, kind, date, status FROM usage_reservations WHERE request_id=?",
+                (request_id,),
+            ).fetchone()
+            if not row or row["status"] != "reserved":
+                return
+            claimed = conn.execute(
+                "UPDATE usage_reservations SET status='released' WHERE request_id=? AND status='reserved'",
+                (request_id,),
+            )
+            if (claimed.rowcount or 0) != 1:
+                return
+            col = "messages" if row["kind"] == "message" else "ultra_runs"
+            conn.execute(
+                f"UPDATE usage_daily SET {col}=CASE WHEN {col}>0 THEN {col}-1 ELSE 0 END "
+                "WHERE user_id=? AND date=?",
+                (row["user_id"], row["date"]),
+            )
+    except QuotaError:
+        raise
+    except Exception as exc:
+        raise QuotaError(_QUOTA_UNAVAILABLE) from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def increment_usage(user_id: str, kind: str = "message") -> None:
     today = date.today().isoformat()
     col   = "messages" if kind == "message" else "ultra_runs"
@@ -533,6 +746,7 @@ def delete_account_rows(conn, user_id: str) -> None:
     The ``api_keys`` table must already exist (see ``delete_user_account_records``)."""
     conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM usage_reservations WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM user_settings WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM idempotency_keys WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM revoked_tokens WHERE user_id=?", (user_id,))

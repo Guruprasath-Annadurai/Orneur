@@ -139,11 +139,11 @@ def test_inference_has_no_second_user_global_history_store():
     assert "CREATE TABLE" not in src
     assert "conversations.append" in src
     assert "claim_session" in src
-    assert "check_quota" in src
+    assert "reserve_quota" in src
     assert "check_input" in src
     assert "scan_output" in src
     assert "spending_authorized" in src
-    assert "increment_usage" in src
+    assert "mark_quota_consumed" in src
 
 
 def test_authenticated_complete_uses_fixture_identity_not_native(ollama_fixture):
@@ -331,10 +331,9 @@ def test_policy_gates_run_before_provider(ollama_fixture, monkeypatch):
         complete(
             user=_user("user-a"),
             message="hello",
-            model="fixture-llama",
+            model="pro-llama",
             host=ollama_fixture,
             session_id="policy-ultra",
-            model_variant="ultra",
             transport_generate=boom,
             synthetic_provider=True,
         )
@@ -362,7 +361,7 @@ def test_quota_gate_runs_before_provider(ollama_fixture, monkeypatch):
         calls.append(1)
         return {"response": "should-not-run", "model": "fixture-llama"}
 
-    monkeypatch.setattr("orca.serve.inference.check_quota", lambda *a, **k: (False, 99, 99))
+    monkeypatch.setattr("orca.serve.inference.reserve_quota", lambda *a, **k: {"ok": False, "request_id": "x", "used": 50, "limit": 50, "status": "released", "duplicate": False})
     with pytest.raises(InferenceError) as exc:
         complete(
             user=_user("user-a"),
@@ -535,6 +534,8 @@ def test_live_ollama_generate_or_block(isolated_home):
         pytest.skip("BLOCKED: Ollama is not reachable on 127.0.0.1:11434 or has no installed model")
     init_db()
     reset_for_tests()
+    from orca.serve.model_catalog import provision_model
+    provision_model(name, "nano", development=True)
     result = complete(
         user=_user("user-a"),
         message="Reply with the single word pong.",
@@ -559,6 +560,8 @@ def test_live_same_user_two_sessions_stay_isolated(isolated_home):
         pytest.skip("BLOCKED: Ollama is not reachable on 127.0.0.1:11434 or has no installed model")
     init_db()
     reset_for_tests()
+    from orca.serve.model_catalog import provision_model
+    provision_model(name, "nano", development=True)
     owner = _user("user-a")
     alpha = _sid()
     beta = _sid()
@@ -597,6 +600,8 @@ def test_live_ollama_concurrency_under_load(isolated_home):
         pytest.skip("BLOCKED: Ollama is not reachable on 127.0.0.1:11434 or has no installed model")
     init_db()
     reset_for_tests()
+    from orca.serve.model_catalog import provision_model
+    provision_model(name, "nano", development=True)
     n = 3
 
     async def _run():

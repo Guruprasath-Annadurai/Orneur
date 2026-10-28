@@ -182,6 +182,8 @@ def test_http_authenticated_live_complete_stream_history_or_block(auth_db, monke
     owner = SovereignMission().login("owner@example.com", "correct-horse")
     client = _client()
     model = names[0]
+    from orca.serve.model_catalog import provision_model
+    provision_model(model, "nano", development=True)
     sid_a, sid_b = _sid(), _sid()
     first = client.post(
         "/api/inference/complete",

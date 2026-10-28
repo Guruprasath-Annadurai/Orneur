@@ -36,6 +36,10 @@ _STATUS = {
     "native_identity_refused": 409,
     "prompt_refused": 400,
     "model_refused": 400,
+    "unknown_model": 403,
+    "variant_mismatch": 403,
+    "quota_unavailable": 503,
+    "session_busy": 409,
 }
 
 
@@ -43,7 +47,7 @@ class CompleteBody(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     model: str = Field(min_length=1, max_length=128)
     session_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]{1,64}$")
-    model_variant: str = Field(default="nano", max_length=32)
+    model_variant: str | None = Field(default=None, max_length=32)
 
 
 def _http(exc: InferenceError) -> HTTPException:
