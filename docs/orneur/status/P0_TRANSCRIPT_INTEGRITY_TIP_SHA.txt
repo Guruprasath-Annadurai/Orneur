@@ -1,3 +1,5 @@
+pr=131
+branch=cursor/transcript-integrity-p03-7679
+tip_sha=22d911812b216e98ea4631f122db5146b7feb183
 implementation_sha=a21e590e2cb5c1ee7443080a1a7a3406e87aceab
-qualify_branch=cursor/transcript-integrity-p03-7679
 never_resubmit=22225086873cba5274d3ad44aab9e7ef5a913230
