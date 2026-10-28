@@ -2,6 +2,7 @@
 
 **Corrective branch:** `cursor/pr126-privacy-remediation-e8f0`  
 **Starting SHA (PR #126 tip including ownership gate):** `a686e5fa6a456e68c54cb38e648cdfaab40801b6`  
+**Finishing SHA:** `d1e98fd86709d227e2242103e28bb2df73b56515`  
 (User-cited frozen parent `ada5e135…` is preserved; `a686e5f` already closed the kernel-before-ownership gap and is the verified candidate this branch extends.)
 
 Does **not** rewrite PR #125 / #126 audited SHAs. No merge to production.
