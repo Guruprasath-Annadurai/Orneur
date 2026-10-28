@@ -42,13 +42,29 @@ Success (shape — fields may grow; required for Claude):
 }
 ```
 
-Failures: `quota_exceeded` (429), `model_access_denied` (402), `content_refused`, `session_forbidden`, `auth_required`, `request_abstained`.
+Failures (HTTP JSON, not SSE): `quota_exceeded` (429), `model_access_denied` (402), `content_refused` (400), `not_found` (404, ownership), `auth_required` (401), `request_abstained`.
 
 Optional: `Idempotency-Key` header (signed-in). Same key + payload → replay without second dispatch (`Idempotent-Replay: true`).
 
 ## Streaming SSE
 
-`POST /api/stream` — `text/event-stream`
+`POST /api/stream`
+
+### Pre-stream admission refusals (HTTP JSON — no SSE body)
+
+When admission fails **before** generation starts, the response is ordinary JSON with the correct HTTP status (not `text/event-stream` 200):
+
+| Code | Status |
+|---|---|
+| `model_access_denied` | 402 |
+| `quota_exceeded` | 429 |
+| `content_refused` | 400 |
+| `not_found` (foreign/unowned session) | 404 |
+| `auth_required` | 401 |
+
+Claude should check `response.status` / `Content-Type` before attaching an EventSource parser. Zero model dispatch on these refusals.
+
+### Successful stream (`text/event-stream`)
 
 Typical event order:
 
@@ -64,6 +80,7 @@ Rules:
 - `delivery: "replayed"` means one complete payload, **not** token streaming.
 - Secrets are redacted **before** browser delivery.
 - Client disconnect cancels upstream when `cancellable: true`.
+- Delivered chunks are not a persistence guarantee; reload transcript after `done` for SoT.
 
 ## Inference API
 
