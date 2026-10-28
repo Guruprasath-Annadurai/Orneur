@@ -194,7 +194,20 @@ def create_share(owner_id: str, session_id: str, grantee_id: str, ttl_seconds: i
         raise OrganizationDenied("share ttl is not valid", "share_rejected")
     from orca.serve import temporary_chat
 
-    if temporary_chat.is_active(session_id):
+    # CTO follow-up, Priority 2 (2026-10-28): is_active() checks state ==
+    # "active" AND real-time TTL ("moment < expires_at") -- it reads back
+    # False for an active-but-genuinely-expired record BEFORE lazy
+    # enforcement has run (its content is still undeleted at that exact
+    # moment), and ALSO False for any already-terminal record (expired,
+    # closed, failed) -- conflating "never was a temporary chat, fine to
+    # share" with "was one and is now in some other state, must NEVER be
+    # shareable" into the same boolean. temporary_chat.read() returns the
+    # record regardless of its current state (None only when this session
+    # was never temporary at all), so it is the check this route actually
+    # needs: once a session has ever been a temporary chat, sharing is
+    # refused permanently, in every state, not only while its own TTL
+    # window happens to still be open.
+    if temporary_chat.read(session_id, owner_id) is not None:
         raise OrganizationDenied("temporary chats cannot be shared", "temporary_not_shareable")
     moment = time.time() if now is None else now
     share_id = uuid.uuid4().hex

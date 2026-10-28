@@ -141,6 +141,58 @@ def delete_session(session_id: str) -> bool:
         return False
 
 
+def _rev_key(session_id: str) -> str:
+    return f"orca:session:{session_id}:rev"
+
+
+def bump_revision(session_id: str) -> Optional[int]:
+    """CTO follow-up, Priority 1 (2026-10-28): the one cross-worker
+    fencing primitive this module provides. A committed message edit
+    calls this UNCONDITIONALLY -- regardless of whether the worker that
+    handled the edit happens to have this session cached locally -- so
+    that every OTHER worker (including one with no local cache at all, or
+    a stale cached copy from before the edit) has a single, atomic,
+    monotonic signal it can compare against before trusting its own
+    in-memory history for a new inference turn (see _get_session()'s
+    revision check in orca/serve/api.py).
+
+    Atomic (Redis INCR), so concurrent edits from different workers never
+    collide or go backward. Returns the new revision, or None if Redis is
+    disabled OR the increment could not be confirmed -- the latter case
+    means NO fencing signal was published for this edit at all, which the
+    caller must treat as "cross-worker consistency cannot be established
+    right now" (a disclosed limitation of a Redis outage), never as
+    silent success.
+    """
+    if not enabled():
+        return None
+    try:
+        new_rev = _client().incr(_rev_key(session_id))
+        _client().expire(_rev_key(session_id), SESSION_TTL_SECONDS)
+        return int(new_rev)
+    except Exception:
+        return None
+
+
+def get_revision(session_id: str) -> Optional[int]:
+    """The current shared revision for this session, or None if Redis is
+    disabled or unreachable -- indistinguishable, by design, from "no
+    fencing signal is available right now," which a caller must treat as
+    "cannot confirm freshness either way" (keep what you have; do not
+    evict on a mere Redis hiccup), never as "definitely fresh." A session
+    with no revision key yet (never edited, or the key expired) reads
+    back as 0, which compares as "not behind" against any real revision
+    a caller may be holding (every real bump starts at 1).
+    """
+    if not enabled():
+        return None
+    try:
+        raw = _client().get(_rev_key(session_id))
+        return int(raw) if raw is not None else 0
+    except Exception:
+        return None
+
+
 def ping() -> bool:
     """Health check — used by /api/status to report Redis connectivity honestly."""
     if not enabled():

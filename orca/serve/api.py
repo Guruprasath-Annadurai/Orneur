@@ -518,14 +518,47 @@ def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: s
     which always consults message_versions.active_view() regardless of
     this function's outcome).
 
-    Returns True if the in-memory copy was kept in step, False if it
-    could not be (and was therefore evicted rather than left stale --
-    see below). Never raises: a failure here is real and is made
-    visible (audit-logged, reflected in the return value), not
-    swallowed, but it is also not conflated with "the edit failed".
+    Returns True if cross-worker consistency for this edit was actually
+    established, False if it was not (and was therefore evicted locally,
+    and/or could not be confirmed remotely -- see below). Never raises: a
+    failure here is real and is made visible (audit-logged, reflected in
+    the return value), not swallowed, but it is also not conflated with
+    "the edit failed".
     """
+    if previous == new_text:
+        return True
+    # CTO FOLLOW-UP, Priority 1 (2026-10-28): the actual, confirmed
+    # defect -- this used to be `if sess is None: return True`, a plain
+    # early exit that touched NOTHING if the worker handling the edit
+    # had no local copy of the session cached. That worker genuinely has
+    # nothing to patch in-memory, but a committed edit is still a real,
+    # durable fact: SOME worker (possibly this one on a later request,
+    # possibly another one entirely) may still be holding pre-edit
+    # content, and nothing published that this happened. bump_revision()
+    # is the fix: an atomic, monotonic, Redis-backed counter advanced on
+    # EVERY committed, content-changing edit, unconditionally, regardless
+    # of local cache state. _get_session() compares its own cached
+    # session's last-known revision against this counter on every
+    # request and evicts-and-rebuilds from the authoritative transcript
+    # when behind -- so no worker's NEXT inference turn can silently
+    # consume stale content, whether or not THIS function found anything
+    # to patch locally.
+    new_revision = session_store.bump_revision(session_id)
     sess = _sessions.get(session_id)
-    if sess is None or previous == new_text:
+    if sess is None:
+        # Nothing local to patch. The revision bump above is the entire
+        # mechanism for this case -- but it is honest about when that
+        # mechanism itself could not run: if Redis is enabled and the
+        # bump could not be confirmed, NO fencing signal was published
+        # for this edit at all, and this function says so rather than
+        # claiming a consistency it cannot demonstrate. If Redis is
+        # simply not configured, there is no other worker that could
+        # ever observe staleness in the first place (single-instance
+        # deployment, the common case) -- genuinely nothing to report.
+        if new_revision is None and session_store.enabled():
+            _logger.warning("message edit committed with no local session and no confirmed Redis revision bump; cross-worker consistency for this edit could not be established", extra={"session_id": session_id})
+            audit.log("message_edit_live_sync_unconfirmed", user_id=None, detail={"session_id": session_id, "role": role, "reason": "no_local_session_and_revision_bump_unconfirmed"})
+            return False
         return True
     try:
         agent = sess._agent
@@ -552,6 +585,12 @@ def _replace_visible_copy(session_id: str, previous: str, new_text: str, role: s
             if msg.role == role and msg.content == previous:
                 msg.content = new_text
                 break
+        # This worker's own cache is now caught up to (at least) the
+        # revision it just published -- without this, the very next
+        # request on THIS SAME worker would see Redis's revision ahead of
+        # its own and needlessly evict the cache it just correctly fixed.
+        if new_revision is not None:
+            sess._known_revision = new_revision
         return True
     except Exception:
         # A partial update here (e.g. agent._history patched but
@@ -901,6 +940,18 @@ class _Session:
             model_variant = model_variant or redis_state.get("model_variant")
             self._restored_history = redis_state.get("history")
 
+        # CTO follow-up, Priority 1: this object's own record of the
+        # shared cross-worker revision it is caught up to as of
+        # construction -- whatever Redis says "current" is right now, by
+        # definition this freshly (re)built session already reflects it
+        # (either restored from that exact Redis state above, or rebuilt
+        # from the authoritative transcript in _ensure_agent() below,
+        # which is always at least as fresh). None when Redis is
+        # disabled/unreachable -- see _get_session()'s fencing check,
+        # which treats None as "nothing to compare against," never as
+        # "stale."
+        self._known_revision = session_store.get_revision(session_id)
+
         self.model_variant = model_variant or "core"
         self.memory = MemoryEngine(session_id=session_id)
         # Brain/agent/ctx resolution is LAZY -- see _ensure_agent() below.
@@ -1148,6 +1199,27 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
         else:
             raise HTTPException(status_code=503, detail="could not allocate a session")
 
+    if sid in _sessions:
+        # CTO FOLLOW-UP, Priority 1: cross-worker staleness fencing. A
+        # committed edit -- on THIS worker or any other -- advances the
+        # shared Redis revision counter unconditionally (see
+        # _replace_visible_copy()). If this worker's own cached session
+        # is behind that counter, its in-memory agent._history may still
+        # hold pre-edit content; evict it here, BEFORE this request's
+        # turn can use it, so the fallback _Session construction below
+        # rebuilds exactly from the authoritative transcript. A Redis
+        # read failure here returns None, which is deliberately
+        # indistinguishable from "nothing to compare against" -- kept,
+        # not evicted, on a mere Redis hiccup; this check can only ever
+        # make the cache MORE conservative when Redis is healthy, never
+        # less reliable than before when it is not.
+        current_revision = session_store.get_revision(sid)
+        if current_revision is not None and current_revision > (_sessions[sid]._known_revision or 0):
+            _logger.info(
+                "session cache behind the shared revision -- evicting for a fresh rebuild",
+                extra={"session_id": sid, "cached_revision": _sessions[sid]._known_revision, "current_revision": current_revision},
+            )
+            del _sessions[sid]
     if sid not in _sessions:
         _sessions[sid] = _Session(sid, model_variant, user_id=user_id)
     _sessions[sid].touch()
