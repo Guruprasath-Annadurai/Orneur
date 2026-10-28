@@ -31,10 +31,25 @@ from orca.code.untrusted import (
 from orca.code.untrusted_routes import router
 from orca.sovereign_mission.service import SovereignMission
 
+def _ensure_allowlisted_image() -> None:
+    inspect = subprocess.run(["docker", "image", "inspect", ALLOWED_IMAGE], capture_output=True, timeout=15)
+    if inspect.returncode == 0:
+        return
+    pulled = subprocess.run(["docker", "pull", ALLOWED_IMAGE], capture_output=True, timeout=180)
+    if pulled.returncode != 0:
+        pytest.skip("BLOCKED: allowlisted python:3.11-alpine image is not present and pull failed")
+
+
 pytestmark = pytest.mark.skipif(
     not daemon_usable(),
     reason="BLOCKED: Docker daemon is not usable — real container tests cannot run",
 )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def allowlisted_image():
+    if daemon_usable():
+        _ensure_allowlisted_image()
 
 
 def _user(uid: str) -> User:
