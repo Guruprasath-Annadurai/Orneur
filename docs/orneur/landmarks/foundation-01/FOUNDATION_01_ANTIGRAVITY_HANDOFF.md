@@ -9,7 +9,8 @@
 | Field | Value |
 |---|---|
 | Branch | `cursor/foundation-landmark-01-backend-closure-1cdf` |
-| Exact SHA | `7c8f7b0e3a2724e77f3be971f7b36cc17ebe530f` |
+| Exact SHA | `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c` |
+| Prior engineering SHA | `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c` (code freeze before docs commit; qualification restarts for tip) |
 | Base lineage | PR #130 fencing (`497073d`) + merged PR #126 context + Landmark-01 admission/auth fixes |
 | Draft PR | (opened by Cursor; do not merge without founder authorization) |
 
@@ -38,7 +39,7 @@ If this tip advances, **qualification must restart** for the new head. Record th
 
 ```bash
 git fetch origin cursor/foundation-landmark-01-backend-closure-1cdf
-git checkout 7c8f7b0e3a2724e77f3be971f7b36cc17ebe530f
+git checkout 6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c
 uv sync --extra dev --extra redis --extra postgres
 .venv/bin/pytest -q \
   tests/test_foundation01_auth_optional.py \

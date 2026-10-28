@@ -3,7 +3,7 @@
 **Milestone:** FOUNDATION LANDMARK-01 — Secure and Reliable ORNEUR Runtime  
 **Owner:** Cursor (engineering). **Independent qualification:** Antigravity (not claimed here).  
 **Branch:** `cursor/foundation-landmark-01-backend-closure-1cdf`  
-**Exact SHA:** `7c8f7b0e3a2724e77f3be971f7b36cc17ebe530f`  
+**Exact SHA:** `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c` (docs tip; code equivalent `7c8f7b0` + landmark docs)  
 **Date:** 28 October 2026 (Asia/Calcutta)
 
 ## Starting baseline

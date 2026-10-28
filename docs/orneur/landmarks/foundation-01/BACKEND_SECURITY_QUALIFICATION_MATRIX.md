@@ -2,7 +2,7 @@
 
 Engineering evidence only. **G13 Independent qualification = Antigravity, not this matrix.**
 
-Tip under test: `7c8f7b0e3a2724e77f3be971f7b36cc17ebe530f`
+Tip under test: `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c`
 
 | Control | Gate | Engineering status | Evidence |
 |---|---|---|---|

@@ -1,6 +1,6 @@
 # FOUNDATION_01_BLOCKER_REGISTER
 
-Refreshed at tip `7c8f7b0e3a2724e77f3be971f7b36cc17ebe530f` on `cursor/foundation-landmark-01-backend-closure-1cdf`.
+Refreshed at tip `6d53c1ed03ca2d827083a7e7a91ac38ed9afb88c` on `cursor/foundation-landmark-01-backend-closure-1cdf`.
 
 | ID | Severity | File / function | Root cause | Already fixed on | Recommended action | Acceptance test |
 |---|---|---|---|---|---|---|
