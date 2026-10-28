@@ -1,5 +1,5 @@
 FOUNDATION LANDMARK-01 backend candidate tip (exact SHA for Antigravity):
-16ee75092bfae621df18fe10feebf2cc845d82f4
+9f5cbc804d6cf983d3d55412514b388c080b484f
 
 Branch: cursor/foundation-landmark-01-backend-closure-1cdf
 
