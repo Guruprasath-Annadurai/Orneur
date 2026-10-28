@@ -204,10 +204,15 @@ def test_H3_duplicate_delivery_across_workers_replays_once(cluster, user):
     fake.reply = "ONCE"
     first = _events(user, {"message": "deliver me once", "session_id": sid}, key=key)
     assert [e for e in first if e["type"] == "done"][0]["persisted"] == "saved"
-    n = len(fake.requests)
+    def answering_calls():
+        # count only the calls that ANSWER this message: the first turn's knowledge-graph extraction is a background side-call that may land late
+        return [r for r in fake.requests if (r.get("messages") or [{}])[-1].get("content", "") == "deliver me once"]
+
+    n = len(answering_calls())
+    assert n == 1, "the first delivery should have produced exactly one answering call"
     again = _events(user, {"message": "deliver me once", "session_id": sid}, key=key, token=user.token_b, base=cluster["b"].base)
     assert [e for e in again if e["type"] == "done"][0].get("idempotent_replay") is True, again
-    assert len(fake.requests) == n, "the duplicate reached the model"
+    assert len(answering_calls()) == n, "the duplicate reached the model"
     assert _transcript(cluster["a"].base, user.token, sid) == [("user", "deliver me once"), ("assistant", "ONCE")]
 
 

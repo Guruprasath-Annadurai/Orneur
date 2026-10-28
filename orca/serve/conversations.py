@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -62,13 +63,12 @@ def _turns_db() -> Path:
     return _dir() / "turns.db"
 
 
-def _turns_conn() -> sqlite3.Connection:
-    path = _turns_db()
-    conn = sqlite3.connect(str(path), isolation_level="IMMEDIATE", check_same_thread=False, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    # A deleted conversation (temporary-chat closure, account deletion) must not survive as readable bytes in free pages: overwrite on delete.
-    conn.execute("PRAGMA secure_delete=ON")
+_SCHEMA_LOCK = threading.Lock()
+_SCHEMA_READY: set[str] = set()          # database files whose schema this process has already verified
+
+
+def _init_schema(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode=WAL")          # persistent in the database file: set once, not on every connection
     conn.execute(
         "CREATE TABLE IF NOT EXISTS conversation_turns ("
         "turn_id TEXT PRIMARY KEY,"
@@ -114,6 +114,36 @@ def _turns_conn() -> sqlite3.Connection:
         conn.execute("ALTER TABLE conversation_turns ADD COLUMN epoch INTEGER NOT NULL DEFAULT 0")
     if "fence_token" not in cols:
         conn.execute("ALTER TABLE conversation_turns ADD COLUMN fence_token TEXT NOT NULL DEFAULT ''")
+
+
+def _turns_conn() -> sqlite3.Connection:
+    """A connection to the authoritative turns database.
+
+    The schema is verified once per database file per process (under a lock, retried while another PROCESS is initialising the same file) instead of
+    on every connection: with many concurrent requests the per-connection DDL / journal-mode change made unrelated requests fail with "database is
+    locked", which then showed up as spurious 503s."""
+    path = _turns_db()
+    key = str(path)
+    fresh = not path.exists()
+    conn = sqlite3.connect(key, isolation_level="IMMEDIATE", check_same_thread=False, timeout=30)
+    conn.row_factory = sqlite3.Row
+    if fresh or key not in _SCHEMA_READY:
+        with _SCHEMA_LOCK:
+            if fresh or key not in _SCHEMA_READY:
+                last: Exception | None = None
+                for attempt in range(8):
+                    try:
+                        _init_schema(conn)
+                        break
+                    except sqlite3.OperationalError as exc:          # another process is creating the same file
+                        last = exc
+                        time.sleep(0.05 * (attempt + 1))
+                else:
+                    conn.close()
+                    raise last  # type: ignore[misc]
+                _SCHEMA_READY.add(key)
+    # A deleted conversation (temporary-chat closure, account deletion) must not survive as readable bytes in free pages: overwrite on delete.
+    conn.execute("PRAGMA secure_delete=ON")
     return conn
 
 
@@ -298,21 +328,23 @@ def purge_if_empty(session_id: str) -> bool:
 
 
 def store_available() -> bool:
-    """True when the authoritative SQLite store can be opened and read. Lets a caller tell "busy/not yours" from "the store is down"."""
-    try:
-        conn = _turns_conn()
-    except Exception:
-        return False
-    try:
-        conn.execute("SELECT 1 FROM session_authority LIMIT 1").fetchall()
-        return True
-    except Exception:
-        return False
-    finally:
+    """True when the authoritative SQLite store can be opened and read. Lets a caller tell "busy/not yours" from "the store is down".
+
+    A few short retries: a momentary lock held by a concurrent writer is not an outage, and must never turn into a refused request."""
+    for attempt in range(3):
         try:
-            conn.close()
+            conn = _turns_conn()
+            try:
+                conn.execute("SELECT 1 FROM session_authority LIMIT 1").fetchall()
+                return True
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         except Exception:
-            pass
+            time.sleep(0.05 * (attempt + 1))
+    return False
 
 
 def renew_authority(
