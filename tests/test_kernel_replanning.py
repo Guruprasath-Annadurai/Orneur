@@ -55,7 +55,7 @@ async def test_court_revise_triggers_exactly_one_bounded_replan_then_accept(monk
     monkeypatch.setattr(truth_mod.TruthFabric, "assess_evidence", fake_assess_evidence)
     monkeypatch.setattr(truth_mod.TruthFabric, "verify_answer", fake_verify_answer)
 
-    async def fake_answer_directly(self, objective, tier, trace_id):
+    async def fake_answer_directly(self, objective, tier, trace_id, request=None):
         return "A deterministic canned answer.", "orneur-genesis", {"prompt_tokens": 1, "completion_tokens": 1}
 
     monkeypatch.setattr(kernel_mod.CognitiveKernel, "_answer_directly", fake_answer_directly)
@@ -97,7 +97,7 @@ async def test_persistent_revise_degrades_after_max_replans_instead_of_looping_f
     monkeypatch.setattr(truth_mod.TruthFabric, "assess_evidence", fake_assess_evidence)
     monkeypatch.setattr(truth_mod.TruthFabric, "verify_answer", fake_verify_answer)
 
-    async def fake_answer_directly(self, objective, tier, trace_id):
+    async def fake_answer_directly(self, objective, tier, trace_id, request=None):
         return "A deterministic canned answer.", "orneur-genesis", {"prompt_tokens": 1, "completion_tokens": 1}
 
     monkeypatch.setattr(kernel_mod.CognitiveKernel, "_answer_directly", fake_answer_directly)

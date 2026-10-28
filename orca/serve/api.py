@@ -637,7 +637,7 @@ def _record_shadow_verification(requested_tier: str | None, resolved_tier: str |
         _logger.debug("Cognitive shadow verification recording failed — real serving path unaffected.", exc_info=True)
 
 
-def _generate_via_frontier_backend(resolution, persona_system: str, message: str, session_id: str | None = None):
+def _generate_via_frontier_backend(resolution, persona_system: str, message: str, session_id: str | None = None, user_id: str | None = None):
     """
     Direct, single-turn generation through a frontier API backend
     (OpenAI/Anthropic) — the "bring your own frontier model" path.
@@ -674,7 +674,7 @@ def _generate_via_frontier_backend(resolution, persona_system: str, message: str
 
     inference_request = InferenceRequest(
         request_id=str(uuid.uuid4()), model_id=gateway_brain.model_id, model_version=gateway_brain.model_version,
-        messages=assemble_messages(session_id=session_id, current_user_text=message),
+        messages=assemble_messages(session_id=session_id, current_user_text=message, user_id=user_id),
         system=persona_system + disclosure, max_tokens=1024,
     )
     inference_response = run_async_in_thread(
@@ -1493,7 +1493,7 @@ async def _chat_impl(
             )
         try:
             result = await asyncio.to_thread(
-                _generate_via_frontier_backend, backend_resolution, persona_system, req.message, req.session_id
+                _generate_via_frontier_backend, backend_resolution, persona_system, req.message, req.session_id, user.id if user else None
             )
         except Exception as e:
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
@@ -1753,7 +1753,7 @@ async def stream_chat(
 
             try:
                 result = await asyncio.to_thread(
-                    _generate_via_frontier_backend, backend_resolution, persona_system, req.message, session_id
+                    _generate_via_frontier_backend, backend_resolution, persona_system, req.message, session_id, user.id if user else None
                 )
             except Exception as e:
                 yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"

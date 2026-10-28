@@ -131,16 +131,16 @@ def _session_lock(session_id: str) -> threading.Lock:
         return lock
 
 
-def _session_messages(session_id: str) -> list[dict]:
+def _session_messages(session_id: str, user_id: str | None = None) -> list[dict]:
     from orca.serve.conversation_context import assemble_messages
 
-    return assemble_messages(session_id=session_id, current_user_text="")
+    return assemble_messages(session_id=session_id, current_user_text="", user_id=user_id)
 
 
 def history(*, user: object, session_id: str) -> list[dict]:
     uid = _user_id(user)
     sid = bind_session(user_id=uid, session_id=session_id)
-    return _session_messages(sid)
+    return _session_messages(sid, uid)
 
 
 def reset_for_tests() -> None:
@@ -148,16 +148,16 @@ def reset_for_tests() -> None:
         _TURN_LOCKS.clear()
 
 
-def _prompt_with_session(session_id: str, message: str) -> str:
-    parts = [f"{row['role']}: {row['content']}" for row in _session_messages(session_id)]
+def _prompt_with_session(session_id: str, message: str, user_id: str | None = None) -> str:
+    parts = [f"{row['role']}: {row['content']}" for row in _session_messages(session_id, user_id)]
     parts.append(f"user: {message}")
     return "\n".join(parts)
 
 
-def _messages_with_session(session_id: str, message: str) -> list[dict]:
+def _messages_with_session(session_id: str, message: str, user_id: str | None = None) -> list[dict]:
     from orca.serve.conversation_context import assemble_messages
 
-    return assemble_messages(session_id=session_id, current_user_text=message)
+    return assemble_messages(session_id=session_id, current_user_text=message, user_id=user_id)
 
 
 def _identity(served: str) -> dict:
@@ -183,7 +183,7 @@ def _persist(*, user_id: str, session_id: str, message: str, text: str, identity
     session_store.save_session_state(
         session_id,
         stored_tier,
-        _session_messages(session_id),
+        _session_messages(session_id, user_id),
         expected_revision=rev,
         fence_token=fence_token,
     )
@@ -247,7 +247,7 @@ def _complete_locked(
         raise InferenceError("provider_unavailable")
     rid = _admit_quota(user=user, request_id=request_id or uuid.uuid4().hex)
     consumed = False
-    prompt = _prompt_with_session(sid, message.strip())
+    prompt = _prompt_with_session(sid, message.strip(), uid)
     t0 = time.monotonic()
     try:
         if transport_generate is not None:
@@ -383,7 +383,7 @@ def _stream_complete_locked(
     tokens_in = 0
     tokens_out = 0
     served = model
-    messages = _messages_with_session(sid, message.strip())
+    messages = _messages_with_session(sid, message.strip(), uid)
     try:
         if transport_stream is not None:
             for delta in transport_stream(host, model, message.strip()):
@@ -569,7 +569,7 @@ async def _stream_via_gateway_locked(
         request_id=request_id,
         model_id=model,
         model_version=model,
-        messages=_messages_with_session(sid, message.strip()),
+        messages=_messages_with_session(sid, message.strip(), uid),
         max_tokens=64,
         temperature=0.0,
         tenant_id=uid,
