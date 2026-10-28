@@ -432,25 +432,32 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
                            viewer_user_id=uid)
 
 
-def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> None:
+def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> dict | None:
     """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request."""
     if not user or not session_id:
-        return
+        return None
     try:
-        from orca.serve import conversations
+        from orca.serve import conversations, message_versions
 
-        conversations.append(session_id, "user", user_text)
-        meta: dict = {}
+        user_message_id = str(uuid.uuid4())
+        assistant_message_id = message_id or str(uuid.uuid4())
+        conversations.append(session_id, "user", user_text, meta={"message_id": user_message_id})
+        meta: dict = {"message_id": assistant_message_id}
         if identity:
             meta["model_identity"] = identity
         if src:
             meta["source_summary"] = src["summary"]
             meta["sources"] = [{k: s.get(k) for k in ("ref", "kind", "filename", "url", "locator", "cited_in_answer")} for s in src["sources"]]
-        if message_id:
-            meta["message_id"] = message_id
-        conversations.append(session_id, "assistant", assistant_text, meta=meta or None)
+        conversations.append(session_id, "assistant", assistant_text, meta=meta)
+        try:
+            message_versions.seed(session_id, user.id, user_message_id, "user", user_text)
+            message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_text)
+        except Exception:
+            _logger.debug("message version seed failed", exc_info=True)
+        return {"user_message_id": user_message_id, "message_id": assistant_message_id}
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
+        return None
 
 
 def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
@@ -600,7 +607,7 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
             }
 
     cognitive_request = CognitiveRequest(
-        objective=message, session_id=None, requested_mode=model_variant,
+        objective=message, session_id=session_id, requested_mode=model_variant,
         tenant=user.id if user else None,
     )
 
@@ -630,7 +637,7 @@ def _record_shadow_verification(requested_tier: str | None, resolved_tier: str |
         _logger.debug("Cognitive shadow verification recording failed — real serving path unaffected.", exc_info=True)
 
 
-def _generate_via_frontier_backend(resolution, persona_system: str, message: str):
+def _generate_via_frontier_backend(resolution, persona_system: str, message: str, session_id: str | None = None, user_id: str | None = None):
     """
     Direct, single-turn generation through a frontier API backend
     (OpenAI/Anthropic) — the "bring your own frontier model" path.
@@ -663,9 +670,12 @@ def _generate_via_frontier_backend(resolution, persona_system: str, message: str
         f"safety characteristics."
     )
     gateway_brain = _bridge(resolution)
+    from orca.serve.conversation_context import assemble_messages
+
     inference_request = InferenceRequest(
         request_id=str(uuid.uuid4()), model_id=gateway_brain.model_id, model_version=gateway_brain.model_version,
-        messages=[{"role": "user", "content": message}], system=persona_system + disclosure, max_tokens=1024,
+        messages=assemble_messages(session_id=session_id, current_user_text=message, user_id=user_id),
+        system=persona_system + disclosure, max_tokens=1024,
     )
     inference_response = run_async_in_thread(
         lambda: gateway_brain._gateway.generate(inference_request, allow_experimental=gateway_brain.allow_experimental)
@@ -789,13 +799,14 @@ class _Session:
     def touch(self):
         self.last_active = time.time()
 
-    def persist_to_redis(self) -> bool:
+    def persist_to_redis(self, fence_token: str | None = None) -> bool:
         """Save current conversation history so any instance can pick this session back up."""
         if session_store.enabled() and self._known_revision is None:
             return False
         return session_store.save_session_state(
             self.id, self.model_variant, self.agent.get_history(),
             expected_revision=self._known_revision,
+            fence_token=fence_token,
         )
 
 
@@ -979,6 +990,21 @@ class UltraRequest(BaseModel):
     model_variant: str | None = None
 
 
+class TemporaryChatRequest(BaseModel):
+    ttl_seconds: int = 3600
+    session_id: str | None = None
+
+
+class MessageEditRequest(BaseModel):
+    content: str
+    idempotency_key: str | None = None
+
+
+class ShareRequest(BaseModel):
+    grantee: str | None = None
+    role: str | None = None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Session title persistence
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1022,6 +1048,14 @@ async def serve_ui():
     if index.exists():
         return HTMLResponse(index.read_text())
     return HTMLResponse("<h1>Orneur UI not found</h1><p>Run: orneur serve</p>")
+
+
+@app.get("/conversation", response_class=HTMLResponse)
+async def serve_conversation():
+    page = WEB_DIR / "conversation.html"
+    if page.exists():
+        return HTMLResponse(page.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Conversation UI not found</h1>", status_code=404)
 
 
 @app.get("/trust", response_class=HTMLResponse)
@@ -1415,6 +1449,12 @@ async def _chat_impl(
     from orca.cognitive.contracts import CognitiveState
     from orca.cognitive.errors import CognitiveError
 
+    _check_session_ownership(req.session_id, user.id if user else None)
+    if req.session_id:
+        blocked = _temporary_block(req.session_id)
+        if blocked is not None:
+            return blocked
+
     try:
         cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
     except Exception as e:
@@ -1453,7 +1493,7 @@ async def _chat_impl(
             )
         try:
             result = await asyncio.to_thread(
-                _generate_via_frontier_backend, backend_resolution, persona_system, req.message
+                _generate_via_frontier_backend, backend_resolution, persona_system, req.message, req.session_id, user.id if user else None
             )
         except Exception as e:
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
@@ -1503,6 +1543,9 @@ async def _chat_impl(
         }
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
+    blocked = _temporary_block(sess.id)
+    if blocked is not None:
+        return blocked
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
     persona_system = get_persona_system(sess.model_variant)
@@ -1554,12 +1597,13 @@ async def _chat_impl(
 
     sess.memory.add_turn("user", req.message)
     sess.memory.add_turn("assistant", final)
-    sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
-    # Phase 5: additive, significance-gated Memory Continuum ingestion --
-    # does NOT replace the unconditional legacy commit_to_long_term()
-    # call above (see orca/memory/turn_ingest.py's own docstring for why).
-    from orca.memory.turn_ingest import maybe_ingest_turn
-    maybe_ingest_turn(sess.id, req.message, final)
+    if not _omit_long_term(sess.id):
+        sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
+        # Phase 5: additive, significance-gated Memory Continuum ingestion --
+        # does NOT replace the unconditional legacy commit_to_long_term()
+        # call above (see orca/memory/turn_ingest.py's own docstring for why).
+        from orca.memory.turn_ingest import maybe_ingest_turn
+        maybe_ingest_turn(sess.id, req.message, final)
     sess.persist_to_redis()
 
     audit.log("chat", user_id=user.id if user else None,
@@ -1654,6 +1698,12 @@ async def stream_chat(
     from orca.cognitive.contracts import CognitiveState
     from orca.cognitive.errors import CognitiveError
 
+    _check_session_ownership(req.session_id, user.id if user else None)
+    if req.session_id:
+        blocked = _temporary_block(req.session_id)
+        if blocked is not None:
+            return blocked
+
     try:
         cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
     except Exception as e:
@@ -1703,7 +1753,7 @@ async def stream_chat(
 
             try:
                 result = await asyncio.to_thread(
-                    _generate_via_frontier_backend, backend_resolution, persona_system, req.message
+                    _generate_via_frontier_backend, backend_resolution, persona_system, req.message, session_id, user.id if user else None
                 )
             except Exception as e:
                 yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
@@ -1746,6 +1796,9 @@ async def stream_chat(
         )
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
+    blocked = _temporary_block(sess.id)
+    if blocked is not None:
+        return blocked
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
 
@@ -1798,120 +1851,121 @@ async def stream_chat(
     async def _event_stream() -> AsyncIterator[str]:
         # Send session_id first
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
+        generation_id = str(uuid.uuid4())
+        yield f"data: {json.dumps({'type': 'generation', 'generation_id': generation_id, 'session_id': sess.id})}\n\n"
+        fence = uuid.uuid4().hex
+        if session_store.enabled() and not session_store.acquire_session_lease(sess.id, fence, ttl_ms=120_000):
+            yield f"data: {json.dumps({'type': 'error', 'code': 'session_busy', 'text': 'This conversation is busy on another worker.'})}\n\n"
+            return
         identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
-        yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
-        if rag_result and rag_result.sources:
-            yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
+        try:
+            yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
+            if rag_result and rag_result.sources:
+                yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
 
-        full = ""
-        tool_names: list[str] = []
-        plan_action = "direct"
-        delivery = "upstream"
+            full = ""
+            tool_names: list[str] = []
+            plan_action = "direct"
+            delivery = "upstream"
 
-        if use_kernel_direct:
-            # Kernel's plan needed nothing beyond a direct model call --
-            # already answered via ModelGateway, entitlement-reconciled.
-            # Word-chunked for the same incremental SSE UX as any other
-            # path (same pattern as the frontier-passthrough branch above)
-            # -- ModelGateway.generate() was a single non-streaming call,
-            # this is presentation-layer chunking, not fake generation.
-            plan_action = "cognitive_direct"
-            # G-026: the Kernel's ModelGateway call is non-streaming -- the answer is already complete here. It used to be split into words and
-            # re-emitted with sleep(0) between them (presentation-layer "typing"). It is now sent once and labelled, so a client can neither mistake it
-            # for live generation nor offer a "stop generating" control that would not stop anything.
-            delivery = "replayed"
-            full = cognitive_result.output or ""
-            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
-            yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
-        else:
-            try:
-                gen, trace = await asyncio.to_thread(
-                    lambda: sess.agent.stream(enriched, persona_system)
-                )
-                # Send tool activity if any
-                if trace.plan_action == "tools":
-                    yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
-                # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
-                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+            if use_kernel_direct:
+                plan_action = "cognitive_direct"
+                delivery = "replayed"
+                full = cognitive_result.output or ""
+                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
+                yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
+            else:
+                try:
+                    gen, trace = await asyncio.to_thread(
+                        lambda: sess.agent.stream(enriched, persona_system)
+                    )
+                    # Send tool activity if any
+                    if trace.plan_action == "tools":
+                        yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
+                    # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
+                    yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
 
-                # contextlib.aclosing, not a bare `async for`: breaking the
-                # loop below on client disconnect does not by itself call
-                # aclose() on an async generator (same rule as a sync
-                # generator abandoned mid-`for`) -- without this, a
-                # disconnected client's backend generator is only closed
-                # whenever Python eventually garbage-collects it, leaking
-                # the worker thread and the backend connection until then.
-                async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
-                    async for chunk in achunks:
-                        full += chunk
-                        yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                        if await request.is_disconnected():
-                            audit.log("stream_client_disconnected", user_id=user.id if user else None,
-                                      detail={"chars_sent": len(full)})
-                            return
+                    # contextlib.aclosing, not a bare `async for`: breaking the
+                    # loop below on client disconnect does not by itself call
+                    # aclose() on an async generator (same rule as a sync
+                    # generator abandoned mid-`for`) -- without this, a
+                    # disconnected client's backend generator is only closed
+                    # whenever Python eventually garbage-collects it, leaking
+                    # the worker thread and the backend connection until then.
+                    async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
+                        async for chunk in achunks:
+                            full += chunk
+                            yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                            if await request.is_disconnected():
+                                audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                          detail={"chars_sent": len(full)})
+                                return
 
-                tool_names = [tc.tool for tc in trace.tool_calls]
-                plan_action = trace.plan_action
+                    tool_names = [tc.tool for tc in trace.tool_calls]
+                    plan_action = trace.plan_action
 
-            except streaming.StreamingUnavailable as e:
-                err = public_error(e, route="/api/stream", user_id=user.id if user else None,
-                                   code="server_busy", message="The server is at capacity. Please retry shortly.")
-                yield f"data: {json.dumps(err.as_sse())}\n\n"
+                except streaming.StreamingUnavailable as e:
+                    err = public_error(e, route="/api/stream", user_id=user.id if user else None,
+                                       code="server_busy", message="The server is at capacity. Please retry shortly.")
+                    yield f"data: {json.dumps(err.as_sse())}\n\n"
+                    return
+                except Exception as e:
+                    yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                    return
+
+            if not _stream_may_publish(sess.id, fence):
                 return
-            except Exception as e:
-                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+            # Persist
+            sess.memory.add_turn("user", req.message)
+            sess.memory.add_turn("assistant", full)
+            if not _omit_long_term(sess.id):
+                sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
+                from orca.memory.turn_ingest import maybe_ingest_turn
+                maybe_ingest_turn(sess.id, req.message, full)
+            sess.persist_to_redis(fence_token=fence)
+            if user:
+                increment_usage(user.id, "message")
+
+            from orca.serve import temporary_chat
+            if not temporary_chat.is_hidden(sess.id):
+                asyncio.create_task(asyncio.to_thread(
+                    sess.knowledge_graph.extract_and_add,
+                    f"{req.message}\n{full}", "chat", sess.brain,
+                ))
+
+            # Citation compliance: mechanical check, not just a prompt instruction.
+            # If document context was available and the response cited zero
+            # sources, that's a real governance signal — logged for visibility
+            # and surfaced to the frontend so it can flag the answer, not silently
+            # trusted just because the system prompt said to cite.
+            context_block = rag_result.context_block if rag_result else ""
+            citation_report = check_citations(full, context_block)
+            if citation_report["had_context"] and not citation_report["compliant"]:
+                audit.log("citation_compliance_failed", user_id=user.id if user else None,
+                          detail={"message_id": message_id, "note": citation_report["note"]})
+
+            audit.log("stream_chat", user_id=user.id if user else None,
+                      detail={"model": sess.model_variant, "tools": tool_names,
+                              "cognitive_degraded": cognitive_result.degraded,
+                              "cognitive_resolved_tier": cognitive_result.resolved_tier})
+
+            # Explainability: capture the full retrieval/reasoning trace for this
+            # message, keyed by message_id so the frontend "Explain" button can
+            # fetch it on demand without bloating every SSE payload.
+            _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
+                                  evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
+                                  citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
+                                  evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
+            if not _stream_may_publish(sess.id, fence):
                 return
+            persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
+            explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
+            sess.explain_store.add(explain_record)
+            user_message_id = (persisted or {}).get("user_message_id")
 
-        # Persist
-        sess.memory.add_turn("user", req.message)
-        sess.memory.add_turn("assistant", full)
-        sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
-        from orca.memory.turn_ingest import maybe_ingest_turn
-        maybe_ingest_turn(sess.id, req.message, full)
-        sess.persist_to_redis()
-        if user:
-            increment_usage(user.id, "message")
-
-        # Knowledge graph extraction — fire-and-forget, NOT awaited. This is
-        # an LLM call (real latency on CPU inference per this project's own
-        # benchmarks), and the user is already looking at their finished
-        # response by this point — making them wait for graph extraction
-        # too would be pure UX cost for a background-enrichment feature.
-        # Failures here are silent by design (extract_and_add never raises)
-        # and don't affect the conversation that already completed.
-        asyncio.create_task(asyncio.to_thread(
-            sess.knowledge_graph.extract_and_add,
-            f"{req.message}\n{full}", "chat", sess.brain,
-        ))
-
-        # Citation compliance: mechanical check, not just a prompt instruction.
-        # If document context was available and the response cited zero
-        # sources, that's a real governance signal — logged for visibility
-        # and surfaced to the frontend so it can flag the answer, not silently
-        # trusted just because the system prompt said to cite.
-        context_block = rag_result.context_block if rag_result else ""
-        citation_report = check_citations(full, context_block)
-        if citation_report["had_context"] and not citation_report["compliant"]:
-            audit.log("citation_compliance_failed", user_id=user.id if user else None,
-                      detail={"message_id": message_id, "note": citation_report["note"]})
-
-        audit.log("stream_chat", user_id=user.id if user else None,
-                  detail={"model": sess.model_variant, "tools": tool_names,
-                          "cognitive_degraded": cognitive_result.degraded,
-                          "cognitive_resolved_tier": cognitive_result.resolved_tier})
-
-        # Explainability: capture the full retrieval/reasoning trace for this
-        # message, keyed by message_id so the frontend "Explain" button can
-        # fetch it on demand without bloating every SSE payload.
-        _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
-                              evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
-                              citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
-                              evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
-        _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
-        explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
-        sess.explain_store.add(explain_record)
-
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'user_message_id': user_message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
+        finally:
+            session_store.release_session_lease(sess.id, fence)
 
     return StreamingResponse(
         _event_stream(),
@@ -1983,7 +2037,13 @@ async def list_sessions(
                 activity[sid] = ts
         for sid in episode_ids:
             activity.setdefault(sid, 0.0)
-        visible = sorted(activity, key=lambda s: activity[s], reverse=True)
+        from orca.serve import temporary_chat
+
+        visible = sorted(
+            (sid for sid in activity if not temporary_chat.is_hidden(sid)),
+            key=lambda s: activity[s],
+            reverse=True,
+        )
     elif _anonymous_listing_allowed():
         visible = saved
         activity = {}
@@ -2079,6 +2139,41 @@ def _owned_session_or_404(session_id: str, user: "User | None") -> None:
     _check_session_ownership(session_id, user.id if user else None)
 
 
+def _temporary_http(decision: dict) -> JSONResponse:
+    code = decision.get("code") or "temporary_finished"
+    status = 409 if code in {
+        "temporary_expired", "temporary_closed", "temporary_finished",
+        "temporary_deletion_incomplete", "temporary_not_empty",
+    } else 400
+    return JSONResponse(
+        {"error": decision.get("error") or "temporary chat is not available", "code": code, "state": decision.get("state")},
+        status_code=status,
+    )
+
+
+def _temporary_block(session_id: str):
+    from orca.serve import temporary_chat
+
+    decision = temporary_chat.enforce(session_id)
+    if decision is None:
+        return None
+    return _temporary_http(decision)
+
+
+def _omit_long_term(session_id: str) -> bool:
+    from orca.serve import temporary_chat
+
+    return temporary_chat.is_hidden(session_id)
+
+
+def _stream_may_publish(session_id: str, fence: str) -> bool:
+    if session_store.enabled() and not session_store.lease_held(session_id, fence):
+        return False
+    from orca.serve import temporary_chat
+
+    return temporary_chat.enforce(session_id) is None
+
+
 @app.get("/api/session/{session_id}/messages")
 async def session_messages(session_id: str, limit: int = 200, offset: int = 0, user: User | None = Depends(get_current_user_optional)):
     """The durable transcript of one of the caller's conversations (paged). Signed-in users only; anonymous sessions are not persisted."""
@@ -2106,7 +2201,10 @@ async def search_sessions(q: str, request: Request, limit: int = 20, user: User 
     from orca.serve import conversations
 
     owned = get_user_session_ids(user.id)
-    return await asyncio.to_thread(conversations.search, owned, _session_titles, q, limit=max(1, min(int(limit), 50)))
+    from orca.serve import temporary_chat
+
+    visible = [sid for sid in owned if not temporary_chat.is_hidden(sid)]
+    return await asyncio.to_thread(conversations.search, visible, _session_titles, q, limit=max(1, min(int(limit), 50)))
 
 
 @app.get("/api/session/{session_id}/export")
@@ -2148,6 +2246,11 @@ async def delete_conversation(session_id: str, user: User | None = Depends(get_c
     if session_id not in set(get_user_session_ids(user.id)):
         raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
     result = await asyncio.to_thread(_delete_session_data, session_id)
+    try:
+        from orca.serve import message_versions
+        message_versions.delete_session(session_id)
+    except Exception:
+        pass
     _remove_session_title(session_id)
     _sessions.pop(session_id, None)
     release_session(session_id, user.id)
@@ -2166,6 +2269,105 @@ async def save_session(req: ChatRequest, user: User | None = Depends(get_current
         sess.memory.save_session()
         return {"saved": True, "session_id": sid}
     return {"saved": False}
+
+
+def _temporary_error(exc) -> JSONResponse:
+    status = 404 if getattr(exc, "code", "") == "temporary_not_found" else 409 if getattr(exc, "code", "") in {"temporary_not_empty", "temporary_finished", "temporary_expired", "temporary_closed"} else 400
+    return JSONResponse({"error": exc.reason, "code": getattr(exc, "code", "temporary_rejected")}, status_code=status)
+
+
+@app.post("/api/sessions/temporary")
+async def open_temporary_chat(req: TemporaryChatRequest, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations, temporary_chat
+
+    if not temporary_chat.MIN_TTL_SECONDS <= req.ttl_seconds <= temporary_chat.MAX_TTL_SECONDS:
+        return JSONResponse({"error": "temporary chat ttl is not valid", "code": "temporary_rejected"}, status_code=400)
+    if req.session_id:
+        _owned_session_or_404(req.session_id, user)
+        sid = req.session_id
+        if conversations.last_activity(sid) is not None and not temporary_chat.is_active(sid):
+            return JSONResponse({"error": "temporary chat cannot adopt an existing transcript", "code": "temporary_not_empty"}, status_code=409)
+    else:
+        sid = _get_session(None, user_id=user.id).id
+    try:
+        return temporary_chat.activate(sid, user.id, req.ttl_seconds)
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+
+
+@app.get("/api/session/{session_id}/temporary")
+async def temporary_chat_status(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import temporary_chat
+
+    try:
+        record = temporary_chat.read(session_id, user.id)
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+    if record is not None and record.get("state") == "active":
+        temporary_chat.enforce(session_id)
+        record = temporary_chat.read(session_id, user.id)
+    if record is None:
+        _owned_session_or_404(session_id, user)
+        return {"session_id": session_id, "state": "inactive", "terminal": False}
+    return record
+
+
+@app.post("/api/session/{session_id}/temporary/close")
+async def close_temporary_chat(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import temporary_chat
+
+    try:
+        view = temporary_chat.finish(session_id, user.id, "closed")
+    except temporary_chat.TemporaryChatDenied as exc:
+        return _temporary_error(exc)
+    status = 200 if view.get("state") in {"closed", "expired"} else 500
+    return JSONResponse(view, status_code=status)
+
+
+@app.post("/api/session/{session_id}/messages/{message_id}/edits")
+async def edit_message(session_id: str, message_id: str, req: MessageEditRequest, request: Request, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import conversations, message_versions
+
+    line = conversations.find_message(session_id, message_id)
+    if line is None:
+        raise HTTPException(status_code=404, detail="message not found")
+    previous = (conversations.transcript(session_id, limit=1000).get("messages") or [])
+    previous_text = next((m["content"] for m in previous if m.get("message_id") == message_id), line.get("content") or "")
+    idempotency_key = req.idempotency_key or request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key")
+    try:
+        view = message_versions.edit(session_id, user.id, message_id, req.content, idempotency_key=idempotency_key)
+    except message_versions.MessageVersionDenied as exc:
+        status = 404 if "not found" in exc.reason else 409 if isinstance(exc, message_versions.MessageVersionMismatch) else 400
+        return JSONResponse({"error": exc.reason, "code": "message_version_denied"}, status_code=status)
+    body = dict(view)
+    body["live_sync"] = _replace_visible_copy(session_id, previous_text, view.get("active_content") or req.content, line["role"])
+    return body
+
+
+@app.post("/api/session/{session_id}/shares")
+async def share_session(session_id: str, req: ShareRequest, user: User | None = Depends(get_current_user_optional)):
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.serve import temporary_chat
+
+    if temporary_chat.is_hidden(session_id) or temporary_chat.is_active(session_id):
+        return JSONResponse({"error": "temporary chat cannot be shared", "code": "temporary_unshareable"}, status_code=409)
+    return JSONResponse({"error": "sharing is not enabled", "code": "share_unavailable"}, status_code=400)
 
 
 @app.get("/api/usage")

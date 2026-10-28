@@ -80,18 +80,59 @@ def _iter_file(p: Path) -> Iterator[dict]:
         return
 
 
+def _shown(session_id: str, rec: dict) -> tuple[str, dict]:
+    """Active version text when one exists. The JSONL line is not rewritten."""
+    meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+    message_id = meta.get("message_id")
+    extra: dict = {}
+    if isinstance(message_id, str):
+        extra["message_id"] = message_id
+        try:
+            from orca.serve import message_versions
+
+            view = message_versions.active_view(session_id, message_id)
+        except Exception:
+            view = None
+        if view is not None:
+            extra["version_id"] = view["version_id"]
+            extra["version_count"] = view["version_count"]
+            extra["edited"] = view["edited"]
+            return view["content"], extra
+    return rec["content"], extra
+
+
+def find_message(session_id: str, message_id: str) -> dict | None:
+    for rec in _iter_file(_path(session_id)):
+        meta = rec.get("meta") if isinstance(rec.get("meta"), dict) else {}
+        if meta.get("message_id") == message_id:
+            return rec
+    return None
+
+
 def transcript(session_id: str, *, limit: int = 200, offset: int = 0) -> dict:
     limit = max(1, min(int(limit), 1000))
     offset = max(0, int(offset))
     msgs = list(_iter_file(_path(session_id)))
     page = msgs[offset: offset + limit]
+    rendered = []
+    for i, message in enumerate(page):
+        content, extra = _shown(session_id, message)
+        row = {
+            "index": offset + i,
+            "role": message["role"],
+            "content": content,
+            "timestamp": message.get("ts"),
+            **extra,
+        }
+        if message.get("meta"):
+            row["meta"] = message["meta"]
+        rendered.append(row)
     return {
         "session_id": session_id,
         "total": len(msgs),
         "offset": offset,
         "limit": limit,
-        "messages": [{"index": offset + i, "role": m["role"], "content": m["content"], "timestamp": m.get("ts"), **({"meta": m["meta"]} if m.get("meta") else {})}
-                     for i, m in enumerate(page)],
+        "messages": rendered,
     }
 
 
