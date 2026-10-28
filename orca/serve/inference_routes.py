@@ -40,6 +40,11 @@ _STATUS = {
     "variant_mismatch": 403,
     "quota_unavailable": 503,
     "session_busy": 409,
+    "request_in_progress": 409,
+    "stale_worker": 409,
+    "persist_failed": 503,
+    "reservation_forbidden": 403,
+    "reservation_mismatch": 409,
 }
 
 

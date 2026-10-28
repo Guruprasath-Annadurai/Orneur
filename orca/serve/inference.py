@@ -18,7 +18,14 @@ import threading
 import time
 import uuid
 
-from orca.auth.store import QuotaError, claim_session, mark_quota_consumed, release_quota, reserve_quota
+from orca.auth.store import (
+    QuotaError,
+    claim_session,
+    mark_quota_consumed,
+    release_quota,
+    reservation_fingerprint,
+    reserve_quota,
+)
 from orca.gateway.contracts import InferenceRequest
 from orca.gateway.errors import DeploymentUnavailableError, GenerationTimeoutError, RequestCancelledError
 from orca.gateway.ollama_runtime import OllamaRuntime
@@ -93,33 +100,69 @@ def authorize_serving(*, user: object, message: str, model: str, model_variant: 
     return uid
 
 
-def _admit_quota(*, user: object, request_id: str) -> str:
+def _admit_quota(
+    *,
+    user: object,
+    request_id: str,
+    fingerprint: str | None = None,
+) -> dict:
+    """Admit one billable unit. Returns the reservation dict.
+
+    ``ok`` is True only for a fresh reservation that may dispatch a provider
+    call. Consumed matches may carry ``replay`` for idempotent response
+    return without redispatch.
+    """
     try:
         reservation = reserve_quota(
             _user_id(user),
             getattr(user, "tier", "free") or "free",
             "message",
             request_id=request_id,
+            fingerprint=fingerprint,
         )
     except QuotaError as exc:
         raise InferenceError(exc.code) from exc
-    if not reservation["ok"]:
+    if reservation.get("ok"):
+        return reservation
+    status = reservation.get("status")
+    if status == "consumed" and reservation.get("replay") is not None:
+        return reservation
+    if status in {"released", "consumed"}:
         raise InferenceError("quota_exceeded")
-    return reservation["request_id"]
+    if status == "in_progress":
+        raise InferenceError("request_in_progress")
+    raise InferenceError("quota_exceeded")
 
 
-def _consume_quota(request_id: str) -> None:
+def _consume_quota(request_id: str, response: dict | None = None) -> None:
     try:
-        mark_quota_consumed(request_id)
+        mark_quota_consumed(request_id, response=response)
     except QuotaError as exc:
         raise InferenceError(exc.code) from exc
 
 
-def _acquire_turn(session_id: str) -> str:
+def _acquire_turn(session_id: str, user_id: str) -> tuple[str, int]:
+    """Acquire Redis advisory lease + durable SQLite fencing authority.
+
+    Redis alone never authorizes a later SQLite insert. The returned
+    ``(fence_token, epoch)`` must be presented to ``commit_turn``.
+    """
     fence = uuid.uuid4().hex
     if not session_store.acquire_session_lease(session_id, fence, ttl_ms=45_000):
         raise InferenceError("session_busy")
-    return fence
+    auth = conversations.acquire_authority(session_id, user_id, fence, ttl_s=45.0)
+    if auth is None:
+        session_store.release_session_lease(session_id, fence)
+        raise InferenceError("session_busy")
+    return fence, int(auth.epoch)
+
+
+def _release_turn(session_id: str, fence: str, epoch: int) -> None:
+    try:
+        conversations.release_authority(session_id, fence, epoch)
+    except Exception:
+        pass
+    session_store.release_session_lease(session_id, fence)
 
 
 def _session_lock(session_id: str) -> threading.Lock:
@@ -170,21 +213,61 @@ def _identity(served: str) -> dict:
     )
 
 
-def _persist(*, user_id: str, session_id: str, message: str, text: str, identity: dict, model: str, model_variant: str | None = None, fence_token: str | None = None) -> str:
+def _persist(
+    *,
+    user_id: str,
+    session_id: str,
+    message: str,
+    text: str,
+    identity: dict,
+    model: str,
+    model_variant: str | None = None,
+    fence_token: str | None = None,
+    epoch: int | None = None,
+) -> str:
+    """Authoritative turn commit under durable SQLite fencing.
+
+    Contract: SQLite ``session_authority`` + ``conversation_turns`` are the
+    source of truth. Redis lease/revision is advisory cache only. A Redis
+    claim alone never authorizes the insert — ``commit_turn`` re-validates
+    fence, epoch, expiry, ownership and committed_revision inside the same
+    SQLite transaction as the insert. JSONL is rebuilt only after COMMIT.
+    """
     from orca.serve.dlp import scan_output
     from orca.serve.model_catalog import lookup
 
     safe = scan_output(text or "")["safe_text"]
-    conversations.append(session_id, "user", message)
-    conversations.append(session_id, "assistant", safe, meta={"model_identity": identity})
-    _state, rev = session_store.load_session_state_with_revision(session_id)
+    if not fence_token or not epoch:
+        raise InferenceError("stale_worker")
+    # Best-effort renew so a just-expired authority is not racing the commit
+    # window; commit_turn still re-checks expiry inside its transaction.
+    conversations.renew_authority(session_id, fence_token, int(epoch), ttl_s=45.0)
+    # Advisory Redis revision claim (Claude fencing). Never authorizes SQLite
+    # insert alone — commit_turn re-validates fence/epoch/expiry/ownership.
+    session_store.claim_turn_commit(session_id, fence_token)
+    turn_id = uuid.uuid4().hex
+    committed = conversations.commit_turn(
+        session_id,
+        message,
+        safe,
+        user_id=user_id,
+        turn_id=turn_id,
+        fence_token=fence_token,
+        epoch=int(epoch),
+        meta={"model_identity": identity},
+    )
+    if not committed.ok:
+        if committed.reason in {"stale_authority", "authority_expired", "ownership_mismatch", "authority_missing"}:
+            raise InferenceError("stale_worker")
+        raise InferenceError("persist_failed")
     entry = lookup(model)
     stored_tier = (entry.tier if entry else None) or model_variant or "nano"
+    # Advisory Redis stamp — failure does not roll back the durable turn.
     session_store.save_session_state(
         session_id,
         stored_tier,
         _session_messages(session_id, user_id=user_id),
-        expected_revision=rev,
+        expected_revision=None,
         fence_token=fence_token,
     )
     session_store.touch_session(session_id)
@@ -207,7 +290,7 @@ def complete(
     uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
     sid = bind_session(user_id=uid, session_id=session_id)
     with _session_lock(sid):
-        fence = _acquire_turn(sid)
+        fence, epoch = _acquire_turn(sid, uid)
         try:
             return _complete_locked(
                 uid=uid,
@@ -221,10 +304,11 @@ def complete(
                 timeout_s=timeout_s,
                 request_id=request_id,
                 fence_token=fence,
+                epoch=epoch,
                 user=user,
             )
         finally:
-            session_store.release_session_lease(sid, fence)
+            _release_turn(sid, fence, epoch)
 
 
 def _complete_locked(
@@ -240,14 +324,23 @@ def _complete_locked(
     timeout_s: float,
     request_id: str | None,
     fence_token: str,
+    epoch: int,
     user: object,
 ) -> dict:
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_generate is None:
         raise InferenceError("provider_unavailable")
-    rid = _admit_quota(user=user, request_id=request_id or uuid.uuid4().hex)
+    msg = message.strip()
+    fp = reservation_fingerprint(user_id=uid, kind="message", session_id=sid, model=model, message=msg)
+    admission = _admit_quota(user=user, request_id=request_id or uuid.uuid4().hex, fingerprint=fp)
+    if admission.get("status") == "consumed" and admission.get("replay") is not None:
+        replay = dict(admission["replay"])
+        replay["request_id"] = admission["request_id"]
+        replay["replayed"] = True
+        return replay
+    rid = admission["request_id"]
     consumed = False
-    prompt = _prompt_with_session(sid, message.strip(), user_id=uid)
+    prompt = _prompt_with_session(sid, msg, user_id=uid)
     t0 = time.monotonic()
     try:
         if transport_generate is not None:
@@ -281,19 +374,18 @@ def _complete_locked(
         tokens_out = int(data.get("eval_count") or 0)
         identity = _identity(served)
         record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        _consume_quota(rid)
-        consumed = True
         safe = _persist(
             user_id=uid,
             session_id=sid,
-            message=message.strip(),
+            message=msg,
             text=text,
             identity=identity,
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            epoch=epoch,
         )
-        return {
+        result = {
             "text": safe,
             "model": served,
             "backend": "ollama",
@@ -308,6 +400,9 @@ def _complete_locked(
             "session_id": sid,
             "request_id": rid,
         }
+        _consume_quota(rid, response=result)
+        consumed = True
+        return result
     finally:
         if not consumed:
             try:
@@ -336,7 +431,7 @@ def stream_complete(
     uid = authorize_serving(user=user, message=message, model=model, model_variant=model_variant)
     sid = bind_session(user_id=uid, session_id=session_id)
     with _session_lock(sid):
-        fence = _acquire_turn(sid)
+        fence, epoch = _acquire_turn(sid, uid)
         try:
             return _stream_complete_locked(
                 uid=uid,
@@ -351,9 +446,10 @@ def stream_complete(
                 timeout_s=timeout_s,
                 user=user,
                 fence_token=fence,
+                epoch=epoch,
             )
         finally:
-            session_store.release_session_lease(sid, fence)
+            _release_turn(sid, fence, epoch)
 
 
 def _stream_complete_locked(
@@ -370,11 +466,20 @@ def _stream_complete_locked(
     timeout_s: float,
     user: object,
     fence_token: str,
+    epoch: int,
 ) -> dict:
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable" and transport_stream is None:
         raise InferenceError("provider_unavailable")
-    rid = _admit_quota(user=user, request_id=uuid.uuid4().hex)
+    msg = message.strip()
+    fp = reservation_fingerprint(user_id=uid, kind="message", session_id=sid, model=model, message=msg)
+    admission = _admit_quota(user=user, request_id=uuid.uuid4().hex, fingerprint=fp)
+    if admission.get("status") == "consumed" and admission.get("replay") is not None:
+        replay = dict(admission["replay"])
+        replay["request_id"] = admission["request_id"]
+        replay["replayed"] = True
+        return replay
+    rid = admission["request_id"]
     consumed = False
     redactor = StreamRedactor()
     chunks: list[str] = []
@@ -383,10 +488,10 @@ def _stream_complete_locked(
     tokens_in = 0
     tokens_out = 0
     served = model
-    messages = _messages_with_session(sid, message.strip(), user_id=uid)
+    messages = _messages_with_session(sid, msg, user_id=uid)
     try:
         if transport_stream is not None:
-            for delta in transport_stream(host, model, message.strip()):
+            for delta in transport_stream(host, model, msg):
                 if cancel is not None and cancel.is_set():
                     cancelled = True
                     break
@@ -466,19 +571,21 @@ def _stream_complete_locked(
         text = "".join(chunks)
         identity = _identity(served)
         record_usage(user_id=uid, model=served, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
-        _consume_quota(rid)
-        consumed = True
         text = _persist(
             user_id=uid,
             session_id=sid,
-            message=message.strip(),
+            message=msg,
             text=text,
             identity=identity,
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            epoch=epoch,
         )
-        return {
+        # Persist already applied DLP; keep emitted chunks consistent with stored text.
+        if text != "".join(chunks):
+            chunks = [text]
+        result = {
             "text": text,
             "chunks": chunks,
             "cancelled": False,
@@ -494,7 +601,11 @@ def _stream_complete_locked(
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "handlers_forcibly_stopped": False,
+            "request_id": rid,
         }
+        _consume_quota(rid, response=result)
+        consumed = True
+        return result
     finally:
         if not consumed:
             try:
@@ -521,7 +632,7 @@ async def stream_via_gateway(
     lock = _session_lock(sid)
     await asyncio.to_thread(lock.acquire)
     try:
-        fence = _acquire_turn(sid)
+        fence, epoch = _acquire_turn(sid, uid)
         try:
             async for item in _stream_via_gateway_locked(
                 uid=uid,
@@ -535,10 +646,11 @@ async def stream_via_gateway(
                 timeout_s=timeout_s,
                 user=user,
                 fence_token=fence,
+                epoch=epoch,
             ):
                 yield redact_structure(item)
         finally:
-            session_store.release_session_lease(sid, fence)
+            _release_turn(sid, fence, epoch)
     finally:
         lock.release()
 
@@ -556,11 +668,21 @@ async def _stream_via_gateway_locked(
     timeout_s: float,
     user: object,
     fence_token: str,
+    epoch: int,
 ):
     probe = probe_ollama(host=host, timeout_s=2.0)
     if probe["status"] != "reachable":
         raise InferenceError("provider_unavailable")
-    rid = _admit_quota(user=user, request_id=uuid.uuid4().hex)
+    msg = message.strip()
+    fp = reservation_fingerprint(user_id=uid, kind="message", session_id=sid, model=model, message=msg)
+    admission = _admit_quota(user=user, request_id=uuid.uuid4().hex, fingerprint=fp)
+    if admission.get("status") == "consumed" and admission.get("replay") is not None:
+        replay = dict(admission["replay"])
+        replay["type"] = "done"
+        replay["replayed"] = True
+        yield replay
+        return
+    rid = admission["request_id"]
     consumed = False
     redactor = StreamRedactor()
     request_id = uuid.uuid4().hex
@@ -569,7 +691,7 @@ async def _stream_via_gateway_locked(
         request_id=request_id,
         model_id=model,
         model_version=model,
-        messages=_messages_with_session(sid, message.strip(), user_id=uid),
+        messages=_messages_with_session(sid, msg, user_id=uid),
         max_tokens=64,
         temperature=0.0,
         tenant_id=uid,
@@ -637,19 +759,18 @@ async def _stream_via_gateway_locked(
         text = "".join(chunks)
         record_usage(user_id=uid, model=model, backend="ollama", tokens_in=tokens_in, tokens_out=tokens_out)
         identity = _identity(model)
-        _consume_quota(rid)
-        consumed = True
         text = _persist(
             user_id=uid,
             session_id=sid,
-            message=message.strip(),
+            message=msg,
             text=text,
             identity=identity,
             model=model,
             model_variant=model_variant,
             fence_token=fence_token,
+            epoch=epoch,
         )
-        yield {
+        done = {
             "type": "done",
             "text": text,
             "model": model,
@@ -664,7 +785,11 @@ async def _stream_via_gateway_locked(
             "tokens_out": tokens_out,
             "finish_reason": "stop",
             "handlers_forcibly_stopped": False,
+            "request_id": rid,
         }
+        _consume_quota(rid, response=done)
+        consumed = True
+        yield done
     finally:
         if not consumed:
             try:

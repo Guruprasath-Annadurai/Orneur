@@ -433,7 +433,13 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
 
 
 def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> dict | None:
-    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request."""
+    """Durable turn commit for SIGNED-IN users via SQLite fencing (same SoT as inference).
+
+    Anonymous sessions are not persisted. Best-effort: history must never fail a
+    request. Uses a short-lived authority acquire → commit_turn → release so
+    ``/api/chat`` and ``/api/stream`` share the same authoritative store as
+    ``/api/inference/*`` (see docs/orneur/status/P0_TRANSCRIPT_INTEGRITY_HANDOFF.md).
+    """
     if not user or not session_id:
         return None
     try:
@@ -441,14 +447,33 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
 
         user_message_id = str(uuid.uuid4())
         assistant_message_id = message_id or str(uuid.uuid4())
-        conversations.append(session_id, "user", user_text, meta={"message_id": user_message_id})
-        meta: dict = {"message_id": assistant_message_id}
+        meta: dict = {"message_id": assistant_message_id, "user_message_id": user_message_id}
         if identity:
             meta["model_identity"] = identity
         if src:
             meta["source_summary"] = src["summary"]
             meta["sources"] = [{k: s.get(k) for k in ("ref", "kind", "filename", "url", "locator", "cited_in_answer")} for s in src["sources"]]
-        conversations.append(session_id, "assistant", assistant_text, meta=meta)
+        fence = uuid.uuid4().hex
+        auth = conversations.acquire_authority(session_id, user.id, fence, ttl_s=30.0)
+        if auth is None:
+            _logger.warning("conversation authority unavailable; turn not persisted")
+            return None
+        try:
+            committed = conversations.commit_turn(
+                session_id,
+                user_text,
+                assistant_text,
+                user_id=user.id,
+                turn_id=uuid.uuid4().hex,
+                fence_token=fence,
+                epoch=auth.epoch,
+                meta=meta,
+            )
+        finally:
+            conversations.release_authority(session_id, fence, auth.epoch)
+        if not committed.ok:
+            _logger.warning("conversation commit refused: %s", committed.reason)
+            return None
         try:
             message_versions.seed(session_id, user.id, user_message_id, "user", user_text)
             message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_text)
@@ -770,6 +795,7 @@ class _Session:
             if self.user_id:
                 try:
                     from orca.serve import conversations as _conversations
+                    _conversations.reconcile_legacy_session(self.id, self.user_id)
                     head = _conversations.transcript(self.id, limit=1, offset=0)
                     total = int(head.get("total") or 0)
                     offset = max(0, total - 1000)
@@ -1908,14 +1934,26 @@ async def stream_chat(
                     # disconnected client's backend generator is only closed
                     # whenever Python eventually garbage-collects it, leaking
                     # the worker thread and the backend connection until then.
+                    from orca.serve.stream_dlp import StreamRedactor
+
+                    redactor = StreamRedactor()
                     async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
                         async for chunk in achunks:
-                            full += chunk
-                            yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                            safe_chunk = redactor.push(chunk)
+                            if safe_chunk:
+                                full += safe_chunk
+                                yield f"data: {json.dumps({'type': 'chunk', 'text': safe_chunk})}\n\n"
                             if await request.is_disconnected():
+                                redactor.cancel()
                                 audit.log("stream_client_disconnected", user_id=user.id if user else None,
                                           detail={"chars_sent": len(full)})
                                 return
+                    tail = redactor.finish()
+                    if tail:
+                        full += tail
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': tail})}\n\n"
+                    # Authoritative persisted text matches what the client received.
+                    full = redactor.safe_text() or full
 
                     tool_names = [tc.tool for tc in trace.tool_calls]
                     plan_action = trace.plan_action
@@ -2199,6 +2237,8 @@ async def session_messages(session_id: str, limit: int = 200, offset: int = 0, u
         return JSONResponse(e.as_json(), status_code=e.status)
     from orca.serve import conversations
 
+    # Explicit legacy JSONL → SQLite migration; empty SQLite never auto-trusts JSONL.
+    conversations.reconcile_legacy_session(session_id, user.id)
     return conversations.transcript(session_id, limit=limit, offset=offset)
 
 

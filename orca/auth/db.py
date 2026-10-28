@@ -104,7 +104,9 @@ CREATE TABLE IF NOT EXISTS usage_reservations (
     kind       TEXT NOT NULL,
     date       TEXT NOT NULL,
     status     TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    fingerprint TEXT,
+    response_json TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created
     ON usage_reservations(status, created_at);
@@ -320,7 +322,9 @@ CREATE TABLE IF NOT EXISTS usage_reservations (
     kind       TEXT NOT NULL,
     date       TEXT NOT NULL,
     status     TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    fingerprint TEXT,
+    response_json TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created
     ON usage_reservations(status, created_at);
@@ -736,7 +740,8 @@ def init_db() -> None:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS usage_reservations ("
                 "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
-                "date TEXT NOT NULL, status TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL)"
+                "date TEXT NOT NULL, status TEXT NOT NULL, created_at DOUBLE PRECISION NOT NULL, "
+                "fingerprint TEXT, response_json TEXT)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created "
@@ -779,7 +784,8 @@ def init_db() -> None:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS usage_reservations ("
             "request_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, "
-            "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL)"
+            "date TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL, "
+            "fingerprint TEXT, response_json TEXT)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS ix_usage_reservations_status_created "
