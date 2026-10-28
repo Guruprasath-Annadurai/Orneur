@@ -82,7 +82,7 @@ from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
 from orca.serve import session_store, ratelimit, metrics, dlp
-from orca.serve.errors import public_error, coded_error, default_code_for_status
+from orca.serve.errors import PublicError, public_error, coded_error, default_code_for_status
 from orca.serve.model_identity import model_identity as _model_identity
 from orca.serve.citations import build_sources as _build_sources
 from orca.serve import streaming
