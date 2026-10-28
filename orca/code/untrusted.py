@@ -24,4 +24,7 @@ def execute(source: str, *, user_id: str) -> dict:
         raise UntrustedError("source_refused")
     if isolator() is None:
         raise UntrustedError("isolation_unavailable")
+    # Docker is present but this branch has not run breakout, privilege,
+    # mount, or network-denial qualification. Subprocess isolation is not
+    # a substitute. Execution stays closed.
     raise UntrustedError("isolation_unqualified")

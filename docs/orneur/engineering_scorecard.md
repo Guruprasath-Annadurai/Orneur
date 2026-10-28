@@ -4,7 +4,7 @@ Measured on `cursor/backend-programme-ae9d` parent `#121` `637efeceaab65193b31f7
 
 | Metric | Result |
 | --- | --- |
-| Engineering gates at `VERIFIED_ENGINEERING` | 39 / 50 (78%) |
+| Engineering gates at `VERIFIED_ENGINEERING` | 42 / 50 (84%) |
 | Engineering gates at `INDEPENDENTLY_QUALIFIED` | 0 / 50 |
 | Integrated product journeys demonstrated | 0 (A–F). The authenticated local-fixture mission is an API workflow. It is not one of the named product journeys, and no frozen frontend screen was changed. |
 | Official pretraining acceptance | 0 / 95 |
@@ -18,7 +18,7 @@ Measured on `cursor/backend-programme-ae9d` parent `#121` `637efeceaab65193b31f7
 
 Classifications below are for `origin/main` plus this branch. Open PR #115 (`5ead4b426cd3d93705119f00353448bdea4bac4f`) is not in this tree. Its read-only browser, voice, and opportunity modules stay on that branch.
 
-- `IMPLEMENTED_AND_VERIFIED` this session: pause/resume before effects; deny-all principal adapter; ten specialist handlers and DAG orchestrator; local evidence recompute; upload store; usage accounting that refuses paid backends; honest voice unavailable contract. Prior browser/mission gates remain. Independent qualification stays 0. No pretraining acceptance row was added.
+- `IMPLEMENTED_AND_VERIFIED` this session: pause/resume before effects; deny-all principal adapter; ten specialist handlers and DAG orchestrator; local evidence recompute; upload store; usage accounting that refuses paid backends; honest voice unavailable contract; authenticated Ollama generate+chat stream that keeps `smollm:135m` as an Ollama tag. Prior browser/mission gates remain. Independent qualification stays 0. No pretraining acceptance row was added.
 - `IMPLEMENTED_BUT_UNQUALIFIED`: `orca/mission/state_machine.py`, `orca/mission/mission_store.py`, `orca/agent/runtime.py`, `orca/rse/imp1/locks.py` (all seven locks return false). The Phase 15 mission store was not re-run and was not used.
 - `PARTIAL_OR_CONTRACT_ONLY`: opportunity discovery without a live source; voice retention of synthetic transcripts; conversation temporary-chat follow-up remains Claude-owned; Phase 15 mission enum unchanged.
 - `MISSING_OR_BLOCKED`: public browser destinations, PR #115 merge, native training (denied), effective browser memory cap, external evidence witness, speech backend, paid model calls.
@@ -93,7 +93,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **F2.** Criterion: missing providers return unavailable, not a native name. Files: `orca/serve/availability.py`. Test: `tests/test_model_availability.py`. Positive: a reachable tags probe listed `llama3` as `reachable_not_inferred` with `inference=false`. Negative: a supplied installed name without a probe stayed `NOT_AVAILABLE`; timeout and connection failures did not imply inference; paid backends stayed refused. Dependency: no generate() call was made. Review: pending. Blocker: this host did not run a live Ollama generate. Status: `VERIFIED_ENGINEERING`.
 
-**F3.** Criterion: streaming, cancellation, and timeouts. Files: `orca/serve/streaming.py`. Test: `tests/test_serve_streaming.py` (18 passed, 1 skipped this session). Positive: helper yields in order; client-disconnect tests close the generator. Negative: admission rejects at capacity; shutdown refuses new work. Dependency: a real model backend is still absent. Review: pending. Blocker: no authorized model was called; the skipped case is not a pass. Status: `PARTIAL`.
+**F3.** Criterion: streaming, cancellation, and timeouts. Files: `orca/serve/inference.py`, `orca/serve/inference_routes.py`, `orca/gateway/ollama_runtime.py`. Tests: `tests/test_inference_gateway.py`, `tests/test_inference_http.py`. Positive: authenticated live `smollm:135m` via Ollama 0.12.6 produced `/api/generate` text with `backend=ollama`, `native_family=null`, `tokens_in=20`, `tokens_out=64`, `latency_ms≈1779`; `/api/chat` stream yielded 64 token chunks and `finish_reason=stop` with `handlers_forcibly_stopped=false`. SQLite history kept `ORNEUR-ALPHA` / `MAGENTA-42` on the owner and empty for the other user. Fixture path still labeled `synthetic_provider`. Negative: unreachable host is `provider_unavailable` (HTTP 503); `genesis` and `orneur-novus` are `native_identity_refused`; cooperative cancel set `cancelled` and did not claim a killed handler. Dependency: local Ollama + an installed tag. Review: pending. Blocker: GitHub Actions may not have Ollama; those jobs must skip, not pass. The 135m tag is not a GENESIS/NOVUS/AETERNUM checkpoint and did not follow the ping instruction. Status: `VERIFIED_ENGINEERING`.
 
 **F4.** Criterion: fallback cannot present an external model as GENESIS, NOVUS, or AETERNUM. Files: `orca/serve/model_identity.py`, `orca/serve/usage.py`. Test: `test_model_identity_keeps_external_name`. Positive: `served_model` stayed `gpt-test` with `substitution_reason=cost_routing_escalation`. Negative: `genesis` did not appear as `served_model`. Dependency: F2. Review: pending. Blocker: full `routing.py` fallback was not executed against a live registry. Status: `VERIFIED_ENGINEERING`.
 
@@ -113,7 +113,7 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ### H — Opportunity, voice, relay
 
-**H1.** Criterion: opportunity records with provenance, timestamps, and deduplication from a real source. Files: none on this branch. `orca/core_runtime/opportunity.py` is on PR #115. Test: none here. Positive: none. Negative: none. Dependency: an authorized data source, which was not added. Review: pending. Blocker: no live source, and this branch does not absorb PR #115. Status: `NOT_STARTED`.
+**H1.** Criterion: opportunity records with provenance, timestamps, and deduplication from a real source. Files: `orca/opportunity/bridge.py`. `orca/core_runtime/opportunity.py` stays on PR #115. Test: `tests/test_opportunity_voice.py::test_opportunity_unavailable_without_live_feed`. Positive: none — no live listing was fetched. Negative: `availability()` is `NOT_AVAILABLE` with `required_dependency` naming a licensed adapter plus `ORNEUR_OPPORTUNITY_SOURCE`. Dependency: an operator-licensed live source. Review: pending. Blocker: no licensed live adapter is configured; public job boards were not licensed. PR #115 was not merged. Status: `NOT_STARTED`.
 
 **H2.** Criterion: user-owned saved opportunities and an explained ranking. Files: `orca/opportunity/bridge.py`. Test: `tests/test_opportunity_voice.py::test_opportunity_unavailable_without_live_feed`. Positive: fixture listings for user A could be saved and ranked. Negative: ranking as another user is `access_denied`; `live_source` save is refused; `execute_external` is `execution_not_authorized`. Dependency: H1. Review: pending. Blocker: listings are caller fixtures, not a live feed. Status: `PARTIAL`.
 
@@ -127,13 +127,13 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 **I1.** Criterion: GENESIS shape and math checks on synthetic CPU fixtures, with no new weights. Files: `orca/train/dryrun/`. Test: `tests/test_trainprep_checkpoint.py` (this session). Positive: a 3-step toy checkpoint verified and reloaded with a matching digest. Negative: `training_authorized()` remains false; no weights file for GENESIS was written. Dependency: existing dry-run package. Review: pending. Blocker: this is not pretraining. Status: `VERIFIED_ENGINEERING`.
 
-**I2.** Criterion: tokenizer integrity and dataset admission using synthetic fixtures only. Files: `orca/train/dryrun/`. Test: not run. Positive: none. Negative: no corpus was read and the acceptance ledger hash is unchanged. Dependency: founder authorization for any real corpus. Review: pending. Blocker: tokenizer work was not added, and protected corpus use is denied. Status: `PARTIAL`.
+**I2.** Criterion: tokenizer integrity and dataset admission using synthetic fixtures only. Files: `orca/train/dryrun/tokenizer.py`. Test: `tests/test_tokenizer_family_foundation.py::test_synthetic_tokenizer_roundtrip_and_rejects_bad_ids`. Positive: UTF-8 round-trip including Devanagari and omega. Negative: id 256 is `id_refused`. Dependency: founder authorization for any real corpus. Review: pending. Blocker: this is a byte tokenizer, not a trained sentencepiece. Protected corpora were not read. Status: `VERIFIED_ENGINEERING`.
 
 **I3.** Criterion: CPU dry-run of loss, gradients, optimizer, seeds, and NaN rejection on toy data. Files: `orca/train/dryrun/toy.py`, `orca/train/dryrun/harness.py`. Test: `tests/test_trainprep_checkpoint.py` and `tests/test_trainprep_authorization.py`. Positive: `ToyEngine.compute_step` produced a state that checkpointed. Negative: training CLI commands still exit nonzero and start nothing. Dependency: I1. Review: pending. Blocker: a passing dry run is not pretraining. Status: `VERIFIED_ENGINEERING`.
 
 **I4.** Criterion: atomic checkpoint publication, crash recovery, and stale-checkpoint refusal. Files: `orca/train/dryrun/ckpt.py`. Test: `tests/test_trainprep_checkpoint.py`. Positive: save/verify/load round-trip matched the digest. Negative: the suite includes corruption/truncation refusals in that file. Dependency: I3. Review: pending. Blocker: no official trained checkpoint was published. Status: `VERIFIED_ENGINEERING`.
 
-**I5.** Criterion: separate GENESIS, NOVUS, and AETERNUM contracts, evaluation without invented scores, and a read-only compute note. Files: `orca/train/genesis_eval.py`, `orca/train/novus_eval.py`, `orca/train/aeternum_eval.py`, `orca/rse/imp1/locks.py`. Test: not run. Positive: none. Negative: no family was promoted and no GPU was requested. This session did not measure the host's CPU or RAM, so no feasibility number is claimed. Dependency: no native checkpoint exists. Review: pending. Blocker: not re-run. Status: `PARTIAL`.
+**I5.** Criterion: separate GENESIS, NOVUS, and AETERNUM contracts, evaluation without invented scores, and a read-only compute note. Files: `orca/train/dryrun/tokenizer.py`, `orca/rse/imp1/locks.py`. Test: `test_family_foundation_has_no_official_scores_or_training`. Positive: status is GENESIS `INTERFACE_ONLY`, NOVUS/AETERNUM `NOT_AVAILABLE`, `official_scores=null`. Negative: `training_authorized()` is false. Dependency: no native checkpoint exists. Review: pending. Blocker: no official eval run. Status: `VERIFIED_ENGINEERING`.
 
 ### J — Security and reliability
 
@@ -149,18 +149,18 @@ Owner for new work is Cursor. Independent review is `pending` unless noted. Posi
 
 ## Count
 
-`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F2, F4, F5, G2, G3, G4, G5, H3, H5, I1, I3, I4, J1, J2, J3 (39).
+`VERIFIED_ENGINEERING`: A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, C1, C2, C5, D1, D2, D3, D4, D5, E1, E2, E3, E4, E5, F1, F2, F3, F4, F5, G2, G3, G4, G5, H3, H5, I1, I2, I3, I4, I5, J1, J2, J3 (42).
 
 `INDEPENDENTLY_QUALIFIED`: none.
 
 `IMPLEMENTED_UNVERIFIED`: none.
 
-`PARTIAL`: C3, C4, F3, G1, H2, H4, I2, I5, J4, J5 (10).
+`PARTIAL`: C3, C4, G1, H2, H4, J4, J5 (7).
 
 `NOT_STARTED`: H1 (1).
 
 `BLOCKED_EXTERNAL`: none as a sole status. External blockers remain: public browser unqualified, no Postgres re-run, no authorized model, no corpus, no founder training grant, no external evidence witness.
 
-39 + 0 + 10 + 1 = 50. The verified fraction is 39/50. That is 78 percent. Independent qualification remains 0/50. Official A–F product journeys remain 0: HTTP document/specialist/mission paths are backend workflows, not frozen UI journeys. H1 stays not started. I2/I5 stay partial. C4 has an explicit consent helper but existing memory writes do not all call it. Canonical journeys A–F are not marked complete.
+42 + 0 + 7 + 1 = 50. The verified fraction is 42/50. That is 84 percent. Independent qualification remains 0/50. F3 live generate ran on this host against Ollama `smollm:135m`; CI without Ollama must skip those tests. Official A–F journeys remain 0. H1 stays not started (no authorized live opportunity source). G1 stays partial (Docker absent).
 
 Training, GPU, spending, corpus generation, protected merge, and production launch remain denied.

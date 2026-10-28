@@ -35,6 +35,13 @@ def availability() -> dict:
         "status": NOT_AVAILABLE,
         "live_source": False,
         "reason": "no_authorized_source_adapter",
+        "required_dependency": (
+            "An operator-licensed live listing adapter with documented terms, "
+            "authentication material if the source requires it, and "
+            "ORNEUR_OPPORTUNITY_SOURCE pointing at that adapter. No such source "
+            "is configured on this branch. Public job boards were not licensed "
+            "for this deployment, so discovery stays NOT_AVAILABLE."
+        ),
     }
 
 

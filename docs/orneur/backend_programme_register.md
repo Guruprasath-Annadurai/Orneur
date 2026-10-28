@@ -62,3 +62,20 @@ Independent qualification is not awarded by a green CI badge.
 - Do not merge #111 or #115 into this PR.
 
 Resume from the branch head after push; re-run exact-head CI before any handover report.
+
+## F3/G1/H1/I2/I5 continuation from `e48f5a3`
+
+- Authenticated `/api/inference/complete` POSTs Ollama `/api/generate`. `/api/inference/stream` uses `OllamaRuntime.stream` (`/api/chat`) as SSE. History is SQLite, per `user.id`.
+- Live on this engineering host: Ollama 0.12.6 serving `smollm:135m` (91 MB Q4_0). Generate `tokens_in=20` `tokens_out=64` `latency_ms≈1779`. Stream produced 64 chunks. Identity stayed `served_model=smollm:135m`, `backend=ollama`, `native_family=null`.
+- Fixture HTTP tests remain labeled `synthetic_provider`. Unreachable host is `provider_unavailable`, not a pass.
+- GitHub Actions: live tests skip unless the runner has Ollama and a tag. That skip is BLOCKED on CI, not a live pass.
+- Docker: **absent**. Untrusted execution stays `isolation_unavailable`.
+- Opportunity live source: **none authorized**. `availability().required_dependency` names a licensed adapter + `ORNEUR_OPPORTUNITY_SOURCE`. H1 remains not started. PR #115 was not merged.
+- Synthetic byte tokenizer + family foundation status without official scores. GENESIS `INTERFACE_ONLY`; NOVUS/AETERNUM `NOT_AVAILABLE`; official scores null.
+- Frontend contract for the authenticated serving journey (frozen UI not edited):
+  - `POST /api/auth/login` then `Authorization: Bearer <token>`
+  - `POST /api/inference/complete` `{message, model}` → `{text, model, backend, identity, latency_ms, tokens_in, tokens_out, live, native_family}`
+  - `POST /api/inference/stream` SSE `data: {type: chunk|done|cancelled|error, ...}`
+  - `GET /api/inference/history` owner-only turns
+  - Claude owns B11/B13, temporary-chat, Redis consistency. This branch did not edit `orca/serve/conversations.py`.
+
