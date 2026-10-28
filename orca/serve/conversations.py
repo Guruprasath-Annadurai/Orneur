@@ -36,11 +36,14 @@ DEFAULT_AUTHORITY_TTL_S = 45.0
 
 
 def _dir() -> Path:
-    # Resolve via config at call time so isolated_home reloads and child
-    # processes that inherit ORCA_HOME/ORNEUR_HOME agree on the same path.
+    # Prefer ``orca.brain.memory.MEMORY_DIR`` (tests monkeypatch it via the
+    # client fixture). Fall back to config so fresh child processes that only
+    # inherit ORCA_HOME/ORNEUR_HOME still resolve the same tree.
+    import orca.brain.memory as mem
     import orca.config as config
 
-    d = Path(config.MEMORY_DIR) / "conversations"
+    base = Path(getattr(mem, "MEMORY_DIR", None) or config.MEMORY_DIR)
+    d = base / "conversations"
     d.mkdir(parents=True, exist_ok=True)
     try:
         os.chmod(d, 0o700)

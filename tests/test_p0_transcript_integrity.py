@@ -247,13 +247,29 @@ def test_two_os_workers_same_session(isolated_home):
 
     sid = "mp-" + uuid.uuid4().hex[:10]
     env = dict(os.environ)
-    # Ensure child processes resolve the same home as the reloaded parent config.
+    # Align parent + child on the same memory tree. Prefer the live
+    # memory.MEMORY_DIR (may be monkeypatched); otherwise ORCA_HOME.
+    import orca.brain.memory as mem
     import orca.config as config
 
-    env["ORCA_HOME"] = str(config.ORCA_HOME)
-    env["ORNEUR_HOME"] = str(config.ORCA_HOME)
+    memory_dir = Path(mem.MEMORY_DIR)
+    home = str(config.ORCA_HOME)
+    env["ORCA_HOME"] = home
+    env["ORNEUR_HOME"] = home
+    env["ORNEUR_TEST_MEMORY_DIR"] = str(memory_dir)
+    # Force parent conversations into the same directory children will use.
+    mem.MEMORY_DIR = memory_dir
+    repo_root = str(Path(__file__).resolve().parents[1])
     script = f"""
-import json, sys, time
+import json, os, sys, time
+from pathlib import Path
+# Child processes: honor the parent's memory dir before importing conversations.
+import orca.brain.memory as mem
+import orca.config as config
+override = os.environ.get("ORNEUR_TEST_MEMORY_DIR")
+if override:
+    mem.MEMORY_DIR = Path(override)
+    config.MEMORY_DIR = Path(override)
 from orca.serve import conversations as c
 cmd = json.loads(sys.stdin.read())
 auth = c.acquire_authority(cmd["sid"], cmd["uid"], cmd["fence"], ttl_s=cmd.get("ttl", 2))
@@ -272,7 +288,7 @@ print(json.dumps({{"ok": r.ok, "reason": r.reason, "rev": r.revision, "epoch": a
         stdout=subprocess.PIPE,
         text=True,
         env=env,
-        cwd="/workspace",
+        cwd=repo_root,
     )
     a.stdin.write(json.dumps({"sid": sid, "uid": "u", "fence": "A", "ttl": 0.2, "sleep": 0.5, "user": "A", "asst": "Aa", "tid": "ta"}))
     a.stdin.close()
@@ -283,7 +299,7 @@ print(json.dumps({{"ok": r.ok, "reason": r.reason, "rev": r.revision, "epoch": a
         stdout=subprocess.PIPE,
         text=True,
         env=env,
-        cwd="/workspace",
+        cwd=repo_root,
     )
     b.stdin.write(json.dumps({"sid": sid, "uid": "u", "fence": "B", "ttl": 5, "sleep": 0, "user": "B", "asst": "Bb", "tid": "tb"}))
     b.stdin.close()
@@ -291,8 +307,8 @@ print(json.dumps({{"ok": r.ok, "reason": r.reason, "rev": r.revision, "epoch": a
     aout = json.loads(a.stdout.read())
     a.wait(timeout=20)
     b.wait(timeout=20)
-    assert bout.get("ok") is True
-    assert aout.get("ok") is False
+    assert bout.get("ok") is True, bout
+    assert aout.get("ok") is False, aout
     from orca.serve import conversations as conv
 
     assert [m["content"] for m in conv.transcript(sid)["messages"]] == ["B", "Bb"]
