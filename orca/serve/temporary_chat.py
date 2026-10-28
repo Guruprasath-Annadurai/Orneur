@@ -129,8 +129,17 @@ def is_active(session_id: str, *, now: float | None = None) -> bool:
 
 
 def is_hidden(session_id: str) -> bool:
-    """Active temporary chats stay out of history list and search."""
-    return is_active(session_id)
+    """Any temporary-chat record stays out of history list and search.
+
+    Active chats are hidden by policy. Expired, closed, and failed records
+    are also hidden so a leftover transcript after TTL or a failed cascade
+    cannot reappear in recents or search.
+    """
+    try:
+        record = _read(_path(session_id))
+    except TemporaryChatDenied:
+        return False
+    return record is not None
 
 
 def activate(session_id: str, user_id: str, ttl_seconds: int, *, now: float | None = None) -> dict:

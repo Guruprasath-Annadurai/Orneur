@@ -12,6 +12,15 @@ MAX_CHARS = 24_000
 
 def assemble_messages(*, session_id: str | None, current_user_text: str, user_id: str | None = None) -> list[dict]:
     current = (current_user_text or "").strip()
+    if session_id:
+        try:
+            from orca.auth.store import check_session_access
+
+            allowed = check_session_access(session_id, user_id)
+        except Exception:
+            allowed = False
+        if not allowed:
+            return _bound([{"role": "user", "content": current}] if current else [])
     history = _history(session_id)
     if history and history[-1].get("role") == "user" and (history[-1].get("content") or "").strip() == current:
         messages = history

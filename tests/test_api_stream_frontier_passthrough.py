@@ -68,7 +68,7 @@ def test_stream_frontier_passthrough_discloses_backend(client, monkeypatch):
     monkeypatch.setattr(api_module, "_resolve_backend_for_chat", lambda variant: _fake_frontier_resolution())
     monkeypatch.setattr(
         api_module, "_generate_via_frontier_backend",
-        lambda resolution, persona, message: _fake_backend_response(),
+        lambda resolution, persona, message, session_id=None: _fake_backend_response(),
     )
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
     monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
@@ -116,7 +116,7 @@ def test_stream_frontier_passthrough_redacts_leaked_secrets(client, monkeypatch)
     monkeypatch.setattr(api_module, "_resolve_backend_for_chat", lambda variant: _fake_frontier_resolution())
     monkeypatch.setattr(
         api_module, "_generate_via_frontier_backend",
-        lambda resolution, persona, message: _fake_backend_response(text=f"Here is a key: {leaked_key}"),
+        lambda resolution, persona, message, session_id=None: _fake_backend_response(text=f"Here is a key: {leaked_key}"),
     )
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
     monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)

@@ -799,13 +799,14 @@ class _Session:
     def touch(self):
         self.last_active = time.time()
 
-    def persist_to_redis(self) -> bool:
+    def persist_to_redis(self, fence_token: str | None = None) -> bool:
         """Save current conversation history so any instance can pick this session back up."""
         if session_store.enabled() and self._known_revision is None:
             return False
         return session_store.save_session_state(
             self.id, self.model_variant, self.agent.get_history(),
             expected_revision=self._known_revision,
+            fence_token=fence_token,
         )
 
 
@@ -1448,6 +1449,12 @@ async def _chat_impl(
     from orca.cognitive.contracts import CognitiveState
     from orca.cognitive.errors import CognitiveError
 
+    _check_session_ownership(req.session_id, user.id if user else None)
+    if req.session_id:
+        blocked = _temporary_block(req.session_id)
+        if blocked is not None:
+            return blocked
+
     try:
         cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
     except Exception as e:
@@ -1590,12 +1597,13 @@ async def _chat_impl(
 
     sess.memory.add_turn("user", req.message)
     sess.memory.add_turn("assistant", final)
-    sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
-    # Phase 5: additive, significance-gated Memory Continuum ingestion --
-    # does NOT replace the unconditional legacy commit_to_long_term()
-    # call above (see orca/memory/turn_ingest.py's own docstring for why).
-    from orca.memory.turn_ingest import maybe_ingest_turn
-    maybe_ingest_turn(sess.id, req.message, final)
+    if not _omit_long_term(sess.id):
+        sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
+        # Phase 5: additive, significance-gated Memory Continuum ingestion --
+        # does NOT replace the unconditional legacy commit_to_long_term()
+        # call above (see orca/memory/turn_ingest.py's own docstring for why).
+        from orca.memory.turn_ingest import maybe_ingest_turn
+        maybe_ingest_turn(sess.id, req.message, final)
     sess.persist_to_redis()
 
     audit.log("chat", user_id=user.id if user else None,
@@ -1690,6 +1698,7 @@ async def stream_chat(
     from orca.cognitive.contracts import CognitiveState
     from orca.cognitive.errors import CognitiveError
 
+    _check_session_ownership(req.session_id, user.id if user else None)
     if req.session_id:
         blocked = _temporary_block(req.session_id)
         if blocked is not None:
@@ -1904,20 +1913,21 @@ async def stream_chat(
                     yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                     return
 
-            if session_store.enabled() and not session_store.lease_held(sess.id, fence):
+            if not _stream_may_publish(sess.id, fence):
                 return
             # Persist
             sess.memory.add_turn("user", req.message)
             sess.memory.add_turn("assistant", full)
-            sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
-            from orca.memory.turn_ingest import maybe_ingest_turn
-            maybe_ingest_turn(sess.id, req.message, full)
-            sess.persist_to_redis()
+            if not _omit_long_term(sess.id):
+                sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
+                from orca.memory.turn_ingest import maybe_ingest_turn
+                maybe_ingest_turn(sess.id, req.message, full)
+            sess.persist_to_redis(fence_token=fence)
             if user:
                 increment_usage(user.id, "message")
 
             from orca.serve import temporary_chat
-            if not temporary_chat.is_active(sess.id):
+            if not temporary_chat.is_hidden(sess.id):
                 asyncio.create_task(asyncio.to_thread(
                     sess.knowledge_graph.extract_and_add,
                     f"{req.message}\n{full}", "chat", sess.brain,
@@ -1946,6 +1956,8 @@ async def stream_chat(
                                   evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
                                   citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
                                   evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
+            if not _stream_may_publish(sess.id, fence):
+                return
             persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
             explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
             sess.explain_store.add(explain_record)
@@ -2148,6 +2160,20 @@ def _temporary_block(session_id: str):
     return _temporary_http(decision)
 
 
+def _omit_long_term(session_id: str) -> bool:
+    from orca.serve import temporary_chat
+
+    return temporary_chat.is_hidden(session_id)
+
+
+def _stream_may_publish(session_id: str, fence: str) -> bool:
+    if session_store.enabled() and not session_store.lease_held(session_id, fence):
+        return False
+    from orca.serve import temporary_chat
+
+    return temporary_chat.enforce(session_id) is None
+
+
 @app.get("/api/session/{session_id}/messages")
 async def session_messages(session_id: str, limit: int = 200, offset: int = 0, user: User | None = Depends(get_current_user_optional)):
     """The durable transcript of one of the caller's conversations (paged). Signed-in users only; anonymous sessions are not persisted."""
@@ -2308,7 +2334,7 @@ async def close_temporary_chat(session_id: str, user: User | None = Depends(get_
 
 
 @app.post("/api/session/{session_id}/messages/{message_id}/edits")
-async def edit_message(session_id: str, message_id: str, req: MessageEditRequest, user: User | None = Depends(get_current_user_optional)):
+async def edit_message(session_id: str, message_id: str, req: MessageEditRequest, request: Request, user: User | None = Depends(get_current_user_optional)):
     if user is None:
         e = coded_error("auth_required")
         return JSONResponse(e.as_json(), status_code=e.status)
@@ -2320,8 +2346,9 @@ async def edit_message(session_id: str, message_id: str, req: MessageEditRequest
         raise HTTPException(status_code=404, detail="message not found")
     previous = (conversations.transcript(session_id, limit=1000).get("messages") or [])
     previous_text = next((m["content"] for m in previous if m.get("message_id") == message_id), line.get("content") or "")
+    idempotency_key = req.idempotency_key or request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key")
     try:
-        view = message_versions.edit(session_id, user.id, message_id, req.content, idempotency_key=req.idempotency_key)
+        view = message_versions.edit(session_id, user.id, message_id, req.content, idempotency_key=idempotency_key)
     except message_versions.MessageVersionDenied as exc:
         status = 404 if "not found" in exc.reason else 409 if isinstance(exc, message_versions.MessageVersionMismatch) else 400
         return JSONResponse({"error": exc.reason, "code": "message_version_denied"}, status_code=status)

@@ -27,7 +27,11 @@ def test_brain_for_colon_tag_registers_without_alias(monkeypatch, isolated_home)
     stored = brain._gateway._deployments[dep_id]
     assert stored.model_version == "llama3.2:1b"
     assert stored.artifact_id == "llama3.2:1b"
-    assert stored.model_id in {"orneur-novus", "orneur-genesis", "orneur-aeternum"}
+    from orca.gateway.wiring import TIER_TO_MODEL_ID
+
+    assert stored.model_id == TIER_TO_MODEL_ID["core"]
+    assert stored.model_version not in TIER_TO_MODEL_ID.values()
+    assert stored.artifact_id not in TIER_TO_MODEL_ID.values()
     assert ":" not in stored.deployment_id
     assert "genesis" not in stored.deployment_id.lower()
     assert "novus" not in stored.deployment_id.lower()

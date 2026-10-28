@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from orca.serve.conversation_context import assemble_messages, MAX_CHARS
 from orca.serve import conversations, message_versions
 
@@ -44,6 +46,57 @@ def test_assemble_excludes_finished_temporary_and_bounds_chars(isolated_home):
     huge = "x" * (MAX_CHARS + 50)
     bounded = assemble_messages(session_id=None, current_user_text=huge)
     assert len(bounded[0]["content"]) <= MAX_CHARS
+
+
+def test_assemble_refuses_another_users_session(isolated_home):
+    from orca.auth.store import record_user_session
+
+    sid = "ownedsess1"
+    conversations.append(sid, "user", "secret from alice", meta={"message_id": "iiiiiiii"})
+    conversations.append(sid, "assistant", "ok", meta={"message_id": "jjjjjjjj"})
+    record_user_session("alice", sid)
+    leaked = assemble_messages(session_id=sid, current_user_text="What did I say?", user_id="bob")
+    assert leaked == [{"role": "user", "content": "What did I say?"}]
+    owned = assemble_messages(session_id=sid, current_user_text="What did I say?", user_id="alice")
+    assert owned[0]["content"] == "secret from alice"
+
+
+def test_hidden_covers_expired_temporary_records(isolated_home):
+    from orca.serve import temporary_chat
+
+    sid = "expiredtmp"
+    temporary_chat.activate(sid, "u1", 3600)
+    conversations.append(sid, "user", "temp secret", meta={"message_id": "kkkkkkkk"})
+    assert temporary_chat.is_hidden(sid) is True
+    path = temporary_chat._path(sid)
+    record = json.loads(path.read_text())
+    record["state"] = "expired"
+    record["expires_at"] = 0
+    path.write_text(json.dumps(record))
+    assert temporary_chat.is_active(sid) is False
+    assert temporary_chat.is_hidden(sid) is True
+    msgs = assemble_messages(session_id=sid, current_user_text="hello", user_id="u1")
+    assert msgs == [{"role": "user", "content": "hello"}]
+
+
+def test_persist_to_redis_forwards_fence_token(isolated_home, monkeypatch):
+    from orca.serve import api, session_store
+
+    captured = {}
+
+    def _save(session_id, model_variant, history, expected_revision=None, fence_token=None):
+        captured["fence_token"] = fence_token
+        return True
+
+    monkeypatch.setattr(session_store, "enabled", lambda: True)
+    monkeypatch.setattr(session_store, "save_session_state", _save)
+    sess = api._Session.__new__(api._Session)
+    sess.id = "fence-sess"
+    sess.model_variant = "core"
+    sess._known_revision = 3
+    sess._agent = type("A", (), {"get_history": lambda self: [{"role": "user", "content": "x"}]})()
+    assert sess.persist_to_redis(fence_token="lease-1") is True
+    assert captured["fence_token"] == "lease-1"
 
 
 def test_kernel_inference_request_contains_history(isolated_home, monkeypatch):

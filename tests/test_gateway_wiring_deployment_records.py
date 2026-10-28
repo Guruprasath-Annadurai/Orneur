@@ -55,21 +55,24 @@ def test_novus_deployment_still_gets_real_experimental_lifecycle(tmp_path, monke
 
 def test_deployment_is_persisted_once_not_on_every_call(tmp_path, monkeypatch):
     import orca.gateway.deployment as deployment_mod
+    from orca.gateway.deployment import ModelDeployment
+
     monkeypatch.setattr(deployment_mod, "DEPLOYMENT_DIR", tmp_path)
     wiring_mod.reset_for_tests()
+    saves = {"n": 0}
+    real_save = ModelDeployment.save
+
+    def counting_save(self):
+        saves["n"] += 1
+        return real_save(self)
+
+    monkeypatch.setattr(ModelDeployment, "save", counting_save)
 
     resolution = _FakeResolution(tier="nano", backend="ollama", model="orca-nano-v7")
     wiring_mod.brain_for_tier_resolution(resolution)
-    from orca.gateway.wiring import stable_deployment_id
-
-    dep_file = tmp_path / f"{stable_deployment_id('ollama', 'orca-nano-v7')}.json"
-    saved_at_first = dep_file.stat().st_mtime
-
     wiring_mod.brain_for_tier_resolution(resolution)
     wiring_mod.brain_for_tier_resolution(resolution)
-    saved_at_third = dep_file.stat().st_mtime
-
-    assert saved_at_first == saved_at_third  # not rewritten on repeated calls
+    assert saves["n"] == 1
 
 
 def test_persisted_genesis_deployment_is_routable_in_production_by_society(tmp_path, monkeypatch):

@@ -290,11 +290,14 @@ def two_servers(tmp_path_factory, tap):
     home = tmp_path_factory.mktemp("two-servers")
     env = {"ORNEUR_OLLAMA_HOST": tap.url, "OLLAMA_HOST": tap.url}
     a = LiveServer(home, redis_url=url, extra_env=env)
-    a.wait_ready()
     b = LiveServer(home, redis_url=url, extra_env=env)
-    b.wait_ready()
-    yield a, b
-    a.stop(); b.stop()
+    try:
+        a.wait_ready()
+        b.wait_ready()
+        yield a, b
+    finally:
+        a.stop()
+        b.stop()
 
 
 def test_E3_edit_on_server_B_is_seen_by_server_A_with_real_redis(two_servers, tap):
