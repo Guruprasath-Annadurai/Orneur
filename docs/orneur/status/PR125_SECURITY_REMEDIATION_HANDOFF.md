@@ -2,7 +2,8 @@
 
 **Corrective branch:** `cursor/pr125-security-remediation-e8f0`  
 **Starting SHA (frozen PR #125 head):** `9298b157fe22c95c897d7afbcc9f2e21a99d256e`
-**Finishing SHA:** `89f485f9e1609a934e2debb939ff43ed26666cdd`  
+**Remediation commit:** `89f485f9e1609a934e2debb939ff43ed26666cdd`
+**Exact tip:** `dd7cd6867f5ca8cca28a0844143682d603f6fe11`  
 **Does not rewrite** PR #125 / #126 audited SHAs. No merge to production.
 
 ## Failures closed
