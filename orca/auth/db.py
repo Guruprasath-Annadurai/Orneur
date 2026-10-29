@@ -168,8 +168,8 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     PRIMARY KEY (user_id, idem_key)
 );
 
--- L02-04: single-use, expiring email-verification / password-reset tokens (the signed token carries the jti; consuming it is one atomic UPDATE),
--- per-account email send ledger (resend throttling) and per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
+-- L02-04: single-use expiring email-verification and password-reset tokens (the signed token carries the jti, consuming it is one atomic UPDATE),
+-- a per-account email send ledger (resend throttling) and a per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
 CREATE TABLE IF NOT EXISTS auth_one_time_tokens (
     jti        TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
@@ -407,8 +407,8 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     PRIMARY KEY (user_id, idem_key)
 );
 
--- L02-04: single-use, expiring email-verification / password-reset tokens (the signed token carries the jti; consuming it is one atomic UPDATE),
--- per-account email send ledger (resend throttling) and per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
+-- L02-04: single-use expiring email-verification and password-reset tokens (the signed token carries the jti, consuming it is one atomic UPDATE),
+-- a per-account email send ledger (resend throttling) and a per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
 CREATE TABLE IF NOT EXISTS auth_one_time_tokens (
     jti        TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
