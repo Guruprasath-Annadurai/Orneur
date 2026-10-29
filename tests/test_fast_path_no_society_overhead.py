@@ -36,7 +36,7 @@ async def test_kernel_never_calls_court_for_a_direct_request(monkeypatch):
 
     monkeypatch.setattr(court_mod.CognitiveCourt, "run", _must_not_be_called)
 
-    async def fake_answer_directly(self, objective, tier, trace_id, request=None):
+    async def fake_answer_directly(self, objective, tier, trace_id, request=None, route_info=None):
         return "Hi there!", "orneur-genesis", {"prompt_tokens": 1, "completion_tokens": 1}
 
     monkeypatch.setattr(kernel_mod.CognitiveKernel, "_answer_directly", fake_answer_directly)
