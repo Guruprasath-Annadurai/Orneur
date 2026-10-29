@@ -5,6 +5,7 @@
 **Draft PR:** #138  
 **Starting main SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Reviewed candidate:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
+**Exact-head green tip:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Corrective parent tip:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
 **Training authorization:** **NO-GO**  
 **Formal acceptance:** **0 / 95**
@@ -43,3 +44,11 @@ VERIFIED_ENGINEERING IDs (probed): G4, G5, C01, C02, DATA-1, DATA-2, TRAIN-1, TR
 - No paid GPU / cloud compute.
 - Formal ledger empty.
 - Independent Antigravity qualification of the final tip is not claimed here until they retest.
+
+
+## Exact-head CI
+
+Green on `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` — Test Suite run `40860060023` (19/19 checks success).
+
+**Engineering status:** `VERIFIED_ENGINEERING — READY_FOR_INDEPENDENT_RETEST`  
+Formal acceptance remains **0/95**. Training remains **NO-GO**.

@@ -67,5 +67,20 @@
     "FOUNDATION_02_TRAINING_MATH_REPORT.md",
     "FOUNDATION_02_VERIFICATION_PROBES.json"
   ],
-  "branch_tip_sha": "b09b37cd48551365173f04441aa1324fc9b858b4"
+  "branch_tip_sha": "b09b37cd48551365173f04441aa1324fc9b858b4",
+  "exact_head_green_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
+  "exact_head_ci": {
+    "test_suite_run": 40860060023,
+    "test_suite_url": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40860060023",
+    "eval_static_run": 40860060020,
+    "eval_static_url": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40860060020",
+    "checks_success": 19,
+    "deterministic": {
+      "passed": 8989,
+      "skipped": 389,
+      "deselected": 43,
+      "xfailed": 7
+    }
+  },
+  "engineering_status": "VERIFIED_ENGINEERING \u2014 READY_FOR_INDEPENDENT_RETEST"
 }
