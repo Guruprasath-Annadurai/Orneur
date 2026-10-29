@@ -142,48 +142,6 @@ VERIFIED_CANDIDATES = {
         "historical_source_sha": "b384348",
         "claim": "Confusable registry name refusal (RSE IMP-1)",
     },
-    "C09": {
-        "implementation": ["orca/rse/imp3/freshness.py", "orca/rse/imp3/ledger.py"],
-        "tests": ["tests/rse/test_imp3_ledger.py"],
-        "historical_source_sha": "b384348",
-        "claim": "Challenge reuse / replay refusal (RSE IMP-3)",
-    },
-    "C10": {
-        "implementation": ["orca/rse/imp3/freshness.py"],
-        "tests": ["tests/rse/test_imp3_ledger.py"],
-        "historical_source_sha": "b384348",
-        "claim": "Freshness / clock set-back does not revive consumed challenge (RSE IMP-3)",
-    },
-    "C11": {
-        "implementation": ["orca/rse/imp2/machine.py"],
-        "tests": ["tests/rse/test_block1_remediation.py", "tests/rse/test_imp2_machine.py"],
-        "historical_source_sha": "b384348",
-        "claim": "No ACTIVE execution before witnessed checkpoint semantics (RSE IMP-2)",
-    },
-    "C12": {
-        "implementation": ["orca/rse/imp3/ledger.py", "orca/rse/imp3/records.py"],
-        "tests": ["tests/rse/test_imp3_ledger.py"],
-        "historical_source_sha": "b384348",
-        "claim": "Witness cosignature verify + forged ack refusal (RSE IMP-3)",
-    },
-    "C13": {
-        "implementation": ["orca/rse/imp3/ledger.py"],
-        "tests": ["tests/rse/test_imp3_ledger.py"],
-        "historical_source_sha": "b384348",
-        "claim": "Witness fork / smaller-tree refusal (RSE IMP-3; synthetic fence ≠ physical)",
-    },
-    "C14": {
-        "implementation": ["orca/rse/imp3/ledger.py"],
-        "tests": ["tests/rse/test_imp3_ledger.py"],
-        "historical_source_sha": "b384348",
-        "claim": "Bundle without witnessed result remains unusable (RSE IMP-3)",
-    },
-    "C15": {
-        "implementation": ["orca/rse/imp3/ledger.py", "orca/rse/imp2/machine.py"],
-        "tests": ["tests/rse/test_imp3_ledger.py", "tests/rse/test_block1_remediation.py"],
-        "historical_source_sha": "b384348",
-        "claim": "Crash/journal recovery matrix (software); C26 hardware power-cut remains separate",
-    },
     "C17": {
         "implementation": ["orca/rse/imp4/ocr1.py"],
         "tests": ["tests/rse/test_imp4_ocr1.py"],
@@ -214,22 +172,12 @@ VERIFIED_CANDIDATES = {
         "historical_source_sha": "b384348",
         "claim": "Bad origin signature rejected before key use",
     },
-    "C45": {
-        "implementation": ["orca/rse/imp2/machine.py"],
-        "tests": ["tests/rse/test_imp2_machine.py"],
-        "historical_source_sha": "b384348",
-        "claim": "Impossible lifecycle edge refusal; class-K remains separate decision",
-    },
-    # Phase 5 software holdout denial (QUAL-2 engineering semantics; not private corpus access).
-    "QUAL-2": {
-        "implementation": ["orca/pretrain_foundation/eval_boundary.py", "orca/genesis/eval/integrity.py"],
-        "tests": ["tests/test_pretraining_phase_closure.py", "tests/test_cursor_eval_integrity.py"],
-        "historical_source_sha": "cd1e557",
-        "claim": "Training identity denied holdout/private eval access; scoring fail-closed",
-    },
 }
 
 # Explicit downgrades: worksheet / docs alone are not VERIFIED_ENGINEERING.
+# Antigravity remediation: nine over-promoted rows whose original acceptance
+# conditions require witness/journal/isolation artifacts (or private holdout
+# access) that software unit probes must not substitute.
 FORCE_UNVERIFIED = {
     "FINAL-1": (
         "IMPLEMENTED_UNVERIFIED",
@@ -245,6 +193,51 @@ FORCE_UNVERIFIED = {
         "IMPLEMENTED_UNVERIFIED",
         "Canonical registry update dual-owner evidence software exists in RSE; dual distinct owner-token acceptance record not independently qualified",
         "orca/rse/imp1/codec.py",
+    ),
+    "C09": (
+        "IMPLEMENTED_UNVERIFIED",
+        "IMP-3 challenge-reuse software exists; original acceptance requires journal/freshness evidence, not software-test substitution",
+        "orca/rse/imp3/freshness.py",
+    ),
+    "C10": (
+        "IMPLEMENTED_UNVERIFIED",
+        "IMP-3 freshness helpers exist; original acceptance requires freshness/journal artifact, not unit-probe substitution",
+        "orca/rse/imp3/freshness.py",
+    ),
+    "C11": (
+        "IMPLEMENTED_UNVERIFIED",
+        "IMP-2 machine semantics exist; original acceptance requires witnessed checkpoint evidence on the operational path",
+        "orca/rse/imp2/machine.py",
+    ),
+    "C12": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Witness cosignature software exists; original acceptance requires witness cosignature / forged-ack refusal artifacts",
+        "orca/rse/imp3/ledger.py",
+    ),
+    "C13": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Synthetic fence is not the required witness-log fork/smaller-tree refusal artifact",
+        "orca/rse/imp3/ledger.py",
+    ),
+    "C14": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Unwitnessed-bundle refusal helpers exist; original acceptance requires witnessed-result usability evidence",
+        "orca/rse/imp3/ledger.py",
+    ),
+    "C15": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Software crash/journal recovery is not C26 power-cut / journal-replay acceptance evidence",
+        "orca/rse/imp3/ledger.py",
+    ),
+    "C45": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Lifecycle-edge software refusals exist; class-K / impossible-edge acceptance remains a separate decision record",
+        "orca/rse/imp2/machine.py",
+    ),
+    "QUAL-2": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Eval-boundary helpers deny training-identity holdout reads in unit tests; original QUAL-2 requires accepted failed-read isolation evidence (depends on QUAL-1/P2-2)",
+        "orca/pretrain_foundation/eval_boundary.py",
     ),
 }
 
@@ -268,8 +261,24 @@ def _git_sha() -> str:
     return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
 
 
+def _assert_clean_worktree() -> None:
+    """Refuse probe runs against a dirty worktree (digests must match the tip)."""
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain"],
+        cwd=ROOT,
+        text=True,
+    ).strip()
+    if status:
+        raise RuntimeError(
+            "refusing to run acceptance-producing probes on a dirty worktree; "
+            "commit or stash changes so digests bind to an exact candidate SHA:\n"
+            f"{status}"
+        )
+
+
 def _run_probes(candidate_sha: str) -> dict:
     """Execute verification probes and return machine-readable honest results."""
+    _assert_clean_worktree()
     env = build_probe_env(ROOT)
     python = resolve_python(ROOT)
 
@@ -325,11 +334,14 @@ def _run_probes(candidate_sha: str) -> dict:
             "require_at_least_one_passed",
             "reject_zero_collected",
             "reject_skip_only",
+            "reject_skips_present_including_mixed_pass_skip",
             "reject_xfail_only",
             "distinguish_xfailed_from_passed",
-            "reject_candidate_sha_mismatch",
-            "no_machine_specific_pythonpath",
+            "require_complete_expected_and_recorded_candidate_sha",
+            "reject_absent_empty_malformed_or_mismatched_candidate_sha",
+            "no_inherited_pythonpath_or_pytest_addopts",
             "portable_pytest_command_argv",
+            "refuse_dirty_worktree_probe_runs",
         ],
         "training_authorization": "NO-GO",
         "probes": results,
@@ -386,6 +398,18 @@ def _disposition(node: dict, probes: dict, candidate_sha: str) -> dict:
             }
         if probe.get("passed_probe"):
             counts = probe.get("counts") or {}
+            if (counts.get("skipped") or 0) > 0:
+                return {
+                    "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+                    "actual_implementation": "; ".join(VERIFIED_CANDIDATES[rid]["implementation"]),
+                    "relevant_test": "; ".join(VERIFIED_CANDIDATES[rid]["tests"]),
+                    "executed_test_result": (
+                        f"PROBE_REFUSED_SKIPS_PRESENT skipped={counts.get('skipped')} "
+                        f"{probe.get('summary_line')}"
+                    ),
+                    "historical_source_sha": VERIFIED_CANDIDATES[rid]["historical_source_sha"],
+                    "evidence_paths": VERIFIED_CANDIDATES[rid]["implementation"],
+                }
             return {
                 "engineering_disposition": "VERIFIED_ENGINEERING",
                 "actual_implementation": "; ".join(probe["implementation_paths"]),
@@ -514,6 +538,7 @@ def build(*, run_probes: bool = True) -> dict:
         assert r["historical_source_sha"], r
         assert r["candidate_sha"] == sha
         assert r["probe"] and (r["probe"].get("counts") or {}).get("passed", 0) >= 1
+        assert (r["probe"].get("counts") or {}).get("skipped") in (None, 0)
     return {
         "schema": "orneur-foundation-02-requirement-matrix/3",
         "validator_check": "pretraining=95 numerator=0",
@@ -528,13 +553,19 @@ def build(*, run_probes: bool = True) -> dict:
         "disposition_histogram": hist,
         "verified_engineering_count": len(verified),
         "verified_engineering_ids": [r["requirement_id"] for r in verified],
+        "antigravity_remediation_downgrades": [
+            "C09", "C10", "C11", "C12", "C13", "C14", "C15", "C45", "QUAL-2",
+        ],
         "probes_path": str(PROBES_JSON.relative_to(ROOT)),
         "training_authorization": "NO-GO",
         "note": (
             "engineering_disposition is not formal acceptance. "
             "VERIFIED_ENGINEERING requires implementation paths + honest pytest evidence "
-            "(>=1 passed; reject zero-collected / skip-only / xfail-only) on candidate_sha. "
+            "(>=1 passed; reject zero-collected / skip-only / mixed skips / xfail-only) "
+            "on a complete matching candidate_sha. "
             "xfailed residuals are recorded separately and are never counted as PASS. "
+            "Nine Antigravity remediation downgrades restore IMPLEMENTED_UNVERIFIED for "
+            "rows whose original acceptance conditions are not satisfied by software tests. "
             "historical_source_sha is when code landed; candidate_sha is the tip under test. "
             "prior_qualified_code_sha preserves the last independently tested code tip. "
             "FORMALLY_ACCEPTED is never assigned by this script. Training remains NO-GO."
@@ -596,8 +627,9 @@ def render_md(doc: dict) -> str:
         "- This matrix does **not** modify `acceptance_ledger.json`.",
         "- A passed engineering test does not become `FORMALLY_ACCEPTED`.",
         "- Training authorization remains **NO-GO**.",
-        "- Exit code 0 with zero collected / skip-only / xfail-only is **not** VERIFIED_ENGINEERING.",
+        "- Exit code 0 with zero collected / skip-only / mixed pass-skip / xfail-only is **not** VERIFIED_ENGINEERING.",
         "- `xfailed` residuals are distinguished from `passed`; an xfail is not a PASS.",
+        "- Acceptance probes require complete expected and recorded 40-hex candidate SHAs.",
         "- Probe commands must not embed machine-specific interpreter or site-package paths.",
         "- `historical_source_sha` ≠ proof the tip was the only SHA ever tested; probes run on `candidate_sha`.",
         "",

@@ -1,8 +1,10 @@
 """FOUNDATION-02 verification-probe honesty rules.
 
 Engineering VERIFIED status requires actual passing tests. Exit code 0 alone
-is insufficient. Zero-collected, skip-only, and xfail-only probes must not
-become PASS. Machine-specific interpreter / site-package paths are refused.
+is insufficient. Zero-collected, skip-only, mixed pass/skip, and xfail-only
+probes must not become PASS. Machine-specific interpreter / site-package
+paths are refused. Acceptance-producing probes require complete, matching
+candidate SHAs.
 """
 from __future__ import annotations
 
@@ -27,6 +29,8 @@ _COUNT_TOKEN_RE = re.compile(
 )
 _COLLECTED_RE = re.compile(r"collected\s+(\d+)\s+items?")
 _NO_TESTS_RAN_RE = re.compile(r"no tests ran", re.IGNORECASE)
+# Complete git commit identity: full 40-char lowercase/uppercase hex SHA-1.
+_COMPLETE_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 @dataclass(frozen=True)
@@ -78,21 +82,13 @@ def resolve_python(root: Path, *, environ: Mapping[str, str] | None = None) -> s
 def build_probe_env(root: Path, *, base_environ: Mapping[str, str] | None = None) -> dict[str, str]:
     """Construct a portable probe environment.
 
-    PYTHONPATH is set to the repository root only. Machine-specific site-package
-    paths are not injected. Existing PYTHONPATH entries that contain forbidden
-    absolute workstation fragments are dropped.
+    PYTHONPATH is set to the repository root only. Inherited PYTHONPATH and
+    PYTEST_ADDOPTS are wiped so host site-packages or addopts cannot shadow
+    the candidate under test.
     """
     env = dict(os.environ if base_environ is None else base_environ)
-    kept: list[str] = [str(root.resolve())]
-    prior = env.get("PYTHONPATH", "")
-    if prior:
-        for part in prior.split(os.pathsep):
-            if not part or part == kept[0]:
-                continue
-            if any(frag in part for frag in _FORBIDDEN_PATH_FRAGMENTS):
-                continue
-            kept.append(part)
-    env["PYTHONPATH"] = os.pathsep.join(kept)
+    env["PYTHONPATH"] = str(root.resolve())
+    env.pop("PYTEST_ADDOPTS", None)
     return env
 
 
@@ -142,6 +138,22 @@ def parse_pytest_summary(stdout: str, stderr: str = "") -> PytestCounts:
     )
 
 
+def normalize_candidate_sha(value: str | None) -> str | None:
+    """Return stripped SHA text, or ``None`` when absent/empty."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def is_complete_candidate_sha(value: str | None) -> bool:
+    """True iff *value* is a complete 40-hex commit identity."""
+    normalized = normalize_candidate_sha(value)
+    if normalized is None:
+        return False
+    return bool(_COMPLETE_SHA_RE.fullmatch(normalized))
+
+
 def classify_probe(
     *,
     exit_code: int,
@@ -152,18 +164,32 @@ def classify_probe(
     expected_candidate_sha: str | None = None,
     recorded_candidate_sha: str | None = None,
 ) -> ProbeVerdict:
-    """Decide whether a probe may become VERIFIED_ENGINEERING evidence."""
+    """Decide whether a probe may become VERIFIED_ENGINEERING evidence.
+
+    Acceptance-producing probes must supply valid, complete expected and
+    recorded commit identities. Any skipped mandatory test refuses the probe,
+    including mixed pass/skip suites.
+    """
     counts = parse_pytest_summary(stdout, stderr)
     refusals: list[str] = []
     missing_implementation = missing_implementation or []
     missing_tests = missing_tests or []
 
+    expected = normalize_candidate_sha(expected_candidate_sha)
+    recorded = normalize_candidate_sha(recorded_candidate_sha)
+
+    if expected is None or recorded is None:
+        refusals.append("CANDIDATE_SHA_MISSING")
+    else:
+        if not is_complete_candidate_sha(expected) or not is_complete_candidate_sha(recorded):
+            refusals.append("CANDIDATE_SHA_MALFORMED")
+        elif expected.lower() != recorded.lower():
+            refusals.append("CANDIDATE_SHA_MISMATCH")
+
     if missing_implementation:
         refusals.append("MISSING_IMPLEMENTATION")
     if missing_tests:
         refusals.append("MISSING_TESTS")
-    if expected_candidate_sha and recorded_candidate_sha and expected_candidate_sha != recorded_candidate_sha:
-        refusals.append("CANDIDATE_SHA_MISMATCH")
     if exit_code != 0:
         refusals.append("NONZERO_EXIT")
     if not counts.parseable:
@@ -181,8 +207,12 @@ def classify_probe(
     skipped = counts.skipped or 0
     xfailed = counts.xfailed or 0
 
-    if counts.parseable and passed == 0 and skipped > 0 and (counts.failed or 0) == 0:
-        refusals.append("SKIP_ONLY")
+    # Any skip in a mandatory qualification suite refuses VERIFIED evidence.
+    if counts.parseable and skipped > 0:
+        if passed == 0 and (counts.failed or 0) == 0:
+            refusals.append("SKIP_ONLY")
+        refusals.append("SKIPS_PRESENT")
+
     if counts.parseable and passed == 0 and xfailed > 0 and skipped == 0 and (counts.failed or 0) == 0:
         refusals.append("XFAIL_ONLY")
     if counts.parseable and passed == 0 and skipped == 0 and xfailed == 0 and (counts.failed or 0) == 0:
@@ -202,13 +232,11 @@ def classify_probe(
             refusal_codes=tuple(refusals),
         )
 
-    # Honest PASS: at least one real pass; xfailed residuals may coexist
-    # but are recorded separately and are never treated as passes.
+    # Honest PASS: at least one real pass; zero skips; xfailed residuals may
+    # coexist but are recorded separately and are never treated as passes.
     reason = f"PASS passed={passed}"
     if xfailed:
         reason += f" xfailed={xfailed} (expected failures distinguished, not counted as PASS)"
-    if skipped:
-        reason += f" skipped={skipped}"
     return ProbeVerdict(
         passed_probe=True,
         reason=reason,

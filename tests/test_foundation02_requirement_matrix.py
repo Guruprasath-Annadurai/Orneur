@@ -55,6 +55,7 @@ def test_verified_engineering_rows_have_honest_probe_evidence():
         if counts.get("passed") is None and probe.get("summary_line"):
             counts = parse_pytest_summary(probe["summary_line"]).to_dict()
         assert (counts.get("passed") or 0) >= 1
+        assert (counts.get("skipped") or 0) == 0
         # Portable command recording (no machine-specific argv).
         cmd = " ".join(probe.get("pytest_command") or [])
         assert "/home/ubuntu/" not in cmd
@@ -69,6 +70,8 @@ def test_verified_engineering_rows_have_honest_probe_evidence():
             recorded_candidate_sha=probe.get("candidate_sha"),
         )
         assert verdict.passed_probe is True, verdict.reason
+        assert len(matrix["candidate_sha"]) == 40
+        assert all(c in "0123456789abcdef" for c in matrix["candidate_sha"].lower())
 
 
 def test_probes_document_rejects_machine_specific_pythonpath():
@@ -85,6 +88,38 @@ def test_final1_is_not_verified_engineering_from_worksheet_alone():
     matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
     final1 = next(r for r in matrix["requirements"] if r["requirement_id"] == "FINAL-1")
     assert final1["engineering_disposition"] == "IMPLEMENTED_UNVERIFIED"
+
+
+def test_antigravity_nine_downgrades_are_not_verified_engineering():
+    """Journal/witness/holdout rows must not keep VERIFIED via software-test substitution."""
+    matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
+    downgraded = {"C09", "C10", "C11", "C12", "C13", "C14", "C15", "C45", "QUAL-2"}
+    assert set(matrix.get("antigravity_remediation_downgrades") or []) == downgraded
+    by_id = {r["requirement_id"]: r for r in matrix["requirements"]}
+    for rid in downgraded:
+        assert by_id[rid]["engineering_disposition"] == "IMPLEMENTED_UNVERIFIED", rid
+        assert rid not in matrix["verified_engineering_ids"]
+    # Software-vector RSE rows that remain probe-eligible stay listed only if verified.
+    for rid in ("C04", "C05", "C17", "C18", "C19", "C20", "C21"):
+        assert by_id[rid]["engineering_disposition"] in {
+            "VERIFIED_ENGINEERING",
+            "IMPLEMENTED_UNVERIFIED",
+        }
+
+
+def test_probe_digests_match_current_implementation_files():
+    """Stale DATA-1 / pipeline digests must not survive a tip rebuild."""
+    import hashlib
+
+    probes_doc = json.loads(PROBES.read_text(encoding="utf-8"))
+    matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
+    assert probes_doc["candidate_sha"] == matrix["candidate_sha"]
+    for rid, probe in probes_doc.get("probes", {}).items():
+        for rel, digest in (probe.get("implementation_sha256") or {}).items():
+            path = ROOT / rel
+            assert path.is_file(), rel
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            assert actual == digest, f"{rid}:{rel} stale digest"
 
 
 def test_matrix_schema_is_honesty_v3():

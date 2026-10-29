@@ -116,13 +116,17 @@ def build() -> dict:
         },
         "honest_final_disposition": {
             "engineering_completed": (
-                "Phase 0/1 evidence honesty; RSE software probes for C04-C15/C17-C21/C45; "
-                "QUAL-2 holdout denial; Phase 2-9 boundary modules; freeze package NO-GO"
+                "Phase 0/1 evidence honesty with skip/SHA refusal; "
+                "RSE software probes retained for C04/C05/C17-C21 only; "
+                "Phase 2-9 boundary modules + call-chain integration; freeze package NO-GO"
             ),
             "engineering_incomplete": (
                 "Physical/custody HW gates; independent second codec (C16); mainline merge (G2/G3); "
-                "formal acceptance process"
+                "formal acceptance process; nine Antigravity downgrades remain IMPLEMENTED_UNVERIFIED "
+                "(C09-C15, C45, QUAL-2) until original acceptance artifacts exist"
             ),
+            "antigravity_remediation_downgrades": matrix.get("antigravity_remediation_downgrades")
+            or ["C09", "C10", "C11", "C12", "C13", "C14", "C15", "C45", "QUAL-2"],
             "founder_controlled_blockers": [
                 "G1", "G8", "G10", "DEC-K", "C08", "C44", "C27", "R65", "DATA-3", "DATA-5",
                 "MODEL-1", "MODEL-2R", "QUAL-1", "FINAL-2",
@@ -131,7 +135,9 @@ def build() -> dict:
             "independent_qualification_pending": True,
             "formal_acceptance_count": f"{len(ledger)}/95",
             "training_authorization_status": "NO-GO",
+            "phases_0_9_fully_complete_claim": False,
         },
+        "probe_evidence_tip": matrix.get("candidate_sha"),
     }
     return doc
 
@@ -153,7 +159,12 @@ def render_md(doc: dict) -> str:
         f"- Honesty probe tip: `{doc['honesty_probe_tip']}`",
         f"- Disposition histogram: `{json.dumps(doc['disposition_histogram'], sort_keys=True)}`",
         f"- VERIFIED_ENGINEERING IDs: {', '.join(doc['verified_engineering_ids'] or []) or '(none)'}",
+        f"- Probe evidence tip: `{doc.get('probe_evidence_tip')}`",
+        f"- Antigravity remediation downgrades: "
+        f"{', '.join(doc['honest_final_disposition'].get('antigravity_remediation_downgrades') or [])}",
         f"- Readiness blockers: {', '.join(doc['readiness_blockers'])}",
+        f"- Phases 0–9 fully complete claim: "
+        f"**{doc['honest_final_disposition'].get('phases_0_9_fully_complete_claim')}**",
         "",
         "## B. Phase-by-phase results",
         "",
@@ -161,15 +172,17 @@ def render_md(doc: dict) -> str:
         "|---:|---|---|",
         "| 0 | Technical baseline | ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW |",
         "| 1 | Evidence honesty / foundation software | ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW |",
-        "| 2 | RSE/security software (+ C27 investigation) | PARTIAL_ENGINEERING — physical/class-K blocked |",
+        "| 2 | RSE/security software (+ C27 investigation) | PARTIAL_ENGINEERING — physical/class-K blocked; nine rows downgraded |",
         "| 3 | GENESIS feasibility (analytical) | PARTIAL_ENGINEERING — DEC-K/MODEL blocked |",
         "| 4 | Data pipeline (synthetic only) | PARTIAL_ENGINEERING — G8/DATA-3 blocked |",
-        "| 5 | Eval harness + holdout denial | PARTIAL_ENGINEERING — QUAL-1/private custody blocked |",
+        "| 5 | Eval harness + holdout denial | PARTIAL_ENGINEERING — QUAL-2 downgraded; QUAL-1/private custody blocked |",
         "| 6 | Hardware-trust boundary software | BLOCKED_BY_PROTECTED_DECISION (physical) |",
         "| 7 | Training infra identity (CPU) | PARTIAL_ENGINEERING — GPU/P2 blocked |",
         "| 8 | Integration preparation | BLOCKED_BY_PROTECTED_DECISION (mainline merge) |",
         "| 9 | Freeze package NO-GO | ENGINEERING_COMPLETE package / NOT_FROZEN |",
         "| 10 | Training execution | PROHIBITED |",
+        "",
+        "> Do **not** claim fully complete Phases 0–9 while protected or external mandatory gates remain open.",
         "",
         "### C27 feasibility",
         "",
