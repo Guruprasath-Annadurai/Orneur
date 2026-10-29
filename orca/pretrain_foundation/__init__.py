@@ -1,9 +1,6 @@
-<<<<<<< HEAD
-"""Cursor-owned pre-training foundation helpers.
+"""Cursor-owned pre-training foundation helpers and readiness reports.
 
 These modules are synthetic control-plane code. They do not train a
-model and they do not authorize training.
+model and they do not authorize training. An empty production ledger
+accepts nothing.
 """
-=======
-"""Pretraining readiness reports. This package does not authorize training."""
->>>>>>> eaa3eac (feat(acceptance): report pretraining blockers without accepting)

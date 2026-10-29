@@ -1,0 +1,47 @@
+{
+  "milestone": "FOUNDATION-02",
+  "branch": "cursor/foundation-02-pretraining-hardening-1cdf",
+  "starting_main_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+  "working_sha_at_packaging": "52e74597ae0185bbbddcd45a70e86b006955229e",
+  "formal_acceptance": {
+    "accepted": 0,
+    "denominator": 95
+  },
+  "training_authorization": "NO-GO",
+  "disposition_histogram": {
+    "BLOCKED": 16,
+    "IMPLEMENTED_UNVERIFIED": 20,
+    "VERIFIED_ENGINEERING": 10,
+    "NOT_IMPLEMENTED": 49
+  },
+  "local_suites": {
+    "foundation_selected": "445 passed, 1 xfailed (pre serving-contract batch)",
+    "serving_contract": "10 passed",
+    "acceptance_validator": "pretraining=95 numerator=0"
+  },
+  "artifacts": [
+    "FOUNDATION_02_ANTIGRAVITY_HANDOFF.md",
+    "FOUNDATION_02_ARCHITECTURE_TOKENIZER_INTEGRITY.md",
+    "FOUNDATION_02_AUTHORIZATION_ASSURANCE.md",
+    "FOUNDATION_02_BLOCKER_REGISTER.md",
+    "FOUNDATION_02_CHECKPOINT_RECOVERY.md",
+    "FOUNDATION_02_COMPUTE_FEASIBILITY.md",
+    "FOUNDATION_02_CORRECTIVE_CHANGELOG.md",
+    "FOUNDATION_02_DATA_PROVENANCE.md",
+    "FOUNDATION_02_EVALUATION_INTEGRITY.md",
+    "FOUNDATION_02_EXACT_HEAD_CI.md",
+    "FOUNDATION_02_MASTER_ENGINEERING_REPORT.md",
+    "FOUNDATION_02_MODEL_SERVING_CONTRACT.md",
+    "FOUNDATION_02_REPRODUCIBILITY.md",
+    "FOUNDATION_02_REQUIREMENT_MATRIX.json",
+    "FOUNDATION_02_REQUIREMENT_MATRIX.md",
+    "FOUNDATION_02_TRAINING_MATH_REPORT.md"
+  ],
+  "non_claims": [
+    "no real training",
+    "no paid compute",
+    "no formal acceptance mutation",
+    "no independent qualification claimed",
+    "no frontier-model superiority claims"
+  ]
+}
