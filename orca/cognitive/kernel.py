@@ -256,6 +256,21 @@ class CognitiveKernel:
                 degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
             )
 
+        if request.defer_direct_answer:
+            # L02-02: the caller answers through the document pipeline and would discard this answer -- do not spend a model dispatch on it.
+            sm.transition(CognitiveState.COMPLETED)
+            trace_builder.record_transition(sm.history[-1])
+            trace_builder.record_operation_outcome("direct_answer_deferred_to_document_pipeline")
+            trace_builder.finalize(plan.budget)
+            latency_ms = (time.monotonic() - start) * 1000
+            metrics.record_total_latency(latency_ms)
+            return CognitiveResult(
+                request_id=request.request_id, trace_id=request.trace_id, status=CognitiveState.COMPLETED,
+                resolved_tier=resolved_tier, plan_id=plan.plan_id, operations_executed=[], latency_ms=latency_ms,
+                warnings=["direct answer deferred -- the document pipeline answers this turn"],
+                degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
+            )
+
         warnings: list[str] = list()
         try:
             # Phase 5 (spec §41-42, fixing the audit's Finding #2 --

@@ -995,6 +995,10 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
     # (no evidence found, not a fabricated citation).
     if doc_store is _KERNEL_DOCS_DEFAULT:
         doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
+    # L02-02: every caller of this function answers a document session through the deep-RAG pipeline and discards a plain direct Kernel answer
+    # (only a Truth-Fabric-grounded answer is kept). Do not pay a model dispatch -- and a quota unit -- for an answer that will be thrown away.
+    if on_raw_delta is None and doc_store is not None and doc_store.count() > 0:
+        cognitive_request.defer_direct_answer = True
     return await kernel.execute(cognitive_request, entitlement=entitlement, doc_store=doc_store)
 
 
