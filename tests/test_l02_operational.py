@@ -301,8 +301,13 @@ def test_the_data_directory_backup_group_does_not_shadow_the_existing_orca_backu
 
     from orca.cli import app
 
+    import re
+
+    def plain(out: str) -> str:  # CI renders help with colour codes that split "--keep"
+        return re.sub(r"\x1b\[[0-9;]*m", "", out)
+
     runner = CliRunner()
     legacy = runner.invoke(app, ["backup", "--help"])
-    assert legacy.exit_code == 0 and "--keep" in legacy.output
+    assert legacy.exit_code == 0 and "--keep" in plain(legacy.output)
     new = runner.invoke(app, ["data-backup", "--help"])
-    assert new.exit_code == 0 and all(w in new.output for w in ("create", "verify", "restore"))
+    assert new.exit_code == 0 and all(w in plain(new.output) for w in ("create", "verify", "restore"))
