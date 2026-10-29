@@ -114,3 +114,39 @@ def test_api_doc_delete_keeps_the_document_listed_when_a_store_failed(isolated_h
     r = client.delete("/api/docs/d1", params={"session_id": sid}, headers=h)
     assert r.status_code == 200 and r.json()["deleted"] is True
     assert list_docs(sid, include_deleting=True) == []
+
+
+# ── L02-02g: bounded recovery of a half-deleted document ────────────────────────────────────────────────────────────────────────────
+
+def test_sweep_finishes_a_document_left_deleting_and_a_retry_cannot_resurrect_it(store):
+    from orca.docs.store import DocStore, list_docs, mark_doc_deleting, pending_document_deletions, register_doc, sweep_document_deletions
+
+    st, sid = store
+    _seed_both(st, "d1", "secret.txt", "PAYROLL-CANARY-4711 quarterly figures")
+    register_doc(sid, "d1", "secret.txt", 1, 40)
+    mark_doc_deleting(sid, "d1")                                       # the API marked it, then the process died before removing anything
+    assert pending_document_deletions() == [{"session_id": sid, "doc_id": "d1", "state": "deleting", "attempts": 0}]
+    assert list_docs(sid) == []                                       # already out of serving
+    r = sweep_document_deletions()
+    assert r["deleted"] == ["d1"] and pending_document_deletions() == []
+    fresh = DocStore(sid, enforce_registry=False)
+    assert fresh._collection.count() == 0 and "PAYROLL-CANARY-4711" not in (fresh._fallback_file.read_text() if fresh._fallback_file.exists() else "")
+    assert sweep_document_deletions()["deleted"] == []                # idempotent
+
+
+def test_sweep_is_bounded_then_escalates_and_stays_hidden(store, monkeypatch):
+    from orca.docs import store as store_mod
+    from orca.docs.store import DocStore, list_docs, mark_doc_deleting, pending_document_deletions, register_doc, sweep_document_deletions
+
+    st, sid = store
+    _seed_both(st, "d1", "secret.txt", "PAYROLL-CANARY-4711 quarterly figures")
+    register_doc(sid, "d1", "secret.txt", 1, 40)
+    mark_doc_deleting(sid, "d1")
+    monkeypatch.setattr(DocStore, "delete_doc_detailed", lambda self, d: {"ok": False, "collection": "failed", "fallback": "ok"})
+    last = None
+    for _ in range(store_mod.DOC_DELETE_MAX_ATTEMPTS):
+        last = sweep_document_deletions()
+    assert last["escalated"] == ["d1"]
+    assert pending_document_deletions() == [{"session_id": sid, "doc_id": "d1", "state": "deletion_failed", "attempts": store_mod.DOC_DELETE_MAX_ATTEMPTS}]
+    assert sweep_document_deletions() == {"deleted": [], "retry_later": [], "escalated": []}, "no unbounded retry"
+    assert list_docs(sid) == [] and list_docs(sid, include_deleting=True)[0]["state"] == "deletion_failed"

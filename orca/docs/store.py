@@ -342,6 +342,50 @@ def mark_doc_deleting(session_id: str, doc_id: str) -> bool:
         return found
 
 
+DOC_DELETE_MAX_ATTEMPTS = 8
+
+
+def pending_document_deletions() -> list[dict]:
+    """Every registry entry whose deletion has not completed (``deleting``, or ``deletion_failed`` once retries were exhausted). Diagnostic + sweep input."""
+    out = []
+    for sid, docs in _load_registry().items():
+        for d in docs:
+            if d.get("state") in ("deleting", "deletion_failed"):
+                out.append({"session_id": sid, "doc_id": d["doc_id"], "state": d["state"], "attempts": int(d.get("delete_attempts", 0))})
+    return out
+
+
+def sweep_document_deletions(ollama_host: str = "http://localhost:11434", limit: int = 20) -> dict:
+    """L02-02g: bounded recovery for documents left ``deleting``. Each pass retries the dual-store removal (idempotent; the document is already out of every
+    serving path, so a retry can never resurrect anything), unregisters on success, counts attempts, and after ``DOC_DELETE_MAX_ATTEMPTS`` marks the
+    entry ``deletion_failed`` -- still hidden, no longer retried automatically, and visible through ``pending_document_deletions()`` / the health report."""
+    done, failed, escalated = [], [], []
+    for item in pending_document_deletions()[: int(limit)]:
+        if item["state"] != "deleting":
+            continue
+        sid, doc_id = item["session_id"], item["doc_id"]
+        try:
+            ok = DocStore(sid, ollama_host).delete_doc_detailed(doc_id)["ok"]
+        except Exception:
+            ok = False
+        if ok:
+            unregister_doc(sid, doc_id)
+            done.append(doc_id)
+            continue
+        with _registry_txn():
+            reg = _load_registry()
+            for d in reg.get(sid, []):
+                if d["doc_id"] == doc_id:
+                    d["delete_attempts"] = int(d.get("delete_attempts", 0)) + 1
+                    d["last_delete_attempt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    if d["delete_attempts"] >= DOC_DELETE_MAX_ATTEMPTS:
+                        d["state"] = "deletion_failed"
+                        escalated.append(doc_id)
+            _save_registry(reg)
+        failed.append(doc_id)
+    return {"deleted": done, "retry_later": failed, "escalated": escalated}
+
+
 def unregister_doc(session_id: str, doc_id: str):
     with _registry_txn():
         reg = _load_registry()
@@ -353,4 +397,4 @@ def unregister_doc(session_id: str, doc_id: str):
 def list_docs(session_id: str, *, include_deleting: bool = False) -> list[dict]:
     reg = _load_registry()
     docs = reg.get(session_id, [])
-    return docs if include_deleting else [d for d in docs if d.get("state") != "deleting"]
+    return docs if include_deleting else [d for d in docs if d.get("state") not in ("deleting", "deletion_failed")]

@@ -112,6 +112,18 @@ async def _retention_loop():
             await asyncio.to_thread(deletions.resume_pending)         # L02-01: finish deletions a crash / an unavailable store left unfinished
         except Exception:
             _logger.debug("deletion sweep failed", exc_info=True)
+        try:
+            from orca.docs.store import sweep_document_deletions
+
+            await asyncio.to_thread(sweep_document_deletions, CONFIG.ollama.host)      # L02-02g: documents left "deleting" are retried, bounded, then escalated
+        except Exception:
+            _logger.debug("document deletion sweep failed", exc_info=True)
+        try:
+            from orca.serve import temporary_chat
+
+            await asyncio.to_thread(temporary_chat.expire_due)        # L02-01e: temporary chats past their TTL are removed even if nobody opens them again
+        except Exception:
+            _logger.debug("temporary-chat sweep failed", exc_info=True)
         await asyncio.sleep(_RETENTION_INTERVAL_S)
 
 

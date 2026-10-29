@@ -309,3 +309,77 @@ def test_account_deletion_tombstones_every_session_and_reports_partial_honestly(
     assert conversations.acquire_authority(sid, uid, uuid.uuid4().hex) is None
     heal()
     assert deletions.resume_pending() == 1 and deletions.get(sid)["state"] == "complete"
+
+
+# ── L02-01e: temporary chat uses the same authoritative deletion ───────────────────────────────────────────────────────────────────
+
+def _temp_chat(env):
+    client, h, uid, sid, _ = env
+    from orca.serve import temporary_chat
+
+    temporary_chat.activate(sid, uid, ttl_seconds=60)
+    _commit(sid, uid, user_text="TEMP-CANARY-5521", assistant="temp reply")
+    return temporary_chat
+
+
+def test_temporary_close_is_not_reported_closed_while_a_derived_store_failed(env, monkeypatch):
+    """Baseline defect: only a transcript error counted, so a vector-store failure still produced state `closed`."""
+    client, h, uid, sid, _ = env
+    tc = _temp_chat(env)
+    heal = _break_vector(monkeypatch)
+    view = tc.finish(sid, uid, "closed")
+    assert view["state"] == "failed" and view["deleted"] is False
+    from orca.serve import deletions
+
+    assert deletions.get(sid)["state"] == "partial"
+    heal()
+    assert tc.retry_failed_closure(sid, uid)["state"] == "closed"
+    assert deletions.get(sid)["state"] == "complete"
+
+
+def test_sweep_expires_an_abandoned_temporary_chat_and_retries_failed_closures(env, monkeypatch):
+    """Baseline defect: `expire_due` had no caller, so a temporary chat nobody reopened outlived its TTL indefinitely."""
+    client, h, uid, sid, _ = env
+    tc = _temp_chat(env)
+    import time
+
+    assert tc.expire_due(now=time.time() + 3600)["expired"] == [sid]
+    from orca.serve import conversations, deletions
+
+    assert conversations.turns_for_session(sid) == [] and deletions.get(sid)["state"] == "complete"
+    # failed closures are retried by the same sweep
+    sid2 = str(uuid.uuid4())
+    from orca.auth.store import record_user_session
+
+    record_user_session(uid, sid2)
+    tc.activate(sid2, uid, ttl_seconds=60)
+    _commit(sid2, uid)
+    heal = _break_vector(monkeypatch)
+    assert tc.finish(sid2, uid, "closed")["state"] == "failed"
+    heal()
+    r = tc.expire_due()
+    assert sid2 in r["expired"] and tc.read(sid2, uid)["state"] == "closed"
+
+
+def test_temporary_chat_cannot_be_written_after_closure(env):
+    client, h, uid, sid, _ = env
+    tc = _temp_chat(env)
+    assert tc.finish(sid, uid, "closed")["state"] == "closed"
+    from orca.serve import api, conversations
+
+    assert api._omit_long_term(sid) is True
+    assert conversations.acquire_authority(sid, uid, uuid.uuid4().hex) is None
+    assert conversations.turns_for_session(sid) == []
+
+
+def test_temporary_closure_survives_restart_without_reappearing(env):
+    """Closure state and tombstone are on disk / in SQLite, not in process memory: a fresh process view sees the same terminal state."""
+    client, h, uid, sid, _ = env
+    tc = _temp_chat(env)
+    tc.finish(sid, uid, "closed")
+    from orca.serve import api, deletions
+
+    api._sessions.clear()                               # what a restart does to the in-memory session cache
+    assert deletions.is_tombstoned(sid) and tc.read(sid, uid)["state"] == "closed"
+    assert client.get(f"/api/session/{sid}/messages", headers=h).status_code in (404, 409)
+    assert sid not in client.get("/api/sessions", headers=h).text
