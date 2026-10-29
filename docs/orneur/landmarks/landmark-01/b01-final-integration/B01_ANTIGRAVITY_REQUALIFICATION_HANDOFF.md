@@ -2,7 +2,7 @@
 
 **From:** Claude Code (engineering). **To:** Antigravity (independent qualification authority). **Status of this candidate:** `VERIFIED_ENGINEERING` — *not* independently qualified; nothing here issues, implies or pre-empts your verdict.
 
-* Candidate: PR `<PR_URL>` (draft), branch `claude/b01-real-sse-chatbot-integration`, **code-bearing SHA `<CODE_SHA>`**, documentation-only head `<HEAD_SHA>` (see `B01_FINAL_EXACT_HEAD_CI_REPORT.md`).
+* Candidate: PR https://github.com/Guruprasath-Annadurai/Orneur/pull/136 (draft), branch `claude/b01-real-sse-chatbot-integration`, **code-bearing SHA `01444cb084e530cd2aca1f5ed24a5e767c8b143d`**, documentation-only head the head recorded in the CI report (see `B01_FINAL_EXACT_HEAD_CI_REPORT.md`).
 * Base lineage (not merged, not substituted): PR #135 `15befec7191a1992286d7fa027236002f7d385db` ← PR #134 `8d72baab4ebe4ce3a6aa4a76385e18e1c1fba788`. `main` is untouched. PR #132 was not used.
 * Governance reminders honoured: no merge, no deployment, no paid infrastructure, no native-model claim (the model is third-party `llama3.2:1b` weights served by Ollama), no UI redesign, no security assertion weakened.
 

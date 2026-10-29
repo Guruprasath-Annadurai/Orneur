@@ -3,7 +3,7 @@
 Evidence state: **VERIFIED_ENGINEERING**. Not independently qualified; no release authorization is implied.
 
 * Base: PR #135 `15befec7191a1992286d7fa027236002f7d385db` (Kernel streaming), on the PR #134 lineage `8d72baab4ebe4ce3a6aa4a76385e18e1c1fba788`. No ref divergence at start.
-* Candidate: draft PR #136, branch `claude/b01-real-sse-chatbot-integration`, code-bearing SHA `01444cb084e530cd2aca1f5ed24a5e767c8b143d`; later commits are documentation only.
+* Candidate: draft PR #136, branch `claude/b01-real-sse-chatbot-integration`, code-bearing SHA `01444cb084e530cd2aca1f5ed24a5e767c8b143d`; later commits are documentation only, except `d462152` which rewords one comment in `.github/workflows/test.yml` (governance guard). Exact-head CI: run 40837020404 on `d462152`, 10/10 jobs success (see `B01_FINAL_EXACT_HEAD_CI_REPORT.md`; two earlier runs failed on that guard and are recorded there).
 
 ## 1. What changed
 * `orca/cognitive/streaming.py` — channel rewritten (terminal state is an attribute, no sentinel, no task) and `KernelRun` supervisor added.
