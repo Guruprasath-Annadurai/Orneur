@@ -1,0 +1,17 @@
+{
+  "recorded_at": "2026-10-29T13:45:34+0000",
+  "embedding_model": "nomic-embed-text (third-party weights)",
+  "embed_calls_during_upload_and_queries": 3,
+  "canary_sent_before_delete": true,
+  "canary_in_document_context_after_delete": false,
+  "canary_occurrences_after_delete": [
+    {
+      "request": 0,
+      "role": "assistant",
+      "in_document_context_block": false,
+      "kind": "conversation history"
+    }
+  ],
+  "sources_after_delete": 0,
+  "model_tag": "llama3.2:1b"
+}

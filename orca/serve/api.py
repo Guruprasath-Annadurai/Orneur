@@ -101,39 +101,46 @@ async def _retention_loop():
     """Workstream B: honour each user's conversation-retention setting. Never lets one failure stop the loop or the server."""
     from orca.serve.retention import purge_expired_conversations
 
-    from orca.serve import deletions
-
     while True:
         try:
             await asyncio.to_thread(purge_expired_conversations)
         except Exception:
             _logger.debug("retention purge failed", exc_info=True)
-        try:
-            await asyncio.to_thread(deletions.resume_pending)         # L02-01: finish deletions a crash / an unavailable store left unfinished
-        except Exception:
-            _logger.debug("deletion sweep failed", exc_info=True)
-        try:
-            from orca.docs.store import sweep_document_deletions
-
-            await asyncio.to_thread(sweep_document_deletions, CONFIG.ollama.host)      # L02-02g: documents left "deleting" are retried, bounded, then escalated
-        except Exception:
-            _logger.debug("document deletion sweep failed", exc_info=True)
-        try:
-            from orca.serve import temporary_chat
-
-            await asyncio.to_thread(temporary_chat.expire_due)        # L02-01e: temporary chats past their TTL are removed even if nobody opens them again
-        except Exception:
-            _logger.debug("temporary-chat sweep failed", exc_info=True)
         await asyncio.sleep(_RETENTION_INTERVAL_S)
+
+
+_DELETE_REQUEST_BUDGET_S = float(os.environ.get("ORNEUR_DELETE_REQUEST_BUDGET_S", "20"))
+_DELETION_SWEEP_INTERVAL_S = float(os.environ.get("ORNEUR_DELETION_SWEEP_S", "60"))
+
+
+async def _deletion_sweep_loop():
+    """L02-01/02: a deletion that a crash or an unavailable store left unfinished must not wait for the 6-hour retention pass. Each step is independent,
+    idempotent, bounded and lease-guarded, so several workers running this loop is safe."""
+    from orca.docs.store import sweep_document_deletions
+    from orca.serve import deletions, temporary_chat
+
+    while True:
+        for name, fn, args in (
+            ("deletion", deletions.resume_pending, ()),                                   # conversation deletions left partial / revoked
+            ("document", sweep_document_deletions, (CONFIG.ollama.host,)),               # documents left "deleting"
+            ("temporary chat", temporary_chat.expire_due, ()),                            # TTL-expired and failed temporary chats
+        ):
+            try:
+                await asyncio.to_thread(fn, *args)
+            except Exception:
+                _logger.debug("%s sweep failed", name, exc_info=True)
+        await asyncio.sleep(_DELETION_SWEEP_INTERVAL_S)
 
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
     _retention_task = asyncio.create_task(_retention_loop())
+    _sweep_task = asyncio.create_task(_deletion_sweep_loop())
     try:
         yield
     finally:
         _retention_task.cancel()
+        _sweep_task.cancel()
     # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
     # wait=False: blocking the event loop here to join every worker would
     # itself hang shutdown behind a slow backend call -- the same class of
@@ -2970,7 +2977,13 @@ async def delete_conversation(session_id: str, user: User | None = Depends(get_c
         raise HTTPException(status_code=404, detail="session not found")          # already fully deleted: indistinguishable from never having existed
     job = await asyncio.to_thread(deletions.begin, session_id, user.id)
     _sessions.pop(session_id, None)
-    job = await asyncio.to_thread(deletions.run, session_id, user.id)
+    # The cascade touches several stores, any of which can be locked or slow. The request waits a bounded time; if the cascade is still running it keeps
+    # going in its worker thread (holding the lease) and the caller is told the truth: access revoked, state "running", retryable.
+    cascade = asyncio.ensure_future(asyncio.to_thread(deletions.run, session_id, user.id))
+    try:
+        job = await asyncio.wait_for(asyncio.shield(cascade), timeout=_DELETE_REQUEST_BUDGET_S)
+    except asyncio.TimeoutError:
+        job = await asyncio.to_thread(deletions.get, session_id) or job
     for _ in range(25):                                                           # another worker holds the cleanup lease: give it a moment to finish
         if job["state"] != "running":
             break
@@ -3658,7 +3671,10 @@ async def delete_doc(
         unregister_doc(sess.id, doc_id)                      # L02-01: stays registered (and retryable) until every store confirmed
     audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id, "ok": ok, "collection": detail["collection"], "fallback": detail["fallback"]})
     body = {"deleted": ok, "doc_id": doc_id, "session_id": sess.id, "retryable": not ok,
-            "stores": {"vector_collection": detail["collection"], "keyword_index": detail["fallback"]}}
+            "stores": {"vector_collection": detail["collection"], "keyword_index": detail["fallback"]},
+            # Honest scope (measured in the real-Ollama journey D6): removing a document removes its passages from retrieval. Text that earlier ANSWERS in this
+            # conversation quoted stays in the conversation (and in memory derived from it) until the conversation is deleted.
+            "derived_content": "Earlier answers in this conversation that quoted this document, and any memory derived from them, are not removed. Delete the conversation to remove them."}
     return JSONResponse(body, status_code=200 if ok else 202)
 
 

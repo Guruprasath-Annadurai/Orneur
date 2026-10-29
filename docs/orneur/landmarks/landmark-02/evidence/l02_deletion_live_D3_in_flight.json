@@ -1,0 +1,14 @@
+{
+  "recorded_at": "2026-10-29T13:45:26+0000",
+  "delete_status": 200,
+  "stream_event_types": [
+    "chunk",
+    "chunk",
+    "chunk",
+    "chunk",
+    "chunk",
+    "error"
+  ],
+  "done_persisted": null,
+  "turn_rows_after": 0
+}

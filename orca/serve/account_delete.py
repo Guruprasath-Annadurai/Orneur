@@ -129,8 +129,12 @@ def _delete_session_data(session_id: str) -> dict:
         result["knowledge_graph_error"] = str(e)
 
     try:
-        session_store.delete_session(session_id)
-        result["redis_deleted"] = session_store.enabled()
+        # L02-01f: delete_session() returns False when Redis is unreachable. That used to be ignored and reported as deleted, leaving the cached
+        # conversation in Redis until its TTL. An unreachable Redis is now a FAILED store (the deletion stays partial and is retried).
+        if not session_store.delete_session(session_id):
+            result["redis_error"] = "redis unreachable"
+        else:
+            result["redis_deleted"] = session_store.enabled()
     except Exception as e:
         result["redis_error"] = str(e)
 

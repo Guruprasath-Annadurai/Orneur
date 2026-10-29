@@ -1,0 +1,7 @@
+{
+  "recorded_at": "2026-10-29T13:45:29+0000",
+  "synthetic_crash_state": "tombstone written, stores untouched",
+  "recovered_by": "new process sweep",
+  "final_state": "complete",
+  "attempts": 1
+}

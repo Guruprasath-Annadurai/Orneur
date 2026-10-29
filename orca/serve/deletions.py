@@ -24,7 +24,7 @@ from orca.serve import conversations
 
 _logger = logging.getLogger("orneur.deletions")
 
-LEASE_S = 60.0
+LEASE_S = 120.0
 MAX_ATTEMPTS = 8
 
 # Honest, fixed statement returned with every deletion result.
@@ -141,6 +141,30 @@ def _finish(session_id: str, state: str, stores: dict) -> dict:
         conn.close()
 
 
+def _vector_collection_absent(session_id: str, budget_s: float = 5.0) -> bool:
+    """True only if the session's vector collection can be PROVEN absent within ``budget_s``. A lock, a timeout or any other doubt answers False."""
+    import concurrent.futures
+
+    def probe() -> bool:
+        import chromadb
+        from orca.brain.memory import MEMORY_DIR
+
+        client = chromadb.PersistentClient(path=str(MEMORY_DIR / "vectors"))
+        try:
+            client.get_collection(name=f"orca_{session_id[:8]}")
+            return False
+        except Exception as exc:
+            return "does not exist" in str(exc).lower() or type(exc).__name__ in ("NotFoundError", "InvalidCollectionException")
+
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        return bool(ex.submit(probe).result(timeout=budget_s))
+    except Exception:
+        return False
+    finally:
+        ex.shutdown(wait=False)
+
+
 def classify(result: dict) -> dict[str, str]:
     """Reduce the cascade's raw report to ``store -> ok | failed``. A store is *failed* only when it reported an error (or the transcript reported that
     rows may remain); "nothing to delete" is ok. Error text is never returned to the caller (it can contain paths)."""
@@ -150,6 +174,11 @@ def classify(result: dict) -> dict[str, str]:
             out[key[: -len("_error")]] = "failed"
     if result.get("conversation_transcript_deleted") is False:
         out["conversation_transcript"] = "failed"
+    # Vector memory: ``logically_deleted`` is False both when the delete could not be CONFIRMED (PENDING / FAILED) and when the session simply never had a
+    # collection. Only the second is success, so an unconfirmed delete is probed: failed unless the collection is provably absent.
+    if result.get("long_term_vector_memory_logically_deleted") is False and "long_term_vector_memory" not in out:
+        if result.get("long_term_vector_memory_physical_reclamation") in ("PENDING", "FAILED") and not _vector_collection_absent(result.get("session_id", "")):
+            out["long_term_vector_memory"] = "failed"
     names = {
         "memory": 1, "conversation_transcript": 1, "message_versions": 1, "long_term_vector_memory": 1, "docs": 1,
         "knowledge_graph": 1, "redis": 1, "semantic_facts": 1, "memory_continuum": 1,

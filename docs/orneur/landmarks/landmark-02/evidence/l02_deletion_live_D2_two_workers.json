@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-10-29T13:45:21+0000",
+  "status_codes": [
+    200,
+    200,
+    200,
+    200,
+    200,
+    200
+  ],
+  "distinct_deletion_ids": 1,
+  "final_state": "complete"
+}
