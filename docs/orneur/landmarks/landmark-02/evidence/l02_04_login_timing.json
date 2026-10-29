@@ -1,0 +1,7 @@
+{
+  "wrong_password_known_account_mean_s": 0.0375,
+  "unknown_account_mean_s": 0.0371,
+  "ratio": 0.989,
+  "samples_each": 5,
+  "note": "single workstation, wall clock; recorded, not a security proof"
+}

@@ -3846,6 +3846,10 @@ async def upload_doc(
     from orca.docs.store import DocLimitExceeded, find_doc_by_sha
 
     ratelimit.enforce(request, ratelimit.DOC_UPLOAD, extra_key="doc_upload")
+    if user is not None and not user.verified:
+        from orca.auth.account_security import verification_required
+        if verification_required():                          # L02-04: an unverified account cannot use stored-document features either
+            return JSONResponse({"error": "Verify your email address to upload documents.", "code": "email_verification_required"}, status_code=403)
     # L02-02: ownership / liveness of the conversation is decided BEFORE a byte of the file is read or parsed (a stranger or a deleted conversation must
     # not be able to make the server parse a hostile file), and the read itself is bounded.
     sess = _get_session(session_id, user_id=user.id if user else None)

@@ -168,6 +168,27 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     PRIMARY KEY (user_id, idem_key)
 );
 
+-- L02-04: single-use, expiring email-verification / password-reset tokens (the signed token carries the jti; consuming it is one atomic UPDATE),
+-- per-account email send ledger (resend throttling) and per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
+CREATE TABLE IF NOT EXISTS auth_one_time_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    purpose    TEXT NOT NULL,
+    email      TEXT NOT NULL,
+    expires_at REAL NOT NULL,
+    used_at    REAL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_email_sends (
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    sent_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_login_failures (
+    subject_hash TEXT NOT NULL,
+    failed_at    REAL NOT NULL
+);
+
 
 
 
@@ -384,6 +405,27 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     response     TEXT,
     created_at   DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (user_id, idem_key)
+);
+
+-- L02-04: single-use, expiring email-verification / password-reset tokens (the signed token carries the jti; consuming it is one atomic UPDATE),
+-- per-account email send ledger (resend throttling) and per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
+CREATE TABLE IF NOT EXISTS auth_one_time_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    purpose    TEXT NOT NULL,
+    email      TEXT NOT NULL,
+    expires_at DOUBLE PRECISION NOT NULL,
+    used_at    DOUBLE PRECISION,
+    created_at DOUBLE PRECISION NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_email_sends (
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    sent_at DOUBLE PRECISION NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_login_failures (
+    subject_hash TEXT NOT NULL,
+    failed_at    DOUBLE PRECISION NOT NULL
 );
 
 

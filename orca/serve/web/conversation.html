@@ -3695,7 +3695,8 @@ async function doLogin() {
   try {
     const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass }) });
     const d = await r.json();
-    if (!r.ok) { errEl.textContent = d.detail || 'Sign in failed.'; return; }
+    // L02-04: a refusal can carry a structured detail ({error, code}); never print an object.
+    if (!r.ok) { errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Sign in failed.'; return; }
     if (d.requires_2fa) { errEl.textContent = '2FA is enabled on this account; use the main app to complete sign-in.'; return; }
     onAuthSuccess(d);
   } catch (e) {
@@ -3718,7 +3719,9 @@ async function doSignup() {
   try {
     const r = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass, name }) });
     const d = await r.json();
-    if (!r.ok) { errEl.textContent = d.detail || 'Signup failed.'; return; }
+    if (!r.ok) { errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Signup failed.'; return; }
+    // L02-04: when the operator requires a verified address the server issues no session at signup and answers every address the same way.
+    if (d.status === 'verification_required') { errEl.textContent = d.message || 'Check your email for a verification link to finish creating your account.'; return; }
     onAuthSuccess(d);
   } catch (e) {
     errEl.textContent = 'Network error. Try again.';

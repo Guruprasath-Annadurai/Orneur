@@ -151,3 +151,12 @@ test('Stop with no request key (anonymous) sends no cancel request and keeps the
   await ctx.stopGeneration();
   assert.equal(calls.fetch.length, 0);
 });
+
+// ── L02-04: the sign-in / sign-up handlers must show what the server said, never "[object Object]", and must not treat a verification-required signup as a session ──
+test('sign-in and sign-up handlers print structured refusals as text and handle verification_required without a session', () => {
+  assert.match(source, /typeof d\.detail === 'string' \? d\.detail : \(d\.detail && d\.detail\.error\) \|\| d\.error/);
+  const signup = extractFunction(source, 'async function doSignup()');
+  const guard = signup.indexOf("d.status === 'verification_required'");
+  const success = signup.indexOf('onAuthSuccess(d)');
+  assert.ok(guard > 0 && success > guard, 'the verification_required branch must return before onAuthSuccess');
+});
