@@ -21,14 +21,13 @@ No P0 is known to remain. "Owner" is the engineering owner proposed for the fix,
 
 ## B-01 — P1 — plain-chat answers are not streamed token-by-token
 
-* **File / function:** `orca/cognitive/kernel.py::CognitiveKernel._answer_directly` (calls non-streaming `ModelGateway.generate`) and `orca/serve/api.py::_event_stream` (`use_kernel_direct` branch).
+* **File / function:** `orca/cognitive/kernel.py::CognitiveKernel._answer_directly` and `orca/serve/api.py::_event_stream` (`use_kernel_direct` branch).
 * **Reproduction:** sign in, send any plain message in `/conversation` with real Ollama (`llama3.2:1b`). `window.__sseLog` (browser journey `B1`) shows `stream {delivery:"replayed", cancellable:false}`, exactly one `chunk {replayed:true}`, then `done`.
 * **Expected:** several `chunk` events as Ollama produces tokens, `delivery:"upstream"`, Stop works.
-* **Observed:** the whole answer arrives in one labelled chunk after the model finishes. The UI is honest about it (no typing animation, no Stop control for a replay — verified), but the experience is not that of a streaming chatbot.
-* **What *is* verified:** when the AgentLoop/document path runs, chunks are forwarded as the provider emits them (fixture provider: 6 chunks 0.5 s apart ⇒ ≥ 1.2 s wire spread **and** ≥ 4 distinct DOM states measured by an in-page `MutationObserver`; Stop; refresh mid-stream; severed connection).
-* **Impact:** perceived latency on every plain turn (≈ 1–3 s for a 1B model); no mid-answer cancellation for the default path.
+* **Observed (pre-remediation):** the whole answer arrives in one labelled chunk after the model finishes.
+* **Cursor Kernel half (this corrective wave):** optional `CognitiveRequest.on_raw_delta` + `ModelGateway.stream()` in `_answer_directly`; `RawDeltaChannel`; tests in `tests/test_kernel_streaming.py`. Evidence under `docs/orneur/landmarks/landmark-01/b01-remediation/`. **API still awaits Kernel before SSE** until Claude integrates the handoff — end-to-end B-01 remains open.
 * **Owner:** Kernel owner (Cursor) + Claude for the API/UI half.
-* **Minimal fix:** add an optional `on_chunk` hook to `CognitiveRequest`; `_answer_directly` iterates `gateway.stream(...)` when it is set, forwarding each delta and still returning the complete output. `_stream_dispatch` runs the Kernel as a task, forwards queued deltas through the existing `StreamRedactor`, and emits the `model` identity event as soon as the tier is known. Gate it to ollama + no-document sessions (otherwise the Kernel's answer is discarded — see B-06).
+* **Claude remaining:** run Kernel as a task; drain raw deltas through `StreamRedactor`; emit `delivery:"upstream"` / `cancellable:true`. See `b01-remediation/B01_CLAUDE_API_INTEGRATION_HANDOFF.md`.
 * **Acceptance test:** journey `B1` (real Ollama) asserts `delivery == "upstream"` and ≥ 2 chunks with a measurable arrival spread for a ≥ 400-character answer; `test_canonical_route_dlp.py` must still pass; quota must be consumed at the first chunk.
 
 ## B-02 — P1 — independent qualification has not happened
