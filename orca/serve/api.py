@@ -2096,7 +2096,27 @@ async def stream_chat(
             _release_all()
 
     response.body_iterator = _releasing_iterator()
-    return response
+    return _ReleasingStreamingResponse(response, _release_all)
+
+
+class _ReleasingStreamingResponse(StreamingResponse):
+    """A StreamingResponse that ALWAYS runs ``release`` when the ASGI call ends.
+
+    The generator wrapper above releases the quota reservation, turn authority and idempotency slot in its ``finally`` - but an async generator that was never
+    started has no ``finally`` to run. A client that disconnects before the first body byte makes Starlette cancel ``stream_response`` before it iterates the body,
+    which stranded the quota keepalive and the authority heartbeat (the conversation then looked busy and the reservation kept being renewed). Releasing here
+    covers that case; every release is idempotent, so the common path is unchanged."""
+
+    def __init__(self, inner: "StreamingResponse", release):
+        super().__init__(inner.body_iterator, status_code=inner.status_code, media_type=inner.media_type, background=inner.background)
+        self.raw_headers = inner.raw_headers
+        self._release = release
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._release()
 
 
 def _abstained_stream(cognitive_result, user):

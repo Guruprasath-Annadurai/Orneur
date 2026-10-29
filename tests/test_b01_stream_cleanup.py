@@ -163,3 +163,29 @@ def test_abandoned_streams_leave_no_task_stream_reservation_or_authority(live):
         assert b'"type": "done"' in _read_until(s, b'"type": "done"')
         _hang_up(s)
     assert conversations.store_available()
+
+
+def test_hanging_up_before_the_first_body_byte_never_strands_quota_or_authority(live):
+    """A never-started response body has no ``finally`` to run: the release must come from the response itself (``_ReleasingStreamingResponse``).
+    Directed repro: send the request and slam the socket in the same instant, many times, on ONE conversation."""
+    client, fake, port, loop = live["client"], live["fake"], live["port"], live["loop"]
+    token, _ = _signup(client)
+    usage = lambda: client.get("/api/usage", headers=_hdr(token)).json()["today"]["messages"]  # noqa: E731
+    fake.chunks, fake.chunk_delay = ["x"], 0.0
+    s = _request(port, token, f"{uuid.uuid4().hex[:8]}-warm", "warm")
+    assert b'"type": "done"' in _read_until(s, b'"type": "done"')
+    _hang_up(s)
+    time.sleep(0.3)
+    baseline = _server_tasks(loop)
+    spent = usage()
+    sid = f"{uuid.uuid4().hex[:8]}-instant"
+    fake.pre_response_delay = 0.4                                   # the model is slow to start, so the hang-up always wins
+    for i in range(30):
+        _hang_up(_request(port, token, sid, f"instant hang-up {i}"))
+    time.sleep(2.0)
+    assert _wait(lambda: not [t for t in _server_tasks(loop) if t not in baseline and any(k in t for k in ("_beat", "_keepalive", "kernel-run"))], 8), _server_tasks(loop)
+    fake.pre_response_delay = 0.0
+    assert usage() == spent, "reservations taken by requests that never produced output must be refunded"
+    s = _request(port, token, sid, "usable at once")
+    assert b'"type": "done"' in _read_until(s, b'"type": "done"'), "the conversation was left busy by the abandoned requests"
+    _hang_up(s)
