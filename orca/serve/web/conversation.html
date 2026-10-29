@@ -3370,11 +3370,13 @@ async function deleteConversation(row, sid) {
     if (myToken !== _authToken) return;
     if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('delete failed');
+    const partial = r.status === 202; // L02-01: access is already revoked, but some stored data is still being removed (server retries) -- say so
     row.remove();
     _draftsByConversation.delete(_draftKeyFor(sid)); // AUDIT-B14: no point keeping a draft slot for a conversation that no longer exists
     if (sid === sessionId) newConversation(); // the open conversation was just deleted -- do not keep showing its now-gone content
     const list = document.getElementById('recents-list');
     if (!list.querySelector('.rec-row')) list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
+    if (partial) appendUnavailableNote('This conversation is hidden and can no longer be opened, but some stored data could not be removed yet. ORNEUR will keep retrying.');
   } catch (e) {
     if (myToken !== _authToken) return;
     appendUnavailableNote('Could not delete this conversation. It has not been removed.');

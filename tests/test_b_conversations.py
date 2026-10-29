@@ -212,7 +212,10 @@ def test_deleting_a_conversation_removes_its_content_everywhere_and_only_that(cl
     r = client.delete(f"/api/session/{gone}", headers=h)
     assert r.status_code == 200 and r.json()["deleted"] is True
     assert client.get("/api/sessions/search", params={"q": "UNIQUE-GONE"}, headers=h).json()["results"] == []
-    assert _msgs(client, h, gone)["total"] == 0
+    # L02-01: a deleted conversation is now access-REVOKED (404), a stronger guarantee than "readable but empty"; the transcript is verified empty at the store.
+    assert client.get(f"/api/session/{gone}/messages", headers=h).status_code == 404
+    from orca.serve import conversations as _conv
+    assert _conv.turns_for_session(gone) == []
     assert gone not in [s["id"] for s in client.get("/api/sessions", headers=h).json()["sessions"]]
     assert _msgs(client, h, keep)["total"] == 2
     assert client.delete(f"/api/session/{gone}", headers=h).status_code == 404         # second delete: nothing of yours by that id

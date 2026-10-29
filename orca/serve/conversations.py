@@ -108,6 +108,20 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "updated_at REAL NOT NULL"
         ")"
     )
+    # L02-01: durable deletion identity / tombstone. Lives in THIS database so ``commit_turn`` can refuse a stale writer inside its own transaction.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS session_deletions ("
+        "session_id TEXT PRIMARY KEY,"
+        "deletion_id TEXT NOT NULL,"
+        "user_id TEXT NOT NULL,"
+        "state TEXT NOT NULL,"
+        "stores_json TEXT NOT NULL DEFAULT '{}',"
+        "attempts INTEGER NOT NULL DEFAULT 0,"
+        "lease_until REAL NOT NULL DEFAULT 0,"
+        "created_at REAL NOT NULL,"
+        "updated_at REAL NOT NULL"
+        ")"
+    )
     # Additive migrations for pre-fencing turns tables.
     cols = {row[1] for row in conn.execute("PRAGMA table_info(conversation_turns)").fetchall()}
     if "epoch" not in cols:
@@ -231,6 +245,8 @@ def acquire_authority(
     conn = _turns_conn()
     try:
         with conn:
+            if conn.execute("SELECT 1 FROM session_deletions WHERE session_id=?", (session_id,)).fetchone():
+                return None                                                                     # L02-01: no authority over a deleted conversation
             _ensure_export_row(conn, session_id, ts)
             row = conn.execute(
                 "SELECT owner_user_id, fence_token, epoch, expires_at, committed_revision "
@@ -430,6 +446,8 @@ def commit_turn(
     new_revision = 0
     try:
         with conn:
+            if conn.execute("SELECT 1 FROM session_deletions WHERE session_id=?", (session_id,)).fetchone():
+                return CommitResult(ok=False, reason="session_deleted", turn_id=turn_id)       # L02-01: a deleted conversation can never be written again
             _ensure_export_row(conn, session_id, ts)
             # Idempotent retry of an already-committed turn_id.
             existing = conn.execute(

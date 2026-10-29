@@ -101,11 +101,17 @@ async def _retention_loop():
     """Workstream B: honour each user's conversation-retention setting. Never lets one failure stop the loop or the server."""
     from orca.serve.retention import purge_expired_conversations
 
+    from orca.serve import deletions
+
     while True:
         try:
             await asyncio.to_thread(purge_expired_conversations)
         except Exception:
             _logger.debug("retention purge failed", exc_info=True)
+        try:
+            await asyncio.to_thread(deletions.resume_pending)         # L02-01: finish deletions a crash / an unavailable store left unfinished
+        except Exception:
+            _logger.debug("deletion sweep failed", exc_info=True)
         await asyncio.sleep(_RETENTION_INTERVAL_S)
 
 
@@ -1271,7 +1277,8 @@ def _check_session_ownership(session_id: str | None, user_id: str | None) -> Non
         return
     _validate_session_id(session_id)
     from orca.auth.store import check_session_access
-    if not check_session_access(session_id, user_id):
+    from orca.serve import deletions
+    if not check_session_access(session_id, user_id) or deletions.is_tombstoned(session_id):         # L02-01: a deleted conversation is gone for everyone, owner included
         raise HTTPException(status_code=404, detail="session not found")
 
 
@@ -1295,10 +1302,11 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
     `HTTPException(404)` (never 403) so an unauthorized caller cannot even
     confirm the session exists."""
     from orca.auth.store import claim_session
+    from orca.serve import deletions
 
     _validate_session_id(session_id)
     if session_id:
-        if not claim_session(session_id, user_id):
+        if deletions.is_tombstoned(session_id) or not claim_session(session_id, user_id):
             raise HTTPException(status_code=404, detail="session not found")
         sid = session_id
     else:
@@ -2036,7 +2044,9 @@ async def _chat_dispatch(
             # call above (see orca/memory/turn_ingest.py's own docstring for why).
             from orca.memory.turn_ingest import maybe_ingest_turn
             maybe_ingest_turn(sess.id, req.message, final)
-        sess.persist_to_redis(fence_token=_ta.fence if _ta is not None else None)
+        from orca.serve import deletions as _deletions
+        if not _deletions.is_tombstoned(sess.id):                 # L02-01: never resurrect a deleted conversation's cache
+            sess.persist_to_redis(fence_token=_ta.fence if _ta is not None else None)
 
     audit.log("chat", user_id=user.id if user else None,
               detail={"model": sess.model_variant, "backend": "ollama", "data_left_infrastructure": False,
@@ -2570,10 +2580,12 @@ async def _stream_dispatch(
                     sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
                     from orca.memory.turn_ingest import maybe_ingest_turn
                     maybe_ingest_turn(sess.id, req.message, full)
-                sess.persist_to_redis(fence_token=fence)
+                from orca.serve import deletions as _deletions, temporary_chat
+                _gone = _deletions.is_tombstoned(sess.id)            # L02-01: deleted while this turn was finishing -> write nothing derived
+                if not _gone:
+                    sess.persist_to_redis(fence_token=fence)
 
-                from orca.serve import temporary_chat
-                if not temporary_chat.is_hidden(sess.id):
+                if not temporary_chat.is_hidden(sess.id) and not _gone:
                     asyncio.create_task(asyncio.to_thread(
                         sess.knowledge_graph.extract_and_add,
                         f"{req.message}\n{full}", "chat", sess.brain,
@@ -2691,7 +2703,10 @@ async def list_sessions(
     if user is not None:
         from orca.auth.store import get_user_session_ids
 
+        from orca.serve import deletions
+
         owned = set(get_user_session_ids(user.id))
+        owned -= deletions.tombstoned_among(owned)                        # L02-01: a deletion in progress is already invisible
         episode_ids = [s for s in saved if s in owned]
         activity: dict[str, float] = {}
         for sid in owned:
@@ -2824,17 +2839,17 @@ def _temporary_block(session_id: str):
 
 
 def _omit_long_term(session_id: str) -> bool:
-    from orca.serve import temporary_chat
+    from orca.serve import deletions, temporary_chat
 
-    return temporary_chat.is_hidden(session_id)
+    return temporary_chat.is_hidden(session_id) or deletions.is_tombstoned(session_id)      # L02-01: nothing derived is written for a deleted conversation
 
 
 def _stream_may_publish(session_id: str, fence: str) -> bool:
     if session_store.enabled() and not session_store.lease_held(session_id, fence):
         return False
-    from orca.serve import temporary_chat
+    from orca.serve import deletions, temporary_chat
 
-    return temporary_chat.enforce(session_id) is None
+    return temporary_chat.enforce(session_id) is None and not deletions.is_tombstoned(session_id)
 
 
 @app.get("/api/session/{session_id}/messages")
@@ -2868,7 +2883,10 @@ async def search_sessions(q: str, request: Request, limit: int = 20, user: User 
     owned = get_user_session_ids(user.id)
     from orca.serve import temporary_chat
 
-    visible = [sid for sid in owned if not temporary_chat.is_hidden(sid)]
+    from orca.serve import deletions
+
+    gone = deletions.tombstoned_among(owned)
+    visible = [sid for sid in owned if sid not in gone and not temporary_chat.is_hidden(sid)]
     return await asyncio.to_thread(conversations.search, visible, _session_titles, q, limit=max(1, min(int(limit), 50)))
 
 
@@ -2900,27 +2918,46 @@ async def export_session(session_id: str, format: str = "md", user: User | None 
 
 @app.delete("/api/session/{session_id}")
 async def delete_conversation(session_id: str, user: User | None = Depends(get_current_user_optional)):
-    """Delete ONE of the caller's conversations and everything scoped to it (transcript, memory, documents, knowledge graph, titles). Owner only."""
+    """Delete ONE of the caller's conversations and everything scoped to it (transcript, memory, documents, knowledge graph, titles). Owner only.
+
+    L02-01: writes a durable deletion identity first (access is revoked from that instant), then runs the idempotent cleanup cascade. The response
+    states what actually happened: ``200 {deleted: true}`` only when every store confirmed; ``202 {deleted: false, state: "partial"|"running"}``
+    when cleanup is unfinished (the conversation is already inaccessible; repeat the request or wait for the sweep). Never a false success."""
     if user is None:
         e = coded_error("auth_required")
         return JSONResponse(e.as_json(), status_code=e.status)
-    _owned_session_or_404(session_id, user)
-    from orca.auth.store import get_user_session_ids, release_session
-    from orca.serve.account_delete import _delete_session_data, _remove_session_title
+    from orca.auth.store import get_user_session_ids
+    from orca.serve import deletions
 
-    if session_id not in set(get_user_session_ids(user.id)):
-        raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
-    result = await asyncio.to_thread(_delete_session_data, session_id)
-    try:
-        from orca.serve import message_versions
-        message_versions.delete_session(session_id)
-    except Exception:
-        pass
-    _remove_session_title(session_id)
+    _validate_session_id(session_id)
+    existing = await asyncio.to_thread(deletions.get, session_id)
+    if existing is None:
+        _owned_session_or_404(session_id, user)
+        if session_id not in set(get_user_session_ids(user.id)):
+            raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
+    elif existing["state"] != "complete":
+        # A repeat/resume is only for the person who started it.
+        if session_id not in set(get_user_session_ids(user.id)):
+            raise HTTPException(status_code=404, detail="session not found")
+    else:
+        raise HTTPException(status_code=404, detail="session not found")          # already fully deleted: indistinguishable from never having existed
+    job = await asyncio.to_thread(deletions.begin, session_id, user.id)
     _sessions.pop(session_id, None)
-    release_session(session_id, user.id)
-    audit.log("conversation_deleted", user_id=user.id, detail={"session_id": session_id})
-    return {"deleted": True, "session_id": session_id, "stores": {k: v for k, v in result.items() if not k.endswith("_error")}}
+    job = await asyncio.to_thread(deletions.run, session_id, user.id)
+    for _ in range(25):                                                           # another worker holds the cleanup lease: give it a moment to finish
+        if job["state"] != "running":
+            break
+        await asyncio.sleep(0.2)
+        job = await asyncio.to_thread(deletions.get, session_id) or job
+    _sessions.pop(session_id, None)
+    audit.log("conversation_deleted", user_id=user.id, detail={"session_id": session_id, "deletion_id": job["deletion_id"], "state": job["state"]})
+    body = {
+        "deleted": job["deleted"], "state": job["state"], "session_id": session_id, "deletion_id": job["deletion_id"],
+        "access_revoked": True, "retryable": job["retryable"], "stores": {k: v for k, v in job["stores"].items() if not k.startswith("_")},
+        "vector_store_physical_reclamation": job["stores"].get("_vector_physical_reclamation"),
+        "retention": deletions.RETENTION_NOTICE,
+    }
+    return JSONResponse(body, status_code=200 if job["deleted"] else 202)
 
 
 @app.post("/api/session/save")
