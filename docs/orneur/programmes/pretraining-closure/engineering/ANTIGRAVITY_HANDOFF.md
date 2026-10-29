@@ -3,12 +3,13 @@
 ## Freeze for independent retesting
 
 1. Prior independently qualified remediation tip: `97d4c83a16f56fca3c934cd7954ae8db6cfeb6d1` — verdict **INDEPENDENTLY_QUALIFIED_ENGINEERING — LIMITED TO TESTED SCOPE**.
-2. **Integrity code tip (probe + digest authority):** `3484d0372bd0bf04649fdc6c9b939b94fc4f912a` (TRAIN-2 probe avoids SyntheticOnlyGuard pollution; prior register-alignment tip `54bb272d4329b59c4694ff5ab41605a7dc6539c7`)
-3. Preserve qualified remediation; do not re-litigate skip/SHA honesty unless digests/code change those paths.
-4. Primary report: `ORNEUR_PRETRAINING_FOUNDATION_FINAL_MASTER_ENGINEERING_REPORT.md`
-5. Eight-row reconciliation: `INDEPENDENT_AUDIT_EIGHT_ROW_RECONCILIATION.json`
-6. Freeze package: `TRAINING_FREEZE_MANIFEST.json` — **NOT_FROZEN** / **NO-GO**
-7. Formal acceptance: **0/95**. Training: **STRICT NO-GO**.
+2. **Integrity probe rebuild tip:** `d6794245b77bc417d9a0d66e52804f5177bbfc17`
+3. Exact-head green tip `a7109fae7881b201591cd5cc0b6db3d43df0f1e2` on PR #140. Test Suite [`40906582652`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40906582652) — success (`9050 passed, 389 skipped, 43 deselected, 7 xfailed`). See `ANTIGRAVITY_REMEDIATION_EXACT_HEAD_CI.md`.
+4. Preserve qualified remediation (`97d4c83`); do not re-litigate skip/SHA honesty unless digests/code change those paths.
+5. Primary report: `ORNEUR_PRETRAINING_FOUNDATION_FINAL_MASTER_ENGINEERING_REPORT.md`
+6. Eight-row reconciliation: `INDEPENDENT_AUDIT_EIGHT_ROW_RECONCILIATION.json`
+7. Freeze package: `TRAINING_FREEZE_MANIFEST.json` — **NOT_FROZEN** / **NO-GO**
+8. Formal acceptance: **0/95**. Training: **STRICT NO-GO**.
 
 ## What changed since 97d4c83 (targeted)
 
