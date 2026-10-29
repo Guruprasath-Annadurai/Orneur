@@ -5,10 +5,11 @@
 1. Prior independently tested FOUNDATION-02 code SHA: `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` (CI `40860060023`).
 2. Audited defective tip (PARTIALLY_QUALIFIED): `98069d833051c18a46f3fcfd42011cf7c83f7f6c`.
 3. **Remediation code-bearing tip (probe + digest authority):** `78e6ad65617741cd92af6df4b4a37543930e4ced`
-4. Evidence/docs commits after that tip may advance HEAD; **do not treat docs-only commits as a new code tip**. Digests in `FOUNDATION_02_VERIFICATION_PROBES.json` must match files at the remediation code tip (and still match after docs-only commits that do not touch implementation paths).
-5. Primary report: `ORNEUR_PRETRAINING_FOUNDATION_FINAL_MASTER_ENGINEERING_REPORT.md`
-6. Evidence manifest: `FINAL_EVIDENCE_MANIFEST.json`
-7. Freeze package: `TRAINING_FREEZE_MANIFEST.json` — status **NOT_FROZEN** / **NO-GO**
+4. Exact-head green tip `7609602ea322093151c8264ff71831291ebb6537` on `cursor/foundation-02-phase1-evidence-closure-8108` (PR #140). Test Suite [`40894646633`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40894646633) — 9/9 success (`9041 passed, 389 skipped, 43 deselected, 7 xfailed`). See `ANTIGRAVITY_REMEDIATION_EXACT_HEAD_CI.md`.
+5. Evidence/docs commits after the code tip may advance HEAD; **do not treat docs-only commits as a new code tip**. Digests in `FOUNDATION_02_VERIFICATION_PROBES.json` must match files at the remediation code tip (and still match after docs-only commits that do not touch implementation paths).
+6. Primary report: `ORNEUR_PRETRAINING_FOUNDATION_FINAL_MASTER_ENGINEERING_REPORT.md`
+7. Evidence manifest: `FINAL_EVIDENCE_MANIFEST.json`
+8. Freeze package: `TRAINING_FREEZE_MANIFEST.json` — status **NOT_FROZEN** / **NO-GO**
 
 ## Corrected defects (must reproduce as refusals)
 
