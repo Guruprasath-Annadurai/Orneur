@@ -1,8 +1,9 @@
 {
-  "schema": "orneur-pretraining-closure-engineering-blocker-register/1",
+  "schema": "orneur-pretraining-closure-engineering-blocker-register/2",
   "training_authorization": "NO-GO",
   "formal_acceptance": "0/95",
   "note": "Engineering blockers only. Does not replace the protected acceptance register.",
+  "verified_engineering_count_at_last_rebuild": 25,
   "blockers": [
     {
       "id": "BLK-TRAIN-AUTH",
@@ -33,7 +34,7 @@
       "severity": "P0",
       "requirement_ids": ["G1"],
       "class": "BLOCKED_BY_PROTECTED_DECISION",
-      "summary": "Independent architecture review absent; separate from Cursor engineering",
+      "summary": "Independent architecture review absent",
       "minimum_prerequisite": "Named independent reviewer artifact"
     },
     {
@@ -45,28 +46,36 @@
       "minimum_prerequisite": "Founder foundation decision + authorized model revision"
     },
     {
-      "id": "BLK-COMPUTE",
+      "id": "BLK-C16",
       "severity": "P1",
-      "requirement_ids": ["C08", "C44", "QUAL-1"],
-      "class": "BLOCKED_BY_PROTECTED_DECISION",
-      "summary": "GPU/spend/qualification run not authorized; environment not provisioned",
-      "minimum_prerequisite": "Founder compute grant + approved environment"
+      "requirement_ids": ["C16"],
+      "class": "PARTIAL_ENGINEERING — CORRECTIONS_REQUIRED",
+      "summary": "Primary OCR1 codec present; independent second implementation not supplied",
+      "minimum_prerequisite": "Non-Cursor second codec agreeing on OCR1 verdict vector"
     },
     {
-      "id": "BLK-DATA-CUSTODY",
-      "severity": "P1",
-      "requirement_ids": ["DATA-5"],
+      "id": "BLK-C27",
+      "severity": "P0",
+      "requirement_ids": ["C27"],
       "class": "BLOCKED_BY_PROTECTED_DECISION",
-      "summary": "Independent data custody evidence absent",
-      "minimum_prerequisite": "Authorized custody specification + independent receipt"
+      "summary": "Authorized class-K re-enrolment path absent; unauthorized workaround refused",
+      "minimum_prerequisite": "Founder-authorized class-K path + real TPM/board records"
+    },
+    {
+      "id": "BLK-COMPUTE",
+      "severity": "P1",
+      "requirement_ids": ["C08", "C44", "QUAL-1", "G12", "P2-1"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "GPU/spend/qualification/P2 environment not authorized or provisioned",
+      "minimum_prerequisite": "Founder compute grant + attested environment"
     },
     {
       "id": "BLK-HARDWARE-TRUST",
       "severity": "P1",
-      "requirement_ids": ["Phase-6 physical gates"],
+      "requirement_ids": ["HW-01", "HW-FORGE", "G6", "G7", "G9", "C24", "C25", "C41"],
       "class": "BLOCKED_BY_PROTECTED_DECISION",
-      "summary": "TPM/Secure Boot/attestation hardware unavailable; mocks must not substitute",
-      "minimum_prerequisite": "Authorized physical hardware + independent checks"
+      "summary": "Physical TPM/Secure Boot/attestation/custody evidence unavailable; mocks refused as PASS",
+      "minimum_prerequisite": "Authorized physical hardware + independent receipts"
     },
     {
       "id": "BLK-AUDIT-TAIL",
@@ -77,20 +86,20 @@
       "minimum_prerequisite": "External sealed audit anchor outside operator write access"
     },
     {
+      "id": "BLK-MAINLINE",
+      "severity": "P0",
+      "requirement_ids": ["G2", "G3"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "Candidate not on protected main; green branch CI is not mainline acceptance",
+      "minimum_prerequisite": "Authorized merge + exact-mainline CI + independent review"
+    },
+    {
       "id": "BLK-INDEPENDENT-QUAL",
       "severity": "P0",
       "requirement_ids": ["G13"],
       "class": "ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW",
-      "summary": "Antigravity must independently retest corrective tip; Cursor self-cert is not G13",
-      "minimum_prerequisite": "Antigravity qualification of honesty-corrected tip"
-    },
-    {
-      "id": "BLK-MAINLINE",
-      "severity": "P0",
-      "requirement_ids": ["G2", "G3", "integration"],
-      "class": "BLOCKED_BY_PROTECTED_DECISION",
-      "summary": "FOUNDATION-02 not on main; green branch CI is not protected-mainline acceptance",
-      "minimum_prerequisite": "Authorized merge + exact-mainline CI"
+      "summary": "Antigravity must independently retest final engineering tip; Cursor self-cert is not G13",
+      "minimum_prerequisite": "Antigravity qualification of frozen candidate"
     }
   ]
 }

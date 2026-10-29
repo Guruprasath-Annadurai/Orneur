@@ -1,15 +1,16 @@
-# HARDWARE_TRUST_EVIDENCE
+# Hardware Trust Evidence (Phase 6)
 
-**Status:** NOT EXECUTED in this turn — Phase 0/1 only.  
-**Training authorization:** NO-GO  
-**Formal acceptance:** 0/95  
+**Disposition:** `BLOCKED_BY_PROTECTED_DECISION`  
+**Training authorization:** **NO-GO**
 
-This artefact exists as a programme slot. It must not be read as completion of Phases 2–8.
+## Software boundary
 
-Prerequisites before meaningful content:
+`orca/pretrain_foundation/hardware_evidence_boundary.py` classifies physical-adjacent claims and **refuses mock/synthetic evidence as physical acceptance**.
 
-- Phase 1 evidence honesty independently confirmed (Antigravity).
-- Founder/Claude decisions for architecture (G1), foundation selection (DEC-K), and any R65 amendment remain protected.
-- No unauthorized corpus ingestion, hardware fabrication, or training.
+Covered requirement families include G6/G7/G9/G11, C22–C28, C39–C43, C46–C50, HW-*, P2-*.
 
-See `TECHNICAL_BASELINE.md`, `FOUNDATION_SOFTWARE_CLOSURE.md`, and `ENGINEERING_BLOCKER_REGISTER.json`.
+## Physical evidence status
+
+**Not present in this environment.** No TPM quotes, Secure Boot key lists, Crown/Forge serial custody receipts, or floor-card comparisons were fabricated.
+
+Minimum prerequisite for each blocked physical row: authorized real hardware + independently checked receipt artifacts.

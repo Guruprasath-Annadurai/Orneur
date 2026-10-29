@@ -129,6 +129,104 @@ VERIFIED_CANDIDATES = {
         "historical_source_sha": "fc1eb1d",
         "claim": "Contamination checking helpers (synthetic; not formal DATA-2 acceptance)",
     },
+    # Phase 2 RSE software semantics (engineering verification ≠ formal acceptance / mainline).
+    "C04": {
+        "implementation": ["orca/rse/imp1/authority.py", "orca/rse/imp1/codec.py"],
+        "tests": ["tests/rse/test_imp1_registry_crown.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Policy ceiling refusal / synthetic policy caps (RSE IMP-1)",
+    },
+    "C05": {
+        "implementation": ["orca/rse/imp1/codec.py"],
+        "tests": ["tests/rse/test_imp1_registry_crown.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Confusable registry name refusal (RSE IMP-1)",
+    },
+    "C09": {
+        "implementation": ["orca/rse/imp3/freshness.py", "orca/rse/imp3/ledger.py"],
+        "tests": ["tests/rse/test_imp3_ledger.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Challenge reuse / replay refusal (RSE IMP-3)",
+    },
+    "C10": {
+        "implementation": ["orca/rse/imp3/freshness.py"],
+        "tests": ["tests/rse/test_imp3_ledger.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Freshness / clock set-back does not revive consumed challenge (RSE IMP-3)",
+    },
+    "C11": {
+        "implementation": ["orca/rse/imp2/machine.py"],
+        "tests": ["tests/rse/test_block1_remediation.py", "tests/rse/test_imp2_machine.py"],
+        "historical_source_sha": "b384348",
+        "claim": "No ACTIVE execution before witnessed checkpoint semantics (RSE IMP-2)",
+    },
+    "C12": {
+        "implementation": ["orca/rse/imp3/ledger.py", "orca/rse/imp3/records.py"],
+        "tests": ["tests/rse/test_imp3_ledger.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Witness cosignature verify + forged ack refusal (RSE IMP-3)",
+    },
+    "C13": {
+        "implementation": ["orca/rse/imp3/ledger.py"],
+        "tests": ["tests/rse/test_imp3_ledger.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Witness fork / smaller-tree refusal (RSE IMP-3; synthetic fence ≠ physical)",
+    },
+    "C14": {
+        "implementation": ["orca/rse/imp3/ledger.py"],
+        "tests": ["tests/rse/test_imp3_ledger.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Bundle without witnessed result remains unusable (RSE IMP-3)",
+    },
+    "C15": {
+        "implementation": ["orca/rse/imp3/ledger.py", "orca/rse/imp2/machine.py"],
+        "tests": ["tests/rse/test_imp3_ledger.py", "tests/rse/test_block1_remediation.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Crash/journal recovery matrix (software); C26 hardware power-cut remains separate",
+    },
+    "C17": {
+        "implementation": ["orca/rse/imp4/ocr1.py"],
+        "tests": ["tests/rse/test_imp4_ocr1.py"],
+        "historical_source_sha": "b384348",
+        "claim": "OCR1 enc validity / zero-shared-secret abort vectors",
+    },
+    "C18": {
+        "implementation": ["orca/rse/imp4/ocr1.py"],
+        "tests": ["tests/rse/test_imp4_ocr1.py"],
+        "historical_source_sha": "b384348",
+        "claim": "RFC 9180 profile vectors used by OCR1",
+    },
+    "C19": {
+        "implementation": ["orca/rse/imp4/ocr1.py"],
+        "tests": ["tests/rse/test_imp4_ocr1.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Missing/duplicate/reordered/extra/truncated/foreign frame verdicts",
+    },
+    "C20": {
+        "implementation": ["orca/rse/imp4/ocr1.py"],
+        "tests": ["tests/rse/test_imp4_ocr1.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Unknown or revoked sender refusal",
+    },
+    "C21": {
+        "implementation": ["orca/rse/imp4/ocr1.py"],
+        "tests": ["tests/rse/test_imp4_ocr1.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Bad origin signature rejected before key use",
+    },
+    "C45": {
+        "implementation": ["orca/rse/imp2/machine.py"],
+        "tests": ["tests/rse/test_imp2_machine.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Impossible lifecycle edge refusal; class-K remains separate decision",
+    },
+    # Phase 5 software holdout denial (QUAL-2 engineering semantics; not private corpus access).
+    "QUAL-2": {
+        "implementation": ["orca/pretrain_foundation/eval_boundary.py", "orca/genesis/eval/integrity.py"],
+        "tests": ["tests/test_pretraining_phase_closure.py", "tests/test_cursor_eval_integrity.py"],
+        "historical_source_sha": "cd1e557",
+        "claim": "Training identity denied holdout/private eval access; scoring fail-closed",
+    },
 }
 
 # Explicit downgrades: worksheet / docs alone are not VERIFIED_ENGINEERING.
@@ -137,6 +235,16 @@ FORCE_UNVERIFIED = {
         "IMPLEMENTED_UNVERIFIED",
         "Engineering worksheet artifact exists; FINAL-1 requires independent recomputation and formal process",
         "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json",
+    ),
+    "C16": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Primary OCR1 codec present; independent second implementation agreement not supplied (Cursor cannot self-certify)",
+        "orca/pretrain_foundation/independent_codec.py",
+    ),
+    "C03": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Canonical registry update dual-owner evidence software exists in RSE; dual distinct owner-token acceptance record not independently qualified",
+        "orca/rse/imp1/codec.py",
     ),
 }
 

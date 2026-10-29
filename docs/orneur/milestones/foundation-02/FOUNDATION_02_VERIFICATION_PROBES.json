@@ -1,6 +1,6 @@
 {
   "schema": "orneur-foundation-02-verification-probes/3",
-  "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+  "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
   "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
   "lockfile_sha256": {
     "uv.lock": "3af0d6934c1a4d0cc9f6a5b9e8fbffa9daa43bc8e8aec85069b0bd9552f5b86d",
@@ -37,7 +37,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -50,7 +50,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "128 passed, 1 warning in 3.13s",
+      "summary_line": "128 passed, 1 warning in 3.28s",
       "counts": {
         "passed": 128,
         "failed": null,
@@ -59,7 +59,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "128 passed, 1 warning in 3.13s",
+        "summary_line": "128 passed, 1 warning in 3.28s",
         "parseable": true
       },
       "passed_probe": true,
@@ -84,7 +84,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -96,7 +96,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "23 passed, 1 xfailed in 0.84s",
+      "summary_line": "23 passed, 1 xfailed in 0.88s",
       "counts": {
         "passed": 23,
         "failed": null,
@@ -105,7 +105,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "23 passed, 1 xfailed in 0.84s",
+        "summary_line": "23 passed, 1 xfailed in 0.88s",
         "parseable": true
       },
       "passed_probe": true,
@@ -130,7 +130,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -142,7 +142,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "92 passed, 1 warning in 3.05s",
+      "summary_line": "92 passed, 1 warning in 3.20s",
       "counts": {
         "passed": 92,
         "failed": null,
@@ -151,7 +151,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "92 passed, 1 warning in 3.05s",
+        "summary_line": "92 passed, 1 warning in 3.20s",
         "parseable": true
       },
       "passed_probe": true,
@@ -177,7 +177,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -190,7 +190,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "30 passed in 2.20s",
+      "summary_line": "30 passed in 2.41s",
       "counts": {
         "passed": 30,
         "failed": null,
@@ -199,7 +199,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "30 passed in 2.20s",
+        "summary_line": "30 passed in 2.41s",
         "parseable": true
       },
       "passed_probe": true,
@@ -225,7 +225,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -238,7 +238,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "52 passed in 9.16s",
+      "summary_line": "52 passed in 9.10s",
       "counts": {
         "passed": 52,
         "failed": null,
@@ -247,7 +247,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "52 passed in 9.16s",
+        "summary_line": "52 passed in 9.10s",
         "parseable": true
       },
       "passed_probe": true,
@@ -272,7 +272,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -284,7 +284,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "23 passed in 1.20s",
+      "summary_line": "23 passed in 1.18s",
       "counts": {
         "passed": 23,
         "failed": null,
@@ -293,7 +293,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "23 passed in 1.20s",
+        "summary_line": "23 passed in 1.18s",
         "parseable": true
       },
       "passed_probe": true,
@@ -319,7 +319,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -367,7 +367,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -412,7 +412,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
       "pytest_command": [
         "python",
         "-m",
@@ -424,7 +424,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "18 passed in 0.31s",
+      "summary_line": "18 passed in 0.30s",
       "counts": {
         "passed": 18,
         "failed": null,
@@ -433,11 +433,731 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "18 passed in 0.31s",
+        "summary_line": "18 passed in 0.30s",
         "parseable": true
       },
       "passed_probe": true,
       "verdict_reason": "PASS passed=18",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C04": {
+      "requirement_id": "C04",
+      "claim": "Policy ceiling refusal / synthetic policy caps (RSE IMP-1)",
+      "implementation_paths": [
+        "orca/rse/imp1/authority.py",
+        "orca/rse/imp1/codec.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
+        "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp1_registry_crown.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp1_registry_crown.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "16 passed in 0.31s",
+      "counts": {
+        "passed": 16,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "16 passed in 0.31s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=16",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C05": {
+      "requirement_id": "C05",
+      "claim": "Confusable registry name refusal (RSE IMP-1)",
+      "implementation_paths": [
+        "orca/rse/imp1/codec.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp1_registry_crown.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp1_registry_crown.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "16 passed in 0.31s",
+      "counts": {
+        "passed": 16,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "16 passed in 0.31s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=16",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C09": {
+      "requirement_id": "C09",
+      "claim": "Challenge reuse / replay refusal (RSE IMP-3)",
+      "implementation_paths": [
+        "orca/rse/imp3/freshness.py",
+        "orca/rse/imp3/ledger.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp3/freshness.py": "a54e6376981b7f2cdb9244893e8f81164c431a574892abfb363b18c4d2bf3eb7",
+        "orca/rse/imp3/ledger.py": "bf25011bf60278808f9b21966c9e77021912916ae2a3d2e535e35963902af9d6"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "15 passed in 0.33s",
+      "counts": {
+        "passed": 15,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "15 passed in 0.33s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=15",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C10": {
+      "requirement_id": "C10",
+      "claim": "Freshness / clock set-back does not revive consumed challenge (RSE IMP-3)",
+      "implementation_paths": [
+        "orca/rse/imp3/freshness.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp3/freshness.py": "a54e6376981b7f2cdb9244893e8f81164c431a574892abfb363b18c4d2bf3eb7"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "15 passed in 0.34s",
+      "counts": {
+        "passed": 15,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "15 passed in 0.34s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=15",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C11": {
+      "requirement_id": "C11",
+      "claim": "No ACTIVE execution before witnessed checkpoint semantics (RSE IMP-2)",
+      "implementation_paths": [
+        "orca/rse/imp2/machine.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp2/machine.py": "c7770157373b7b5364d851af73fcc39b3e23151019e88d3090bf176c39d4b0da"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_block1_remediation.py",
+        "tests/rse/test_imp2_machine.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_block1_remediation.py",
+        "tests/rse/test_imp2_machine.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "25 passed in 0.42s",
+      "counts": {
+        "passed": 25,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "25 passed in 0.42s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=25",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C12": {
+      "requirement_id": "C12",
+      "claim": "Witness cosignature verify + forged ack refusal (RSE IMP-3)",
+      "implementation_paths": [
+        "orca/rse/imp3/ledger.py",
+        "orca/rse/imp3/records.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp3/ledger.py": "bf25011bf60278808f9b21966c9e77021912916ae2a3d2e535e35963902af9d6",
+        "orca/rse/imp3/records.py": "cce865405398a35a1dfc827a01c509f27024d7c954afa7e306c9614809c5c9ca"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "15 passed in 0.33s",
+      "counts": {
+        "passed": 15,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "15 passed in 0.33s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=15",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C13": {
+      "requirement_id": "C13",
+      "claim": "Witness fork / smaller-tree refusal (RSE IMP-3; synthetic fence \u2260 physical)",
+      "implementation_paths": [
+        "orca/rse/imp3/ledger.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp3/ledger.py": "bf25011bf60278808f9b21966c9e77021912916ae2a3d2e535e35963902af9d6"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "15 passed in 0.33s",
+      "counts": {
+        "passed": 15,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "15 passed in 0.33s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=15",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C14": {
+      "requirement_id": "C14",
+      "claim": "Bundle without witnessed result remains unusable (RSE IMP-3)",
+      "implementation_paths": [
+        "orca/rse/imp3/ledger.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp3/ledger.py": "bf25011bf60278808f9b21966c9e77021912916ae2a3d2e535e35963902af9d6"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp3_ledger.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "15 passed in 0.33s",
+      "counts": {
+        "passed": 15,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "15 passed in 0.33s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=15",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C15": {
+      "requirement_id": "C15",
+      "claim": "Crash/journal recovery matrix (software); C26 hardware power-cut remains separate",
+      "implementation_paths": [
+        "orca/rse/imp3/ledger.py",
+        "orca/rse/imp2/machine.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp3/ledger.py": "bf25011bf60278808f9b21966c9e77021912916ae2a3d2e535e35963902af9d6",
+        "orca/rse/imp2/machine.py": "c7770157373b7b5364d851af73fcc39b3e23151019e88d3090bf176c39d4b0da"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp3_ledger.py",
+        "tests/rse/test_block1_remediation.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp3_ledger.py",
+        "tests/rse/test_block1_remediation.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "27 passed in 0.48s",
+      "counts": {
+        "passed": 27,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "27 passed in 0.48s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=27",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C17": {
+      "requirement_id": "C17",
+      "claim": "OCR1 enc validity / zero-shared-secret abort vectors",
+      "implementation_paths": [
+        "orca/rse/imp4/ocr1.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "22 passed in 0.42s",
+      "counts": {
+        "passed": 22,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "22 passed in 0.42s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=22",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C18": {
+      "requirement_id": "C18",
+      "claim": "RFC 9180 profile vectors used by OCR1",
+      "implementation_paths": [
+        "orca/rse/imp4/ocr1.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "22 passed in 0.42s",
+      "counts": {
+        "passed": 22,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "22 passed in 0.42s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=22",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C19": {
+      "requirement_id": "C19",
+      "claim": "Missing/duplicate/reordered/extra/truncated/foreign frame verdicts",
+      "implementation_paths": [
+        "orca/rse/imp4/ocr1.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "22 passed in 0.42s",
+      "counts": {
+        "passed": 22,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "22 passed in 0.42s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=22",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C20": {
+      "requirement_id": "C20",
+      "claim": "Unknown or revoked sender refusal",
+      "implementation_paths": [
+        "orca/rse/imp4/ocr1.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "22 passed in 0.42s",
+      "counts": {
+        "passed": 22,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "22 passed in 0.42s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=22",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C21": {
+      "requirement_id": "C21",
+      "claim": "Bad origin signature rejected before key use",
+      "implementation_paths": [
+        "orca/rse/imp4/ocr1.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "22 passed in 0.42s",
+      "counts": {
+        "passed": 22,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "22 passed in 0.42s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=22",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "C45": {
+      "requirement_id": "C45",
+      "claim": "Impossible lifecycle edge refusal; class-K remains separate decision",
+      "implementation_paths": [
+        "orca/rse/imp2/machine.py"
+      ],
+      "implementation_sha256": {
+        "orca/rse/imp2/machine.py": "c7770157373b7b5364d851af73fcc39b3e23151019e88d3090bf176c39d4b0da"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/rse/test_imp2_machine.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "b384348",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/rse/test_imp2_machine.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "13 passed in 0.27s",
+      "counts": {
+        "passed": 13,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "13 passed in 0.27s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=13",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "QUAL-2": {
+      "requirement_id": "QUAL-2",
+      "claim": "Training identity denied holdout/private eval access; scoring fail-closed",
+      "implementation_paths": [
+        "orca/pretrain_foundation/eval_boundary.py",
+        "orca/genesis/eval/integrity.py"
+      ],
+      "implementation_sha256": {
+        "orca/pretrain_foundation/eval_boundary.py": "65c309b42677a66182cd5d5071fdea97ea85e09c543322f34235317ad53463f7",
+        "orca/genesis/eval/integrity.py": "2cb1362563f10b0f92ecf60d042b8e4ef5aca9f6acad3d58b98544806b8f18bf"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_pretraining_phase_closure.py",
+        "tests/test_cursor_eval_integrity.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "cd1e557",
+      "candidate_sha": "aa59387038a03c244a57b677cc8793200f549220",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_pretraining_phase_closure.py",
+        "tests/test_cursor_eval_integrity.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "19 passed in 0.37s",
+      "counts": {
+        "passed": 19,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "19 passed in 0.37s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=19",
       "refusal_codes": [],
       "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
     }

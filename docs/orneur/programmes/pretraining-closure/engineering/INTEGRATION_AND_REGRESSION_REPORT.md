@@ -1,15 +1,19 @@
-# INTEGRATION_AND_REGRESSION_REPORT
+# Integration and Regression Report (Phase 8)
 
-**Status:** NOT EXECUTED in this turn — Phase 0/1 only.  
-**Training authorization:** NO-GO  
-**Formal acceptance:** 0/95  
+**Disposition:** `BLOCKED_BY_PROTECTED_DECISION` for mainline acceptance; engineering candidate prepared  
+**Training authorization:** **NO-GO**
 
-This artefact exists as a programme slot. It must not be read as completion of Phases 2–8.
+## Candidate
 
-Prerequisites before meaningful content:
+- Branch: `cursor/foundation-02-phase1-evidence-closure-8108`
+- Lineage: FOUNDATION-02 PR #138 → Phase 0/1 honesty PR #140 → Phases 2–9 closure commits
+- Formal acceptance ledger: empty (`0/95`)
+- Protected main merge: **not performed** (no authority)
 
-- Phase 1 evidence honesty independently confirmed (Antigravity).
-- Founder/Claude decisions for architecture (G1), foundation selection (DEC-K), and any R65 amendment remain protected.
-- No unauthorized corpus ingestion, hardware fabrication, or training.
+## Regression posture
 
-See `TECHNICAL_BASELINE.md`, `FOUNDATION_SOFTWARE_CLOSURE.md`, and `ENGINEERING_BLOCKER_REGISTER.json`.
+- Authorization NO-GO preserved
+- Probe honesty v3 preserved (xfail/skip/zero-collected cannot manufacture PASS)
+- RSE + genesis + phase-closure suites included in exact-head CI expectations
+
+Green branch CI is **not** protected-mainline acceptance (G2/G3 remain incomplete until authorized merge + independent review).

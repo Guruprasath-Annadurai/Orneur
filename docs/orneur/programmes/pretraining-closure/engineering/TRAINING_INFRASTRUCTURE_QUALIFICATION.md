@@ -1,15 +1,16 @@
-# TRAINING_INFRASTRUCTURE_QUALIFICATION
+# Training Infrastructure Qualification (Phase 7)
 
-**Status:** NOT EXECUTED in this turn — Phase 0/1 only.  
-**Training authorization:** NO-GO  
-**Formal acceptance:** 0/95  
+**Disposition:** `PARTIAL_ENGINEERING — CORRECTIONS_REQUIRED`  
+**Training authorization:** **NO-GO**
 
-This artefact exists as a programme slot. It must not be read as completion of Phases 2–8.
+## Engineering present
 
-Prerequisites before meaningful content:
+- Scenario honesty: `orca/pretrain_foundation/compute_scenarios.py` (`frontier_pretraining_available() == False`)
+- Fault injection publisher: `orca/pretrain_foundation/faults.py`
+- TRAIN-1 / TRAIN-2 synthetic math + checkpoint probes: VERIFIED_ENGINEERING
+- Infra identity record: `orca/pretrain_foundation/infra_record.py` (lockfile digests + optional dry-run pointer)
+- Authorization integration remains fail-closed
 
-- Phase 1 evidence honesty independently confirmed (Antigravity).
-- Founder/Claude decisions for architecture (G1), foundation selection (DEC-K), and any R65 amendment remain protected.
-- No unauthorized corpus ingestion, hardware fabrication, or training.
+## Blocked
 
-See `TECHNICAL_BASELINE.md`, `FOUNDATION_SOFTWARE_CLOSURE.md`, and `ENGINEERING_BLOCKER_REGISTER.json`.
+GPU/accelerator provisioning, P2 attested environment acceptance, founder spend/GPU permission (C08/C44), SUP-1 dual independent build digests on merged main.

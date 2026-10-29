@@ -1,18 +1,51 @@
-# Antigravity Handoff — Phase 0/1 Evidence Honesty Closure
+# Antigravity Handoff — Pretraining Closure (Phases 0–9 engineering)
 
-1. Start from PR #138 lineage. Prior independently tested code SHA: `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` (CI run `40860060023`).
-2. Retest honesty probe tip `cd1e557a685b529c57bf4bf2f594b088cbeb5172` on `cursor/foundation-02-phase1-evidence-closure-8108`. Exact-head CI green on docs tip `b3fbda01ea1f4cb23a5fa6da5cd6398a4f3d862a` — Test Suite [`40866502460`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40866502460) (9/9 success). See `PHASE_1_EXACT_HEAD_CI.md`.
-3. Confirm `python scripts/acceptance/validate_register_graph.py --check` → `pretraining=95 numerator=0`.
-4. Confirm `docs/orneur/acceptance/acceptance_ledger.json` is `[]`. Do not treat engineering VERIFIED rows as formal acceptance.
-5. Run adversarial honesty suite: `python -m pytest tests/test_foundation02_probe_honesty.py -q`.
-6. Re-run matrix builder probes on the exact tip: `python scripts/foundation02/build_requirement_matrix.py`.
-7. Confirm probes JSON has:
-   - no `/home/ubuntu/` or absolute `/workspace/.venv` in `pytest_command` / `pythonpath`
-   - schema `orneur-foundation-02-verification-probes/3`
-   - `passed_probe` false for zero-collected / skip-only / xfail-only / SHA mismatch
-   - `training_authorization: NO-GO`
-8. Confirm G4 residual: `tests/test_training_authorization_assurance.py::test_truncating_the_audit_log_tail_is_detected` remains `@pytest.mark.xfail(strict=True)` and failing; see `FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md`.
-9. Challenge any claim that an xfail or skip is a PASS.
-10. Do **not** inherit Cursor self-cert as G13. Do **not** authorize training. Do **not** invent R65 policy text.
+## Freeze for independent testing
 
-Read-only export for Claude: `docs/orneur/programmes/pretraining-closure/engineering/`.
+1. Prior independently tested FOUNDATION-02 code SHA: `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` (CI `40860060023`).
+2. Honesty tip: `cd1e557a685b529c57bf4bf2f594b088cbeb5172`.
+3. Retest the **exact HEAD** of `cursor/foundation-02-phase1-evidence-closure-8108` (PR #140 lineage) after Phases 2–9 closure commits land and exact-head CI is green.
+4. Primary report: `ORNEUR_PRETRAINING_FOUNDATION_FINAL_MASTER_ENGINEERING_REPORT.md`
+5. Evidence manifest: `FINAL_EVIDENCE_MANIFEST.json`
+6. Freeze package: `TRAINING_FREEZE_MANIFEST.json` — status **NOT_FROZEN** / **NO-GO**
+
+## Required confirmations
+
+```bash
+python scripts/acceptance/validate_register_graph.py --check
+# expect: pretraining=95 numerator=0
+
+python -m pytest \
+  tests/test_foundation02_probe_honesty.py \
+  tests/test_foundation02_requirement_matrix.py \
+  tests/test_pretraining_phase_closure.py \
+  -q
+
+python scripts/foundation02/build_requirement_matrix.py
+python scripts/foundation02/build_final_master_report.py
+```
+
+Confirm:
+
+- Ledger empty; formal acceptance **0/95**
+- Training authorization **NO-GO**
+- Probes schema v3; no `/home/ubuntu/` machine paths in recorded argv
+- xfail/skip/zero-collected cannot become VERIFIED_ENGINEERING
+- Hardware boundary refuses synthetic-as-acceptance
+- C27 unauthorized class-K workaround refused
+- C16 Cursor self-cert as second codec refused
+- G4 audit-tail strict xfail remains failing (≠ PASS)
+
+## Unresolved findings (do not waive)
+
+- Founder: G1, G8, G10, DEC-K, R65, C08/C44, FINAL-2, DATA-3/DATA-5, MODEL-1/MODEL-2R, QUAL-1
+- Physical: HW-*, Crown/Forge/Witness custody, TPM/Secure Boot/attestation, C27 class-K path, P2 env
+- Independent second OCR1 codec (C16)
+- Mainline merge + exact-mainline CI (G2/G3)
+- Audit-tail external sealed anchor (P2 residual)
+
+## Non-claims
+
+Do **not** inherit Cursor self-cert as G13.  
+Do **not** authorize training.  
+Do **not** treat engineering VERIFIED rows as formal acceptance.

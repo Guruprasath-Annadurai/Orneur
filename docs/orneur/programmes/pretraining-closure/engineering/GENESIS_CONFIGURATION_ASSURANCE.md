@@ -1,15 +1,26 @@
-# GENESIS_CONFIGURATION_ASSURANCE
+# GENESIS Configuration Assurance (Phase 3)
 
-**Status:** NOT EXECUTED in this turn — Phase 0/1 only.  
-**Training authorization:** NO-GO  
-**Formal acceptance:** 0/95  
+**Disposition:** `PARTIAL_ENGINEERING — CORRECTIONS_REQUIRED`  
+**Training authorization:** **NO-GO**
 
-This artefact exists as a programme slot. It must not be read as completion of Phases 2–8.
+## Technical assessment (analytical)
 
-Prerequisites before meaningful content:
+Produced by `orca/pretrain_foundation/genesis_feasibility.py` using `genesis-arch-v1` corrected scaling tiers.
 
-- Phase 1 evidence honesty independently confirmed (Antigravity).
-- Founder/Claude decisions for architecture (G1), foundation selection (DEC-K), and any R65 amendment remain protected.
-- No unauthorized corpus ingestion, hardware fabrication, or training.
+- Parameter counts derived from config dimensions (no hand-asserted totals).
+- Memory / FLOPs estimates are theoretical formulas; **no measured GPU throughput**.
+- Official foundation **not** selected (DEC-K blocked).
+- External weights **not** downloaded.
+- `frontier_pretraining_available()` is **False**.
 
-See `TECHNICAL_BASELINE.md`, `FOUNDATION_SOFTWARE_CLOSURE.md`, and `ENGINEERING_BLOCKER_REGISTER.json`.
+Family statuses from `default_registry()`:
+
+| Family | Status |
+|---|---|
+| GENESIS | INTERFACE_ONLY |
+| NOVUS | NOT_AVAILABLE |
+| AETERNUM | NOT_AVAILABLE |
+
+## Blockers
+
+DEC-K, MODEL-1, MODEL-2R, G8/DATA-3, G10, GPU provisioning, licensing dossier (Claude-owned).

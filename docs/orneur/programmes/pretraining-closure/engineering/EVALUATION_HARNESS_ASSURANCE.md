@@ -1,15 +1,20 @@
-# EVALUATION_HARNESS_ASSURANCE
+# Evaluation Harness Assurance (Phase 5)
 
-**Status:** NOT EXECUTED in this turn — Phase 0/1 only.  
-**Training authorization:** NO-GO  
-**Formal acceptance:** 0/95  
+**Disposition:** `PARTIAL_ENGINEERING — CORRECTIONS_REQUIRED`  
+**Training authorization:** **NO-GO**
 
-This artefact exists as a programme slot. It must not be read as completion of Phases 2–8.
+## Engineering present
 
-Prerequisites before meaningful content:
+- Synthetic eval integrity: `orca/genesis/eval/integrity.py` + `tests/test_cursor_eval_integrity.py`
+- Holdout / identity boundary: `orca/pretrain_foundation/eval_boundary.py`
+  - Training identity denied holdout/private eval reads
+  - Training vs evaluation identity separation enforced
+  - Scoring errors fail closed
+- QUAL-2 engineering probe: VERIFIED_ENGINEERING on this tip (software denial semantics)
 
-- Phase 1 evidence honesty independently confirmed (Antigravity).
-- Founder/Claude decisions for architecture (G1), foundation selection (DEC-K), and any R65 amendment remain protected.
-- No unauthorized corpus ingestion, hardware fabrication, or training.
+## Blocked / not claimed
 
-See `TECHNICAL_BASELINE.md`, `FOUNDATION_SOFTWARE_CLOSURE.md`, and `ENGINEERING_BLOCKER_REGISTER.json`.
+- QUAL-1 authorized qualification run
+- QUAL-3 (as applicable) pending independent protocol
+- No protected evaluation corpus was read
+- No native-model benchmark claimed from unavailable models
