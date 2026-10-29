@@ -109,10 +109,14 @@ def _delete_session_data(session_id: str) -> dict:
         docs = list_docs(session_id)
         if docs:
             store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
+            removed = 0
             for d in docs:
-                store.delete_doc(d["doc_id"])
-                unregister_doc(session_id, d["doc_id"])
-            result["docs_deleted"] = len(docs)
+                if store.delete_doc(d["doc_id"]):                 # L02-01: unregister only what every store confirmed
+                    unregister_doc(session_id, d["doc_id"])
+                    removed += 1
+            result["docs_deleted"] = removed
+            if removed != len(docs):
+                result["docs_error"] = f"{len(docs) - removed} document(s) not fully removed"
     except Exception as e:
         result["docs_error"] = str(e)
 

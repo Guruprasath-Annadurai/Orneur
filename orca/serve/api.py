@@ -3611,10 +3611,14 @@ async def delete_doc(
     if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id)):
         # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
         return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
-    ok = sess.doc_store.delete_doc(doc_id)
-    unregister_doc(sess.id, doc_id)
-    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
-    return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}
+    detail = await asyncio.to_thread(sess.doc_store.delete_doc_detailed, doc_id)
+    ok = bool(detail["ok"])
+    if ok:
+        unregister_doc(sess.id, doc_id)                      # L02-01: stays registered (and retryable) until every store confirmed
+    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id, "ok": ok, "collection": detail["collection"], "fallback": detail["fallback"]})
+    body = {"deleted": ok, "doc_id": doc_id, "session_id": sess.id, "retryable": not ok,
+            "stores": {"vector_collection": detail["collection"], "keyword_index": detail["fallback"]}}
+    return JSONResponse(body, status_code=200 if ok else 202)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

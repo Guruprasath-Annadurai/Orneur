@@ -226,28 +226,47 @@ class DocStore:
         return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"]}
                 for _, e in scored[:top_k]]
 
-    def delete_doc(self, doc_id: str) -> bool:
-        """Remove all chunks for a document."""
+    def delete_doc_detailed(self, doc_id: str) -> dict:
+        """Remove a document from EVERY store that can serve it, and say exactly what happened.
+
+        L02-01: the vector collection and the keyword fallback are both retrieval paths (``retrieve`` falls back to the keyword file whenever the
+        collection errors), so a document is deleted only when BOTH confirm. Each store is attempted independently: a collection outage must not
+        leave the fallback copy behind. The fallback is rewritten through a temporary file + ``os.replace`` so a crash can never truncate other
+        documents' text. Per-store values: ``ok`` | ``failed`` | ``absent`` (no such store / nothing to remove). Internal error text is never returned.
+        """
+        out = {"collection": "absent", "fallback": "absent"}
         if self._collection is not None:
             try:
                 self._collection.delete(where={"doc_id": doc_id})
-                return True
+                out["collection"] = "ok"
             except Exception:
-                pass
-        # Keyword fallback: rewrite file excluding this doc
+                out["collection"] = "failed"
         if self._fallback_file.exists():
-            lines = []
-            with open(self._fallback_file) as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        if entry.get("doc_id") != doc_id:
-                            lines.append(line)
-                    except Exception:
-                        lines.append(line)
-            with open(self._fallback_file, "w") as f:
-                f.writelines(lines)
-        return True
+            try:
+                kept: list[str] = []
+                with open(self._fallback_file) as f:
+                    for line in f:
+                        try:
+                            if json.loads(line).get("doc_id") == doc_id:
+                                continue
+                        except Exception:
+                            pass                                    # an unparseable line is not ours to drop
+                        kept.append(line)
+                tmp = self._fallback_file.with_name(self._fallback_file.name + f".{os.getpid()}.tmp")
+                with open(tmp, "w") as f:
+                    f.writelines(kept)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, self._fallback_file)
+                out["fallback"] = "ok"
+            except Exception:
+                out["fallback"] = "failed"
+        out["ok"] = "failed" not in (out["collection"], out["fallback"])
+        return out
+
+    def delete_doc(self, doc_id: str) -> bool:
+        """True only when every store confirmed the removal (see ``delete_doc_detailed``)."""
+        return bool(self.delete_doc_detailed(doc_id)["ok"])
 
     def count(self) -> int:
         if self._collection is not None:
