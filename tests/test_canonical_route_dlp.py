@@ -27,7 +27,9 @@ def fake(client, monkeypatch):  # noqa: F811
     from orca.serve import ratelimit
 
     monkeypatch.setattr(ratelimit, "enforce", lambda *a, **k: None)
-    f = FakeOllama(models=("orca-nano", "orca-core", "orca-ultra"), reply=REPLY)
+    # chunks must carry the secret-bearing reply: Kernel-direct /api/stream now
+    # uses ModelGateway.stream() (B-01), which reads FakeOllama.chunks — not reply.
+    f = FakeOllama(models=("orca-nano", "orca-core", "orca-ultra"), reply=REPLY, chunks=(REPLY,))
     f.__enter__()
     point_orneur_at(f, monkeypatch)
     yield f

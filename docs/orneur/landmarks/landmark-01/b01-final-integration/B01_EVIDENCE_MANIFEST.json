@@ -1,0 +1,10 @@
+{
+  "base_sha": "15befec7191a1992286d7fa027236002f7d385db",
+  "branch": "cursor/b01-real-sse-chatbot-integration-1cdf",
+  "executions": [
+    {"name": "lifecycle+upstream+dlp+authority", "kind": "fixture", "result": "33 passed", "command": "pytest -q tests/test_raw_delta_channel_lifecycle.py tests/test_b01_stream_kernel_upstream.py tests/test_canonical_route_dlp.py tests/test_canonical_turn_authority.py"},
+    {"name": "security_quota_transcript", "kind": "fixture", "result": "59 passed, 2 skipped", "command": "pytest -q tests/test_a_serving_authorization.py tests/test_b_logout_revocation.py tests/test_session_ownership_isolation.py tests/test_p0_reservation_ownership.py tests/test_p0_stream_dlp_closure.py tests/test_p0_transcript_integrity.py tests/test_canonical_quota_admission.py"},
+    {"name": "live_ollama_llama3.2:1b", "kind": "real", "result": "NOT VERIFIED", "reason": "Ollama unreachable in agent VM"},
+    {"name": "chromium_browser_journeys", "kind": "real", "result": "NOT VERIFIED", "reason": "Not executed in this run"}
+  ]
+}

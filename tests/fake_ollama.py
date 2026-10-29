@@ -13,7 +13,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 class FakeOllama:
     def __init__(self, models=("orca-nano", "orca-core", "orca-ultra"), reply="FAKE-REPLY", chunks=("FAKE-", "REPLY"), chunk_delay=0.0):
-        self.models, self.reply, self.chunks, self.chunk_delay = list(models), reply, list(chunks), chunk_delay
+        self.models = list(models)
+        self._reply = reply
+        self.chunks = list(chunks)
+        self.chunk_delay = chunk_delay
         self.fail_status: int | None = None          # when set, /api/chat answers with this HTTP status
         self.requests: list[dict] = []                # every /api/chat payload received
         self.chunks_sent = 0
@@ -87,6 +90,18 @@ class FakeOllama:
         self._srv.daemon_threads = True
         self.host = f"http://127.0.0.1:{self._srv.server_address[1]}"
         self._t = threading.Thread(target=self._srv.serve_forever, daemon=True)
+
+    @property
+    def reply(self) -> str:
+        return self._reply
+
+    @reply.setter
+    def reply(self, value: str) -> None:
+        """Keep stream chunks coherent: Kernel-direct /api/stream (B-01) reads
+        ``chunks`` via ModelGateway.stream(), while generate() reads ``reply``.
+        Tests that only assign ``.reply`` must still observe that text on stream."""
+        self._reply = value
+        self.chunks = [value]
 
     def __enter__(self):
         self._t.start()
