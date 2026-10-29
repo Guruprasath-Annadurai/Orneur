@@ -73,7 +73,7 @@ from orca.config import CONFIG, ORCA_HOME, orneur_env
 from orca.variants.ultra import OrcaUltra
 from orca.docs import (
     extract, SUPPORTED_EXTENSIONS, MAX_FILE_SIZE,
-    chunk_text, DocStore, register_doc, unregister_doc, list_docs,
+    chunk_text, DocStore, register_doc, unregister_doc, list_docs, mark_doc_deleting,
     run_deep_rag,
 )
 from orca.docs.citation_check import check_citations
@@ -1116,7 +1116,7 @@ class _Session:
         self._agent = None
         self.served_model: str | None = None
         self.fallback_from: str | None = None
-        self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
+        self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host, enforce_registry=True)
         self.explain_store = ExplainStore()
         self.knowledge_graph = KnowledgeGraph(session_id=session_id)
         self.last_active = time.time()
@@ -1991,8 +1991,7 @@ async def _chat_dispatch(
             # Never answer as if the uploaded documents had been consulted when retrieval failed.
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
-        if rag_result.context_block:
-            enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+        enriched = _document_prompt_prefix(rag_result) + enriched
     if kernel_answered:
         # Kernel's plan needed nothing beyond a direct model call --
         # answered via ModelGateway already, entitlement-reconciled. Skip
@@ -2378,8 +2377,7 @@ async def _stream_dispatch(
             CONFIG.ollama.host,
             _model_name_for_variant(req.model_variant),
         )
-        if rag_result.context_block:
-            enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+        enriched = _document_prompt_prefix(rag_result) + enriched
 
     persona_system = get_persona_system(sess.model_variant)
     if mod_result.action == "support":
@@ -2840,6 +2838,19 @@ def _temporary_block(session_id: str):
     if decision is None:
         return None
     return _temporary_http(decision)
+
+
+def _document_prompt_prefix(rag_result) -> str:
+    """L02-02: what the model is told about the retrieved material. Retrieved text is quoted as untrusted evidence; an empty or insufficient retrieval is
+    stated to the model so it abstains instead of answering from general knowledge as if the documents supported it."""
+    from orca.docs.sufficiency import NO_EVIDENCE_NOTICE, PARTIAL_EVIDENCE_NOTICE, UNTRUSTED_HEADER
+
+    if rag_result is None:
+        return ""
+    if not rag_result.context_block:
+        return NO_EVIDENCE_NOTICE + "\n\n"
+    note = ("\n\n" + PARTIAL_EVIDENCE_NOTICE) if rag_result.sufficient is False else ""
+    return f"{UNTRUSTED_HEADER}\n{rag_result.context_block}{note}\n\n"
 
 
 def _omit_long_term(session_id: str) -> bool:
@@ -3528,23 +3539,31 @@ async def upload_doc(
     user: User | None = Depends(get_current_user_optional),
 ):
     """Upload a document for RAG — extract, chunk, embed, and store."""
+    from orca.docs import validation as _val
+
     ratelimit.enforce(request, ratelimit.DOC_UPLOAD, extra_key="doc_upload")
+    # L02-02: ownership / liveness of the conversation is decided BEFORE a byte of the file is read or parsed (a stranger or a deleted conversation must
+    # not be able to make the server parse a hostile file), and the read itself is bounded.
+    sess = _get_session(session_id, user_id=user.id if user else None)
+    blocked = _temporary_block(sess.id)
+    if blocked is not None:
+        return blocked
     if file.filename and Path(file.filename).suffix.lower() not in SUPPORTED_EXTENSIONS:
         return JSONResponse(
-            {"error": f"Unsupported file type. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"},
+            {"error": f"Unsupported file type. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}", "code": "unsupported_file"},
             status_code=400,
         )
-
-    data = await file.read()
-    if len(data) > MAX_FILE_SIZE:
-        return JSONResponse(
-            {"error": f"File too large ({len(data)//1024//1024}MB). Max: {MAX_FILE_SIZE//1024//1024}MB"},
-            status_code=413,
-        )
-
-    filename = file.filename or "upload.txt"
+    if len(list_docs(sess.id, include_deleting=True)) >= _val.MAX_DOCS_PER_SESSION:
+        return JSONResponse({"error": f"This conversation already has {_val.MAX_DOCS_PER_SESSION} documents. Delete one to add another.", "code": "too_many_documents"}, status_code=422)
     try:
-        text = extract(filename, data)
+        data = await _val.read_bounded(file, MAX_FILE_SIZE)
+        filename = _val.safe_filename(file.filename)
+        _val.validate_content(filename, data)
+    except _val.UploadRejected as e:
+        return JSONResponse({"error": str(e), "code": e.code}, status_code=e.status)
+
+    try:
+        text = await asyncio.to_thread(extract, filename, data)
     except ValueError as e:
         # The extractor raises ValueError only for caller-fixable input
         # problems ("Unsupported file type: .xyz"); that text is safe and useful.
@@ -3563,7 +3582,9 @@ async def upload_doc(
         )
 
     if not text.strip():
-        return JSONResponse({"error": "No text could be extracted from this file."}, status_code=422)
+        return JSONResponse({"error": "No text could be extracted from this file.", "code": "no_text"}, status_code=422)
+    if len(text) > _val.MAX_EXTRACTED_CHARS:
+        return JSONResponse({"error": f"This document has too much text ({len(text):,} characters; the limit is {_val.MAX_EXTRACTED_CHARS:,}).", "code": "document_too_large"}, status_code=413)
 
     # PII redaction — scrubs SSNs, emails, phone numbers, and Luhn-valid
     # credit card numbers BEFORE the document is chunked/embedded into the
@@ -3578,9 +3599,12 @@ async def upload_doc(
 
     doc_id = str(uuid.uuid4())
     chunks = chunk_text(text, doc_id=doc_id, filename=filename)
+    if len(chunks) > _val.MAX_CHUNKS_PER_DOC:
+        return JSONResponse({"error": "This document is too large to index.", "code": "document_too_large"}, status_code=413)
 
-    sess = _get_session(session_id, user_id=user.id if user else None)
     stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
+    if stored <= 0:
+        return JSONResponse({"error": "This document could not be indexed.", "code": "index_failed"}, status_code=500)
     register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data))
 
     audit.log("doc_upload", user_id=user.id if user else None,
@@ -3612,9 +3636,10 @@ async def delete_doc(
 ):
     """Remove a document and all its chunks from the session store."""
     sess = _get_session(session_id, user_id=user.id if user else None)
-    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id)):
+    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id, include_deleting=True)):
         # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
         return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
+    mark_doc_deleting(sess.id, doc_id)                       # L02-02: out of every serving path first; physical removal follows
     detail = await asyncio.to_thread(sess.doc_store.delete_doc_detailed, doc_id)
     ok = bool(detail["ok"])
     if ok:

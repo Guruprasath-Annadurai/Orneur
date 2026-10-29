@@ -69,3 +69,66 @@ def test_document_turn_quota_is_charged_once(client, fake):
     _events(client, h, {"message": Q, "session_id": sid})
     after = get_usage_today(uid)
     assert after["messages"] - before["messages"] == 1
+
+
+# ── Stop / quota / single commit in a document turn ─────────────────────────────────────────────────────────────────────────────────
+
+import asyncio
+
+from tests.fake_ollama import FakeOllama, point_orneur_at
+from tests.test_product_flows_fake_ollama import _drive
+
+
+def _doc_session_with_slow_provider(client, monkeypatch, n=40, delay=0.1):
+    f = FakeOllama(chunks=tuple(f"w{i} " for i in range(n)), chunk_delay=delay)
+    f.__enter__()
+    point_orneur_at(f, monkeypatch)
+    t, uid = _signup(client)
+    sid = _upload(client, _hdr(t))
+    return f, t, uid, sid
+
+
+def test_stop_in_a_document_turn_cancels_the_provider_charges_once_and_stores_no_turn(client, monkeypatch):
+    import orca.serve.api as api
+    from orca.auth.store import get_usage_today
+    from orca.serve import conversations
+
+    f, t, uid, sid = _doc_session_with_slow_provider(client, monkeypatch)
+    try:
+        before = get_usage_today(uid)["messages"]
+        got, took = asyncio.run(_drive(api.app, "/api/stream", {"message": Q, "session_id": sid}, t, 2))
+        assert f.stream_aborted.wait(timeout=3), "the provider never saw the hang-up: Stop did not cancel the document-turn generation"
+        assert got == 2 and took < 3.0 and f.chunks_sent < 40
+        assert get_usage_today(uid)["messages"] - before == 1, "output was produced: exactly one unit is spent (policy unchanged), never two"
+        assert conversations.turns_for_session(sid) == [], "no phantom turn after Stop"
+    finally:
+        f.__exit__(None, None, None)
+
+
+def test_a_completed_document_turn_is_committed_exactly_once(client, fake):
+    from orca.serve import conversations
+
+    t, _ = _signup(client)
+    h = _hdr(t)
+    sid = _upload(client, h)
+    evs = _events(client, h, {"message": Q, "session_id": sid})
+    done = evs[-1]
+    assert done["persisted"] == "saved"
+    turns = conversations.turns_for_session(sid)
+    assert len(turns) == 1 and turns[0]["user_content"] == Q
+    assert "".join(e["text"] for e in evs if e["type"] == "chunk") == turns[0]["assistant_content"]
+
+
+def test_a_provider_failure_in_a_document_turn_refunds_the_unit_and_stores_nothing(client, fake):
+    from orca.auth.store import get_usage_today
+    from orca.serve import conversations
+
+    t, uid = _signup(client)
+    h = _hdr(t)
+    sid = _upload(client, h)
+    before = get_usage_today(uid)["messages"]
+    fake.fail_status = 500
+    evs = _events(client, h, {"message": Q, "session_id": sid})
+    assert evs[-1]["type"] == "error" and "fake backend failure" not in json.dumps(evs)
+    assert get_usage_today(uid)["messages"] == before
+    assert conversations.turns_for_session(sid) == []

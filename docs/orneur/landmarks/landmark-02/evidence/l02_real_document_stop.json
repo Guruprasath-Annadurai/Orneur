@@ -1,0 +1,11 @@
+{
+  "model_tag": "llama3.2:1b",
+  "ollama_host": "http://localhost:11434",
+  "weights": "third-party (not an ORNEUR-native model)",
+  "recorded_at": "2026-10-29T11:02:02+0000",
+  "baseline_measure": false,
+  "chunks_before_stop": 5,
+  "provider_streams_open_after": 0,
+  "messages_stored": 0,
+  "requests": 4
+}

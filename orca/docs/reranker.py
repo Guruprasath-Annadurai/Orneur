@@ -27,6 +27,7 @@ class ScoredChunk:
     chunk_idx: int
     score: float = 0.0
     source: str = ""     # which retriever found it: dense | bm25 | hyde | multiquery
+    doc_id: str = ""     # L02-02: the document this chunk belongs to (chunk identity = doc_id + chunk_idx)
 
 
 def reciprocal_rank_fusion(
@@ -38,12 +39,12 @@ def reciprocal_rank_fusion(
         score(d) = sum over lists of 1 / (k + rank_in_list)
 
     Each input list is a list of dicts with at least {'text','filename','chunk_idx'}.
-    Dedup key = (filename, chunk_idx).
+    Dedup key = (doc_id, filename, chunk_idx): two documents that share a filename are different documents.
     """
     fused: dict[tuple, dict] = {}
     for rlist in ranked_lists:
         for rank, item in enumerate(rlist):
-            key = (item.get("filename", ""), item.get("chunk_idx", -1))
+            key = (item.get("doc_id", ""), item.get("filename", ""), item.get("chunk_idx", -1))
             rrf_score = 1.0 / (k + rank + 1)
             if key not in fused:
                 fused[key] = {**item, "_rrf": 0.0}
@@ -124,6 +125,7 @@ def cross_encoder_rerank(
             chunk_idx=c.get("chunk_idx", 0),
             score=_parse_score(raw),
             source=c.get("source", ""),
+            doc_id=c.get("doc_id", ""),
         )
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:

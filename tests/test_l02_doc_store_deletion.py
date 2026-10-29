@@ -108,8 +108,9 @@ def test_api_doc_delete_keeps_the_document_listed_when_a_store_failed(isolated_h
     monkeypatch.setattr(DocStore, "delete_doc_detailed", flaky)
     r = client.delete("/api/docs/d1", params={"session_id": sid}, headers=h)
     assert r.status_code == 202 and r.json()["deleted"] is False and r.json()["retryable"] is True
-    assert [d["doc_id"] for d in list_docs(sid)] == ["d1"], "still registered so the owner can retry"
+    assert [d["doc_id"] for d in list_docs(sid, include_deleting=True)] == ["d1"], "still registered so the owner can retry"
+    assert list_docs(sid) == [], "but already out of every serving path (hidden from the list; retrieval excludes it)"
     down["v"] = False
     r = client.delete("/api/docs/d1", params={"session_id": sid}, headers=h)
     assert r.status_code == 200 and r.json()["deleted"] is True
-    assert list_docs(sid) == []
+    assert list_docs(sid, include_deleting=True) == []

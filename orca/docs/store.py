@@ -119,8 +119,11 @@ class DocStore:
     Stores chunks in ChromaDB with Ollama embeddings (or keyword fallback).
     """
 
-    def __init__(self, session_id: str, ollama_host: str = "http://localhost:11434"):
+    def __init__(self, session_id: str, ollama_host: str = "http://localhost:11434", *, enforce_registry: bool = False):
         self.session_id = session_id
+        # L02-02: when True, ``retrieve`` returns only chunks of documents that are currently REGISTERED (and not being deleted) for this session.
+        # An orphaned chunk (registry entry removed, delete half-finished, stale embedding) can then never reach a prompt or a citation.
+        self.enforce_registry = enforce_registry
         self.ollama_host = ollama_host
         self._col_name = f"docs_{session_id[:12].replace('-', '')}"
         self._chroma = None
@@ -180,8 +183,21 @@ class DocStore:
                 }) + "\n")
         return len(chunks)
 
+    def _authorized_doc_ids(self) -> set[str] | None:
+        return {d["doc_id"] for d in list_docs(self.session_id)} if self.enforce_registry else None
+
     def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
-        """Retrieve most relevant chunks for a query."""
+        """Retrieve most relevant chunks for a query. Each hit carries its ``doc_id`` (chunk identity = doc_id + chunk_idx)."""
+        allowed = self._authorized_doc_ids()
+        if allowed is not None and not allowed:
+            return []
+        want = top_k if allowed is None else top_k * 3          # over-fetch: unauthorized chunks are dropped below
+        hits = self._retrieve_raw(query, want)
+        if allowed is not None:
+            hits = [h for h in hits if h.get("doc_id") in allowed]
+        return hits[:top_k]
+
+    def _retrieve_raw(self, query: str, top_k: int) -> list[dict]:
         if self._collection is not None:
             try:
                 if self._use_embeddings:
@@ -203,7 +219,7 @@ class DocStore:
                     )
                 docs  = results.get("documents", [[]])[0]
                 metas = results.get("metadatas", [[]])[0]
-                return [{"text": d, "filename": m.get("filename", ""), "chunk_idx": m.get("chunk_idx", 0)}
+                return [{"text": d, "filename": m.get("filename", ""), "chunk_idx": m.get("chunk_idx", 0), "doc_id": m.get("doc_id", "")}
                         for d, m in zip(docs, metas)]
             except Exception:
                 pass
@@ -223,7 +239,7 @@ class DocStore:
                 except Exception:
                     continue
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"]}
+        return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"], "doc_id": e.get("doc_id", "")}
                 for _, e in scored[:top_k]]
 
     def delete_doc_detailed(self, doc_id: str) -> dict:
@@ -269,6 +285,9 @@ class DocStore:
         return bool(self.delete_doc_detailed(doc_id)["ok"])
 
     def count(self) -> int:
+        if self.enforce_registry:
+            # L02-02: "does this conversation have documents" is decided by what is REGISTERED and not being deleted, not by stray chunks.
+            return sum(int(d.get("chunk_count", 0) or 0) for d in list_docs(self.session_id))
         if self._collection is not None:
             try:
                 return self._collection.count()
@@ -308,6 +327,21 @@ def register_doc(session_id: str, doc_id: str, filename: str, chunk_count: int, 
         _save_registry(reg)
 
 
+def mark_doc_deleting(session_id: str, doc_id: str) -> bool:
+    """L02-02: take a document out of every serving path BEFORE its chunks are physically removed. It stays in the registry (so a retry can find it)
+    but ``list_docs`` and retrieval no longer see it."""
+    with _registry_txn():
+        reg = _load_registry()
+        found = False
+        for d in reg.get(session_id, []):
+            if d["doc_id"] == doc_id:
+                d["state"] = "deleting"
+                found = True
+        if found:
+            _save_registry(reg)
+        return found
+
+
 def unregister_doc(session_id: str, doc_id: str):
     with _registry_txn():
         reg = _load_registry()
@@ -316,6 +350,7 @@ def unregister_doc(session_id: str, doc_id: str):
         _save_registry(reg)
 
 
-def list_docs(session_id: str) -> list[dict]:
+def list_docs(session_id: str, *, include_deleting: bool = False) -> list[dict]:
     reg = _load_registry()
-    return reg.get(session_id, [])
+    docs = reg.get(session_id, [])
+    return docs if include_deleting else [d for d in docs if d.get("state") != "deleting"]

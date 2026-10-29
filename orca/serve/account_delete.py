@@ -106,7 +106,7 @@ def _delete_session_data(session_id: str) -> dict:
         result["long_term_vector_memory_error"] = str(e)
 
     try:
-        docs = list_docs(session_id)
+        docs = list_docs(session_id, include_deleting=True)
         if docs:
             store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
             removed = 0
