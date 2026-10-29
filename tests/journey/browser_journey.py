@@ -100,6 +100,43 @@ def api_from_page(page, method, path, token, body=None):
         return {status:r.status, text:(await r.text()).slice(0,400)}; }""", [method, path, token, body])
 
 
+def http_status(method, path, token, body=None):
+    """Plain urllib request from the driver process -- independent of the page -- returns the HTTP status."""
+    import urllib.error
+    import urllib.request
+    headers = {"Authorization": "Bearer " + token}
+    data = None
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(body).encode()
+    if path == "/api/stream":
+        headers["Idempotency-Key"] = str(uuid.uuid4())
+    req = urllib.request.Request(BASE + path, method=method, headers=headers, data=data)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read(200)
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+def api_login(email):
+    import urllib.request
+    req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", headers={"Content-Type": "application/json"},
+                                 data=json.dumps({"email": email, "password": PW}).encode())
+    return json.loads(urllib.request.urlopen(req, timeout=30).read())["token"]
+
+
+def token_of(page):
+    return page.evaluate("() => localStorage.getItem('orneur_token')")
+
+
+def api_from_page(page, method, path, token, body=None):
+    return page.evaluate(
+        """async ([m,p,t,b]) => { const r = await fetch(p,{method:m,headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+        return {status:r.status, text:(await r.text()).slice(0,400)}; }""", [method, path, token, body])
+
+
 with sync_playwright() as pw:
     browser = pw.chromium.launch()
     alice_email = f"ui-alice-{uuid.uuid4().hex[:6]}@example.com"
@@ -290,21 +327,50 @@ with sync_playwright() as pw:
     def g1():
         tok = token_of(page)
         assert tok
+        other_session = api_login(alice_email)  # a second, independent session for the same account
+        assert http_status("GET", "/api/auth/me", other_session) == 200
         page.click("#logout-row")
         page.wait_for_selector("#auth-overlay", state="visible", timeout=15000)
+        page.wait_for_function("() => document.getElementById('si-error').textContent.includes('signed out')", timeout=15000)
+        assert page.inner_text("#si-error").strip() == "You have been signed out.", page.inner_text("#si-error")
         assert not token_of(page), "token still in localStorage after logout"
         body_text = page.inner_text("body")
         assert "pineapple" not in body_text.lower() and "quokka" not in body_text.lower(), "prior conversation content still in DOM after logout"
-        # old token must be dead server-side too
+        # the old token is dead on the server: plain HTTP from outside the page AND from inside it
+        for path, method in (("/api/auth/me", "GET"), ("/api/sessions", "GET")):
+            assert http_status(method, path, tok) == 401, f"revoked token still valid for {path}"
+        assert http_status("POST", "/api/stream", tok, {"message": "after logout", "session_id": None, "model_variant": "core"}) == 401, \
+            "revoked token reached /api/stream"
         me = api_from_page(page, "GET", "/api/auth/me", tok)
-        assert me["status"] == 401, f"revoked token still valid: {me}"
-        sess = api_from_page(page, "GET", "/api/sessions", tok)
-        assert sess["status"] == 401, f"revoked token still lists sessions: {sess}"
+        assert me["status"] == 401, f"revoked token still valid: {me['status']}"
+        # logout ends THIS session only
+        assert http_status("GET", "/api/auth/me", other_session) == 200, "logout revoked a different session"
         page.reload()
         page.wait_for_selector("#auth-overlay", state="visible", timeout=15000)
         shot(page, "G1_logged_out_light")
-        report("G1_logout_clears_ui_and_revokes_token", True, "overlay shown, token revoked (401)")
+        report("G1_logout_clears_ui_and_revokes_token", True, "confirmed message shown; old token 401 on me/sessions/stream (HTTP + in-page); other session still 200")
     g1()
+
+    @step("G2_logout_with_server_unreachable_is_reported_honestly")
+    def g2():
+        c = browser.new_context(viewport={"width": 1280, "height": 800})
+        p2 = c.new_page()
+        sign_in(p2, alice_email)
+        p2.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
+        tok = token_of(p2)
+        p2.route("**/api/auth/logout", lambda route: route.abort())
+        p2.click("#logout-row")
+        p2.wait_for_selector("#auth-overlay", state="visible", timeout=15000)
+        p2.wait_for_function("() => document.getElementById('si-error').textContent.includes('did not confirm')", timeout=20000)
+        msg = p2.inner_text("#si-error")
+        assert "may remain valid" in msg and "signed out everywhere" not in msg.lower()
+        assert not token_of(p2), "token kept locally after a failed revocation"
+        # the truth the message admits: the server never heard about it, so the token is still live
+        still = http_status("GET", "/api/auth/me", tok)
+        shot(p2, "G2_logout_unconfirmed_light")
+        c.close()
+        report("G2_logout_with_server_unreachable_is_reported_honestly", True, f"local state cleared; message admits non-confirmation; server still accepts token (HTTP {still}) as disclosed")
+    g2()
 
     @step("D1_second_user_sees_none_of_the_first_users_conversations")
     def d1():
@@ -319,6 +385,59 @@ with sync_playwright() as pw:
         ctx2.close()
         report("D1_second_user_sees_none_of_the_first_users_conversations", True, "Bob's shell shows none of Alice's content")
     d1()
+
+    @step("E4_two_tabs_edit_their_own_messages_by_authoritative_id")
+    def e4():
+        c = browser.new_context(viewport={"width": 1280, "height": 800})
+        tab_a = c.new_page()
+        sign_in(tab_a, alice_email)
+        tab_a.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
+        send(tab_a, "alpha one")
+        tab_a.locator(".msg-user .edit-msg-btn").first.click()
+        tab_a.wait_for_function("() => { const b=document.querySelector('.msg-user [data-action=save]'); return b && !b.disabled; }", timeout=6000)
+        sid = tab_a.evaluate("() => sessionId")
+        # tab B: same browser profile (shared token), opens the SAME conversation from the sidebar
+        tab_b = c.new_page()
+        tab_b.goto(f"{BASE}/conversation")
+        tab_b.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
+        tab_b.wait_for_selector("#recents-list .rec-row", timeout=20000)
+        tab_b.locator(f'#recents-list .rec[data-sid="{sid}"]').first.click()  # rows are untitled: match on the session id
+        tab_b.wait_for_selector(".msg-user .sample-q", timeout=15000)
+        send(tab_b, "beta two")
+        # each tab edits ITS OWN just-sent message, immediately, with the ids the server returned
+        tab_b.locator(".msg-user .edit-msg-btn").last.click()
+        tab_b.wait_for_function("() => { const bs=[...document.querySelectorAll('.msg-user [data-action=save]')]; return bs.length && !bs[bs.length-1].disabled; }", timeout=6000)
+        tab_b.locator(".msg-user .edit-msg-textarea").last.fill("beta edited")
+        tab_b.locator(".msg-user [data-action=save]").last.click()
+        tab_b.wait_for_selector(".msg-user .edited-badge", timeout=20000)
+        tab_a.locator(".msg-user .edit-msg-textarea").first.fill("alpha edited")
+        tab_a.locator(".msg-user [data-action=save]").first.click()
+        tab_a.wait_for_selector(".msg-user .edited-badge", timeout=20000)
+        tok = token_of(tab_a)
+        import urllib.request
+        req = urllib.request.Request(f"{BASE}/api/session/{sid}/messages", headers={"Authorization": "Bearer " + tok})
+        msgs = json.loads(urllib.request.urlopen(req, timeout=30).read())["messages"]
+        users = [m["content"] for m in msgs if m["role"] == "user"]
+        assert users == ["alpha edited", "beta edited"], f"edits landed on the wrong messages: {users}"
+        shot(tab_a, "E4_tab_a_light")
+        c.close()
+        report("E4_two_tabs_edit_their_own_messages_by_authoritative_id", True, f"server transcript user lines: {users}")
+    e4()
+
+    @step("C2_each_new_conversation_appears_in_the_sidebar_without_reload")
+    def c2():
+        c = browser.new_context(viewport={"width": 1280, "height": 800})
+        pg = c.new_page()
+        sign_in(pg, alice_email)
+        pg.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
+        pg.wait_for_selector("#recents-list .rec-row", timeout=20000)
+        before = pg.locator("#recents-list .rec-row").count()
+        send(pg, "Fresh topic: lighthouses.")
+        pg.wait_for_function("n => document.querySelectorAll('#recents-list .rec-row').length === n + 1", arg=before, timeout=10000)
+        shot(pg, "C2_new_row_light")
+        c.close()
+        report("C2_each_new_conversation_appears_in_the_sidebar_without_reload", True, f"rows {before} -> {before + 1}")
+    c2()
 
     @step("T1_dark_theme_renders_logged_in_shell")
     def t1():

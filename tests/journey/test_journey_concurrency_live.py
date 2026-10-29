@@ -268,14 +268,18 @@ def test_H6_server_restart_keeps_committed_conversations(cluster, tmp_path_facto
     home = tmp_path_factory.mktemp("restart-home")
     env = {"ORNEUR_OLLAMA_HOST": fake.host, "OLLAMA_HOST": fake.host}
     s1 = LiveServer(home, extra_env=env)
-    s1.wait_ready()
-    u = User(s1.base, "restart")
-    sid = str(uuid.uuid4())
-    fake.reply = "SURVIVES"
-    assert [e for e in _events(u, {"message": "remember the pomelo", "session_id": sid}) if e["type"] == "done"][0]["persisted"] == "saved"
-    s1.proc.kill()                                                # no graceful shutdown: a crash
-    s1.proc.wait(timeout=15)
-    s1._log.close()
+    try:
+        s1.wait_ready()
+        u = User(s1.base, "restart")
+        sid = str(uuid.uuid4())
+        fake.reply = "SURVIVES"
+        assert [e for e in _events(u, {"message": "remember the pomelo", "session_id": sid}) if e["type"] == "done"][0]["persisted"] == "saved"
+        s1.proc.kill()                                                # no graceful shutdown: a crash
+        s1.proc.wait(timeout=15)
+    finally:
+        if s1.proc.poll() is None:
+            s1.proc.kill()
+        s1._log.close()
     s2 = LiveServer(home, extra_env=env)
     try:
         s2.wait_ready()

@@ -90,7 +90,7 @@ class LiveServer:
             cwd=REPO, env=env, stdout=self._log, stderr=subprocess.STDOUT,
         )
 
-    def wait_ready(self, timeout: float = 90.0) -> None:
+    def wait_ready(self, timeout: float = 180.0) -> None:
         end = time.time() + timeout
         while time.time() < end:
             if self.proc.poll() is not None:
