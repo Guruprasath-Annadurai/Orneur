@@ -16,6 +16,7 @@ Tests: `tests/rse/`.
 Additional Phase-2 engineering modules:
 
 - `orca/pretrain_foundation/independent_codec.py` — C16 refuses Cursor self-cert as second codec
+- `orca/pretrain_foundation/ocr1_golden_vectors.py` + `OCR1_GOLDEN_VECTORS.json` — golden digests for a future independent second codec (does **not** claim C16)
 - `orca/pretrain_foundation/c27_feasibility.py` — class-K investigation; unauthorized workaround refused
 
 ## Explicitly blocked / incomplete

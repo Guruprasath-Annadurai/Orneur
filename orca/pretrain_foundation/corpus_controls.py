@@ -1,12 +1,14 @@
 """Phase 4 corpus control boundaries (synthetic / non-training fixtures only).
 
 Refuses unauthorized corpus creation and protected holdout exposure.
-Does not ingest user conversations.
+Does not ingest user conversations. Refuses remote URL / object-store origins.
 """
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
+from typing import Any
 
 
 class CorpusControlError(Exception):
@@ -17,6 +19,15 @@ ALLOWED_FIXTURE_CLASSES = frozenset({
     "synthetic_unit_fixture",
     "legally_authorized_non_training_fixture",
 })
+
+_REMOTE_SCHEMES = (
+    "http://",
+    "https://",
+    "ftp://",
+    "s3://",
+    "gs://",
+    "azure://",
+)
 
 
 @dataclass(frozen=True)
@@ -66,3 +77,44 @@ def refuse_user_conversation_ingestion(*, source_type: str) -> None:
         raise CorpusControlError(
             f"unauthorized user-conversation ingestion refused ({source_type})"
         )
+
+
+def refuse_remote_origin(source: str | os.PathLike[str]) -> None:
+    """Refuse URL / object-store origins. Corpus readers are local-path only.
+
+    ``pathlib.Path`` collapses ``https://`` to ``https:/`` on POSIX, so both
+    the raw string and the Path-mangled form are rejected.
+    """
+    text = os.fspath(source).strip()
+    lowered = text.lower()
+    for scheme in _REMOTE_SCHEMES:
+        if lowered.startswith(scheme):
+            raise CorpusControlError(
+                f"remote corpus origin refused ({scheme.rstrip(':/')}); local path required"
+            )
+        # Path("https://host/x") -> "https:/host/x" on POSIX.
+        mangled = scheme.replace("://", ":/")
+        if lowered.startswith(mangled):
+            raise CorpusControlError(
+                f"remote corpus origin refused ({scheme.rstrip(':/')}); local path required"
+            )
+    if "://" in text or (":/" in text and not text.startswith("/") and not text.startswith("./")):
+        # Catch other URI-like schemes after Path mangling (e.g. custom:// -> custom:/).
+        scheme_name = text.split(":", 1)[0]
+        if scheme_name and scheme_name.isalnum():
+            raise CorpusControlError(
+                f"non-local URI scheme refused for corpus origin: {scheme_name}"
+            )
+
+
+def training_bound_reader_kwargs(**overrides: Any) -> dict[str, Any]:
+    """Kwargs every training-bound corpus reader must use.
+
+    License metadata is still not a training grant; G8 remains required for
+    real corpus creation. This only hardens the software admission path.
+    """
+    kwargs: dict[str, Any] = {"require_license": True}
+    kwargs.update(overrides)
+    if not kwargs.get("require_license", True):
+        raise CorpusControlError("training-bound readers cannot disable require_license")
+    return kwargs

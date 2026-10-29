@@ -13,14 +13,18 @@ from orca.pretrain_foundation.c27_feasibility import (
     investigate_c27,
     refuse_unauthorized_class_k_workaround,
 )
+from orca.genesis.data.pipeline import CorpusBoundaryError, process_corpus, process_training_bound_corpus
 from orca.pretrain_foundation.corpus_controls import (
     CorpusAdmissionRequest,
     CorpusControlError,
     admit_fixture,
     corpus_digest,
     invalidate_on_digest_change,
+    refuse_remote_origin,
     refuse_user_conversation_ingestion,
+    training_bound_reader_kwargs,
 )
+from orca.pretrain_foundation.ocr1_golden_vectors import export_manifest, write_golden_vectors
 from orca.pretrain_foundation.eval_boundary import (
     AccessAttempt,
     EvalBoundaryError,
@@ -201,3 +205,36 @@ def test_training_freeze_package_is_nogo_and_refuses_execution(tmp_path):
     write_freeze_manifest(out, package)
     doc = json.loads(out.read_text(encoding="utf-8"))
     assert doc["package"]["training_authorization"] == "NO-GO"
+
+
+def test_remote_corpus_origins_are_refused(tmp_path):
+    with pytest.raises(CorpusControlError, match="remote corpus origin"):
+        refuse_remote_origin("https://example.com/corpus.jsonl")
+    with pytest.raises(CorpusBoundaryError, match="remote corpus origin"):
+        process_corpus("https://example.com/corpus.jsonl", tmp_path / "out", num_shards=1)
+
+
+def test_training_bound_reader_requires_license_and_jail(tmp_path):
+    kwargs = training_bound_reader_kwargs(allowed_root=tmp_path)
+    assert kwargs["require_license"] is True
+    with pytest.raises(CorpusControlError, match="cannot disable require_license"):
+        training_bound_reader_kwargs(require_license=False)
+    path = tmp_path / "in.jsonl"
+    path.write_text(json.dumps({"text": "x"}) + "\n")
+    with pytest.raises(CorpusBoundaryError, match="allowed_root"):
+        process_training_bound_corpus(path, tmp_path / "out", num_shards=1, allowed_root=None)  # type: ignore[arg-type]
+    report, _ = process_training_bound_corpus(
+        path, tmp_path / "out2", num_shards=1, allowed_root=tmp_path
+    )
+    assert report.kept == 0  # license metadata omitted under training-bound path
+    assert report.corrupt_records == 1
+
+
+def test_ocr1_golden_vectors_export_does_not_claim_c16(tmp_path):
+    doc = export_manifest()
+    assert doc["primary_implementation_id"] == "orca.rse.imp4.ocr1"
+    assert "PRIMARY_ONLY" in doc["c16_status"]
+    assert len(doc["vectors"]) >= 2
+    out = tmp_path / "OCR1_GOLDEN_VECTORS.json"
+    write_golden_vectors(out)
+    assert out.is_file()

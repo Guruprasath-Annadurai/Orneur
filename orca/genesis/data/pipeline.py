@@ -210,7 +210,16 @@ def _open_corpus_input(path: Path, *, allowed_root: Path | None) -> int:
     path must be lexically inside that root and every component under the
     root is opened with `O_NOFOLLOW`, so a directory symlink cannot retarget
     the read after a separate `resolve()` check.
+
+    Remote URL / object-store origins are refused before any open.
     """
+    # Local import avoids a hard cycle for tooling that only imports Path helpers.
+    from orca.pretrain_foundation.corpus_controls import CorpusControlError, refuse_remote_origin
+
+    try:
+        refuse_remote_origin(path)
+    except CorpusControlError as exc:
+        raise CorpusBoundaryError(str(exc)) from exc
     path = Path(path)
     if allowed_root is None:
         parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
@@ -385,6 +394,13 @@ def iter_classified_records(
     ingestion must pass True; a license string is metadata, not a grant
     that the text itself is approved for training.
     """
+    # Refuse remote origins on the raw argument before Path normalizes schemes.
+    from orca.pretrain_foundation.corpus_controls import CorpusControlError, refuse_remote_origin
+
+    try:
+        refuse_remote_origin(path)
+    except CorpusControlError as exc:
+        raise CorpusBoundaryError(str(exc)) from exc
     fd = _open_corpus_input(Path(path), allowed_root=allowed_root)
     try:
         if max_record_bytes is None:
@@ -1283,6 +1299,38 @@ def process_corpus(
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
         os.close(dir_fd)
+
+
+def process_training_bound_corpus(
+    input_path: Path,
+    output_dir: Path,
+    *,
+    num_shards: int,
+    allowed_root: Path,
+    **kwargs,
+) -> tuple[ProcessingReport, list[str]]:
+    """Training-bound admission path: license metadata required; remote origins refused.
+
+    This does **not** create or authorize a protected training corpus (G8).
+    It only hardens software admission for callers that claim a training-bound
+    ingest path. `allowed_root` is mandatory so inputs cannot wander.
+    """
+    from orca.pretrain_foundation.corpus_controls import training_bound_reader_kwargs
+
+    if allowed_root is None:
+        raise CorpusBoundaryError("training-bound corpus processing requires an allowed_root jail")
+    bound = training_bound_reader_kwargs(allowed_root=allowed_root)
+    # Callers cannot override require_license off via kwargs.
+    kwargs.pop("require_license", None)
+    kwargs.pop("allowed_root", None)
+    return process_corpus(
+        input_path,
+        output_dir,
+        num_shards=num_shards,
+        require_license=bound["require_license"],
+        allowed_root=bound["allowed_root"],
+        **kwargs,
+    )
 
 
 def compute_shard_digests(output_dir: Path) -> dict[str, str]:

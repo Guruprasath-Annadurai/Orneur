@@ -12,7 +12,10 @@
   - Per-record content hash required
   - Holdout under training identity refused
   - User-conversation ingestion refused
+  - Remote URL / object-store origins refused (including Path-mangled `https:/`)
+  - Training-bound reader helper forces `require_license=True` + mandatory `allowed_root`
   - Digest change invalidates frozen corpus
+- `process_training_bound_corpus()` in `orca/genesis/data/pipeline.py` — software hardening only; **not** G8 corpus creation
 
 ## Blocked
 
