@@ -4,7 +4,8 @@
   "draft_pr": 138,
   "starting_main_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
   "reviewed_candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
-  "corrective_parent_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+  "code_corrective_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+  "matrix_probe_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
   "formal_acceptance": {
     "accepted": 0,
     "denominator": 95
@@ -36,6 +37,7 @@
   },
   "serving_contract_corrective": "capability-state validation; INTERFACE_ONLY/NOT_AVAILABLE live-serving gaps closed",
   "audit_tail_residual": "FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md",
+  "note": "matrix_probe_sha is the commit probes executed against; push tip may add docs-only commits on top and must re-clear CI",
   "non_claims": [
     "no real training",
     "no paid compute",
@@ -64,6 +66,5 @@
     "FOUNDATION_02_REQUIREMENT_MATRIX.md",
     "FOUNDATION_02_TRAINING_MATH_REPORT.md",
     "FOUNDATION_02_VERIFICATION_PROBES.json"
-  ],
-  "corrective_tip_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff"
+  ]
 }

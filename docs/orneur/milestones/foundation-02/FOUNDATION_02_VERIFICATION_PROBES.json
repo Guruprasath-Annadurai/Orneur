@@ -1,5 +1,5 @@
 {
-  "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+  "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
   "probes": {
     "AUTH-1": {
       "requirement_id": "AUTH-1",
@@ -15,7 +15,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -26,7 +26,7 @@
         "tests/test_genesis_governance_authorization.py"
       ],
       "exit_code": 0,
-      "summary_line": "128 passed, 1 warning in 3.53s",
+      "summary_line": "128 passed, 1 warning in 3.30s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -43,7 +43,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -53,7 +53,7 @@
         "tests/test_training_authorization_assurance.py"
       ],
       "exit_code": 0,
-      "summary_line": "23 passed, 1 xfailed in 0.91s",
+      "summary_line": "23 passed, 1 xfailed in 0.88s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -70,7 +70,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -80,7 +80,7 @@
         "tests/test_training_authorization_gate.py"
       ],
       "exit_code": 0,
-      "summary_line": "92 passed, 1 warning in 3.20s",
+      "summary_line": "92 passed, 1 warning in 3.15s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -98,7 +98,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -109,7 +109,7 @@
         "tests/test_genesis_training_primitives.py"
       ],
       "exit_code": 0,
-      "summary_line": "30 passed in 2.04s",
+      "summary_line": "30 passed in 2.02s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -127,7 +127,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -138,7 +138,7 @@
         "tests/test_genesis_resumable_checkpoint.py"
       ],
       "exit_code": 0,
-      "summary_line": "52 passed in 8.90s",
+      "summary_line": "52 passed in 8.99s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -155,7 +155,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -165,7 +165,7 @@
         "tests/test_genesis_model_architecture.py"
       ],
       "exit_code": 0,
-      "summary_line": "23 passed in 1.23s",
+      "summary_line": "23 passed in 1.24s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -183,7 +183,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -212,7 +212,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -223,7 +223,7 @@
         "tests/test_cursor_pipeline_admission.py"
       ],
       "exit_code": 0,
-      "summary_line": "37 passed in 0.48s",
+      "summary_line": "37 passed in 0.43s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -239,7 +239,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+      "candidate_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
