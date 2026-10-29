@@ -122,6 +122,27 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "updated_at REAL NOT NULL"
         ")"
     )
+    # L02-03: one durable record per client request (the Idempotency-Key). Same database as the commit so "committed" is written in the SAME transaction as the turn.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS turn_requests ("
+        "user_id TEXT NOT NULL,"
+        "request_key TEXT NOT NULL,"
+        "session_id TEXT,"
+        "state TEXT NOT NULL,"
+        "reason TEXT,"
+        "turn_id TEXT,"
+        "revision INTEGER,"
+        "message_id TEXT,"
+        "user_message_id TEXT,"
+        "fence_token TEXT,"
+        "epoch INTEGER,"
+        "cancel_requested INTEGER NOT NULL DEFAULT 0,"
+        "request_hash TEXT,"
+        "created_at REAL NOT NULL,"
+        "updated_at REAL NOT NULL,"
+        "PRIMARY KEY (user_id, request_key)"
+        ")"
+    )
     # Additive migrations for pre-fencing turns tables.
     cols = {row[1] for row in conn.execute("PRAGMA table_info(conversation_turns)").fetchall()}
     if "epoch" not in cols:
@@ -130,7 +151,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE conversation_turns ADD COLUMN fence_token TEXT NOT NULL DEFAULT ''")
 
 
-def _turns_conn() -> sqlite3.Connection:
+def _turns_conn(timeout: float = 30) -> sqlite3.Connection:
     """A connection to the authoritative turns database.
 
     The schema is verified once per database file per process (under a lock, retried while another PROCESS is initialising the same file) instead of
@@ -139,7 +160,7 @@ def _turns_conn() -> sqlite3.Connection:
     path = _turns_db()
     key = str(path)
     fresh = not path.exists()
-    conn = sqlite3.connect(key, isolation_level="IMMEDIATE", check_same_thread=False, timeout=30)
+    conn = sqlite3.connect(key, isolation_level="IMMEDIATE", check_same_thread=False, timeout=timeout)
     conn.row_factory = sqlite3.Row
     if fresh or key not in _SCHEMA_READY:
         with _SCHEMA_LOCK:
@@ -428,6 +449,7 @@ def commit_turn(
     epoch: int,
     meta: dict | None = None,
     now: float | None = None,
+    request_key: str | None = None,
     _test_crash_after_insert: bool = False,
     _test_skip_export: bool = False,
 ) -> CommitResult:
@@ -448,6 +470,14 @@ def commit_turn(
         with conn:
             if conn.execute("SELECT 1 FROM session_deletions WHERE session_id=?", (session_id,)).fetchone():
                 return CommitResult(ok=False, reason="session_deleted", turn_id=turn_id)       # L02-01: a deleted conversation can never be written again
+            if request_key:
+                # L02-03: one request key commits at most one turn. A repeat of a request that already committed returns that commit (no second transcript
+                # entry); a request that was closed (cancelled / superseded / not committed) can no longer commit.
+                rq = conn.execute("SELECT state, turn_id, revision FROM turn_requests WHERE user_id=? AND request_key=?", (user_id, request_key)).fetchone()
+                if rq is not None and rq["state"] == "committed":
+                    return CommitResult(ok=True, reason="idempotent", turn_id=rq["turn_id"], revision=int(rq["revision"] or 0), epoch=int(epoch))
+                if rq is not None and rq["state"] in ("cancelled", "superseded", "not_committed"):
+                    return CommitResult(ok=False, reason="request_closed", turn_id=turn_id)
             _ensure_export_row(conn, session_id, ts)
             # Idempotent retry of an already-committed turn_id.
             existing = conn.execute(
@@ -526,6 +556,13 @@ def commit_turn(
                 "UPDATE session_export_state SET export_pending=1, updated_at=? WHERE session_id=?",
                 (ts, session_id),
             )
+            if request_key:
+                m = meta or {}
+                conn.execute(
+                    "UPDATE turn_requests SET state='committed', reason=NULL, turn_id=?, revision=?, message_id=?, user_message_id=?, session_id=?, updated_at=? "
+                    "WHERE user_id=? AND request_key=?",
+                    (turn_id, new_revision, m.get("message_id"), m.get("user_message_id"), session_id, ts, user_id, request_key),
+                )
             if _test_crash_after_insert:
                 # Simulate process kill before COMMIT: roll back by raising.
                 raise _TestCrash("crash_before_commit")

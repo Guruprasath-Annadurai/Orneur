@@ -1,0 +1,7 @@
+{
+  "recorded_at": "2026-10-29T15:11:08+0000",
+  "state_right_after_kill": "running",
+  "resolved": "not_committed",
+  "reason": "worker_lost",
+  "retry": "committed once on the surviving worker"
+}

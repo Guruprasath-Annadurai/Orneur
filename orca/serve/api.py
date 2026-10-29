@@ -18,6 +18,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import contextlib
 import json
@@ -641,6 +642,7 @@ def _hold_turn(request: Request, session_id: str, user) -> "PublicError | None":
         return coded_error("session_busy")
     ta.start_heartbeat()
     request.state.turn_authority = ta
+    _turn_mark_running(request, ta)
     return None
 
 
@@ -653,6 +655,121 @@ def _release_turn(request: Request) -> None:
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
+
+
+def _turn_key(request: Request):
+    """(user_id, request_key) of the durable turn-request record for this HTTP request, or None (anonymous / no Idempotency-Key)."""
+    return getattr(request.state, "turn_req", None)
+
+
+def _committed_payload(user_id: str, rec: dict) -> dict | None:
+    """The stored result of a request that already committed, read back from the transcript (the authority) - used to answer a late retry of the same key."""
+    from orca.serve import conversations
+
+    if not rec.get("session_id"):
+        return None
+    for t in conversations.turns_for_session(rec["session_id"]):
+        if t["turn_id"] == rec.get("turn_id"):
+            meta = t.get("meta") or {}
+            return {"session_id": rec["session_id"], "response": t["assistant_content"], "message_id": rec.get("message_id"),
+                    "user_message_id": rec.get("user_message_id"), "model_identity": meta.get("model_identity")}
+    return None
+
+
+def _turn_begin(user, key: str, session_id: str | None, req_hash: str | None = None):
+    """Admission record for this request. Returns ("proceed", None) | ("replay", payload) | ("cancelled", None) | ("mismatch", None)."""
+    from orca.serve import turn_requests as tr
+
+    try:
+        rec = tr.view(user.id, key)
+        if rec is not None and req_hash and rec.get("request_hash") and rec["request_hash"] != req_hash and rec["state"] == "committed":
+            return "mismatch", None
+        if rec is not None and rec["state"] == "committed":
+            payload = _committed_payload(user.id, rec)
+            if payload is not None:
+                return "replay", payload
+        if rec is not None and rec["state"] == "cancelled" and rec.get("reason") == "cancelled_before_admission":
+            return "cancelled", None
+        if rec is not None and rec["terminal"] and rec["state"] != "committed":
+            tr.reopen(user.id, key, session_id, req_hash)        # the same key, a new attempt after a closed one: a real retry
+        else:
+            tr.begin(user.id, key, session_id, req_hash)
+    except Exception:
+        _logger.warning("turn-request admission record failed", exc_info=True)           # the lifecycle record is an observation; it never blocks serving
+    return "proceed", None
+
+
+def _turn_mark_running(request: Request, ta) -> None:
+    tk = _turn_key(request)
+    if tk and ta is not None and ta.epoch:
+        try:
+            from orca.serve import turn_requests as tr
+
+            tr.mark_running(tk[0], tk[1], ta.session_id, ta.fence, ta.epoch)
+        except Exception:
+            _logger.debug("turn-request running mark failed", exc_info=True)
+
+
+def _turn_finish(request: Request, *, error_code: str | None = None, persisted: str | None = None) -> None:
+    """Close the request record from the way the HTTP request ended. A record already ``committed`` is never touched (compare-and-set)."""
+    tk = _turn_key(request)
+    if not tk:
+        return
+    try:
+        from orca.serve import turn_requests as tr
+
+        if getattr(request.state, "turn_cancelled", False) or tr.cancel_requested(tk[0], tk[1]):
+            tr.finish(tk[0], tk[1], "cancelled", "user_stop")
+        elif persisted == "failed":
+            tr.finish(tk[0], tk[1], "not_committed", "persist_failed")
+        elif error_code:
+            tr.finish(tk[0], tk[1], "not_committed", error_code)
+        elif getattr(request.state, "client_gone", False):
+            tr.finish(tk[0], tk[1], "not_committed", "client_disconnected")
+        else:
+            tr.finish(tk[0], tk[1], "not_committed", "ended_without_commit")
+    except Exception:
+        _logger.debug("turn-request finish failed", exc_info=True)
+
+
+def _make_is_gone(request: Request):
+    """Cancellation check for the generation loops: the client left, OR the user pressed Stop (POST /api/turns/<key>/cancel) - the two are different facts."""
+    async def gone() -> bool:
+        if await request.is_disconnected():
+            request.state.client_gone = True
+            return True
+        tk = _turn_key(request)
+        if tk:
+            now = time.monotonic()
+            if now - getattr(request.state, "_cancel_poll_at", 0.0) >= 0.25:        # a Stop is noticed within a quarter second; not one query per streamed token
+                request.state._cancel_poll_at = now
+                from orca.serve import turn_requests as tr
+
+                if await asyncio.to_thread(tr.cancel_requested, tk[0], tk[1]):
+                    request.state.turn_cancelled = True
+                    return True
+            elif getattr(request.state, "turn_cancelled", False):
+                return True
+        return False
+    return gone
+
+
+def _idem_resolve_stale(user, key: str, req_hash: str, state: str, cached):
+    """L02-03: an idempotency row stuck ``in_progress`` after its worker died would refuse every retry for ten minutes while the outcome record already says the request
+    is NOT committed. When the durable record shows the request has ended (worker lost / superseded / not committed / cancelled) the stale row is released and the
+    retry proceeds as the new attempt it is. A live request stays a conflict."""
+    if state != "in_progress":
+        return state, cached
+    from orca.serve import idempotency, turn_requests as tr
+
+    try:
+        rec = tr.view(user.id, key)
+    except Exception:
+        return state, cached
+    if rec is not None and rec["terminal"] and rec["state"] != "committed":
+        idempotency.abort(user.id, key)
+        return idempotency.begin(user.id, key, req_hash)
+    return state, cached
 
 
 def _idem_begin_stream(req: "ChatRequest", request: Request, user):
@@ -673,7 +790,31 @@ def _idem_begin_stream(req: "ChatRequest", request: Request, user):
 
     if not idempotency.valid_key(key):
         return _one(coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.").as_sse())
-    state, cached = idempotency.begin(user.id, key, idempotency.request_hash(req.model_dump()))
+    req_hash = idempotency.request_hash(req.model_dump())
+    state, cached = _idem_resolve_stale(user, key, req_hash, *idempotency.begin(user.id, key, req_hash))
+    if state == "new":
+        # L02-03: the short-lived idempotency window has no record, but the durable one may: a request that already COMMITTED is answered from the transcript, never regenerated.
+        phase, payload = _turn_begin(user, key, req.session_id, req_hash)
+        if phase == "mismatch":
+            idempotency.abort(user.id, key)
+            return _one(coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.").as_sse())
+        if phase == "cancelled":
+            idempotency.abort(user.id, key)
+            return _one(coded_error("conflict", message="This request was cancelled before it started.").as_sse())
+    else:
+        phase, payload = "proceed", None
+    if phase == "replay":
+        idempotency.abort(user.id, key)
+        async def _replay_committed():
+            yield _sse({"type": "session", "session_id": payload["session_id"]})
+            if payload.get("model_identity"):
+                yield _sse({"type": "model", "identity": payload["model_identity"]})
+            yield _sse({"type": "stream", "delivery": "replayed", "cancellable": False})
+            yield _sse({"type": "chunk", "text": payload["response"], "replayed": True})
+            yield _sse({"type": "done", "message_id": payload["message_id"], "user_message_id": payload["user_message_id"], "persisted": "saved",
+                        "delivery": "replayed", "idempotent_replay": True, "model_identity": payload.get("model_identity")})
+        return StreamingResponse(_replay_committed(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Idempotent-Replay": "true"})
     if state == "in_progress":
         return _one(coded_error("conflict", message="A request with this Idempotency-Key is still being processed.").as_sse())
     if state == "mismatch":
@@ -689,6 +830,7 @@ def _idem_begin_stream(req: "ChatRequest", request: Request, user):
         return StreamingResponse(_replay(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Idempotent-Replay": "true"})
     request.state.idem = {"user_id": user.id, "key": key, "completed": False}
+    request.state.turn_req = (user.id, key)
     return None
 
 
@@ -776,7 +918,8 @@ def _release_message_quota(request: Request) -> None:
         ticket.release()
 
 
-def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None, authority: "_TurnAuthority | None" = None) -> dict | None:
+def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None, authority: "_TurnAuthority | None" = None,
+                  request_key: str | None = None) -> dict | None:
     """Durable turn commit for SIGNED-IN users via SQLite fencing (same SoT as inference).
 
     Anonymous sessions are not persisted. Best-effort: history must never fail a
@@ -813,7 +956,7 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
                 committed = conversations.commit_turn(
                     session_id, user_text, assistant_text,
                     user_id=user.id, turn_id=uuid.uuid4().hex,
-                    fence_token=held.fence, epoch=held.epoch, meta=meta,
+                    fence_token=held.fence, epoch=held.epoch, meta=meta, request_key=request_key,
                 )
             else:
                 # No pre-generation authority (new session id, frontier pass-through, legacy callers): acquire for the commit only.
@@ -826,18 +969,32 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
                     committed = conversations.commit_turn(
                         session_id, user_text, assistant_text,
                         user_id=user.id, turn_id=uuid.uuid4().hex,
-                        fence_token=fence, epoch=auth.epoch, meta=meta,
+                        fence_token=fence, epoch=auth.epoch, meta=meta, request_key=request_key,
                     )
                 finally:
                     conversations.release_authority(session_id, fence, auth.epoch)
             if not committed.ok:
                 _logger.warning("conversation commit refused: %s", committed.reason)
+                if request_key:
+                    try:
+                        from orca.serve import turn_requests as _tr
+
+                        if committed.reason in ("stale_authority", "revision_conflict", "ownership_mismatch"):
+                            _tr.finish(user.id, request_key, "superseded", committed.reason)
+                        elif committed.reason != "request_closed":
+                            _tr.finish(user.id, request_key, "not_committed", committed.reason)
+                    except Exception:
+                        pass
                 return None
             try:
                 message_versions.seed(session_id, user.id, user_message_id, "user", user_text)
                 message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_text)
             except Exception:
                 _logger.debug("message version seed failed", exc_info=True)
+        if committed.reason == "idempotent" and request_key:
+            from orca.serve import turn_requests as _tr
+            rec = _tr.view(user.id, request_key) or {}
+            return {"user_message_id": rec.get("user_message_id") or user_message_id, "message_id": rec.get("message_id") or assistant_message_id}
         return {"user_message_id": user_message_id, "message_id": assistant_message_id}
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
@@ -1294,6 +1451,14 @@ def _validate_session_id(session_id: str | None) -> None:
         raise HTTPException(status_code=422, detail="invalid session id")
 
 
+def _deleted_for_access(session_id: str) -> bool:
+    """A tombstoned conversation is a 404 - EXCEPT a temporary chat, whose closed/expired/failed states keep their own, established 409 contract
+    (``temporary_closed`` / ``temporary_expired`` / ``temporary_deletion_incomplete``); those are refused by ``_temporary_block`` right after."""
+    from orca.serve import deletions, temporary_chat
+
+    return deletions.is_tombstoned(session_id) and not temporary_chat.is_hidden(session_id)
+
+
 def _check_session_ownership(session_id: str | None, user_id: str | None) -> None:
     """The raise-only half of `_get_session()`'s access check, exposed
     separately so a route needing to check a session it is NOT about to
@@ -1308,7 +1473,7 @@ def _check_session_ownership(session_id: str | None, user_id: str | None) -> Non
     _validate_session_id(session_id)
     from orca.auth.store import check_session_access
     from orca.serve import deletions
-    if not check_session_access(session_id, user_id) or deletions.is_tombstoned(session_id):         # L02-01: a deleted conversation is gone for everyone, owner included
+    if not check_session_access(session_id, user_id) or _deleted_for_access(session_id):         # L02-01: a deleted conversation is gone for everyone, owner included
         raise HTTPException(status_code=404, detail="session not found")
 
 
@@ -1336,7 +1501,7 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
 
     _validate_session_id(session_id)
     if session_id:
-        if deletions.is_tombstoned(session_id) or not claim_session(session_id, user_id):
+        if _deleted_for_access(session_id) or not claim_session(session_id, user_id):
             raise HTTPException(status_code=404, detail="session not found")
         sid = session_id
     else:
@@ -1779,7 +1944,20 @@ async def chat(
     if not idempotency.valid_key(key):
         e = coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.")
         return JSONResponse(e.as_json(), status_code=e.status)
-    state, cached = idempotency.begin(user.id, key, idempotency.request_hash(req.model_dump()))
+    req_hash = idempotency.request_hash(req.model_dump())
+    state, cached = _idem_resolve_stale(user, key, req_hash, *idempotency.begin(user.id, key, req_hash))
+    if state == "new":
+        phase, payload = _turn_begin(user, key, req.session_id, req_hash)       # L02-03: an already-committed request is answered from the transcript
+        if phase in ("mismatch", "cancelled", "replay"):
+            idempotency.abort(user.id, key)
+        if phase == "mismatch":
+            e = coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.")
+            return JSONResponse(e.as_json(), status_code=e.status)
+        if phase == "cancelled":
+            e = coded_error("conflict", message="This request was cancelled before it started.")
+            return JSONResponse(e.as_json(), status_code=e.status)
+        if phase == "replay":
+            return JSONResponse({**payload, "persisted": "saved", "idempotent_replay": True}, headers={"Idempotent-Replay": "true"})
     if state == "done":
         return JSONResponse(cached, headers={"Idempotent-Replay": "true"})
     if state == "in_progress":
@@ -1788,14 +1966,18 @@ async def chat(
     if state == "mismatch":
         e = coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.")
         return JSONResponse(e.as_json(), status_code=e.status)
+    request.state.turn_req = (user.id, key)
     try:
         result = await _chat_impl(req, request, user)
     except BaseException:
+        _turn_finish(request, error_code="error")
         idempotency.abort(user.id, key)
         raise
     if isinstance(result, dict):
+        _turn_finish(request, persisted=result.get("persisted"))
         idempotency.complete(user.id, key, result)
     else:
+        _turn_finish(request, error_code=f"http_{getattr(result, 'status_code', 0)}")
         idempotency.abort(user.id, key)                      # errors are not cached: a retry is a real retry
     return result
 
@@ -2059,7 +2241,7 @@ async def _chat_dispatch(
                           evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
     _ident = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered)
     # Durable commit first; derived state (live window, long-term memory, Redis-shared history) only for an accepted turn.
-    _persisted = _persist_turn(user, sess.id, req.message, final, identity=_ident, src=_src, authority=_ta)
+    _persisted = _persist_turn(user, sess.id, req.message, final, identity=_ident, src=_src, authority=_ta, request_key=(_turn_key(request) or (None, None))[1])
     _persist_status = "not_applicable" if user is None else ("saved" if _persisted else "failed")
     if _persist_status == "failed":
         audit.log("turn_not_persisted", user_id=user.id if user else None, detail={"session_id": sess.id})
@@ -2104,9 +2286,12 @@ async def stream_chat(
     request: Request,
     user: User | None = Depends(get_current_user_optional),
 ):
+    seen = {"error": None, "persisted": None}
+
     def _release_all() -> None:
         _release_message_quota(request)
         _release_turn(request)
+        _turn_finish(request, error_code=seen["error"], persisted=seen["persisted"])
         _idem_abort_if_unfinished(request)
 
     early = _idem_begin_stream(req, request, user)
@@ -2130,7 +2315,21 @@ async def stream_chat(
         # commit; every other exit (error event, abstention, disconnect, cancel) refunds / releases here.
         try:
             async for part in inner:
+                if isinstance(part, str) and part.startswith("data: {"):
+                    if '"type": "error"' in part:
+                        try:
+                            seen["error"] = json.loads(part[6:]).get("code") or "error"
+                        except Exception:
+                            seen["error"] = "error"
+                    elif '"type": "done"' in part:
+                        try:
+                            seen["persisted"] = json.loads(part[6:]).get("persisted")
+                        except Exception:
+                            pass
                 yield part
+        except (asyncio.CancelledError, GeneratorExit):
+            request.state.client_gone = True           # the server stopped iterating because the client left
+            raise
         finally:
             _release_all()
 
@@ -2450,7 +2649,7 @@ async def _stream_dispatch(
                 redactor = StreamRedactor()
                 raw_kernel_text = ""
                 try:
-                    async with contextlib.aclosing(kernel_run.deltas(is_gone=request.is_disconnected)) as raw_deltas:
+                    async with contextlib.aclosing(kernel_run.deltas(is_gone=_make_is_gone(request))) as raw_deltas:
                         async for raw_delta in raw_deltas:
                             _consume_message_quota(user, request)       # the first model output spends the unit; a later Stop must not refund it
                             if not streamed_upstream:
@@ -2467,7 +2666,7 @@ async def _stream_dispatch(
                             if safe_delta:
                                 full += safe_delta
                                 yield f"data: {json.dumps({'type': 'chunk', 'text': safe_delta})}\n\n"
-                            if await request.is_disconnected():
+                            if await _make_is_gone(request)():
                                 raise ConsumerGone()
                     cognitive_result = await kernel_run.result()
                 except ConsumerGone:
@@ -2559,7 +2758,7 @@ async def _stream_dispatch(
                             if safe_chunk:
                                 full += safe_chunk
                                 yield f"data: {json.dumps({'type': 'chunk', 'text': safe_chunk})}\n\n"
-                            if await request.is_disconnected():
+                            if await _make_is_gone(request)():
                                 redactor.cancel()
                                 audit.log("stream_client_disconnected", user_id=user.id if user else None,
                                           detail={"chars_sent": len(full)})
@@ -2597,7 +2796,7 @@ async def _stream_dispatch(
                                   evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
                                   citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
                                   evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
-            persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id, authority=ta)
+            persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id, authority=ta, request_key=(_turn_key(request) or (None, None))[1])
             persist_status = "not_applicable" if user is None else ("saved" if persisted else "failed")
             if persist_status == "failed":
                 audit.log("turn_not_persisted", user_id=user.id if user else None, detail={"session_id": sess.id})
@@ -2981,6 +3180,52 @@ async def export_session(session_id: str, format: str = "md", user: User | None 
             lines.append(f"{role}\n\n{m.get('content', '')}\n\n---\n")
         md = "\n".join(lines)
     return PlainTextResponse(md, headers={"Content-Disposition": f'attachment; filename="orneur-{session_id[:8]}.md"'})
+
+
+@app.get("/api/turns/{request_key}")
+async def turn_outcome(request_key: str, user: User | None = Depends(get_current_user_optional)):
+    """L02-03: the AUTHORITATIVE outcome of one of the caller's requests, by the Idempotency-Key it was sent with. Use it after a dropped connection instead of guessing.
+
+    ``state`` is one of admitted | running | cancel_requested | cancelled | committed | not_committed | superseded | unknown (the server has no record: it never saw the request
+    or refused it before admission - nothing was committed). When the authoritative store cannot be read the answer is 503 ``outcome_unknown`` - not a statement about the turn."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import idempotency, turn_requests
+
+    if not idempotency.valid_key(request_key):
+        e = coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    try:
+        rec = await asyncio.to_thread(turn_requests.view, user.id, request_key)
+    except Exception:
+        return JSONResponse({"state": "outcome_unknown", "request_key": request_key, "retryable": True, "safe_to_retry": False,
+                             "message": "The outcome cannot be read right now. Your message may or may not have been saved. Ask again in a moment."}, status_code=503,
+                            headers={"Retry-After": "2"})
+    if rec is None:
+        return {"state": "unknown", "request_key": request_key, "safe_to_retry": True, "terminal": False,
+                "message": "The server has no record of this request. Nothing was saved."}
+    return {k: v for k, v in rec.items() if k not in ("request_hash", "turn_id")}          # internal fields stay internal
+
+
+@app.post("/api/turns/{request_key}/cancel")
+async def turn_cancel(request_key: str, user: User | None = Depends(get_current_user_optional)):
+    """L02-03: the user pressed Stop. Asks the running turn to stop (it confirms by ending - poll GET /api/turns/<key>); if the server has not seen the request yet it is
+    closed in advance so a late arrival is refused. Too late (already committed) is reported as such, never hidden."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import idempotency, turn_requests
+
+    if not idempotency.valid_key(request_key):
+        e = coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    try:
+        rec = await asyncio.to_thread(turn_requests.request_cancel, user.id, request_key)
+    except Exception:
+        return JSONResponse({"state": "outcome_unknown", "request_key": request_key, "retryable": True}, status_code=503, headers={"Retry-After": "2"})
+    audit.log("turn_cancel_requested", user_id=user.id, detail={"request_key_hash": hashlib.sha256(request_key.encode()).hexdigest()[:12], "state": rec.get("state")})
+    return JSONResponse({k: v for k, v in rec.items() if k not in ("request_hash", "turn_id")}, status_code=200 if rec.get("terminal") else 202)
 
 
 @app.delete("/api/session/{session_id}")

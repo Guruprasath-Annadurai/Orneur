@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-10-29T15:11:16+0000",
+  "reads_during_lock": [
+    [
+      200,
+      "running",
+      0.01
+    ],
+    [
+      200,
+      "running",
+      0.01
+    ],
+    [
+      200,
+      "running",
+      0.01
+    ],
+    [
+      200,
+      "running",
+      0.89
+    ],
+    [
+      200,
+      "running",
+      0.01
+    ],
+    [
+      200,
+      "running",
+      0.01
+    ]
+  ],
+  "final": "committed"
+}

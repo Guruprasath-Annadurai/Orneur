@@ -1,0 +1,9 @@
+{
+  "recorded_at": "2026-10-29T15:10:48+0000",
+  "states_seen_from_worker_b": [
+    "committed",
+    "running",
+    "unknown"
+  ],
+  "final": "committed"
+}

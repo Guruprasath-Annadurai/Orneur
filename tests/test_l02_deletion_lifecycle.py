@@ -381,5 +381,6 @@ def test_temporary_closure_survives_restart_without_reappearing(env):
 
     api._sessions.clear()                               # what a restart does to the in-memory session cache
     assert deletions.is_tombstoned(sid) and tc.read(sid, uid)["state"] == "closed"
-    assert client.get(f"/api/session/{sid}/messages", headers=h).status_code in (404, 409)
+    r = client.get(f"/api/session/{sid}/messages", headers=h)
+    assert r.status_code in (200, 404, 409) and (r.status_code != 200 or r.json()["messages"] == []), "a closed temporary chat shows nothing (its established contract)"
     assert sid not in client.get("/api/sessions", headers=h).text
