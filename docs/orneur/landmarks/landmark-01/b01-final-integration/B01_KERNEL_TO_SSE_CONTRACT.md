@@ -12,8 +12,16 @@
 2. `generation`
 3. `model` (`provisional: true` until CognitiveResult resolves)
 4. `stream` `{delivery:"upstream", cancellable:true}`
-5. `chunk*` (StreamRedactor-safe only)
-6. `done` with `delivery:"upstream"`, `persisted`, final `model_identity`
+5. `chunk*` (StreamRedactor-safe only) when Kernel answers via `on_raw_delta`
+6. `model` (resolved, non-provisional) once CognitiveResult is known
+7. `done` with `delivery:"upstream"`, `persisted`, final `model_identity`
+
+## Kernel deferral → AgentLoop
+
+If CognitiveResult has `output is None` (tools / plan deferral) and no raw
+deltas were emitted, the same SSE generator continues with `agent.stream`
+under the already-announced `upstream`/`cancellable` contract. It must not
+emit `invalid_request` or invent a completed answer.
 
 ## Refusal protocol (honest)
 

@@ -2200,8 +2200,108 @@ async def _stream_kernel_direct_upstream(
             return
 
         if cognitive_result.output is None:
-            # No-document session deferred to AgentLoop — rare; do not invent tokens.
-            yield f"data: {json.dumps(coded_error('invalid_request', message='This turn could not be streamed on the direct path.').as_sse())}\n\n"
+            # Kernel deferred to AgentLoop (tools / plan). Headers already
+            # announced upstream+cancellable; continue with agent.stream so
+            # CODEY-style turns and test doubles that force output=None still
+            # get real incremental tokens (do not invent a completed answer).
+            if full:
+                # Partial raw deltas with a deferred result is inconsistent —
+                # refuse rather than mix two producers into one transcript.
+                yield f"data: {json.dumps(coded_error('invalid_request', message='This turn could not be streamed on the direct path.').as_sse())}\n\n"
+                return
+            mem_ctx = sess.memory.recall_context(req.message, n=3)
+            enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
+            persona_system = get_persona_system(sess.model_variant)
+            if mod_result.action == "support":
+                persona_system += (
+                    f"\n\nIMPORTANT: This message may indicate the user is in emotional distress or crisis. "
+                    f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
+                )
+            identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=False)
+            yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
+            tool_names: list[str] = []
+            plan_action = "direct"
+            try:
+                gen, trace = await asyncio.to_thread(
+                    lambda: sess.agent.stream(enriched, persona_system)
+                )
+                if trace.plan_action == "tools":
+                    yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
+                agent_redactor = StreamRedactor()
+                raw_text = ""
+                async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
+                    async for chunk in achunks:
+                        _consume_message_quota(user, request)
+                        raw_text += chunk
+                        safe_chunk = agent_redactor.push(chunk)
+                        if safe_chunk:
+                            full += safe_chunk
+                            yield f"data: {json.dumps({'type': 'chunk', 'text': safe_chunk})}\n\n"
+                        if await request.is_disconnected():
+                            agent_redactor.cancel()
+                            audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                      detail={"chars_sent": len(full), "path": "kernel_deferred_agent"})
+                            return
+                tail = agent_redactor.finish()
+                if tail:
+                    full += tail
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': tail})}\n\n"
+                full = agent_redactor.safe_text() or full
+                if raw_text and raw_text != full:
+                    _swap_last_assistant_in_window(sess, raw_text, full)
+                tool_names = [tc.tool for tc in trace.tool_calls]
+                plan_action = trace.plan_action
+            except streaming.StreamingUnavailable as e:
+                err = public_error(e, route="/api/stream", user_id=user.id if user else None,
+                                   code="server_busy", message="The server is at capacity. Please retry shortly.")
+                yield f"data: {json.dumps(err.as_sse())}\n\n"
+                return
+            except Exception as e:
+                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                return
+
+            if not ta.still_authoritative():
+                yield f"data: {json.dumps({'type': 'error', 'code': 'turn_superseded', 'text': 'This conversation moved on while the reply was being generated, so it was not saved.'})}\n\n"
+                return
+            _consume_message_quota(user, request)
+            _src = _build_sources(answer=full, session_id=sess.id, rag_result=None)
+            persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id, authority=ta)
+            persist_status = "not_applicable" if user is None else ("saved" if persisted else "failed")
+            if persist_status == "failed":
+                audit.log("turn_not_persisted", user_id=user.id if user else None, detail={"session_id": sess.id})
+            if persist_status != "failed":
+                sess.memory.add_turn("user", req.message)
+                sess.memory.add_turn("assistant", full)
+                if not _omit_long_term(sess.id):
+                    sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
+                    from orca.memory.turn_ingest import maybe_ingest_turn
+                    maybe_ingest_turn(sess.id, req.message, full)
+                sess.persist_to_redis(fence_token=fence)
+                from orca.serve import temporary_chat
+                if not temporary_chat.is_hidden(sess.id):
+                    asyncio.create_task(asyncio.to_thread(
+                        sess.knowledge_graph.extract_and_add,
+                        f"{req.message}\n{full}", "chat", sess.brain,
+                    ))
+            citation_report = check_citations(full, "")
+            audit.log("stream_chat", user_id=user.id if user else None,
+                      detail={"model": sess.model_variant, "tools": tool_names,
+                              "cognitive_degraded": cognitive_result.degraded,
+                              "cognitive_resolved_tier": cognitive_result.resolved_tier,
+                              "delivery": "upstream", "path": "kernel_deferred_agent"})
+            explain_record = build_from_rag_result(message_id, None, plan_action, tool_names)
+            sess.explain_store.add(explain_record)
+            user_message_id = (persisted or {}).get("user_message_id")
+            _done_event = {
+                "type": "done", "tools": tool_names, "message_id": message_id, "user_message_id": user_message_id,
+                "citation_compliance": citation_report, "degraded": cognitive_result.degraded,
+                "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
+                "delivery": "upstream", "persisted": persist_status, "context_freshness": _context_freshness(sess),
+                "model_identity": identity, "source_summary": _src["summary"], "sources": _src["sources"],
+            }
+            if persist_status != "failed":
+                _idem_complete_stream(request, sess.id, full, _done_event)
+            yield f"data: {json.dumps(_done_event)}\n\n"
             return
 
         tail = redactor.finish()
@@ -2216,6 +2316,8 @@ async def _stream_kernel_direct_upstream(
 
         _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
         identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=True)
+        # Resolved identity after provisional announcement (B-01 truthful refinement).
+        yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
 
         if not ta.still_authoritative():
             yield f"data: {json.dumps({'type': 'error', 'code': 'turn_superseded', 'text': 'This conversation moved on while the reply was being generated, so it was not saved.'})}\n\n"

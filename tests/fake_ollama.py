@@ -97,11 +97,19 @@ class FakeOllama:
 
     @reply.setter
     def reply(self, value: str) -> None:
-        """Keep stream chunks coherent: Kernel-direct /api/stream (B-01) reads
-        ``chunks`` via ModelGateway.stream(), while generate() reads ``reply``.
-        Tests that only assign ``.reply`` must still observe that text on stream."""
+        """Keep stream chunks coherent with ``.reply`` when they still mirror
+        the previous reply (Kernel-direct B-01 reads ``chunks`` via
+        ModelGateway.stream(); generate() reads ``reply``).
+
+        Do NOT stomp an explicit ``chunks`` assignment: tests often set
+        ``fake.chunks, fake.reply, fake.truncate_after = (...)`` left-to-right,
+        and overwriting chunks after that assignment would destroy truncation /
+        multi-chunk streaming scenarios.
+        """
+        old = self._reply
         self._reply = value
-        self.chunks = [value]
+        if "".join(self.chunks) == (old or ""):
+            self.chunks = [value]
 
     def __enter__(self):
         self._t.start()
