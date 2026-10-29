@@ -1,5 +1,5 @@
 {
-  "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+  "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
   "probes": {
     "AUTH-1": {
       "requirement_id": "AUTH-1",
@@ -15,7 +15,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -26,7 +26,7 @@
         "tests/test_genesis_governance_authorization.py"
       ],
       "exit_code": 0,
-      "summary_line": "128 passed, 1 warning in 3.35s",
+      "summary_line": "128 passed, 1 warning in 3.53s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -43,7 +43,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -70,7 +70,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -80,7 +80,7 @@
         "tests/test_training_authorization_gate.py"
       ],
       "exit_code": 0,
-      "summary_line": "92 passed, 1 warning in 3.11s",
+      "summary_line": "92 passed, 1 warning in 3.20s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -98,7 +98,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -109,7 +109,7 @@
         "tests/test_genesis_training_primitives.py"
       ],
       "exit_code": 0,
-      "summary_line": "30 passed in 2.10s",
+      "summary_line": "30 passed in 2.04s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -127,7 +127,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -155,7 +155,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -165,7 +165,7 @@
         "tests/test_genesis_model_architecture.py"
       ],
       "exit_code": 0,
-      "summary_line": "23 passed in 1.20s",
+      "summary_line": "23 passed in 1.23s",
       "passed_probe": true,
       "stderr_tail": ""
     },
@@ -183,7 +183,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -212,7 +212,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -239,7 +239,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "candidate_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
       "pytest_command": [
         "/workspace/.venv/bin/python",
         "-m",
@@ -249,7 +249,7 @@
         "tests/test_genesis_data_contamination.py"
       ],
       "exit_code": 0,
-      "summary_line": "18 passed in 0.33s",
+      "summary_line": "18 passed in 0.32s",
       "passed_probe": true,
       "stderr_tail": ""
     }

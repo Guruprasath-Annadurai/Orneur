@@ -2,7 +2,7 @@
 
 **Starting SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Reviewed candidate:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
-**Corrective tip:** _filled after push_  
+**Corrective tip:** `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` (awaiting CI)  
 **CI URL:** _filled after green run on corrective tip_
 
 ## Local corrective verification

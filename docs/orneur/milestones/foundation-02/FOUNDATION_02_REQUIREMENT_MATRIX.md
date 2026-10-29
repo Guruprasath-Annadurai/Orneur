@@ -1,6 +1,6 @@
 # FOUNDATION-02 Requirement Matrix
 
-**Candidate SHA:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
+**Candidate SHA:** `442e9cfb26700153ca1ae2d939ca3081eb8d21ff`  
 **Main base SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Formal acceptance:** 0 / 95  
 **Validator:** `pretraining=95 numerator=0`  
@@ -19,15 +19,15 @@
 
 | ID | Historical SHA | Candidate SHA | Tests | Result |
 |---|---|---|---|---|
-| G4 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_training_authorization_assurance.py | PASS (23 passed, 1 xfailed in 0.91s) |
-| G5 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_training_authorization_gate.py | PASS (92 passed, 1 warning in 3.11s) |
-| C01 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_model_architecture.py | PASS (23 passed in 1.20s) |
-| C02 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_tokenizer.py; tests/test_cursor_tokenizer_robustness.py | PASS (34 passed in 0.36s) |
-| DATA-1 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_data_manifest.py; tests/test_cursor_pipeline_admission.py | PASS (37 passed in 0.48s) |
-| DATA-2 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_data_contamination.py | PASS (18 passed in 0.33s) |
-| TRAIN-1 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_cursor_training_math.py; tests/test_genesis_training_primitives.py | PASS (30 passed in 2.10s) |
-| TRAIN-2 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_checkpoint_integrity.py; tests/test_genesis_resumable_checkpoint.py | PASS (52 passed in 8.90s) |
-| AUTH-1 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_training_authorization_gate.py; tests/test_genesis_governance_authorization.py | PASS (128 passed, 1 warning in 3.35s) |
+| G4 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_training_authorization_assurance.py | PASS (23 passed, 1 xfailed in 0.91s) |
+| G5 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_training_authorization_gate.py | PASS (92 passed, 1 warning in 3.20s) |
+| C01 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_genesis_model_architecture.py | PASS (23 passed in 1.23s) |
+| C02 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_genesis_tokenizer.py; tests/test_cursor_tokenizer_robustness.py | PASS (34 passed in 0.36s) |
+| DATA-1 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_genesis_data_manifest.py; tests/test_cursor_pipeline_admission.py | PASS (37 passed in 0.48s) |
+| DATA-2 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_genesis_data_contamination.py | PASS (18 passed in 0.32s) |
+| TRAIN-1 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_cursor_training_math.py; tests/test_genesis_training_primitives.py | PASS (30 passed in 2.04s) |
+| TRAIN-2 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_genesis_checkpoint_integrity.py; tests/test_genesis_resumable_checkpoint.py | PASS (52 passed in 8.90s) |
+| AUTH-1 | `fc1eb1d` | `442e9cfb26700153ca1ae2d939ca3081eb8d21ff` | tests/test_training_authorization_gate.py; tests/test_genesis_governance_authorization.py | PASS (128 passed, 1 warning in 3.53s) |
 
 ## All rows
 
