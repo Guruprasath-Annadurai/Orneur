@@ -16,9 +16,9 @@
   "harness": {
     "pr": 133,
     "worktree": "/home/pc/projects/Orneur",
-    "head_sha": "28aa9f420c267e64e4f9807e8aefb65b6760a7a7",
+    "head_sha": "d9d5fb816bdf67a6d96a75f8c37d6e4b85c138e6",
     "branch": "antigravity/qualification-landmark-01",
-    "clean": false
+    "clean": true
   },
   "test_execution_summary": {
     "suite_results": {
