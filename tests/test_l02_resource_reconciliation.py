@@ -123,10 +123,11 @@ def test_a_record_a_live_worker_announces_is_never_an_orphan_and_a_quarantined_o
 
 def test_wiring_announces_what_this_worker_serves(isolated_home, monkeypatch):
     from orca.gateway import wiring
-    from orca.serve.registry import resolve_tier_backend
+    from types import SimpleNamespace
 
     wiring.reset_for_tests()
-    res = resolve_tier_backend("core")
+    # a synthetic resolution: the test must not depend on a backend (Ollama) being reachable on the machine that runs it
+    res = SimpleNamespace(tier="core", backend="ollama", model="llama3.2:1b", data_left_infrastructure=False)
     wiring.brain_for_tier_resolution(res)
     assert wiring.stable_deployment_id("ollama", res.model, "orneur-novus") in reconcile.live_ids() or any(i.startswith("ollama-") for i in reconcile.live_ids())
 
