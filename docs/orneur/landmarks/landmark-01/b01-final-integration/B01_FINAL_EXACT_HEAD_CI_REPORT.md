@@ -3,7 +3,7 @@
 **Starting SHA:** `15befec7191a1992286d7fa027236002f7d385db`  
 **Integration tip (pre-CI-fix):** `19322133181d71ed39d229187564ebb0e9100501`  
 **CI failure:** run `40839269051` — Deterministic Unit Tests (11 failures)  
-**Corrective tip:** _filled after push of CI-fix commit_  
+**Corrective tip:** `e6547634a9d531504df070447dd9b90095f6f571` (awaiting exact-head CI)  
 
 ## Failure root causes (1932213)
 
