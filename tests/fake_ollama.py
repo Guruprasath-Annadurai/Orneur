@@ -26,6 +26,7 @@ class FakeOllama:
         self.stream_started = threading.Event()       # set when the first streamed piece has been written
         self.streams_open = 0                         # /api/chat streams currently being served (0 once the client hung up or it finished)
         self.streams_finished = 0                     # streams that were written to the final {"done": true} line
+        self.stream_aborts = 0                        # streams whose client hung up before the final line (a count, unlike the one-shot Event above)
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -45,10 +46,24 @@ class FakeOllama:
             def do_GET(self):
                 if self.path == "/api/tags":
                     return self._json(200, {"models": [{"name": m, "digest": "sha256:" + "ab" * 32} for m in fake.models]})
+                if self.path == "/__stats":                       # control plane for out-of-process drivers (browser journeys); not an Ollama endpoint
+                    return self._json(200, {"chunks_sent": fake.chunks_sent, "streams_open": fake.streams_open, "streams_finished": fake.streams_finished,
+                                            "stream_aborts": fake.stream_aborts, "requests": len(fake.requests)})
+                if self.path == "/__requests":
+                    return self._json(200, {"requests": fake.requests})
                 self._json(404, {"error": "not found"})
 
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if self.path == "/__config":
+                    for key in ("chunk_delay", "fail_status", "pre_response_delay", "truncate_after"):
+                        if key in payload:
+                            setattr(fake, key, payload[key])
+                    if "chunks" in payload:
+                        fake.chunks = payload["chunks"]
+                    if "reply" in payload:
+                        fake.reply = payload["reply"]
+                    return self._json(200, {"ok": True})
                 if self.path != "/api/chat":
                     return self._json(404, {"error": "not found"})
                 fake.requests.append(payload)
@@ -91,6 +106,7 @@ class FakeOllama:
                     fake.streams_finished += 1
                 except (BrokenPipeError, ConnectionResetError):
                     fake.stream_aborted.set()
+                    fake.stream_aborts += 1
                 finally:
                     fake.streams_open -= 1
 
