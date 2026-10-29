@@ -3,8 +3,13 @@
 evidence_required: A synthetic dry-run log showing corpus, qualification,
 model-selection, GPU, and training locks still false afterward.
 
-Uses in-process dry-run APIs and the committed sample result. Does not train,
-allocate GPU, generate corpus, or flip authorization files.
+This suite validates the committed SHA-pinned dry-run sample and the live
+authorization lock snapshot. The scrubbed live CLI path is covered by
+``tests/test_trainprep_cli.py`` in CI and is intentionally not invoked here:
+in-process dry-run trips SyntheticOnlyGuard once ``tokenizers`` (or similar)
+is already imported by earlier suite modules.
+
+Does not train, allocate GPU, generate corpus, or flip authorization files.
 """
 from __future__ import annotations
 
@@ -17,6 +22,16 @@ from orca.rse.imp1 import locks as L
 
 REPO = Path(__file__).resolve().parents[1]
 SAMPLE = REPO / "docs/orneur/status/trainprep/dryrun_result.json"
+
+_LOCK_NAMES = (
+    "corpus_generation_authorized",
+    "qualification_authorized",
+    "model_selection_authorized",
+    "gpu_authorized",
+    "provider_authorized",
+    "spending_authorized",
+    "training_authorized",
+)
 
 
 def test_train2_committed_sample_is_synthetic_and_locks_remain_false():
@@ -31,25 +46,21 @@ def test_train2_committed_sample_is_synthetic_and_locks_remain_false():
     assert auth["locks_still_false"] is True
     assert auth["locks_before"] == auth["locks_after"]
     functions = auth["locks_after"]["functions"]
-    for name in (
-        "corpus_generation_authorized",
-        "qualification_authorized",
-        "model_selection_authorized",
-        "gpu_authorized",
-        "provider_authorized",
-        "spending_authorized",
-        "training_authorized",
-    ):
+    for name in _LOCK_NAMES:
         assert functions[name] is False, name
     assert auth["locks_after"]["training_authorization_status"] == "NOT_AUTHORIZED"
     assert doc["gate_probe"] == {"authorized": False, "reasons": ["NOT_AUTHORIZED"]}
     assert doc["lock"]["structure_ok"] is True
     assert doc["lock"]["path"] == "requirements/train.txt"
+    assert doc["runs"]["zero_budget"]["status"] == "REFUSED"
 
 
 def test_train2_live_lock_snapshot_matches_denied_posture():
     snap = cli.lock_snapshot(REPO)
     assert cli.locks_all_denied(snap)
+    assert snap["training_authorization_status"] == "NOT_AUTHORIZED"
+    for name in _LOCK_NAMES:
+        assert snap["functions"][name] is False, name
     assert L.corpus_generation_authorized() is False
     assert L.qualification_authorized() is False
     assert L.model_selection_authorized() is False
@@ -57,25 +68,6 @@ def test_train2_live_lock_snapshot_matches_denied_posture():
     assert L.training_authorized() is False
     assert L.spending_authorized() is False
     assert L.provider_authorized() is False
-
-
-def test_train2_inprocess_dryrun_does_not_flip_locks(tmp_path):
-    """In-process run_cli (no scrubbed child) still proves locks unchanged."""
-    before = cli.lock_snapshot(REPO)
-    out = tmp_path / "dryrun.json"
-    code = cli.run_cli(["--max-steps", "4", "--max-tokens", "40", "--out", str(out)], repo=REPO)
-    # Dirty trees refuse binding (exit 3); clean trees return 0.
-    doc = json.loads(out.read_text(encoding="utf-8"))
-    assert doc["synthetic"] is True
-    assert doc["authorization"]["locks_still_false"] is True
-    assert doc["authorization"]["authorization_files_byte_identical"] is True
-    assert cli.lock_snapshot(REPO) == before
-    if code == 0:
-        assert doc["status"] in {"OK", "OK_BUDGET_LIMITED"}
-        assert doc["gate_probe"]["authorized"] is False
-    else:
-        assert code == 3
-        assert doc["status"] == "REFUSED_BINDING"
 
 
 def test_train2_sample_auth_hashes_match_committed_authorization_files():
@@ -87,3 +79,14 @@ def test_train2_sample_auth_hashes_match_committed_authorization_files():
     assert after["authorization_json_sha256"]["TRAINING_AUTHORITY_REGISTRY.json"] == file_sha256(
         REPO / A.REGISTRY_PATH
     )
+
+
+def test_train2_gate_probe_denies_without_writing_state(tmp_path, monkeypatch):
+    import orca.config as orca_config
+
+    monkeypatch.setattr(orca_config, "ORCA_HOME", tmp_path / "home")
+    before = cli.lock_snapshot(REPO)
+    probe = cli.gate_probe(REPO, "a" * 40, cli.Plan())
+    assert probe == {"authorized": False, "reasons": ["NOT_AUTHORIZED"]}
+    assert cli.lock_snapshot(REPO) == before
+    assert not (tmp_path / "home").exists()
