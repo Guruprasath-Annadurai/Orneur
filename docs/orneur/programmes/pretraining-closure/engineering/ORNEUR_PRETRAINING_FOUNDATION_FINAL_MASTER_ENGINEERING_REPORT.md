@@ -1,7 +1,7 @@
 # ORNEUR — PRETRAINING FOUNDATION FINAL MASTER ENGINEERING REPORT
 
-**Generated (UTC):** 2026-10-29T13:55:39Z  
-**Final engineering SHA:** `aa59387038a03c244a57b677cc8793200f549220`  
+**Generated (UTC):** 2026-10-29T13:56:39Z  
+**Final engineering SHA:** `ad2b26fe054cad45c33f60da469fdbff31a9f652`  
 **Prior qualified code SHA:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Training authorization:** **NO-GO**  
 **Formal acceptance:** **0 / 95**  
@@ -160,8 +160,8 @@
 
 ## F. Final qualification evidence
 
-- Candidate SHA: `aa59387038a03c244a57b677cc8793200f549220`
-- Artifact digests: `{"freeze_manifest": "697ca588593628b17f4ef90b5b5c5bb8a8ab2055b327a2822199a5a31698242a", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "a90885b0a0b4eb44dabab8bb6a6bc68d9a346958b5811c11a28161eefaeddfe9", "probes": "9c826909d86762a66fa2c9eb86453ae58f9ef7f34619fcc43120d3ba6056ad22", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
+- Candidate SHA: `ad2b26fe054cad45c33f60da469fdbff31a9f652`
+- Artifact digests: `{"freeze_manifest": "12e73b25969292a36a9ac70369e8950835ec3a54305f34f8d16dd29b24331972", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "c897b730520ff840e2f98913f14c25f8477ae6a2544c635f484d73dd0fcced56", "probes": "96bc0eae393f5f4f9d7761c3817d287de296bc30a520e47bd41036bd36cc7bf5", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
 - Reproduction:
   - `python scripts/acceptance/validate_register_graph.py --check`
   - `python -m pytest tests/test_foundation02_probe_honesty.py tests/test_pretraining_phase_closure.py -q`
