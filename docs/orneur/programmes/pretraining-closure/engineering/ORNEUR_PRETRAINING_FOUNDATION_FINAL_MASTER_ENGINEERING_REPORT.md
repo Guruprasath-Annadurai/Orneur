@@ -1,7 +1,7 @@
 # ORNEUR — PRETRAINING FOUNDATION FINAL MASTER ENGINEERING REPORT
 
-**Generated (UTC):** 2026-10-29T13:56:39Z  
-**Final engineering SHA:** `ad2b26fe054cad45c33f60da469fdbff31a9f652`  
+**Generated (UTC):** 2026-10-29T14:44:32Z  
+**Final engineering SHA:** `78e6ad65617741cd92af6df4b4a37543930e4ced`  
 **Prior qualified code SHA:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Training authorization:** **NO-GO**  
 **Formal acceptance:** **0 / 95**  
@@ -11,9 +11,12 @@
 - Starting main SHA: `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`
 - PR lineage: #138 FOUNDATION-02, #140 Phase 0/1 honesty + Phases 2-9 closure
 - Honesty probe tip: `cd1e557a685b529c57bf4bf2f594b088cbeb5172`
-- Disposition histogram: `{"BLOCKED": 16, "IMPLEMENTED_UNVERIFIED": 6, "NOT_IMPLEMENTED": 48, "VERIFIED_ENGINEERING": 25}`
-- VERIFIED_ENGINEERING IDs: G4, G5, C01, C02, C04, C05, C09, C10, C11, C12, C13, C14, C17, C18, C19, C20, C21, C45, C15, DATA-1, DATA-2, QUAL-2, TRAIN-1, TRAIN-2, AUTH-1
+- Disposition histogram: `{"BLOCKED": 16, "IMPLEMENTED_UNVERIFIED": 15, "NOT_IMPLEMENTED": 48, "VERIFIED_ENGINEERING": 16}`
+- VERIFIED_ENGINEERING IDs: G4, G5, C01, C02, C04, C05, C17, C18, C19, C20, C21, DATA-1, DATA-2, TRAIN-1, TRAIN-2, AUTH-1
+- Probe evidence tip: `78e6ad65617741cd92af6df4b4a37543930e4ced`
+- Antigravity remediation downgrades: C09, C10, C11, C12, C13, C14, C15, C45, QUAL-2
 - Readiness blockers: r65_unmapped, c27_unmet, trust_anchors_absent, protected_corpus_evidence_absent, private_evaluation_unfrozen, foundation_not_selected, compute_unqualified, independent_reviews_missing, real_data_licensing_unresolved, training_authorization_absent
+- Phases 0–9 fully complete claim: **False**
 
 ## B. Phase-by-phase results
 
@@ -21,15 +24,17 @@
 |---:|---|---|
 | 0 | Technical baseline | ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW |
 | 1 | Evidence honesty / foundation software | ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW |
-| 2 | RSE/security software (+ C27 investigation) | PARTIAL_ENGINEERING — physical/class-K blocked |
+| 2 | RSE/security software (+ C27 investigation) | PARTIAL_ENGINEERING — physical/class-K blocked; nine rows downgraded |
 | 3 | GENESIS feasibility (analytical) | PARTIAL_ENGINEERING — DEC-K/MODEL blocked |
 | 4 | Data pipeline (synthetic only) | PARTIAL_ENGINEERING — G8/DATA-3 blocked |
-| 5 | Eval harness + holdout denial | PARTIAL_ENGINEERING — QUAL-1/private custody blocked |
+| 5 | Eval harness + holdout denial | PARTIAL_ENGINEERING — QUAL-2 downgraded; QUAL-1/private custody blocked |
 | 6 | Hardware-trust boundary software | BLOCKED_BY_PROTECTED_DECISION (physical) |
 | 7 | Training infra identity (CPU) | PARTIAL_ENGINEERING — GPU/P2 blocked |
 | 8 | Integration preparation | BLOCKED_BY_PROTECTED_DECISION (mainline merge) |
 | 9 | Freeze package NO-GO | ENGINEERING_COMPLETE package / NOT_FROZEN |
 | 10 | Training execution | PROHIBITED |
+
+> Do **not** claim fully complete Phases 0–9 while protected or external mandatory gates remain open.
 
 ### C27 feasibility
 
@@ -60,19 +65,19 @@
 | C02 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C04 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C05 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C09 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C10 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C11 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C12 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C13 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C14 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C09 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C10 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C11 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C12 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C13 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C14 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C17 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C18 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C19 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C20 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C21 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C45 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
-| C15 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C45 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
+| C15 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C03 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | The verify log shows two distinct tokens. C08 remains its own row. |
 | C06 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
 | C07 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | False | A reviewer accepts this row's own artifact on the merged SHA. |
@@ -132,7 +137,7 @@
 | MODEL-2R | `BLOCKED` | False | NOT_CLAIMED | False | The research-only scope record exists. Commercial rights remain MODEL-2C. |
 | MODEL-1 | `BLOCKED` | False | NOT_CLAIMED | False | The selection record exists and stays inside the research-only scope. It does not set training_authorized(). |
 | QUAL-1 | `BLOCKED` | False | NOT_CLAIMED | False | The founder changes the runner state. This register does not. |
-| QUAL-2 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The failed-read log is accepted. |
+| QUAL-2 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | The failed-read log is accepted. |
 | QUAL-3 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | False | The threshold freeze is recorded before a candidate run. |
 | TRAIN-1 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The lock and the command log name the same SHA. |
 | TRAIN-2 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The log shows the locks still false. The run does not flip them. |
@@ -160,8 +165,8 @@
 
 ## F. Final qualification evidence
 
-- Candidate SHA: `ad2b26fe054cad45c33f60da469fdbff31a9f652`
-- Artifact digests: `{"freeze_manifest": "12e73b25969292a36a9ac70369e8950835ec3a54305f34f8d16dd29b24331972", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "c897b730520ff840e2f98913f14c25f8477ae6a2544c635f484d73dd0fcced56", "probes": "96bc0eae393f5f4f9d7761c3817d287de296bc30a520e47bd41036bd36cc7bf5", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
+- Candidate SHA: `78e6ad65617741cd92af6df4b4a37543930e4ced`
+- Artifact digests: `{"freeze_manifest": "1776688fa41fd95361528b3768ef8e2c0b9bd6e9ee2b688db4431848b046343b", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "b365291aef6bf238b7b6ef165f04683d6f7850bfcd4d25f94deb86a1fb590086", "probes": "c60e5e3ff0e956c11b84e726885f571298db6d06c48b53518da61f4ac6f7798a", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
 - Reproduction:
   - `python scripts/acceptance/validate_register_graph.py --check`
   - `python -m pytest tests/test_foundation02_probe_honesty.py tests/test_pretraining_phase_closure.py -q`
@@ -170,12 +175,14 @@
 
 ## G. Honest final disposition
 
-- **engineering_completed:** Phase 0/1 evidence honesty; RSE software probes for C04-C15/C17-C21/C45; QUAL-2 holdout denial; Phase 2-9 boundary modules; freeze package NO-GO
-- **engineering_incomplete:** Physical/custody HW gates; independent second codec (C16); mainline merge (G2/G3); formal acceptance process
+- **engineering_completed:** Phase 0/1 evidence honesty with skip/SHA refusal; RSE software probes retained for C04/C05/C17-C21 only; Phase 2-9 boundary modules + call-chain integration; freeze package NO-GO
+- **engineering_incomplete:** Physical/custody HW gates; independent second codec (C16); mainline merge (G2/G3); formal acceptance process; nine Antigravity downgrades remain IMPLEMENTED_UNVERIFIED (C09-C15, C45, QUAL-2) until original acceptance artifacts exist
+- **antigravity_remediation_downgrades:** C09, C10, C11, C12, C13, C14, C15, C45, QUAL-2
 - **founder_controlled_blockers:** G1, G8, G10, DEC-K, C08, C44, C27, R65, DATA-3, DATA-5, MODEL-1, MODEL-2R, QUAL-1, FINAL-2
 - **external_blockers:** C22, C23, C24, C25, C26, C27, C28, C39, C40, C41, C42, C43, C46, C47, C48, C50, G11, G6, G7, G9, HW-01, HW-02, HW-03, HW-06, HW-08, HW-11, HW-16, HW-18, HW-19, HW-20, HW-21, HW-24, HW-FORGE, P2-1, P2-2, P2-4
 - **independent_qualification_pending:** True
 - **formal_acceptance_count:** 0/95
 - **training_authorization_status:** NO-GO
+- **phases_0_9_fully_complete_claim:** False
 
 This report is engineering evidence for CTO review and Antigravity audit. It is **not** formal acceptance and **not** training authorization.
