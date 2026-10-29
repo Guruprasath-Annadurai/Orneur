@@ -5,7 +5,8 @@
 **Draft PR:** #138  
 **Starting main SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Reviewed candidate:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
-**Exact-head green tip:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
+**Prior exact-head green tip:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
+**Honesty-corrected probe tip:** `cd1e557a685b529c57bf4bf2f594b088cbeb5172`  
 **Corrective parent tip:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
 **Training authorization:** **NO-GO**  
 **Formal acceptance:** **0 / 95**
@@ -16,6 +17,7 @@
 2. Serving contract hardened with structured `capability_state` (gaps A/B/C closed).
 3. Requirement matrix v2: VERIFIED_ENGINEERING only with pytest probes on candidate SHA; FINAL-1 downgraded to IMPLEMENTED_UNVERIFIED.
 4. Audit-tail truncation classified as P2 residual (`FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md`); xfail ≠ pass.
+5. Phase 1 evidence honesty (matrix/probes v3): portable interpreter/PYTHONPATH; reject zero-collected / skip-only / xfail-only; distinguish xfailed; digest + SHA provenance; training NO-GO preserved.
 
 ## Disposition histogram (engineering only)
 

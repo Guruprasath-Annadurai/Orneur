@@ -1,7 +1,7 @@
 # Antigravity Handoff — Phase 0/1 Evidence Honesty Closure
 
 1. Start from PR #138 lineage. Prior independently tested code SHA: `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` (CI run `40860060023`).
-2. Retest the **corrective tip** of `cursor/foundation-02-phase1-evidence-closure-8108` (exact HEAD after CI green).
+2. Retest honesty probe tip `cd1e557a685b529c57bf4bf2f594b088cbeb5172` on `cursor/foundation-02-phase1-evidence-closure-8108` (exact HEAD after CI green; docs-only commits may sit above).
 3. Confirm `python scripts/acceptance/validate_register_graph.py --check` → `pretraining=95 numerator=0`.
 4. Confirm `docs/orneur/acceptance/acceptance_ledger.json` is `[]`. Do not treat engineering VERIFIED rows as formal acceptance.
 5. Run adversarial honesty suite: `python -m pytest tests/test_foundation02_probe_honesty.py -q`.

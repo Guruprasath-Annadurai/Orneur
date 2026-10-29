@@ -21,7 +21,7 @@
     "main_subject": "Merge PR #51: ORNEUR consolidated audited foundation",
     "foundation_02_pr": {
       "number": 138,
-      "title": "FOUNDATION-02 — Native Model Foundation Integrity and Pretraining Assurance",
+      "title": "FOUNDATION-02 \u2014 Native Model Foundation Integrity and Pretraining Assurance",
       "state": "OPEN",
       "url": "https://github.com/Guruprasath-Annadurai/Orneur/pull/138",
       "base_ref": "main",
@@ -115,13 +115,13 @@
     }
   ],
   "protected_approval_dependencies": [
-    "Founder training grant (G10) — NO-GO",
+    "Founder training grant (G10) \u2014 NO-GO",
     "Founder corpus-generation grant (G8 / DATA-3)",
     "Foundation selection decision (DEC-K)",
     "Independent architecture review (G1)",
-    "Independent Antigravity qualification (G13) — not Cursor self-cert",
-    "R65 unmapped placeholder — cannot invent policy text",
-    "Formal acceptance ledger writes — protected; engineering must not accept"
+    "Independent Antigravity qualification (G13) \u2014 not Cursor self-cert",
+    "R65 unmapped placeholder \u2014 cannot invent policy text",
+    "Formal acceptance ledger writes \u2014 protected; engineering must not accept"
   ],
   "external_hardware_compute": [
     {
@@ -141,11 +141,11 @@
     }
   ],
   "requirement_work_routes_summary": {
-    "VERIFIED_ENGINEERING_candidates": "AUTH-1,G4,G5,TRAIN-1,TRAIN-2,C01,C02,DATA-1,DATA-2 — honesty re-probe on corrective tip",
+    "VERIFIED_ENGINEERING_candidates": "AUTH-1,G4,G5,TRAIN-1,TRAIN-2,C01,C02,DATA-1,DATA-2 \u2014 honesty re-probe on corrective tip",
     "BLOCKED_founder_or_policy": "G1,G8,G10,MODEL-1,MODEL-2R,QUAL-1,C08,C44,DEC-K,DATA-3,DATA-5,R65 + other founder-controlled register rows",
     "IMPLEMENTED_UNVERIFIED": "Present artefacts without tip-honest probes / independent qualification",
     "NOT_IMPLEMENTED": "Remaining counted pretraining rows without engineering closure",
-    "later_phases": "Phases 2–9 planned only after Phase 1 honesty exit; Phase 10 prohibited until Phase 9 founder authorization"
+    "later_phases": "Phases 2\u20139 planned only after Phase 1 honesty exit; Phase 10 prohibited until Phase 9 founder authorization"
   },
   "claude_readonly_export": {
     "path": "docs/orneur/programmes/pretraining-closure/engineering/",
@@ -161,5 +161,7 @@
   "exit_condition": {
     "met": true,
     "statement": "All engineering-owned Phase 0/1 requirements have a defined work route; FOUNDATION-02 recovered from PR #138; no hidden second acceptance register; training remains NO-GO."
-  }
+  },
+  "phase1_honesty_probe_tip": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
+  "phase1_disposition": "ENGINEERING_COMPLETE \u2014 AWAITING_INDEPENDENT_REVIEW"
 }
