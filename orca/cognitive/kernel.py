@@ -472,6 +472,11 @@ class CognitiveKernel:
             current_user_text=objective,
             user_id=request.tenant if request is not None else None,
         )
+        # L02-08: the model is told, from the server, what it is and cannot do (third-party weights, no code execution/browsing/actions), so it does not describe itself
+        # or its abilities as something this deployment is not. Tools exist only on the agent path, never here.
+        from orca.serve.capability_truth import system_facts_for_model
+
+        messages = [{"role": "system", "content": system_facts_for_model(tools_available=False)}, *messages]
         want_stream = request is not None and request.on_raw_delta is not None
         inference_request = InferenceRequest(
             request_id=str(uuid.uuid4()), trace_id=trace_id,

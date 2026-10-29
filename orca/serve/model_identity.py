@@ -66,4 +66,14 @@ def model_identity(*, requested_variant: str | None, served_tier: str | None, se
         "lifecycle": lifecycle,
         "disclosure": disclosure,
         "data_left_infrastructure": bool(data_left_infrastructure),
+        # L02-08: who made the weights that answered. A frontier backend is someone else's model; a local runtime serves third-party open weights unless native
+        # ORNEUR weights exist (none do). Derived from orca.serve.capability_truth, never from the tier label.
+        **_provenance(backend, served or requested),
     }
+
+
+def _provenance(backend: str, tier: str | None) -> dict:
+    from orca.serve.capability_truth import native_weights_available
+
+    native = backend == "ollama" and native_weights_available(tier)
+    return {"weights_origin": "orneur" if native else "third_party", "native_orneur_weights": native, "runtime": "ollama" if backend == "ollama" else backend}

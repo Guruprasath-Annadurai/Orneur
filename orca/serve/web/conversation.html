@@ -2110,6 +2110,9 @@ function renderModelOptions() {
     if (typeof info.vision_capable === 'boolean') fields.push(['Vision input', info.vision_capable ? 'Supported' : 'Not supported']);
     if (info.fallback_active && info.resolved_model) fields.push(['Actually serving', info.resolved_model]);
     if (info.disclosure) fields.push(['Disclosure', info.disclosure]);
+    // L02-08: who made the weights, from the server (never inferred from the tier name)
+    if (info.weights_origin) fields.push(['Weights', info.native_orneur_weights ? 'ORNEUR-trained' : 'Third-party open model (not trained by ORNEUR)']);
+    if (info.runtime) fields.push(['Runs on', (info.location === 'local' ? 'Local ' : '') + info.runtime]);
     detailsPanel.innerHTML = fields.map(([k, v]) => `<div class="detail-row"><span class="detail-k">${esc(k)}</span><span class="detail-v">${esc(String(v))}</span></div>`).join('')
       || '<div class="detail-row"><span class="detail-v">No further verified attributes reported.</span></div>';
     // AUDIT-B05: ".open" is the authoritative toggle (the `.model-details`

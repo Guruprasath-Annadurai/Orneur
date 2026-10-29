@@ -22,9 +22,12 @@ def fake(client, monkeypatch):  # noqa: F811
 
 
 def _answering(fake, prompt):
+    """The messages the model was sent for ``prompt``, WITHOUT the constant leading system message of serving facts (L02-08), which sits outside the history window."""
     for req in reversed(fake.requests):
         msgs = req.get("messages") or []
         if msgs and msgs[-1].get("content") == prompt:
+            if msgs[0].get("role") == "system" and msgs[0].get("content", "").startswith("[Serving facts"):
+                return msgs[1:]
             return msgs
     return None
 

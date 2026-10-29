@@ -56,6 +56,7 @@ from orca.auth import auth_router, get_current_user, get_current_user_optional, 
 from orca.auth.rbac import require_permission
 from orca.auth.store import User, model_access_allowed
 from orca import audit
+from orca.serve import capability_truth
 from orca.lens.intent import detect_generation_intent
 
 from orca.brain.providers import get_brain
@@ -2275,7 +2276,7 @@ async def _chat_dispatch(
         except Exception as e:
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
-        used_tools = [tc.tool for tc in trace.tool_calls]
+        used_tools = [tc.tool for tc in trace.tool_calls if not tc.refused]          # L02-08: only tools that ACTUALLY ran; a call the gate refused is not 'used'
         plan_action = trace.plan_action
 
     _consume_message_quota(user, request)
@@ -2849,7 +2850,7 @@ async def _stream_dispatch(
                         # The agent loop appended the RAW streamed text to its live window; the window is what the next turn / a Redis peer reuses.
                         _swap_last_assistant_in_window(sess, raw_text, full)
 
-                    tool_names = [tc.tool for tc in trace.tool_calls]
+                    tool_names = [tc.tool for tc in trace.tool_calls if not tc.refused]        # L02-08: executed tools only (refused calls are audited, not reported as used)
                     plan_action = trace.plan_action
 
                 except streaming.StreamingUnavailable as e:
@@ -3519,6 +3520,15 @@ async def available_tools():
     }
 
 
+@app.get("/api/capabilities")
+async def capabilities_endpoint():
+    """L02-08: what this deployment can and cannot do, and who made the model - from facts, with the tests that back each claim. Public; contains no secrets or user data."""
+    from orca.auth import account_security as acct
+    from orca.auth.email import delivery_mode
+
+    return capability_truth.capabilities(email_delivery=delivery_mode(), verification_required=acct.verification_required())
+
+
 @app.get("/api/models")
 async def list_models():
     """
@@ -3565,6 +3575,7 @@ async def list_models():
             "lifecycle": decision.lifecycle,
             "publicly_served": decision.allowed,
             "disclosure": decision.label or ("Experimental model -- not qualified." if decision.lifecycle == "EXPERIMENTAL" else ""),
+            **capability_truth.serving_facts(tier),            # L02-08: runtime, weights origin (third party), native status - never inferred from the tier label
         }
 
     def _persona_claim_status(tier: str) -> dict:
