@@ -1,18 +1,17 @@
-# Antigravity remediation — exact-head CI binding
+# Requirement-integrity closure — exact-head CI binding
 
 | Item | Value |
 |---|---|
-| Remediation code tip (probe authority) | `78e6ad65617741cd92af6df4b4a37543930e4ced` |
-| Evidence commit tip | `42a3b79b0d82ff1655f4c02c23c1e0837be85d0f` |
-| Exact-head green tip (branch HEAD) | `7609602ea322093151c8264ff71831291ebb6537` |
-| CI | [40894646633](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40894646633) — **9/9 success** |
-| Deterministic | `9041 passed, 389 skipped, 43 deselected, 7 xfailed` |
+| Prior independently qualified tip | `97d4c83a16f56fca3c934cd7954ae8db6cfeb6d1` |
+| Integrity probe rebuild tip | `d6794245b77bc417d9a0d66e52804f5177bbfc17` |
+| Exact-head green tip | `a7109fae7881b201591cd5cc0b6db3d43df0f1e2` |
+| CI | [40906582652](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40906582652) — Test Suite success |
+| Deterministic | `9050 passed, 389 skipped, 43 deselected, 7 xfailed` |
 | Formal acceptance | **0/95** |
 | Training | **NO-GO** |
-| VERIFIED_ENGINEERING | **16** |
-| Disposition histogram | `BLOCKED=16`, `IMPLEMENTED_UNVERIFIED=15`, `VERIFIED_ENGINEERING=16`, `NOT_IMPLEMENTED=48` |
-| Nine downgrades | C09, C10, C11, C12, C13, C14, C15, C45, QUAL-2 |
+| VERIFIED_ENGINEERING | **11** — C01, C02, C04, C05, C17–C21, TRAIN-1, TRAIN-2 |
+| Independently qualified (counted) | C04, C05, C17, C18, C19, C20, C21 |
+| Qualified uncounted | `DATA_ADMISSION_CONTROLS` (`canonical_requirement_id: null`) |
+| Disposition histogram | `BLOCKED=19`, `IMPLEMENTED_UNVERIFIED=17`, `VERIFIED_ENGINEERING=11`, `NOT_IMPLEMENTED=48` |
 
-Implementation digests in `FOUNDATION_02_VERIFICATION_PROBES.json` were regenerated on the remediation code tip, including `orca/genesis/data/pipeline.py`.
-
-Mandatory probe suites for VERIFIED rows recorded **zero skips**. Global CI suite skips remain non-qualification residual and do not mint VERIFIED_ENGINEERING.
+Mandatory VERIFIED probe suites recorded **zero skips**. Global CI suite skips remain non-qualification residual.
