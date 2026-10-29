@@ -1,42 +1,37 @@
 # FOUNDATION-02 Requirement Matrix
 
-**Candidate SHA:** `78e6ad65617741cd92af6df4b4a37543930e4ced`  
+**Candidate SHA:** `54bb272d4329b59c4694ff5ab41605a7dc6539c7`  
 **Prior qualified code SHA:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Main base SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Formal acceptance:** 0 / 95  
 **Validator:** `pretraining=95 numerator=0`  
 **Training authorization:** **NO-GO**  
-**VERIFIED_ENGINEERING (honest probes):** 16 — G4, G5, C01, C02, C04, C05, C17, C18, C19, C20, C21, DATA-1, DATA-2, TRAIN-1, TRAIN-2, AUTH-1  
+**VERIFIED_ENGINEERING (honest probes):** 11 — C01, C02, C04, C05, C17, C18, C19, C20, C21, TRAIN-1, TRAIN-2  
 
 ## Disposition histogram (engineering only)
 
 | Disposition | Count |
 |---|---:|
-| `BLOCKED` | 16 |
-| `IMPLEMENTED_UNVERIFIED` | 15 |
+| `BLOCKED` | 19 |
+| `IMPLEMENTED_UNVERIFIED` | 17 |
 | `NOT_IMPLEMENTED` | 48 |
-| `VERIFIED_ENGINEERING` | 16 |
+| `VERIFIED_ENGINEERING` | 11 |
 
 ## VERIFIED_ENGINEERING evidence
 
 | ID | Historical SHA | Candidate SHA | Tests | Result |
 |---|---|---|---|---|
-| G4 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_training_authorization_assurance.py | PASS (23 passed, 1 xfailed in 0.85s) passed=23 xfailed=1 skipped=0 |
-| G5 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_training_authorization_gate.py | PASS (92 passed, 1 warning in 3.07s) passed=92 xfailed=0 skipped=0 |
-| C01 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_genesis_model_architecture.py | PASS (23 passed in 1.17s) passed=23 xfailed=0 skipped=0 |
-| C02 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_genesis_tokenizer.py; tests/test_cursor_tokenizer_robustness.py | PASS (34 passed in 0.34s) passed=34 xfailed=0 skipped=0 |
-| C04 | `b384348` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.30s) passed=16 xfailed=0 skipped=0 |
-| C05 | `b384348` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.31s) passed=16 xfailed=0 skipped=0 |
-| C17 | `b384348` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
-| C18 | `b384348` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0 |
-| C19 | `b384348` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
-| C20 | `b384348` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
-| C21 | `b384348` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
-| DATA-1 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_genesis_data_manifest.py; tests/test_cursor_pipeline_admission.py | PASS (37 passed in 0.41s) passed=37 xfailed=0 skipped=0 |
-| DATA-2 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_genesis_data_contamination.py | PASS (18 passed in 0.31s) passed=18 xfailed=0 skipped=0 |
-| TRAIN-1 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_cursor_training_math.py; tests/test_genesis_training_primitives.py | PASS (30 passed in 2.16s) passed=30 xfailed=0 skipped=0 |
-| TRAIN-2 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_genesis_checkpoint_integrity.py; tests/test_genesis_resumable_checkpoint.py | PASS (52 passed in 9.10s) passed=52 xfailed=0 skipped=0 |
-| AUTH-1 | `fc1eb1d` | `78e6ad65617741cd92af6df4b4a37543930e4ced` | tests/test_training_authorization_gate.py; tests/test_genesis_governance_authorization.py | PASS (128 passed, 1 warning in 3.19s) passed=128 xfailed=0 skipped=0 |
+| C01 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_c01_c02_registry_refusal.py | PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0 |
+| C02 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_c01_c02_registry_refusal.py; tests/rse/test_imp1r_final.py | PASS (8 passed in 0.28s) passed=8 xfailed=0 skipped=0 |
+| C04 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0 |
+| C05 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0 |
+| C17 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0 |
+| C18 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0 |
+| C19 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
+| C20 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
+| C21 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.43s) passed=22 xfailed=0 skipped=0 |
+| TRAIN-1 | `fc1eb1d` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/test_trainprep_lock_env.py | PASS (31 passed in 1.10s) passed=31 xfailed=0 skipped=0 |
+| TRAIN-2 | `fc1eb1d` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/test_train2_dryrun_locks_evidence.py | PASS (4 passed in 0.28s) passed=4 xfailed=0 skipped=0 |
 
 ## All rows
 
@@ -45,8 +40,8 @@
 | G1 | NOT_VERIFIABLE | `BLOCKED` | False |
 | G2 | PRESENT_ON_MAIN | `IMPLEMENTED_UNVERIFIED` | False |
 | G3 | UNMERGED_NOT_ACCEPTED | `IMPLEMENTED_UNVERIFIED` | False |
-| G4 | NOT_AUTHORIZED | `VERIFIED_ENGINEERING` | True |
-| G5 | NOT_AUTHORIZED | `VERIFIED_ENGINEERING` | True |
+| G4 | NOT_AUTHORIZED | `BLOCKED` | True |
+| G5 | NOT_AUTHORIZED | `BLOCKED` | True |
 | G6 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | G7 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | G8 | NOT_AUTHORIZED | `BLOCKED` | True |
@@ -123,8 +118,8 @@
 | P2-1 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | P2-2 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | P2-4 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
-| DATA-1 | NOT_ACCEPTED | `VERIFIED_ENGINEERING` | False |
-| DATA-2 | NOT_STARTED | `VERIFIED_ENGINEERING` | False |
+| DATA-1 | NOT_ACCEPTED | `IMPLEMENTED_UNVERIFIED` | False |
+| DATA-2 | NOT_STARTED | `IMPLEMENTED_UNVERIFIED` | False |
 | DATA-3 | NOT_STARTED | `BLOCKED` | False |
 | DATA-5 | NOT_STARTED | `BLOCKED` | False |
 | MODEL-2R | NOT_AUTHORIZED | `BLOCKED` | True |
@@ -134,7 +129,7 @@
 | QUAL-3 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | TRAIN-1 | NOT_STARTED | `VERIFIED_ENGINEERING` | False |
 | TRAIN-2 | NOT_STARTED | `VERIFIED_ENGINEERING` | False |
-| AUTH-1 | NOT_VERIFIABLE | `VERIFIED_ENGINEERING` | True |
+| AUTH-1 | NOT_VERIFIABLE | `BLOCKED` | True |
 | R65 | NOT_VERIFIABLE | `BLOCKED` | True |
 | FINAL-1 | NOT_STARTED | `IMPLEMENTED_UNVERIFIED` | False |
 

@@ -1,7 +1,7 @@
 # ORNEUR — PRETRAINING FOUNDATION FINAL MASTER ENGINEERING REPORT
 
-**Generated (UTC):** 2026-10-29T14:44:32Z  
-**Final engineering SHA:** `78e6ad65617741cd92af6df4b4a37543930e4ced`  
+**Generated (UTC):** 2026-10-29T15:36:02Z  
+**Final engineering SHA:** `54bb272d4329b59c4694ff5ab41605a7dc6539c7`  
 **Prior qualified code SHA:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Training authorization:** **NO-GO**  
 **Formal acceptance:** **0 / 95**  
@@ -11,9 +11,12 @@
 - Starting main SHA: `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`
 - PR lineage: #138 FOUNDATION-02, #140 Phase 0/1 honesty + Phases 2-9 closure
 - Honesty probe tip: `cd1e557a685b529c57bf4bf2f594b088cbeb5172`
-- Disposition histogram: `{"BLOCKED": 16, "IMPLEMENTED_UNVERIFIED": 15, "NOT_IMPLEMENTED": 48, "VERIFIED_ENGINEERING": 16}`
-- VERIFIED_ENGINEERING IDs: G4, G5, C01, C02, C04, C05, C17, C18, C19, C20, C21, DATA-1, DATA-2, TRAIN-1, TRAIN-2, AUTH-1
-- Probe evidence tip: `78e6ad65617741cd92af6df4b4a37543930e4ced`
+- Disposition histogram: `{"BLOCKED": 19, "IMPLEMENTED_UNVERIFIED": 17, "NOT_IMPLEMENTED": 48, "VERIFIED_ENGINEERING": 11}`
+- VERIFIED_ENGINEERING IDs: C01, C02, C04, C05, C17, C18, C19, C20, C21, TRAIN-1, TRAIN-2
+- Independently qualified (counted): C04, C05, C17, C18, C19, C20, C21
+- Qualified uncounted software: `DATA_ADMISSION_CONTROLS` (no fabricated eighth requirement ID)
+- Probe evidence tip: `54bb272d4329b59c4694ff5ab41605a7dc6539c7`
+- Eight-row reconciliation: `docs/orneur/programmes/pretraining-closure/engineering/INDEPENDENT_AUDIT_EIGHT_ROW_RECONCILIATION.json`
 - Antigravity remediation downgrades: C09, C10, C11, C12, C13, C14, C15, C45, QUAL-2
 - Readiness blockers: r65_unmapped, c27_unmet, trust_anchors_absent, protected_corpus_evidence_absent, private_evaluation_unfrozen, foundation_not_selected, compute_unqualified, independent_reviews_missing, real_data_licensing_unresolved, training_authorization_absent
 - Phases 0–9 fully complete claim: **False**
@@ -52,8 +55,8 @@
 | G1 | `BLOCKED` | False | NOT_CLAIMED | False | Name a reviewer who did not author RSE-ARCH-1.2, and record where the review is stored. |
 | G2 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | The integration check still matches the manifest. |
 | G3 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | The merged SHA has its own main push CI and a review that is not a copied slogan. |
-| G4 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The authorization names the machines. This register does not purchase them. |
-| G5 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | A founder act changes the authorization. This register does not create a secret. |
+| G4 | `BLOCKED` | False | NOT_CLAIMED | False | The authorization names the machines. This register does not purchase them. |
+| G5 | `BLOCKED` | False | NOT_CLAIMED | False | A founder act changes the authorization. This register does not create a secret. |
 | G6 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | True | Founder names the operator who runs the acceptance. The reviewer is not that operator. Purchase stays on G4. |
 | G7 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | True | Founder names the Crown custodian. No purchase is authorized here. Purchase stays on G4. |
 | G8 | `BLOCKED` | False | NOT_CLAIMED | False | The founder changes that file. This register does not. |
@@ -130,8 +133,8 @@
 | P2-1 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | True | Founder names the environment operator. No provider contract is authorized here. |
 | P2-2 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | True | The egress test log is accepted. |
 | P2-4 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | True | The refusal test is accepted. Raising the cap is FINAL-2. |
-| DATA-1 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | Founder names who assembles the manifest. This row generates no corpus. |
-| DATA-2 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The oracle output is accepted. G8 does not pass this row. |
+| DATA-1 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | Founder names who assembles the manifest. This row generates no corpus. |
+| DATA-2 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | The oracle output is accepted. G8 does not pass this row. |
 | DATA-3 | `BLOCKED` | False | NOT_CLAIMED | False | Founder names the corpus operator after G8. This row does not generate a corpus and does not implement class K. |
 | DATA-5 | `BLOCKED` | False | NOT_CLAIMED | False | Founder names a custodian who did not create the corpus. This row does not generate a corpus. |
 | MODEL-2R | `BLOCKED` | False | NOT_CLAIMED | False | The research-only scope record exists. Commercial rights remain MODEL-2C. |
@@ -141,7 +144,7 @@
 | QUAL-3 | `NOT_IMPLEMENTED` | False | NOT_CLAIMED | False | The threshold freeze is recorded before a candidate run. |
 | TRAIN-1 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The lock and the command log name the same SHA. |
 | TRAIN-2 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The log shows the locks still false. The run does not flip them. |
-| AUTH-1 | `VERIFIED_ENGINEERING` | False | NOT_CLAIMED | False | The record exists. Until then this row blocks a readiness percentage. |
+| AUTH-1 | `BLOCKED` | False | NOT_CLAIMED | False | The record exists. Until then this row blocks a readiness percentage. |
 | R65 | `BLOCKED` | False | NOT_CLAIMED | False | Founder supplies the complete exact text. Do not paraphrase it. |
 | FINAL-1 | `IMPLEMENTED_UNVERIFIED` | False | NOT_CLAIMED | False | The worksheet matches a fresh run of the validator. Founder authorization is still FINAL-2. |
 
@@ -165,8 +168,8 @@
 
 ## F. Final qualification evidence
 
-- Candidate SHA: `78e6ad65617741cd92af6df4b4a37543930e4ced`
-- Artifact digests: `{"freeze_manifest": "1776688fa41fd95361528b3768ef8e2c0b9bd6e9ee2b688db4431848b046343b", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "b365291aef6bf238b7b6ef165f04683d6f7850bfcd4d25f94deb86a1fb590086", "probes": "c60e5e3ff0e956c11b84e726885f571298db6d06c48b53518da61f4ac6f7798a", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
+- Candidate SHA: `54bb272d4329b59c4694ff5ab41605a7dc6539c7`
+- Artifact digests: `{"freeze_manifest": "bbb438baa619cf33b1ed998e53be30b51e66dfdaee602d4b9ffd993672f23e26", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "3ac7bd0e2ba8fdbc11482b697e4810fa50a6a56ecf5fae2ce839b1b7dfafc300", "probes": "95ce5979b705fd4c7fc3d98b3405c2ca4f274d74efbf9dc7231765755d78bbf7", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
 - Reproduction:
   - `python scripts/acceptance/validate_register_graph.py --check`
   - `python -m pytest tests/test_foundation02_probe_honesty.py tests/test_pretraining_phase_closure.py -q`
@@ -175,10 +178,12 @@
 
 ## G. Honest final disposition
 
-- **engineering_completed:** Phase 0/1 evidence honesty with skip/SHA refusal; RSE software probes retained for C04/C05/C17-C21 only; Phase 2-9 boundary modules + call-chain integration; freeze package NO-GO
-- **engineering_incomplete:** Physical/custody HW gates; independent second codec (C16); mainline merge (G2/G3); formal acceptance process; nine Antigravity downgrades remain IMPLEMENTED_UNVERIFIED (C09-C15, C45, QUAL-2) until original acceptance artifacts exist
+- **engineering_completed:** Register-aligned matrix correction; C01/C02 signed-registry refusals; TRAIN-1 hash lock + TRAIN-2 synthetic dry-run locks-false evidence; independently qualified C04/C05/C17–C21 preserved; data-admission uncounted capability recorded
+- **engineering_incomplete:** Physical/custody HW gates; independent second codec (C16); mainline merge (G2/G3); formal acceptance process; journal/witness/holdout rows remain IMPLEMENTED_UNVERIFIED; DATA-1/DATA-2 require protected corpus artifacts
 - **antigravity_remediation_downgrades:** C09, C10, C11, C12, C13, C14, C15, C45, QUAL-2
-- **founder_controlled_blockers:** G1, G8, G10, DEC-K, C08, C44, C27, R65, DATA-3, DATA-5, MODEL-1, MODEL-2R, QUAL-1, FINAL-2
+- **independently_qualified_engineering_ids:** C04, C05, C17, C18, C19, C20, C21
+- **qualified_uncounted_software:** {'capability_id': 'DATA_ADMISSION_CONTROLS', 'canonical_requirement_id': None, 'reason': 'Remote-origin refusal and training-bound license/jail admission are independently exercised software controls; they do not satisfy DATA-1 (provenance manifest bound to DATA-3 creation digest) or DATA-2 (contamination/holdout separation on a protected corpus).', 'implementation': ['orca/pretrain_foundation/corpus_controls.py', 'orca/genesis/data/pipeline.py'], 'tests': ['tests/test_pretraining_phase_closure.py', 'tests/test_pretraining_call_chain_integration.py', 'tests/test_cursor_pipeline_admission.py']}
+- **founder_controlled_blockers:** G1, G4, G5, G8, G10, AUTH-1, DEC-K, C08, C44, C27, R65, DATA-3, DATA-5, MODEL-1, MODEL-2R, QUAL-1, FINAL-2
 - **external_blockers:** C22, C23, C24, C25, C26, C27, C28, C39, C40, C41, C42, C43, C46, C47, C48, C50, G11, G6, G7, G9, HW-01, HW-02, HW-03, HW-06, HW-08, HW-11, HW-16, HW-18, HW-19, HW-20, HW-21, HW-24, HW-FORGE, P2-1, P2-2, P2-4
 - **independent_qualification_pending:** True
 - **formal_acceptance_count:** 0/95

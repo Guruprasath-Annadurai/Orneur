@@ -92,13 +92,13 @@
       "requirement_id": "C01",
       "was": "GENESIS transformer architecture tests",
       "now": "Signed-registry Crown ABSENT refusal for unregistered entry id",
-      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+      "engineering_classification": "VERIFIED_ENGINEERING"
     },
     {
       "requirement_id": "C02",
       "was": "Tokenizer robustness tests",
       "now": "Consumer/accept_registry stale or unknown registry refusal",
-      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+      "engineering_classification": "VERIFIED_ENGINEERING"
     },
     {
       "requirement_id": "G4",

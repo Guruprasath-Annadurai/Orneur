@@ -1,6 +1,6 @@
 {
   "schema": "orneur-foundation-02-verification-probes/3",
-  "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+  "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
   "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
   "lockfile_sha256": {
     "uv.lock": "3af0d6934c1a4d0cc9f6a5b9e8fbffa9daa43bc8e8aec85069b0bd9552f5b86d",
@@ -22,431 +22,103 @@
   ],
   "training_authorization": "NO-GO",
   "probes": {
-    "AUTH-1": {
-      "requirement_id": "AUTH-1",
-      "claim": "Fail-closed training / native-pretraining authorization entry points",
-      "implementation_paths": [
-        "orca/train/authorization.py",
-        "orca/genesis/governance/authorization.py"
-      ],
-      "implementation_sha256": {
-        "orca/train/authorization.py": "e54d26087ad5290ae80415bfc32dc98cea6441855ad7bd6c20aa00cbadf4a2d4",
-        "orca/genesis/governance/authorization.py": "0bb0a2dc6e023e63d0b4b71d1198a6c56f32045c0e16fe128cb3cbe659abf0f7"
-      },
-      "missing_implementation": [],
-      "test_paths": [
-        "tests/test_training_authorization_gate.py",
-        "tests/test_genesis_governance_authorization.py"
-      ],
-      "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
-      "pytest_command": [
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=no",
-        "tests/test_training_authorization_gate.py",
-        "tests/test_genesis_governance_authorization.py"
-      ],
-      "python_resolved": "/usr/bin/python3",
-      "pythonpath": "/workspace",
-      "exit_code": 0,
-      "summary_line": "128 passed, 1 warning in 3.19s",
-      "counts": {
-        "passed": 128,
-        "failed": null,
-        "skipped": null,
-        "xfailed": null,
-        "xpassed": null,
-        "errors": null,
-        "collected": null,
-        "summary_line": "128 passed, 1 warning in 3.19s",
-        "parseable": true
-      },
-      "passed_probe": true,
-      "verdict_reason": "PASS passed=128",
-      "refusal_codes": [],
-      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
-    },
-    "G4": {
-      "requirement_id": "G4",
-      "claim": "Committed authorization record is NOT_AUTHORIZED; adversarial assurance suite",
-      "implementation_paths": [
-        "orca/train/authorization.py",
-        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
-      ],
-      "implementation_sha256": {
-        "orca/train/authorization.py": "e54d26087ad5290ae80415bfc32dc98cea6441855ad7bd6c20aa00cbadf4a2d4",
-        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json": "4a0fd8709c03a02ec04c4b633d67683a2244c752910e7eb0dfbb0b6d33aeed83"
-      },
-      "missing_implementation": [],
-      "test_paths": [
-        "tests/test_training_authorization_assurance.py"
-      ],
-      "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
-      "pytest_command": [
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=no",
-        "tests/test_training_authorization_assurance.py"
-      ],
-      "python_resolved": "/usr/bin/python3",
-      "pythonpath": "/workspace",
-      "exit_code": 0,
-      "summary_line": "23 passed, 1 xfailed in 0.85s",
-      "counts": {
-        "passed": 23,
-        "failed": null,
-        "skipped": null,
-        "xfailed": 1,
-        "xpassed": null,
-        "errors": null,
-        "collected": null,
-        "summary_line": "23 passed, 1 xfailed in 0.85s",
-        "parseable": true
-      },
-      "passed_probe": true,
-      "verdict_reason": "PASS passed=23 xfailed=1 (expected failures distinguished, not counted as PASS)",
-      "refusal_codes": [],
-      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
-    },
-    "G5": {
-      "requirement_id": "G5",
-      "claim": "Empty authority registry with pinned digest; no key can authorize",
-      "implementation_paths": [
-        "orca/train/authorization.py",
-        "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json"
-      ],
-      "implementation_sha256": {
-        "orca/train/authorization.py": "e54d26087ad5290ae80415bfc32dc98cea6441855ad7bd6c20aa00cbadf4a2d4",
-        "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json": "2b6fa35141b856df3166b9222d6ef1f92c0752761bfae5eb4190424ac321820d"
-      },
-      "missing_implementation": [],
-      "test_paths": [
-        "tests/test_training_authorization_gate.py"
-      ],
-      "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
-      "pytest_command": [
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=no",
-        "tests/test_training_authorization_gate.py"
-      ],
-      "python_resolved": "/usr/bin/python3",
-      "pythonpath": "/workspace",
-      "exit_code": 0,
-      "summary_line": "92 passed, 1 warning in 3.07s",
-      "counts": {
-        "passed": 92,
-        "failed": null,
-        "skipped": null,
-        "xfailed": null,
-        "xpassed": null,
-        "errors": null,
-        "collected": null,
-        "summary_line": "92 passed, 1 warning in 3.07s",
-        "parseable": true
-      },
-      "passed_probe": true,
-      "verdict_reason": "PASS passed=92",
-      "refusal_codes": [],
-      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
-    },
-    "TRAIN-1": {
-      "requirement_id": "TRAIN-1",
-      "claim": "CPU synthetic training mathematics / primitives",
-      "implementation_paths": [
-        "orca/genesis/training/primitives.py",
-        "orca/genesis/training/math_qualification.py"
-      ],
-      "implementation_sha256": {
-        "orca/genesis/training/primitives.py": "90a1260c6bd8bf9ff29778cf503b9234f66e1cfa425ebec4d914c5d75870884d",
-        "orca/genesis/training/math_qualification.py": "0add4e2a6c0623c737e07f63154678e21a83520b4cb0968b1376696f9b2ef5a5"
-      },
-      "missing_implementation": [],
-      "test_paths": [
-        "tests/test_cursor_training_math.py",
-        "tests/test_genesis_training_primitives.py"
-      ],
-      "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
-      "pytest_command": [
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=no",
-        "tests/test_cursor_training_math.py",
-        "tests/test_genesis_training_primitives.py"
-      ],
-      "python_resolved": "/usr/bin/python3",
-      "pythonpath": "/workspace",
-      "exit_code": 0,
-      "summary_line": "30 passed in 2.16s",
-      "counts": {
-        "passed": 30,
-        "failed": null,
-        "skipped": null,
-        "xfailed": null,
-        "xpassed": null,
-        "errors": null,
-        "collected": null,
-        "summary_line": "30 passed in 2.16s",
-        "parseable": true
-      },
-      "passed_probe": true,
-      "verdict_reason": "PASS passed=30",
-      "refusal_codes": [],
-      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
-    },
-    "TRAIN-2": {
-      "requirement_id": "TRAIN-2",
-      "claim": "Synthetic checkpoint integrity and resume refusal paths",
-      "implementation_paths": [
-        "orca/genesis/training/checkpoint_integrity.py",
-        "orca/genesis/training/resumable_checkpoint.py"
-      ],
-      "implementation_sha256": {
-        "orca/genesis/training/checkpoint_integrity.py": "40d55e9969c3cf9ed797a681e1f24ffcc3609fe74f4768b174ddf9b7db1b66fc",
-        "orca/genesis/training/resumable_checkpoint.py": "0fa5607d50eca33040024400f2a7417127e6f3142806a1e152a87e042d7f581a"
-      },
-      "missing_implementation": [],
-      "test_paths": [
-        "tests/test_genesis_checkpoint_integrity.py",
-        "tests/test_genesis_resumable_checkpoint.py"
-      ],
-      "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
-      "pytest_command": [
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=no",
-        "tests/test_genesis_checkpoint_integrity.py",
-        "tests/test_genesis_resumable_checkpoint.py"
-      ],
-      "python_resolved": "/usr/bin/python3",
-      "pythonpath": "/workspace",
-      "exit_code": 0,
-      "summary_line": "52 passed in 9.10s",
-      "counts": {
-        "passed": 52,
-        "failed": null,
-        "skipped": null,
-        "xfailed": null,
-        "xpassed": null,
-        "errors": null,
-        "collected": null,
-        "summary_line": "52 passed in 9.10s",
-        "parseable": true
-      },
-      "passed_probe": true,
-      "verdict_reason": "PASS passed=52",
-      "refusal_codes": [],
-      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
-    },
     "C01": {
       "requirement_id": "C01",
-      "claim": "GENESIS architecture config/interface synthetic tests",
+      "claim": "Signed-registry Crown path refuses unregistered entry id (ABSENT)",
       "implementation_paths": [
-        "orca/genesis/model/config.py",
-        "orca/genesis/model/transformer.py"
+        "orca/rse/imp1/authority.py",
+        "orca/rse/imp1/codec.py"
       ],
       "implementation_sha256": {
-        "orca/genesis/model/config.py": "12e8e4b32698aca8bb79ea0a98251f46fbd5be5a2b9336e0ac5dad0bf45911e8",
-        "orca/genesis/model/transformer.py": "3d893653a31c566f48e00fdff810c3d91664942eb8fc1f9eae3cb5ad264e7932"
+        "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
+        "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
       },
       "missing_implementation": [],
       "test_paths": [
-        "tests/test_genesis_model_architecture.py"
+        "tests/rse/test_c01_c02_registry_refusal.py"
       ],
       "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "historical_source_sha": "b384348",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
         "pytest",
         "-q",
         "--tb=no",
-        "tests/test_genesis_model_architecture.py"
+        "tests/rse/test_c01_c02_registry_refusal.py"
       ],
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "23 passed in 1.17s",
+      "summary_line": "4 passed in 0.25s",
       "counts": {
-        "passed": 23,
+        "passed": 4,
         "failed": null,
         "skipped": null,
         "xfailed": null,
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "23 passed in 1.17s",
+        "summary_line": "4 passed in 0.25s",
         "parseable": true
       },
       "passed_probe": true,
-      "verdict_reason": "PASS passed=23",
+      "verdict_reason": "PASS passed=4",
       "refusal_codes": [],
       "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
     },
     "C02": {
       "requirement_id": "C02",
-      "claim": "Tokenizer framework + robustness synthetic tests",
+      "claim": "Consumer / accept_registry refuse stale or unknown registry binding",
       "implementation_paths": [
-        "orca/genesis/tokenizer/framework.py",
-        "orca/genesis/tokenizer/robustness.py"
+        "orca/rse/imp1/authority.py",
+        "orca/rse/imp1/codec.py"
       ],
       "implementation_sha256": {
-        "orca/genesis/tokenizer/framework.py": "cff40d01395106e453139ecc744620bb0ddf2edf4959948608cd4694debc36bc",
-        "orca/genesis/tokenizer/robustness.py": "d7dd71abed8759fad6b537373ca534af7b6af6329a0bd0c0c36a0ae61cd06583"
+        "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
+        "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
       },
       "missing_implementation": [],
       "test_paths": [
-        "tests/test_genesis_tokenizer.py",
-        "tests/test_cursor_tokenizer_robustness.py"
+        "tests/rse/test_c01_c02_registry_refusal.py",
+        "tests/rse/test_imp1r_final.py"
       ],
       "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "historical_source_sha": "b384348",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
         "pytest",
         "-q",
         "--tb=no",
-        "tests/test_genesis_tokenizer.py",
-        "tests/test_cursor_tokenizer_robustness.py"
+        "tests/rse/test_c01_c02_registry_refusal.py",
+        "tests/rse/test_imp1r_final.py"
       ],
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "34 passed in 0.34s",
+      "summary_line": "8 passed in 0.28s",
       "counts": {
-        "passed": 34,
+        "passed": 8,
         "failed": null,
         "skipped": null,
         "xfailed": null,
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "34 passed in 0.34s",
+        "summary_line": "8 passed in 0.28s",
         "parseable": true
       },
       "passed_probe": true,
-      "verdict_reason": "PASS passed=34",
-      "refusal_codes": [],
-      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
-    },
-    "DATA-1": {
-      "requirement_id": "DATA-1",
-      "claim": "Dataset manifest / pipeline admission (synthetic; not formal DATA-1 acceptance)",
-      "implementation_paths": [
-        "orca/genesis/data/manifest.py",
-        "orca/genesis/data/pipeline.py"
-      ],
-      "implementation_sha256": {
-        "orca/genesis/data/manifest.py": "da2fd5d86345811b0705a4effe9ecee2173db3dfa53fd84627d9eca8f89fab79",
-        "orca/genesis/data/pipeline.py": "7a846eccbefcc0b510772cef4767873889c9a4b7cdeeda00a0b2736f8968f548"
-      },
-      "missing_implementation": [],
-      "test_paths": [
-        "tests/test_genesis_data_manifest.py",
-        "tests/test_cursor_pipeline_admission.py"
-      ],
-      "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
-      "pytest_command": [
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=no",
-        "tests/test_genesis_data_manifest.py",
-        "tests/test_cursor_pipeline_admission.py"
-      ],
-      "python_resolved": "/usr/bin/python3",
-      "pythonpath": "/workspace",
-      "exit_code": 0,
-      "summary_line": "37 passed in 0.41s",
-      "counts": {
-        "passed": 37,
-        "failed": null,
-        "skipped": null,
-        "xfailed": null,
-        "xpassed": null,
-        "errors": null,
-        "collected": null,
-        "summary_line": "37 passed in 0.41s",
-        "parseable": true
-      },
-      "passed_probe": true,
-      "verdict_reason": "PASS passed=37",
-      "refusal_codes": [],
-      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
-    },
-    "DATA-2": {
-      "requirement_id": "DATA-2",
-      "claim": "Contamination checking helpers (synthetic; not formal DATA-2 acceptance)",
-      "implementation_paths": [
-        "orca/genesis/data/contamination.py"
-      ],
-      "implementation_sha256": {
-        "orca/genesis/data/contamination.py": "c05033a7d04610292c6bcd4b23fdf696a82ecafeb067fdc9c2d3508f4c8eb371"
-      },
-      "missing_implementation": [],
-      "test_paths": [
-        "tests/test_genesis_data_contamination.py"
-      ],
-      "missing_tests": [],
-      "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
-      "pytest_command": [
-        "python",
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=no",
-        "tests/test_genesis_data_contamination.py"
-      ],
-      "python_resolved": "/usr/bin/python3",
-      "pythonpath": "/workspace",
-      "exit_code": 0,
-      "summary_line": "18 passed in 0.31s",
-      "counts": {
-        "passed": 18,
-        "failed": null,
-        "skipped": null,
-        "xfailed": null,
-        "xpassed": null,
-        "errors": null,
-        "collected": null,
-        "summary_line": "18 passed in 0.31s",
-        "parseable": true
-      },
-      "passed_probe": true,
-      "verdict_reason": "PASS passed=18",
+      "verdict_reason": "PASS passed=8",
       "refusal_codes": [],
       "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
     },
     "C04": {
       "requirement_id": "C04",
-      "claim": "Policy ceiling refusal / synthetic policy caps (RSE IMP-1)",
+      "claim": "Policy ceiling / RESOURCE_CAP refusal (independently qualified)",
       "implementation_paths": [
         "orca/rse/imp1/authority.py",
         "orca/rse/imp1/codec.py"
@@ -461,7 +133,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
@@ -473,7 +145,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "16 passed in 0.30s",
+      "summary_line": "16 passed in 0.29s",
       "counts": {
         "passed": 16,
         "failed": null,
@@ -482,7 +154,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "16 passed in 0.30s",
+        "summary_line": "16 passed in 0.29s",
         "parseable": true
       },
       "passed_probe": true,
@@ -492,7 +164,7 @@
     },
     "C05": {
       "requirement_id": "C05",
-      "claim": "Confusable registry name refusal (RSE IMP-1)",
+      "claim": "Confusable registry name refusal (independently qualified)",
       "implementation_paths": [
         "orca/rse/imp1/codec.py"
       ],
@@ -505,7 +177,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
@@ -517,7 +189,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "16 passed in 0.31s",
+      "summary_line": "16 passed in 0.29s",
       "counts": {
         "passed": 16,
         "failed": null,
@@ -526,7 +198,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "16 passed in 0.31s",
+        "summary_line": "16 passed in 0.29s",
         "parseable": true
       },
       "passed_probe": true,
@@ -536,7 +208,7 @@
     },
     "C17": {
       "requirement_id": "C17",
-      "claim": "OCR1 enc validity / zero-shared-secret abort vectors",
+      "claim": "OCR1 enc validity / zero-shared-secret abort (independently qualified)",
       "implementation_paths": [
         "orca/rse/imp4/ocr1.py"
       ],
@@ -549,7 +221,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
@@ -561,7 +233,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "22 passed in 0.42s",
+      "summary_line": "22 passed in 0.41s",
       "counts": {
         "passed": 22,
         "failed": null,
@@ -570,7 +242,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "22 passed in 0.42s",
+        "summary_line": "22 passed in 0.41s",
         "parseable": true
       },
       "passed_probe": true,
@@ -580,7 +252,7 @@
     },
     "C18": {
       "requirement_id": "C18",
-      "claim": "RFC 9180 profile vectors used by OCR1",
+      "claim": "RFC 9180 profile vectors used by OCR1 (independently qualified)",
       "implementation_paths": [
         "orca/rse/imp4/ocr1.py"
       ],
@@ -593,7 +265,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
@@ -624,7 +296,7 @@
     },
     "C19": {
       "requirement_id": "C19",
-      "claim": "Missing/duplicate/reordered/extra/truncated/foreign frame verdicts",
+      "claim": "Missing/duplicate/reordered/extra/truncated/foreign frame verdicts (independently qualified)",
       "implementation_paths": [
         "orca/rse/imp4/ocr1.py"
       ],
@@ -637,7 +309,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
@@ -668,7 +340,7 @@
     },
     "C20": {
       "requirement_id": "C20",
-      "claim": "Unknown or revoked sender refusal",
+      "claim": "Unknown or revoked sender refusal (independently qualified)",
       "implementation_paths": [
         "orca/rse/imp4/ocr1.py"
       ],
@@ -681,7 +353,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
@@ -712,7 +384,7 @@
     },
     "C21": {
       "requirement_id": "C21",
-      "claim": "Bad origin signature rejected before key use",
+      "claim": "Bad origin signature rejected before key use (independently qualified)",
       "implementation_paths": [
         "orca/rse/imp4/ocr1.py"
       ],
@@ -725,7 +397,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
       "pytest_command": [
         "python",
         "-m",
@@ -737,7 +409,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "22 passed in 0.42s",
+      "summary_line": "22 passed in 0.43s",
       "counts": {
         "passed": 22,
         "failed": null,
@@ -746,11 +418,107 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "22 passed in 0.42s",
+        "summary_line": "22 passed in 0.43s",
         "parseable": true
       },
       "passed_probe": true,
       "verdict_reason": "PASS passed=22",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "TRAIN-1": {
+      "requirement_id": "TRAIN-1",
+      "claim": "Hash-locked train extra (requirements/train.txt) + SHA-bound dry-run command surface",
+      "implementation_paths": [
+        "orca/train/dryrun/lockcheck.py",
+        "requirements/train.txt",
+        "orca/train/dryrun/cli.py"
+      ],
+      "implementation_sha256": {
+        "orca/train/dryrun/lockcheck.py": "1b0b5aa265783dd9c0a4f0a7725cf7a2c9c0d15c880a1d8dcd7239e81221fd8d",
+        "requirements/train.txt": "5330ae5c5bd3ca4bf35a1a3e9e8dc871dbc344a03bd3dce88a854536551f3733",
+        "orca/train/dryrun/cli.py": "332178dc7d18934cbd06bccd026998959b95b7165af8e1031f34de16ef800eb5"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_trainprep_lock_env.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_trainprep_lock_env.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "31 passed in 1.10s",
+      "counts": {
+        "passed": 31,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "31 passed in 1.10s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=31",
+      "refusal_codes": [],
+      "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
+    },
+    "TRAIN-2": {
+      "requirement_id": "TRAIN-2",
+      "claim": "Synthetic dry-run proves authorization locks remain false; no training",
+      "implementation_paths": [
+        "orca/train/dryrun/cli.py",
+        "orca/rse/imp1/locks.py",
+        "docs/orneur/status/trainprep/dryrun_result.json"
+      ],
+      "implementation_sha256": {
+        "orca/train/dryrun/cli.py": "332178dc7d18934cbd06bccd026998959b95b7165af8e1031f34de16ef800eb5",
+        "orca/rse/imp1/locks.py": "fadf9c4309b060492677c4b0f182c01fe5a857b52e8549fa9904a08fba136862",
+        "docs/orneur/status/trainprep/dryrun_result.json": "665e1eea95b3c79baa308c4ad4ec7b7d7430eb05a9f6182622a1e116bb5b00d5"
+      },
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_train2_dryrun_locks_evidence.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "pytest_command": [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_train2_dryrun_locks_evidence.py"
+      ],
+      "python_resolved": "/usr/bin/python3",
+      "pythonpath": "/workspace",
+      "exit_code": 0,
+      "summary_line": "4 passed in 0.28s",
+      "counts": {
+        "passed": 4,
+        "failed": null,
+        "skipped": null,
+        "xfailed": null,
+        "xpassed": null,
+        "errors": null,
+        "collected": null,
+        "summary_line": "4 passed in 0.28s",
+        "parseable": true
+      },
+      "passed_probe": true,
+      "verdict_reason": "PASS passed=4",
       "refusal_codes": [],
       "stderr_tail": "_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n"
     }

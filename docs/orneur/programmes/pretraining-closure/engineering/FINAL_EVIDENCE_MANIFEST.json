@@ -1,6 +1,6 @@
 {
   "schema": "orneur-pretraining-closure-final-evidence-manifest/1",
-  "final_engineering_sha": "78e6ad65617741cd92af6df4b4a37543930e4ced",
+  "final_engineering_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
   "training_authorization": "NO-GO",
   "formal_acceptance": "0/95",
   "primary_report_md": "docs/orneur/programmes/pretraining-closure/engineering/ORNEUR_PRETRAINING_FOUNDATION_FINAL_MASTER_ENGINEERING_REPORT.md",
@@ -9,10 +9,10 @@
   "matrix": "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json",
   "antigravity_handoff": "docs/orneur/programmes/pretraining-closure/engineering/ANTIGRAVITY_HANDOFF.md",
   "artifact_digests": {
-    "matrix": "b365291aef6bf238b7b6ef165f04683d6f7850bfcd4d25f94deb86a1fb590086",
-    "probes": "c60e5e3ff0e956c11b84e726885f571298db6d06c48b53518da61f4ac6f7798a",
+    "matrix": "3ac7bd0e2ba8fdbc11482b697e4810fa50a6a56ecf5fae2ce839b1b7dfafc300",
+    "probes": "95ce5979b705fd4c7fc3d98b3405c2ca4f274d74efbf9dc7231765755d78bbf7",
     "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7",
     "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-    "freeze_manifest": "1776688fa41fd95361528b3768ef8e2c0b9bd6e9ee2b688db4431848b046343b"
+    "freeze_manifest": "bbb438baa619cf33b1ed998e53be30b51e66dfdaee602d4b9ffd993672f23e26"
   }
 }
