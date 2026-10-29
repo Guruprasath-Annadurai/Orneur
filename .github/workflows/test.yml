@@ -323,7 +323,7 @@ jobs:
         run: |
           python -m pytest tests/journey/test_journey_browser_fixture.py tests/journey/test_journey_concurrency_live.py \
             tests/journey/test_b01_streaming_live.py tests/journey/test_b01_cancel_race_live.py -p no:cacheprovider -v
-          # B-01: the approved page, real Chromium, streamed default path (fixture provider only - the real-Ollama half is workstation-only)
+          # B-01: the approved page, real Chromium, streamed default path (fixture provider only - the real-model half is workstation-only)
           python -m pytest tests/journey/test_b01_browser_streaming.py -k fixture -p no:cacheprovider -v
 
       - name: Upload journey screenshots on failure
