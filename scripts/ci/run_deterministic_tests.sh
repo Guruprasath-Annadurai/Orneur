@@ -38,11 +38,13 @@ set -euo pipefail
 #
 # Fix, matching this file's own established precedent for the identical
 # class of problem (test_train_losses.py's torch dependency runs in the
-# separate torch-loss-tests job instead of polluting this shared process):
+# separate torch-loss-tests job instead of polluting this shared process;
+# test_independent_adversarial_dlp.py's external candidate dependency runs in
+# the dedicated dual-worktree qualification runner scripts/qualification/run_b01_qualification.py):
 # run the sentinel file in genuine isolation, in its own process, BEFORE
 # anything else has a chance to import a forbidden package -- then run
 # everything else. Both invocations' exit codes are checked explicitly
 # (not masked by `tee`, per this script's own original fix above).
 
 pytest tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-sentinel-log.txt
-pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-log.txt
+pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py --ignore=tests/qualification/test_independent_adversarial_dlp.py -v 2>&1 | tee /tmp/pytest-log.txt

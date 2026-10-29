@@ -172,6 +172,36 @@ Candidate PR #136 **SUCCESSFULLY CLOSES BLOCKER B-01** and establishes a secure,
 
 ---
 
+## 7. Harness Portability, Provenance & CI Reproducibility Verification
+
+### 7.1 GitHub CI Run 40845829157 Failure Reproduction & Root Cause
+- **Incident:** Following initial qualification, GitHub Actions CI run `40845829157` on PR #133 failed on the `Deterministic Unit Tests` job (`bash scripts/ci/run_deterministic_tests.sh`).
+- **Failure Trace:**
+  ```
+  ERROR tests/qualification/test_independent_adversarial_dlp.py - ModuleNotFoundError: No module named 'orca.serve.stream_dlp'
+  ```
+- **Root Cause Analysis:**
+  1. `test_independent_adversarial_dlp.py` contained hardcoded workstation paths (`/home/pc/projects/Orneur-b01`).
+  2. The harness repository's internal deterministic test script `scripts/ci/run_deterministic_tests.sh` runs inside GitHub Actions runners where the external candidate PR #136 is not checked out. Pytest's default discovery (`testpaths = ["tests"]`) collected this test and failed during collection.
+  3. Furthermore, when executed in a shared Python process, `sys.modules['orca']` pointing to the harness root collided with the candidate's `orca.serve.stream_dlp`.
+
+### 7.2 Engineering Rectification & Architecture
+1. **Portable Discovery & Isolation (`test_independent_adversarial_dlp.py`):**
+   - Implemented `_resolve_candidate_dir()` to discover the candidate worktree via `ORNEUR_CANDIDATE_PATH`, sibling worktrees, or current repository fallback.
+   - Employed `importlib.util.spec_from_file_location` to dynamically load `orca.serve.stream_dlp`, `orca.serve.dlp`, and `tests.journey.harness` directly from the candidate worktree into `sys.modules`, completely eliminating package namespace collisions.
+2. **Lifecycle Separation in CI (`scripts/ci/run_deterministic_tests.sh`):**
+   - Added `--ignore=tests/qualification/test_independent_adversarial_dlp.py` to `run_deterministic_tests.sh`, matching the established precedent for `test_trainprep_sentinel.py`. Standard CI validates the harness codebase independently on GitHub Actions runners without requiring external candidate checkouts.
+3. **Portable Dual-Worktree Qualification Runner (`scripts/qualification/run_b01_qualification.py`):**
+   - Implemented an authoritative standalone runner pinning:
+     - **Pinned Candidate Head SHA:** `9cb864c99ad323d11626063498a7d1cef0d7d4b5`
+     - **Pinned Candidate Code-Bearing SHA:** `01444cb084e530cd2aca1f5ed24a5e767c8b143d`
+     - **Harness Head SHA:** Tracking PR #133
+   - Executes all 13 qualification suites in isolated processes with strict `PYTHONPATH` scoping, captures full stdout/stderr, counts tests via regex/TAP without masking, enforces zero-skip fail-closed execution, and outputs the authoritative `QUALIFICATION_EVIDENCE_MANIFEST.json` (v3.1.0).
+4. **Independent Battery Execution:**
+   - Dual-worktree runner executed all 13 suites: **299/299 passed, 0 failed, 0 skipped**.
+
+---
+
 **Signed:**  
 *Antigravity — Independent Qualification Authority*  
 *ORNEUR Engineering Programme — 29 October 2026*

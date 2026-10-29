@@ -1,32 +1,78 @@
 from __future__ import annotations
 
-import sys
-sys.path.insert(0, "/home/pc/projects/Orneur-b01")
-
-"""Independent Adversarial DLP & Memory Contamination Qualification Suite.
-
-Authored independently by Antigravity for LANDMARK-01 B-01 Qualification.
-Directly challenges:
-1. Multi-split boundary redaction across newly minted canaries (OpenAI, GitHub, AWS, JWT, PEM variants)
-2. Raw wire SSE chunk inspection for zero-leakage of partial or full tokens
-3. SQLite database turns table inspection for zero-leakage
-4. Outbound model request context on subsequent turns (verifying prompt context is unpolluted)
-5. Fail-closed behavior on buffer overflow (single delta > 8192 chars and unterminated PEM body > 8192 chars)
-"""
-
-import json
-import uuid
-import time
 import importlib.util
+import json
+import os
+import sys
+import time
+import uuid
 from pathlib import Path
+
 import pytest
 
-from orca.serve.stream_dlp import StreamRedactor, MAX_DELTA_CHARS, MAX_PEM_CHARS, MAX_HOLD_CHARS
-from orca.serve.dlp import scan_output, redact_secrets
+
+def _resolve_candidate_dir() -> Path:
+    """Resolve candidate worktree path portably without hardcoded workstation paths."""
+    # 1. Explicit environment variable set by qualification runner or CI
+    env_path = os.environ.get("ORNEUR_CANDIDATE_PATH")
+    if env_path:
+        cand = Path(env_path).resolve()
+        if cand.exists() and (cand / "orca").exists():
+            return cand
+
+    # 2. Sibling directory discovery relative to harness repository
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2]  # Orneur root
+    for candidate_name in ["Orneur-b01", "candidate", "Orneur-candidate"]:
+        cand = repo_root.parent / candidate_name
+        if cand.exists() and (cand / "orca" / "serve" / "stream_dlp.py").exists():
+            return cand
+        cand_sub = repo_root / candidate_name
+        if cand_sub.exists() and (cand_sub / "orca" / "serve" / "stream_dlp.py").exists():
+            return cand_sub
+
+    # 3. Current repository if candidate features are present
+    if (repo_root / "orca" / "serve" / "stream_dlp.py").exists():
+        return repo_root
+
+    raise RuntimeError(
+        "Candidate worktree with orca.serve.stream_dlp not found. "
+        "Set ORNEUR_CANDIDATE_PATH or execute via scripts/qualification/run_b01_qualification.py"
+    )
+
+
+_candidate_dir = _resolve_candidate_dir()
+if str(_candidate_dir) not in sys.path:
+    sys.path.insert(0, str(_candidate_dir))
+
+# Explicit module loading to eliminate sys.modules namespace collisions between candidate and harness
+_stream_dlp_path = _candidate_dir / 'orca' / 'serve' / 'stream_dlp.py'
+_dlp_path = _candidate_dir / 'orca' / 'serve' / 'dlp.py'
+
+_spec_dlp = importlib.util.spec_from_file_location('orca.serve.dlp', str(_dlp_path))
+_mod_dlp = importlib.util.module_from_spec(_spec_dlp)
+sys.modules['orca.serve.dlp'] = _mod_dlp
+_spec_dlp.loader.exec_module(_mod_dlp)
+
+_spec_sdlp = importlib.util.spec_from_file_location('orca.serve.stream_dlp', str(_stream_dlp_path))
+_mod_sdlp = importlib.util.module_from_spec(_spec_sdlp)
+sys.modules['orca.serve.stream_dlp'] = _mod_sdlp
+_spec_sdlp.loader.exec_module(_mod_sdlp)
+
+MAX_DELTA_CHARS = _mod_sdlp.MAX_DELTA_CHARS
+MAX_HOLD_CHARS = _mod_sdlp.MAX_HOLD_CHARS
+MAX_PEM_CHARS = _mod_sdlp.MAX_PEM_CHARS
+StreamRedactor = _mod_sdlp.StreamRedactor
+scan_output = _mod_dlp.scan_output
+redact_secrets = _mod_dlp.redact_secrets
 from tests.fake_ollama import FakeOllama
 
 # Direct file import to prevent sys.modules['tests'] namespace collision between harness and candidate
-_spec = importlib.util.spec_from_file_location("b01_harness", "/home/pc/projects/Orneur-b01/tests/journey/harness.py")
+_harness_file = _candidate_dir / "tests" / "journey" / "harness.py"
+if not _harness_file.exists():
+    raise RuntimeError(f"Candidate harness not found at {_harness_file}")
+
+_spec = importlib.util.spec_from_file_location("b01_harness", str(_harness_file))
 _harness = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_harness)
 JOURNEY_MODEL = _harness.JOURNEY_MODEL
