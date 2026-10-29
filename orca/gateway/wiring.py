@@ -167,6 +167,21 @@ _frontier_runtimes_registered: set[str] = set()
 # unconditional disk write per call would be real, needless I/O cost for
 # a record that doesn't change between calls).
 _deployments_persisted: set[str] = set()
+_announced_ids: set[str] = set()      # L02-05: deployment ids THIS worker serves; announced so the reconciler never treats them as orphans
+
+
+def refresh_live_announcement() -> None:
+    try:
+        from orca.gateway import reconcile
+
+        reconcile.announce_live(_announced_ids)
+    except Exception:
+        log.debug("live announcement failed", exc_info=True)
+
+
+def _announce(deployment_id: str) -> None:
+    _announced_ids.add(deployment_id)
+    refresh_live_announcement()
 
 
 def get_shared_gateway() -> ModelGateway:
@@ -244,6 +259,7 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
         if deployment_id not in _deployments_persisted:
             deployment.save()
             _deployments_persisted.add(deployment_id)
+        _announce(deployment_id)
         allow_experimental = decision.allowed
         if not decision.allowed:
             log.warning("not serving %r (tier %s) on a public edge: %s", resolution.model, resolution.tier, decision.reason)
@@ -273,9 +289,10 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
 def reset_for_tests() -> None:
     """Test-only: clears the module-level singleton so tests don't leak
     registered runtimes/deployments across test files."""
-    global _gateway, _ollama_runtime_registered, _frontier_runtimes_registered, _deployments_persisted
+    global _gateway, _ollama_runtime_registered, _frontier_runtimes_registered, _deployments_persisted, _announced_ids
     with _lock:
         _gateway = None
         _ollama_runtime_registered = False
         _frontier_runtimes_registered = set()
         _deployments_persisted = set()
+        _announced_ids = set()

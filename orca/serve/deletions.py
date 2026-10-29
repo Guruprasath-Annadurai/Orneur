@@ -235,3 +235,12 @@ def resume_pending(limit: int = 20) -> int:
         run(r["session_id"], r["user_id"])
         n += 1
     return n
+
+
+def count_incomplete() -> dict:
+    """{state: n} for deletions not yet complete (diagnostic)."""
+    conn = conversations._turns_conn()
+    try:
+        return {r["state"]: r["n"] for r in conn.execute("SELECT state, COUNT(*) AS n FROM session_deletions WHERE state!='complete' GROUP BY state")}
+    finally:
+        conn.close()

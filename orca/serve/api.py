@@ -114,6 +114,13 @@ _DELETE_REQUEST_BUDGET_S = float(os.environ.get("ORNEUR_DELETE_REQUEST_BUDGET_S"
 _DELETION_SWEEP_INTERVAL_S = float(os.environ.get("ORNEUR_DELETION_SWEEP_S", "60"))
 
 
+def _reconcile_resources() -> dict:
+    from orca.gateway import reconcile, wiring
+
+    wiring.refresh_live_announcement()                 # this worker still serves what it announced
+    return reconcile.sweep()
+
+
 async def _deletion_sweep_loop():
     """L02-01/02: a deletion that a crash or an unavailable store left unfinished must not wait for the 6-hour retention pass. Each step is independent,
     idempotent, bounded and lease-guarded, so several workers running this loop is safe."""
@@ -125,6 +132,7 @@ async def _deletion_sweep_loop():
             ("deletion", deletions.resume_pending, ()),                                   # conversation deletions left partial / revoked
             ("document", sweep_document_deletions, (CONFIG.ollama.host,)),               # documents left "deleting"
             ("temporary chat", temporary_chat.expire_due, ()),                            # TTL-expired and failed temporary chats
+            ("resource reconciliation", _reconcile_resources, ()),                        # L02-05: orphan deployment records / document chunks / temp files
         ):
             try:
                 await asyncio.to_thread(fn, *args)
@@ -3180,6 +3188,19 @@ async def export_session(session_id: str, format: str = "md", user: User | None 
             lines.append(f"{role}\n\n{m.get('content', '')}\n\n---\n")
         md = "\n".join(lines)
     return PlainTextResponse(md, headers={"Content-Disposition": f'attachment; filename="orneur-{session_id[:8]}.md"'})
+
+
+@app.get("/api/admin/reconcile")
+async def admin_reconcile(user: User = Depends(require_permission("manage_users"))):
+    """L02-05: what the resource reconciler has seen and done (counts, blocked items, recent actions). Resource identifiers only - no user content."""
+    from orca.gateway import reconcile
+    from orca.docs.store import pending_document_deletions
+    from orca.serve import deletions
+
+    d = await asyncio.to_thread(reconcile.diagnostics)
+    d["pending_document_deletions"] = len(await asyncio.to_thread(pending_document_deletions))
+    d["incomplete_conversation_deletions"] = await asyncio.to_thread(deletions.count_incomplete)
+    return d
 
 
 @app.get("/api/turns/{request_key}")
