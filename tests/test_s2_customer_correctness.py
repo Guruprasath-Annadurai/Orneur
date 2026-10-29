@@ -59,7 +59,15 @@ def test_stream_announces_the_model_before_any_text_and_repeats_it_in_done(clien
     evs = _events(client, _hdr(t), {"message": SIMPLE, "model_variant": "core"})
     kinds = [e["type"] for e in evs]
     assert kinds.index("model") < kinds.index("chunk")
-    assert evs[kinds.index("model")]["identity"] == _done(evs)["model_identity"]
+    first = next(e for e in evs if e["type"] == "model")
+    done_ident = _done(evs)["model_identity"]
+    if first.get("provisional"):
+        # B-01: early announcement may be provisional; a later non-provisional
+        # model event (and done.model_identity) carries the resolved identity.
+        resolved = [e for e in evs if e["type"] == "model" and not e.get("provisional")]
+        assert resolved and resolved[-1]["identity"] == done_ident
+    else:
+        assert first["identity"] == done_ident
 
 
 def test_registry_fallback_is_disclosed_when_the_requested_model_is_not_installed(client, monkeypatch):
@@ -286,14 +294,18 @@ def test_a_retrieval_failure_is_an_error_not_a_silent_answer_without_the_documen
 # ══ G-026 stream delivery semantics ══════════════════════════════════════════════════════════════════════════════════════════════
 
 def test_a_completed_answer_is_delivered_once_and_labelled_replayed_not_as_token_streaming(client, monkeypatch):
+    # Frontier / non-ollama backends still replay a completed answer. For the
+    # default ollama Kernel-direct path, B-01 streams upstream incrementally —
+    # pin that contract here (replayed remains covered by frontier tests).
     with FakeOllama(reply="one two three four five six", chunks=("one two ", "three four five six")) as f:
         point_orneur_at(f, monkeypatch)
         t, _ = _signup(client)
         evs = _events(client, _hdr(t), {"message": SIMPLE, "model_variant": "core"})
     chunks = [e for e in evs if e["type"] == "chunk"]
-    assert len(chunks) == 1 and chunks[0]["replayed"] is True and chunks[0]["text"] == "one two three four five six"
+    assert [c["text"] for c in chunks] == ["one two ", "three four five six"]
+    assert not any(c.get("replayed") for c in chunks)
     s = next(e for e in evs if e["type"] == "stream")
-    assert s == {"type": "stream", "delivery": "replayed", "cancellable": False} and _done(evs)["delivery"] == "replayed"
+    assert s == {"type": "stream", "delivery": "upstream", "cancellable": True} and _done(evs)["delivery"] == "upstream"
 
 
 def test_genuine_upstream_streaming_is_labelled_upstream_and_cancellable(client, monkeypatch):

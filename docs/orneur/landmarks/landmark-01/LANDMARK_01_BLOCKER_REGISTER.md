@@ -25,10 +25,10 @@ No P0 is known to remain. "Owner" is the engineering owner proposed for the fix,
 * **Reproduction:** sign in, send any plain message in `/conversation` with real Ollama (`llama3.2:1b`). `window.__sseLog` (browser journey `B1`) shows `stream {delivery:"replayed", cancellable:false}`, exactly one `chunk {replayed:true}`, then `done`.
 * **Expected:** several `chunk` events as Ollama produces tokens, `delivery:"upstream"`, Stop works.
 * **Observed (pre-remediation):** the whole answer arrives in one labelled chunk after the model finishes.
-* **Cursor Kernel half (this corrective wave):** optional `CognitiveRequest.on_raw_delta` + `ModelGateway.stream()` in `_answer_directly`; `RawDeltaChannel`; tests in `tests/test_kernel_streaming.py`. Evidence under `docs/orneur/landmarks/landmark-01/b01-remediation/`. **API still awaits Kernel before SSE** until Claude integrates the handoff — end-to-end B-01 remains open.
-* **Owner:** Kernel owner (Cursor) + Claude for the API/UI half.
-* **Claude remaining:** run Kernel as a task; drain raw deltas through `StreamRedactor`; emit `delivery:"upstream"` / `cancellable:true`. See `b01-remediation/B01_CLAUDE_API_INTEGRATION_HANDOFF.md`.
-* **Acceptance test:** journey `B1` (real Ollama) asserts `delivery == "upstream"` and ≥ 2 chunks with a measurable arrival spread for a ≥ 400-character answer; `test_canonical_route_dlp.py` must still pass; quota must be consumed at the first chunk.
+* **Cursor Kernel half:** optional `CognitiveRequest.on_raw_delta` + `ModelGateway.stream()` (PR #135).
+* **API/SSE half (this integration branch):** concurrent Kernel + SSE for ollama/no-docs; `KernelStreamBridge` lifecycle; StreamRedactor on deltas; `delivery:"upstream"` / `cancellable:true`. Evidence: `b01-final-integration/`.
+* **Still open for Antigravity / workstation:** real Ollama `llama3.2:1b` + Chromium Stop/progress journeys on the frozen SHA.
+* **Acceptance test:** journey `B1` (real Ollama) asserts `delivery == "upstream"` and ≥ 2 chunks with measurable arrival spread; `test_canonical_route_dlp.py` must still pass; quota consumed at first chunk.
 
 ## B-02 — P1 — independent qualification has not happened
 

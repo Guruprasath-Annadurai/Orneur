@@ -1,0 +1,54 @@
+{
+  "base_sha": "15befec7191a1992286d7fa027236002f7d385db",
+  "branch": "cursor/b01-real-sse-chatbot-integration-1cdf",
+  "exact_head_green_sha": "63f2dfa7cd51f4a79a1e09102c7fe7ad14b06520",
+  "exact_head_ci_run": 40842561058,
+  "exact_head_ci_url": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40842561058",
+  "failed_tip": "19322133181d71ed39d229187564ebb0e9100501",
+  "failed_ci_run": 40839269051,
+  "corrective_code_sha": "e6547634a9d531504df070447dd9b90095f6f571",
+  "deterministic_counts_exact_head": {
+    "passed": 9024,
+    "skipped": 398,
+    "deselected": 100,
+    "xfailed": 6
+  },
+  "executions": [
+    {
+      "name": "lifecycle+upstream+dlp+authority",
+      "kind": "fixture",
+      "result": "33 passed",
+      "command": "pytest -q tests/test_raw_delta_channel_lifecycle.py tests/test_b01_stream_kernel_upstream.py tests/test_canonical_route_dlp.py tests/test_canonical_turn_authority.py"
+    },
+    {
+      "name": "security_quota_transcript",
+      "kind": "fixture",
+      "result": "59 passed, 2 skipped",
+      "command": "pytest -q tests/test_a_serving_authorization.py tests/test_b_logout_revocation.py tests/test_session_ownership_isolation.py tests/test_p0_reservation_ownership.py tests/test_p0_stream_dlp_closure.py tests/test_p0_transcript_integrity.py tests/test_canonical_quota_admission.py"
+    },
+    {
+      "name": "ci_corrective_related_suites",
+      "kind": "fixture",
+      "result": "108 passed, 1 skipped",
+      "command": "pytest -q tests/test_product_flows_fake_ollama.py tests/test_s2_customer_correctness.py tests/test_serve_streaming.py tests/test_b01_stream_kernel_upstream.py tests/test_raw_delta_channel_lifecycle.py tests/test_canonical_turn_authority.py tests/test_canonical_route_dlp.py tests/test_reliability_failures.py::test_truncated_upstream_stream_is_not_a_completed_turn"
+    },
+    {
+      "name": "exact_head_github_ci",
+      "kind": "ci",
+      "result": "10/10 success",
+      "sha": "63f2dfa7cd51f4a79a1e09102c7fe7ad14b06520",
+      "run": 40842561058
+    },
+    {
+      "name": "live_ollama_llama3.2:1b",
+      "kind": "real",
+      "result": "NOT VERIFIED",
+      "reason": "Ollama unreachable in agent VM"
+    },
+    {
+      "name": "chromium_browser_journeys_local_agent",
+      "kind": "real",
+      "result": "NOT VERIFIED in agent VM; CI Journeys job green on exact head (fixture provider)"
+    }
+  ]
+}

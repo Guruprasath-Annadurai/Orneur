@@ -53,9 +53,12 @@ def test_stream_emits_session_chunk_done_with_a_message_id(client, fake):
     assert types[0] == "session"
     assert "generation" in types
     assert types[-1] == "done"
-    chunk = next(e for e in evs if e["type"] == "chunk")
+    chunks = [e for e in evs if e["type"] == "chunk"]
     done = next(e for e in evs if e["type"] == "done")
-    assert chunk["text"] == "FAKE-REPLY" and chunk["replayed"] is True and done["message_id"] and "citation_compliance" in done
+    assert "".join(c["text"] for c in chunks) == "FAKE-REPLY"
+    assert not any(c.get("replayed") for c in chunks)
+    assert next(e for e in evs if e["type"] == "stream")["delivery"] == "upstream"
+    assert done["message_id"] and "citation_compliance" in done and done["delivery"] == "upstream"
 
 
 def test_response_discloses_which_model_served(client, fake):
@@ -64,12 +67,12 @@ def test_response_discloses_which_model_served(client, fake):
     assert fake.requests[0]["model"] in json.dumps(r)
 
 
-@pytest.mark.xfail(strict=True, reason="G-026: a simple question is generated NON-streaming (stream=false upstream) and delivered as one chunk after the whole "
-                                       "answer exists, so there is nothing incremental to show and nothing to cancel mid-generation.")
 def test_simple_answers_are_generated_with_streaming_upstream(client, fake):
+    # B-01: Kernel-direct /api/stream uses ModelGateway.stream() (stream=true)
+    # for the answer. Planner/routing may still issue non-stream calls.
     t, _ = _signup(client)
     _events(client, _hdr(t), {"message": "long answer please", "model_variant": "core"})
-    assert fake.requests and all(q.get("stream") for q in fake.requests)
+    assert fake.requests and any(q.get("stream") for q in fake.requests)
 
 
 # ── streaming and cancellation ─────────────────────────────────────────────────────────────────────────────────────────────────────
