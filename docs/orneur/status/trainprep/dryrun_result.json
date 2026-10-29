@@ -64,7 +64,7 @@
     "locks_still_false": true
   },
   "env_manifest": {
-    "code_sha": "2296b840f9785f30694b04a4e01aea6c9d42f011",
+    "code_sha": "cc39fb40c6805d6f1912d129d177d405f2c5f288",
     "container": {
       "image_digest": null,
       "status": "NOT_BUILT"
@@ -77,14 +77,14 @@
       "sha256": "5330ae5c5bd3ca4bf35a1a3e9e8dc871dbc344a03bd3dce88a854536551f3733",
       "structure_ok": true
     },
-    "manifest_sha256": "cba55348f3b194b8386984b5c82aeb491aef5827835fe1efa313174ed3cef8af",
+    "manifest_sha256": "354ca463c384590cad340be1b23f8627881b47b1b87ab999bea1d4e9457749d9",
     "platform": {
       "machine": "x86_64",
       "system": "Linux"
     },
     "python": {
       "implementation": "CPython",
-      "version": "3.11.17"
+      "version": "3.12.3"
     },
     "schema": "orneur-dryrun-env-manifest/1",
     "seeds": {
@@ -99,7 +99,7 @@
       "NOT_AUTHORIZED"
     ]
   },
-  "git_sha": "2296b840f9785f30694b04a4e01aea6c9d42f011",
+  "git_sha": "cc39fb40c6805d6f1912d129d177d405f2c5f288",
   "lock": {
     "hashes": 2500,
     "packages": 122,
@@ -110,7 +110,7 @@
   },
   "note": "SYNTHETIC pure-Python toy run; nothing real was trained, loaded, downloaded or authorized.",
   "plan_sha256": "1cd399873bf6afcc1213be20583205896d7a4095ef74857869f7b3eae9a35da0",
-  "result_sha256": "9dcb1820cd7bb10423a8b26b4321a50ff43267ba7d89edf3562902ae96dfdb00",
+  "result_sha256": "9c0a779415a975c3ce7bf03c2b769ca90b68aa06126370228840e00e858bd468",
   "resume_equivalent": true,
   "runs": {
     "interrupted_first_segment": {
@@ -118,10 +118,10 @@
         "ckpt-000004",
         "ckpt-000005"
       ],
-      "final_checkpoint_digest": "c3ed18c52a830152b211896ecfbf11756b6d6ecdee87851340c9cc2cbd4e68df",
-      "ledger_head_hash": "a9568aaaa00a22b2a92d7db39b2e28df0925b826656d6a910b5a571c8771149c",
+      "final_checkpoint_digest": "b64436fe0b2ae41025294a0f1a3b2f2282dc9021c68bc954a7fb18f455f5bb5b",
+      "ledger_head_hash": "6b07adc4d41a4bd4509087b8b01434c8fc46f0b5352ea4542f097de792b22153",
       "reason": "STEP_CAP",
-      "state_sha256": "20b0cf6e32e181fd539cd857cd8376daa59d7cc7d159a9632603209422e6c151",
+      "state_sha256": "4164b8ec3e0f7fddcc52d8c4836ea0964c1ddcd2804435a4382a4c30e83fb1ee",
       "status": "STOPPED",
       "steps": 5,
       "usage": {
@@ -137,10 +137,10 @@
         "ckpt-000008",
         "ckpt-000012"
       ],
-      "final_checkpoint_digest": "d8828ab2bdacd888c04b4869edb1110d4fa43a32a08256b52f342692566c1249",
-      "ledger_head_hash": "2fe4b209196b6181347dee74181a6b8f722a67b59f48add96db933464938c156",
+      "final_checkpoint_digest": "5a97ad5a9c46cbde3dd5af2defac8b3df1d3dfec849aa4e767bdd116e86764f9",
+      "ledger_head_hash": "065bd93b90021ecf0eb7f0c29a397ac2ef67e73422e8c933e2c56102a250a60e",
       "reason": null,
-      "state_sha256": "5bb79b0f13b944b0e7ea966f867cbbcba85585ebcf4cc035a6dc3b1f85e424c9",
+      "state_sha256": "d42d6dbd4d0abdb2a538d27745f08cc6983c0a25924bdd40a4790df021b7dea8",
       "status": "FINISHED",
       "steps": 12,
       "usage": {
@@ -155,10 +155,10 @@
         "ckpt-000008",
         "ckpt-000012"
       ],
-      "final_checkpoint_digest": "d8828ab2bdacd888c04b4869edb1110d4fa43a32a08256b52f342692566c1249",
-      "ledger_head_hash": "d5fdc790264b10adb73a45bcc766104a59d8a8bcd9b882ea821a1a7cba6c63a8",
+      "final_checkpoint_digest": "5a97ad5a9c46cbde3dd5af2defac8b3df1d3dfec849aa4e767bdd116e86764f9",
+      "ledger_head_hash": "4aa514f91442e8ef8734af604a7f547c105faefed71e52b484a9a4d377a4780c",
       "reason": null,
-      "state_sha256": "5bb79b0f13b944b0e7ea966f867cbbcba85585ebcf4cc035a6dc3b1f85e424c9",
+      "state_sha256": "d42d6dbd4d0abdb2a538d27745f08cc6983c0a25924bdd40a4790df021b7dea8",
       "status": "FINISHED",
       "steps": 12,
       "usage": {
@@ -191,21 +191,21 @@
   "synthetic": true,
   "verification": {
     "interrupted": {
-      "head": "2fe4b209196b6181347dee74181a6b8f722a67b59f48add96db933464938c156",
+      "head": "065bd93b90021ecf0eb7f0c29a397ac2ef67e73422e8c933e2c56102a250a60e",
       "ledger_ok": true,
       "manifests": 2,
       "manifests_ok": true,
       "records": 22
     },
     "uninterrupted": {
-      "head": "d5fdc790264b10adb73a45bcc766104a59d8a8bcd9b882ea821a1a7cba6c63a8",
+      "head": "4aa514f91442e8ef8734af604a7f547c105faefed71e52b484a9a4d377a4780c",
       "ledger_ok": true,
       "manifests": 1,
       "manifests_ok": true,
       "records": 18
     },
     "zero_budget": {
-      "head": "aa1106d94b0959dadc553a896b7bb2195358cc34cbb69670ce2dade03e156f0a",
+      "head": "fa79f2701ca89d3461757333adcb78dfa95bb50c9b39899afff07ab4f60f4102",
       "ledger_ok": true,
       "manifests": 1,
       "manifests_ok": true,
