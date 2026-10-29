@@ -200,6 +200,28 @@ Candidate PR #136 **SUCCESSFULLY CLOSES BLOCKER B-01** and establishes a secure,
 4. **Independent Battery Execution:**
    - Dual-worktree runner executed all 13 suites: **299/299 passed, 0 failed, 0 skipped**.
 
+### 7.3 CTO Integrity Correction & Automated Safeguards
+In accordance with the CTO Final Qualification Integrity Correction directive:
+1. **Strict SHA Pre-Execution Gate:**
+   - [`scripts/qualification/run_b01_qualification.py`](file:///home/pc/projects/Orneur/scripts/qualification/run_b01_qualification.py) verifies the candidate worktree HEAD SHA against `PINNED_CANDIDATE_HEAD` (`9cb864c99ad323d11626063498a7d1cef0d7d4b5`).
+   - If any divergence occurs, execution aborts immediately with code 2 before any test battery runs.
+2. **Strict Completeness & Fail-Closed Policy:**
+   - Any skipped test in any mandatory suite triggers immediate rejection (`suite_failed = True`, overall status `FAILED`, code 1).
+   - Any suite with zero collected/passing tests triggers immediate rejection (`suite_failed = True`).
+   - If any suite fails or skips, all manifest verdicts become `NOT_ACCEPTED` and statuses become `BLOCKED`.
+3. **Dedicated GitHub Actions Qualification Job:**
+   - Added `b01-independent-qualification` to [`.github/workflows/test.yml`](file:///home/pc/projects/Orneur/.github/workflows/test.yml).
+   - Checks out the pinned candidate at `9cb864c99ad323d11626063498a7d1cef0d7d4b5`, asserts the exact SHA, and independently executes the adversarial DLP suite and the qualification harness integrity regression suite.
+4. **Harness Integrity Regression Suite ([`tests/qualification/test_qualification_harness_integrity.py`](file:///home/pc/projects/Orneur/tests/qualification/test_qualification_harness_integrity.py)):**
+   - Direct regression proof of 4 failure modes:
+     1. `test_wrong_candidate_sha_fails_closed_before_execution`: Verifies exit code 2 and immediate abort when SHA diverges.
+     2. `test_missing_candidate_worktree_fails_closed`: Verifies exit code 2 when candidate worktree is absent.
+     3. `test_skipped_test_fails_qualification`: Verifies that a skipped test triggers rejection and status `FAILED`.
+     4. `test_zero_collected_tests_fails_qualification`: Verifies that an empty suite triggers rejection and status `FAILED`.
+   - All 4 integrity regression tests execute and pass in $\le 1$ second.
+5. **Provenance Reconciliation:**
+   - Decoupled self-referential manifest loop via `--harness-sha` parameter and immutable git commit tracking.
+
 ---
 
 **Signed:**  

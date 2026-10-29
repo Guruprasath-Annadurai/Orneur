@@ -47,4 +47,4 @@ set -euo pipefail
 # (not masked by `tee`, per this script's own original fix above).
 
 pytest tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-sentinel-log.txt
-pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py --ignore=tests/qualification/test_independent_adversarial_dlp.py -v 2>&1 | tee /tmp/pytest-log.txt
+pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py --ignore=tests/qualification -v 2>&1 | tee /tmp/pytest-log.txt

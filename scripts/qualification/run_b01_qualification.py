@@ -110,6 +110,7 @@ def main():
     parser = argparse.ArgumentParser(description="ORNEUR B-01 Independent Qualification Runner")
     parser.add_argument("--candidate-worktree", default=os.environ.get("ORNEUR_CANDIDATE_PATH", "../Orneur-b01"), help="Path to PR #136 worktree")
     parser.add_argument("--harness-worktree", default=str(Path(__file__).resolve().parents[2]), help="Path to harness worktree")
+    parser.add_argument("--harness-sha", default=None, help="Explicit harness commit SHA to record in manifest")
     parser.add_argument("--redis-db", type=int, default=12, help="Isolated test Redis DB")
     parser.add_argument("--skip-real-model", action="store_true", help="Skip tests requiring live Ollama daemon")
     parser.add_argument("--output", default="docs/orneur/landmarks/landmark-01/b01-qualification/QUALIFICATION_EVIDENCE_MANIFEST.json", help="Manifest output path")
@@ -137,10 +138,15 @@ def main():
     print(f"Node Runtime       : {node_bin or 'NOT FOUND'}")
     print("=" * 90)
 
-    # Pinning verification (Strict Provenance Assertion)
-    if candidate_git["sha"] != PINNED_CANDIDATE_HEAD:
-        print(f"WARNING: Candidate SHA {candidate_git['sha']} diverges from pinned HEAD {PINNED_CANDIDATE_HEAD}.", file=sys.stderr)
-        # Note: allow if candidate tree is clean and explicitly passed, but record warning
+    # 1. Strict Candidate SHA assertion (Fail-Closed Gate before test execution)
+    cand_sha = candidate_git.get("sha")
+    if cand_sha != PINNED_CANDIDATE_HEAD:
+        print(
+            f"FATAL: Candidate HEAD SHA '{cand_sha}' does not match pinned SHA '{PINNED_CANDIDATE_HEAD}'.\n"
+            "Strict SHA policy requires exact match. Qualification aborted with code 2 before test execution.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     suite_definitions = [
         # 1. Independent Adversarial DLP (Harness test targeting candidate StreamRedactor)
@@ -279,13 +285,26 @@ def main():
         total_failed += r["failed_count"]
         total_skipped += r["skipped_count"]
 
+        suite_failed = False
         if not r["passed"] or r["failed_count"] > 0:
+            suite_failed = True
+        # Strict completeness: any skipped test or zero-passing mandatory suite is an automatic failure
+        if r["skipped_count"] > 0:
+            suite_failed = True
+            print(f"  -> REJECTED: Suite '{sid}' reported {r['skipped_count']} skipped tests. Zero skips allowed in qualification.")
+        if r["passed_count"] == 0:
+            suite_failed = True
+            print(f"  -> REJECTED: Suite '{sid}' collected 0 passing tests. Mandatory suite must execute.")
+
+        if suite_failed:
             any_failed = True
-            print(f"  -> FAILED: exit code {r['exit_code']} ({r['failed_count']} failed, {r['passed_count']} passed)")
-            print(f"  STDOUT: {r['stdout_tail'][-400:]}")
-            print(f"  STDERR: {r['stderr_tail'][-400:]}")
+            print(f"  -> FAILED: exit code {r['exit_code']} ({r['failed_count']} failed, {r['passed_count']} passed, {r['skipped_count']} skipped)")
+            if r['stdout_tail']:
+                print(f"  STDOUT: {r['stdout_tail'][-400:]}")
+            if r['stderr_tail']:
+                print(f"  STDERR: {r['stderr_tail'][-400:]}")
         else:
-            print(f"  -> PASSED: {r['passed_count']} passed, {r['skipped_count']} skipped in {r['duration_s']}s")
+            print(f"  -> PASSED: {r['passed_count']} passed, 0 skipped in {r['duration_s']}s")
 
     print("\n" + "=" * 90)
     print("ORNEUR QUALIFICATION SUMMARY")
@@ -294,7 +313,16 @@ def main():
     print(f"Total Tests Passed    : {total_passed}")
     print(f"Total Tests Failed    : {total_failed}")
     print(f"Total Tests Skipped   : {total_skipped}")
-    print(f"Overall Status        : {'QUALIFIED' if not any_failed else 'FAILED'}")
+    if total_skipped > 0 or total_failed > 0:
+        any_failed = True
+
+    overall_status = "QUALIFIED" if not any_failed else "FAILED"
+    v_accepted = "ACCEPTED" if not any_failed else "NOT_ACCEPTED"
+    v_status = "QUALIFIED" if not any_failed else "BLOCKED"
+    v_staging = "QUALIFIED_FOR_STAGING" if not any_failed else "BLOCKED"
+    v_controlled = "READY_FOR_CONTROLLED_STAGING" if not any_failed else "BLOCKED"
+
+    print(f"Overall Status        : {overall_status}")
     print("=" * 90)
 
     # Manifest update
@@ -302,6 +330,8 @@ def main():
     if not out_file.is_absolute():
         out_file = harness_dir / out_file
     out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    harness_sha = args.harness_sha if args.harness_sha else harness_git.get("sha")
 
     manifest_data = {
         "manifest_version": "3.1.0",
@@ -321,7 +351,7 @@ def main():
         "harness": {
             "pr": 133,
             "worktree": str(harness_dir),
-            "head_sha": harness_git["sha"],
+            "head_sha": harness_sha,
             "branch": harness_git["branch"],
             "clean": harness_git["clean"],
         },
@@ -331,6 +361,7 @@ def main():
             "total_qualification_tests_passed": total_passed,
             "total_qualification_tests_failed": total_failed,
             "total_qualification_tests_skipped": total_skipped,
+            "overall_status": overall_status,
         },
         "blocker_register_status": {
             "p0_outstanding": 0,
@@ -340,11 +371,11 @@ def main():
             "p3_limitations": ["B-05", "B-07", "B-08", "B-09", "B-10", "B-11", "L-02", "L-03", "L-04", "L-05", "L-06"],
         },
         "verdicts": {
-            "1_default_chat_streaming": {"verdict": "ACCEPTED", "status": "QUALIFIED"},
-            "2_security_and_dlp": {"verdict": "ACCEPTED", "status": "QUALIFIED"},
-            "3_cancellation_and_persistence": {"verdict": "ACCEPTED", "status": "QUALIFIED"},
-            "4_integrated_product_candidate": {"verdict": "ACCEPTED", "status": "QUALIFIED_FOR_STAGING"},
-            "5_controlled_staging": {"verdict": "ACCEPTED", "status": "READY_FOR_CONTROLLED_STAGING"},
+            "1_default_chat_streaming": {"verdict": v_accepted, "status": v_status},
+            "2_security_and_dlp": {"verdict": v_accepted, "status": v_status},
+            "3_cancellation_and_persistence": {"verdict": v_accepted, "status": v_status},
+            "4_integrated_product_candidate": {"verdict": v_accepted, "status": v_staging},
+            "5_controlled_staging": {"verdict": v_accepted, "status": v_controlled},
             "6_global_production": {"verdict": "NOT_ACCEPTED", "status": "BLOCKED"},
             "7_native_model_training": {"verdict": "NOT_APPLICABLE", "status": "PROHIBITED"},
         },
