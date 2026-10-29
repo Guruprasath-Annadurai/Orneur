@@ -123,7 +123,7 @@ VERIFIED_CANDIDATES = {
             "orca/rse/imp1/locks.py",
             "docs/orneur/status/trainprep/dryrun_result.json",
         ],
-        "tests": ["tests/test_trainprep_cli.py"],
+        "tests": ["tests/test_train2_dryrun_locks_evidence.py"],
         "historical_source_sha": "fc1eb1d",
         "claim": "Synthetic dry-run proves authorization locks remain false; no training",
     },
