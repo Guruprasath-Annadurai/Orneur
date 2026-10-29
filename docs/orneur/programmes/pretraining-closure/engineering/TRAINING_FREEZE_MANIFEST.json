@@ -1,0 +1,8 @@
+{
+  "schema": "orneur-pretraining-closure-training-freeze-manifest/1",
+  "status": "NOT_FROZEN",
+  "phase": 9,
+  "training_authorization": "NO-GO",
+  "reason": "Phase 9 prohibited until prior phases and founder FINAL-2 / execution grant. Phase 0/1 only in this delivery.",
+  "package": null
+}

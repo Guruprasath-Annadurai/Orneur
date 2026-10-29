@@ -1,0 +1,165 @@
+{
+  "schema": "orneur-pretraining-closure-phase0-technical-baseline/1",
+  "programme": "ORNEUR Pretraining Completion",
+  "phase": 0,
+  "generated_by": "cursor",
+  "training_authorization": "NO-GO",
+  "formal_acceptance": {
+    "numerator": 0,
+    "denominator": 95,
+    "validator_check": "pretraining=95 numerator=0",
+    "ledger_empty": true,
+    "authoritative_register": "docs/orneur/acceptance/register_graph.json",
+    "authoritative_ledger": "docs/orneur/acceptance/acceptance_ledger.json",
+    "note": "Engineering dispositions are not formal acceptance."
+  },
+  "starting_repository_state": {
+    "inspected_at_zone": "Asia/Calcutta",
+    "remote": "https://github.com/Guruprasath-Annadurai/Orneur",
+    "default_branch": "main",
+    "main_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+    "main_subject": "Merge PR #51: ORNEUR consolidated audited foundation",
+    "foundation_02_pr": {
+      "number": 138,
+      "title": "FOUNDATION-02 — Native Model Foundation Integrity and Pretraining Assurance",
+      "state": "OPEN",
+      "url": "https://github.com/Guruprasath-Annadurai/Orneur/pull/138",
+      "base_ref": "main",
+      "head_ref": "cursor/foundation-02-pretraining-hardening-1cdf",
+      "head_tip_sha": "b2a307158e8b171b04ec75b7786e7acfdc8dce87",
+      "independently_tested_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
+      "documentation_tip_after_ci_record": "b2a307158e8b171b04ec75b7786e7acfdc8dce87",
+      "exact_head_ci_run_on_code_sha": "40860060023",
+      "mergeable": true,
+      "commits_ahead_of_main": 88,
+      "in_main": false
+    },
+    "corrective_work_branch": "cursor/foundation-02-phase1-evidence-closure-8108",
+    "recovery_decision": "Recover FOUNDATION-02 PR #138 tip; do not rewrite architecture; do not restart foundation.",
+    "qualified_code_sha_preservation": {
+      "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
+      "reason_new_tip_allowed": "Phase 1 evidence-tool honesty corrections require a new tip; prior qualified SHA retained as lineage."
+    }
+  },
+  "engineering_matrix_at_recon": {
+    "source": "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json",
+    "schema_at_recon": "orneur-foundation-02-requirement-matrix/2",
+    "candidate_sha_recorded": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
+    "disposition_histogram": {
+      "VERIFIED_ENGINEERING": 9,
+      "IMPLEMENTED_UNVERIFIED": 19,
+      "BLOCKED": 16,
+      "NOT_IMPLEMENTED": 51
+    },
+    "verified_engineering_ids": [
+      "G4",
+      "G5",
+      "C01",
+      "C02",
+      "DATA-1",
+      "DATA-2",
+      "TRAIN-1",
+      "TRAIN-2",
+      "AUTH-1"
+    ],
+    "note": "These classifications are engineering only; formal acceptance remains 0/95."
+  },
+  "phase1_defects_detected": [
+    {
+      "id": "F02-EVIDENCE-01",
+      "severity": "P0",
+      "defect": "Machine-specific PYTHONPATH and absolute /workspace/.venv interpreter in build_requirement_matrix.py",
+      "file": "scripts/foundation02/build_requirement_matrix.py",
+      "work_route": "Replace with portable resolve_python + build_probe_env; record portable pytest argv"
+    },
+    {
+      "id": "F02-EVIDENCE-02",
+      "severity": "P0",
+      "defect": "Comment/policy treated xfail-only exit-0 suites as engineering verification OK",
+      "file": "scripts/foundation02/build_requirement_matrix.py",
+      "work_route": "classify_probe refuses XFAIL_ONLY / SKIP_ONLY / ZERO_COLLECTED / NO_PASSES"
+    },
+    {
+      "id": "F02-EVIDENCE-03",
+      "severity": "P0",
+      "defect": "Probe PASS decided from exit code without parsed pass counts",
+      "file": "scripts/foundation02/build_requirement_matrix.py",
+      "work_route": "Require counts.passed >= 1; distinguish xfailed from passed"
+    },
+    {
+      "id": "F02-EVIDENCE-04",
+      "severity": "P1",
+      "defect": "Committed probes embed /workspace/.venv absolute paths; candidate_sha lagged tip",
+      "file": "docs/orneur/milestones/foundation-02/FOUNDATION_02_VERIFICATION_PROBES.json",
+      "work_route": "Regenerate probes with honesty schema v3 on corrective tip"
+    },
+    {
+      "id": "F02-EVIDENCE-05",
+      "severity": "P2",
+      "defect": "Audit-tail truncation residual remains; previously risked being misread as fixed",
+      "file": "docs/orneur/milestones/foundation-02/FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md",
+      "work_route": "Preserve strict xfail; residual remains unresolved; xfail != PASS"
+    }
+  ],
+  "unmerged_dependencies": [
+    {
+      "ref": "PR #138",
+      "sha": "b2a307158e8b171b04ec75b7786e7acfdc8dce87",
+      "contains": "orca/genesis native learning stack, foundation-02 evidence package, authorization NO-GO gates",
+      "integration_candidate": true,
+      "mainline_merged": false
+    },
+    {
+      "ref": "claude/genesis-audit077-p0-remediation-2026-10-21 lineage",
+      "note": "Contained inside PR #138 ancestry; not separately required once #138 tip is the integration candidate"
+    }
+  ],
+  "protected_approval_dependencies": [
+    "Founder training grant (G10) — NO-GO",
+    "Founder corpus-generation grant (G8 / DATA-3)",
+    "Foundation selection decision (DEC-K)",
+    "Independent architecture review (G1)",
+    "Independent Antigravity qualification (G13) — not Cursor self-cert",
+    "R65 unmapped placeholder — cannot invent policy text",
+    "Formal acceptance ledger writes — protected; engineering must not accept"
+  ],
+  "external_hardware_compute": [
+    {
+      "need": "TPM / Secure Boot / measured boot / attestation",
+      "status": "UNAVAILABLE_IN_THIS_ENVIRONMENT",
+      "disposition": "BLOCKED until authorized physical evidence"
+    },
+    {
+      "need": "GPU / accelerator training environment",
+      "status": "NOT_PROVISIONED_AND_NOT_AUTHORIZED",
+      "disposition": "BLOCKED; CPU/synthetic only until founder grant"
+    },
+    {
+      "need": "External sealed audit-tail anchor (HSM / remote append-only log)",
+      "status": "NOT_PROVISIONED",
+      "disposition": "P2 residual documented; not marked fixed"
+    }
+  ],
+  "requirement_work_routes_summary": {
+    "VERIFIED_ENGINEERING_candidates": "AUTH-1,G4,G5,TRAIN-1,TRAIN-2,C01,C02,DATA-1,DATA-2 — honesty re-probe on corrective tip",
+    "BLOCKED_founder_or_policy": "G1,G8,G10,MODEL-1,MODEL-2R,QUAL-1,C08,C44,DEC-K,DATA-3,DATA-5,R65 + other founder-controlled register rows",
+    "IMPLEMENTED_UNVERIFIED": "Present artefacts without tip-honest probes / independent qualification",
+    "NOT_IMPLEMENTED": "Remaining counted pretraining rows without engineering closure",
+    "later_phases": "Phases 2–9 planned only after Phase 1 honesty exit; Phase 10 prohibited until Phase 9 founder authorization"
+  },
+  "claude_readonly_export": {
+    "path": "docs/orneur/programmes/pretraining-closure/engineering/",
+    "primary_files": [
+      "PHASE_0_TECHNICAL_BASELINE.json",
+      "TECHNICAL_BASELINE.md",
+      "ENGINEERING_BLOCKER_REGISTER.json",
+      "FOUNDATION_SOFTWARE_CLOSURE.md",
+      "ANTIGRAVITY_HANDOFF.md"
+    ],
+    "note": "Read-only technical evidence export for Claude architecture/policy work; does not authorize ledger writes."
+  },
+  "exit_condition": {
+    "met": true,
+    "statement": "All engineering-owned Phase 0/1 requirements have a defined work route; FOUNDATION-02 recovered from PR #138; no hidden second acceptance register; training remains NO-GO."
+  }
+}

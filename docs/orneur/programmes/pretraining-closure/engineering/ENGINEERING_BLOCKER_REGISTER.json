@@ -1,0 +1,96 @@
+{
+  "schema": "orneur-pretraining-closure-engineering-blocker-register/1",
+  "training_authorization": "NO-GO",
+  "formal_acceptance": "0/95",
+  "note": "Engineering blockers only. Does not replace the protected acceptance register.",
+  "blockers": [
+    {
+      "id": "BLK-TRAIN-AUTH",
+      "severity": "P0",
+      "requirement_ids": ["G10", "AUTH-1"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "Training authorization record is NOT_AUTHORIZED; authority registry empty",
+      "minimum_prerequisite": "Founder-signed AUTHORIZED grant with pinned registry key"
+    },
+    {
+      "id": "BLK-CORPUS-G8",
+      "severity": "P0",
+      "requirement_ids": ["G8", "DATA-3"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "Protected corpus creation / founder corpus-generation grant absent",
+      "minimum_prerequisite": "Authorized G8 corpus grant; no unauthorized ingestion"
+    },
+    {
+      "id": "BLK-R65",
+      "severity": "P0",
+      "requirement_ids": ["R65"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "Unmapped placeholder; engineering must not invent policy text",
+      "minimum_prerequisite": "Founder/Claude authorized policy amendment"
+    },
+    {
+      "id": "BLK-G1",
+      "severity": "P0",
+      "requirement_ids": ["G1"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "Independent architecture review absent; separate from Cursor engineering",
+      "minimum_prerequisite": "Named independent reviewer artifact"
+    },
+    {
+      "id": "BLK-DEC-K",
+      "severity": "P0",
+      "requirement_ids": ["DEC-K", "MODEL-1", "MODEL-2R"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "Foundation selection / authorized native training identity not accepted",
+      "minimum_prerequisite": "Founder foundation decision + authorized model revision"
+    },
+    {
+      "id": "BLK-COMPUTE",
+      "severity": "P1",
+      "requirement_ids": ["C08", "C44", "QUAL-1"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "GPU/spend/qualification run not authorized; environment not provisioned",
+      "minimum_prerequisite": "Founder compute grant + approved environment"
+    },
+    {
+      "id": "BLK-DATA-CUSTODY",
+      "severity": "P1",
+      "requirement_ids": ["DATA-5"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "Independent data custody evidence absent",
+      "minimum_prerequisite": "Authorized custody specification + independent receipt"
+    },
+    {
+      "id": "BLK-HARDWARE-TRUST",
+      "severity": "P1",
+      "requirement_ids": ["Phase-6 physical gates"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "TPM/Secure Boot/attestation hardware unavailable; mocks must not substitute",
+      "minimum_prerequisite": "Authorized physical hardware + independent checks"
+    },
+    {
+      "id": "BLK-AUDIT-TAIL",
+      "severity": "P2",
+      "requirement_ids": ["G4 residual"],
+      "class": "PARTIAL_ENGINEERING — CORRECTIONS_REQUIRED",
+      "summary": "Audit-tail truncation residual under local state-dir write; strict xfail remains",
+      "minimum_prerequisite": "External sealed audit anchor outside operator write access"
+    },
+    {
+      "id": "BLK-INDEPENDENT-QUAL",
+      "severity": "P0",
+      "requirement_ids": ["G13"],
+      "class": "ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW",
+      "summary": "Antigravity must independently retest corrective tip; Cursor self-cert is not G13",
+      "minimum_prerequisite": "Antigravity qualification of honesty-corrected tip"
+    },
+    {
+      "id": "BLK-MAINLINE",
+      "severity": "P0",
+      "requirement_ids": ["G2", "G3", "integration"],
+      "class": "BLOCKED_BY_PROTECTED_DECISION",
+      "summary": "FOUNDATION-02 not on main; green branch CI is not protected-mainline acceptance",
+      "minimum_prerequisite": "Authorized merge + exact-mainline CI"
+    }
+  ]
+}

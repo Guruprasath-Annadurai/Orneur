@@ -1,10 +1,12 @@
 # FOUNDATION-02 Requirement Matrix
 
-**Candidate SHA:** `9ea450123f1a0f8ec34a6e92be50c216cea51326`  
+**Candidate SHA:** `b2a307158e8b171b04ec75b7786e7acfdc8dce87`  
+**Prior qualified code SHA:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Main base SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Formal acceptance:** 0 / 95  
 **Validator:** `pretraining=95 numerator=0`  
-**VERIFIED_ENGINEERING (probed):** 9 — G4, G5, C01, C02, DATA-1, DATA-2, TRAIN-1, TRAIN-2, AUTH-1  
+**Training authorization:** **NO-GO**  
+**VERIFIED_ENGINEERING (honest probes):** 9 — G4, G5, C01, C02, DATA-1, DATA-2, TRAIN-1, TRAIN-2, AUTH-1  
 
 ## Disposition histogram (engineering only)
 
@@ -19,15 +21,15 @@
 
 | ID | Historical SHA | Candidate SHA | Tests | Result |
 |---|---|---|---|---|
-| G4 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_training_authorization_assurance.py | PASS (23 passed, 1 xfailed in 0.88s) |
-| G5 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_training_authorization_gate.py | PASS (92 passed, 1 warning in 3.15s) |
-| C01 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_genesis_model_architecture.py | PASS (23 passed in 1.24s) |
-| C02 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_genesis_tokenizer.py; tests/test_cursor_tokenizer_robustness.py | PASS (34 passed in 0.36s) |
-| DATA-1 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_genesis_data_manifest.py; tests/test_cursor_pipeline_admission.py | PASS (37 passed in 0.43s) |
-| DATA-2 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_genesis_data_contamination.py | PASS (18 passed in 0.32s) |
-| TRAIN-1 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_cursor_training_math.py; tests/test_genesis_training_primitives.py | PASS (30 passed in 2.02s) |
-| TRAIN-2 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_genesis_checkpoint_integrity.py; tests/test_genesis_resumable_checkpoint.py | PASS (52 passed in 8.99s) |
-| AUTH-1 | `fc1eb1d` | `9ea450123f1a0f8ec34a6e92be50c216cea51326` | tests/test_training_authorization_gate.py; tests/test_genesis_governance_authorization.py | PASS (128 passed, 1 warning in 3.30s) |
+| G4 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_training_authorization_assurance.py | PASS (23 passed, 1 xfailed in 0.84s) passed=23 xfailed=1 skipped=0 |
+| G5 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_training_authorization_gate.py | PASS (92 passed, 1 warning in 3.06s) passed=92 xfailed=0 skipped=0 |
+| C01 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_genesis_model_architecture.py | PASS (23 passed in 1.19s) passed=23 xfailed=0 skipped=0 |
+| C02 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_genesis_tokenizer.py; tests/test_cursor_tokenizer_robustness.py | PASS (34 passed in 0.35s) passed=34 xfailed=0 skipped=0 |
+| DATA-1 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_genesis_data_manifest.py; tests/test_cursor_pipeline_admission.py | PASS (37 passed in 0.45s) passed=37 xfailed=0 skipped=0 |
+| DATA-2 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_genesis_data_contamination.py | PASS (18 passed in 0.34s) passed=18 xfailed=0 skipped=0 |
+| TRAIN-1 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_cursor_training_math.py; tests/test_genesis_training_primitives.py | PASS (30 passed in 2.25s) passed=30 xfailed=0 skipped=0 |
+| TRAIN-2 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_genesis_checkpoint_integrity.py; tests/test_genesis_resumable_checkpoint.py | PASS (52 passed in 9.09s) passed=52 xfailed=0 skipped=0 |
+| AUTH-1 | `fc1eb1d` | `b2a307158e8b171b04ec75b7786e7acfdc8dce87` | tests/test_training_authorization_gate.py; tests/test_genesis_governance_authorization.py | PASS (128 passed, 1 warning in 3.16s) passed=128 xfailed=0 skipped=0 |
 
 ## All rows
 
@@ -134,4 +136,7 @@
 - This matrix does **not** modify `acceptance_ledger.json`.
 - A passed engineering test does not become `FORMALLY_ACCEPTED`.
 - Training authorization remains **NO-GO**.
+- Exit code 0 with zero collected / skip-only / xfail-only is **not** VERIFIED_ENGINEERING.
+- `xfailed` residuals are distinguished from `passed`; an xfail is not a PASS.
+- Probe commands must not embed machine-specific interpreter or site-package paths.
 - `historical_source_sha` ≠ proof the tip was the only SHA ever tested; probes run on `candidate_sha`.

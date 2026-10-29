@@ -2,17 +2,30 @@
 """Build FOUNDATION-02 engineering disposition matrix over the 95 counted rows.
 
 Does not accept requirements, edit the ledger, or mint signatures.
-Verified status requires inspectable implementation + executed test evidence.
+Verified status requires inspectable implementation + honest pytest evidence:
+actual passes, not exit-0 alone, not skip-only, not xfail-only, not zero-collected.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from orca.pretrain_foundation.probe_honesty import (  # noqa: E402
+    assert_command_portable,
+    build_probe_env,
+    classify_probe,
+    implementation_digests,
+    lockfile_digest,
+    resolve_python,
+)
+
 GRAPH = ROOT / "docs/orneur/acceptance/register_graph.json"
 LEDGER = ROOT / "docs/orneur/acceptance/acceptance_ledger.json"
 OUT_JSON = ROOT / "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json"
@@ -25,6 +38,8 @@ HISTORICAL = {
     "gap_register": "255d25a",
     "readiness_gate": "eaa3eac",
     "main_base": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+    # Prior independently tested code-bearing tip (Antigravity handoff).
+    "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
 }
 
 # Candidate probe definitions: only these may become VERIFIED_ENGINEERING.
@@ -146,42 +161,72 @@ def _git_sha() -> str:
 
 
 def _run_probes(candidate_sha: str) -> dict:
-    """Execute verification probes and return machine-readable results."""
-    env = {
-        **dict(**{k: v for k, v in __import__("os").environ.items()}),
-        "PYTHONPATH": "/home/ubuntu/.local/lib/python3.12/site-packages:/usr/lib/python3/dist-packages:"
-        + str(ROOT),
-    }
-    # Prefer project venv pytest if present.
-    py = Path("/workspace/.venv/bin/python")
-    python = str(py) if py.exists() else sys.executable
+    """Execute verification probes and return machine-readable honest results."""
+    env = build_probe_env(ROOT)
+    python = resolve_python(ROOT)
 
-    results = {}
+    results: dict[str, dict] = {}
     for rid, meta in VERIFIED_CANDIDATES.items():
-        # Existence checks
         missing = [p for p in meta["implementation"] if not (ROOT / p).exists()]
         missing_tests = [p for p in meta["tests"] if not (ROOT / p).exists()]
+        # Portable argv: interpreter path may resolve under the repo; never inject
+        # /home/ubuntu site-packages. Record argv with a portable python token.
         cmd = [python, "-m", "pytest", "-q", "--tb=no", *meta["tests"]]
+        portable_cmd = ["python", "-m", "pytest", "-q", "--tb=no", *meta["tests"]]
+        assert_command_portable(portable_cmd)
+
         proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=600)
-        summary = (proc.stdout or "").strip().splitlines()[-1] if proc.stdout else ""
-        ok = proc.returncode == 0 and not missing and not missing_tests
-        # xfail-only suites still return 0; treat as ok for engineering verification.
+        verdict = classify_probe(
+            exit_code=proc.returncode,
+            stdout=proc.stdout or "",
+            stderr=proc.stderr or "",
+            missing_implementation=missing,
+            missing_tests=missing_tests,
+            expected_candidate_sha=candidate_sha,
+            recorded_candidate_sha=candidate_sha,
+        )
+        digests = implementation_digests(ROOT, meta["implementation"])
         results[rid] = {
             "requirement_id": rid,
             "claim": meta["claim"],
             "implementation_paths": meta["implementation"],
+            "implementation_sha256": digests,
             "missing_implementation": missing,
             "test_paths": meta["tests"],
             "missing_tests": missing_tests,
             "historical_source_sha": meta["historical_source_sha"],
             "candidate_sha": candidate_sha,
-            "pytest_command": cmd,
+            "pytest_command": portable_cmd,
+            "python_resolved": python,
+            "pythonpath": env.get("PYTHONPATH", ""),
             "exit_code": proc.returncode,
-            "summary_line": summary,
-            "passed_probe": ok,
+            "summary_line": verdict.counts.summary_line or "",
+            "counts": verdict.counts.to_dict(),
+            "passed_probe": verdict.passed_probe,
+            "verdict_reason": verdict.reason,
+            "refusal_codes": list(verdict.refusal_codes),
             "stderr_tail": (proc.stderr or "")[-500:],
         }
-    PROBES_JSON.write_text(json.dumps({"candidate_sha": candidate_sha, "probes": results}, indent=2) + "\n")
+    payload = {
+        "schema": "orneur-foundation-02-verification-probes/3",
+        "candidate_sha": candidate_sha,
+        "prior_qualified_code_sha": HISTORICAL["prior_qualified_code_sha"],
+        "lockfile_sha256": lockfile_digest(ROOT),
+        "honesty_rules": [
+            "require_exit_code_0",
+            "require_at_least_one_passed",
+            "reject_zero_collected",
+            "reject_skip_only",
+            "reject_xfail_only",
+            "distinguish_xfailed_from_passed",
+            "reject_candidate_sha_mismatch",
+            "no_machine_specific_pythonpath",
+            "portable_pytest_command_argv",
+        ],
+        "training_authorization": "NO-GO",
+        "probes": results,
+    }
+    PROBES_JSON.write_text(json.dumps(payload, indent=2) + "\n")
     return results
 
 
@@ -208,26 +253,62 @@ def _disposition(node: dict, probes: dict, candidate_sha: str) -> dict:
             "evidence_paths": [tests],
         }
     if rid in VERIFIED_CANDIDATES:
-        probe = probes[rid]
-        if probe["passed_probe"]:
+        probe = probes.get(rid)
+        if probe is None:
+            return {
+                "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+                "actual_implementation": "; ".join(VERIFIED_CANDIDATES[rid]["implementation"]),
+                "relevant_test": "; ".join(VERIFIED_CANDIDATES[rid]["tests"]),
+                "executed_test_result": "PROBE_MISSING",
+                "historical_source_sha": VERIFIED_CANDIDATES[rid]["historical_source_sha"],
+                "evidence_paths": VERIFIED_CANDIDATES[rid]["implementation"],
+            }
+        # Refuse stale --no-probes payloads from another tip.
+        if probe.get("candidate_sha") != candidate_sha:
+            return {
+                "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+                "actual_implementation": "; ".join(probe["implementation_paths"]),
+                "relevant_test": "; ".join(probe["test_paths"]),
+                "executed_test_result": (
+                    f"PROBE_SHA_MISMATCH probe={probe.get('candidate_sha')} "
+                    f"candidate={candidate_sha}"
+                ),
+                "historical_source_sha": probe["historical_source_sha"],
+                "evidence_paths": probe["implementation_paths"],
+            }
+        if probe.get("passed_probe"):
+            counts = probe.get("counts") or {}
             return {
                 "engineering_disposition": "VERIFIED_ENGINEERING",
                 "actual_implementation": "; ".join(probe["implementation_paths"]),
                 "relevant_test": "; ".join(probe["test_paths"]),
-                "executed_test_result": f"PASS ({probe['summary_line']})",
+                "executed_test_result": (
+                    f"PASS ({probe.get('summary_line')}) "
+                    f"passed={counts.get('passed')} "
+                    f"xfailed={counts.get('xfailed') or 0} "
+                    f"skipped={counts.get('skipped') or 0}"
+                ),
                 "historical_source_sha": probe["historical_source_sha"],
                 "evidence_paths": probe["implementation_paths"] + probe["test_paths"],
                 "probe": {
                     "exit_code": probe["exit_code"],
-                    "summary_line": probe["summary_line"],
+                    "summary_line": probe.get("summary_line"),
+                    "counts": counts,
                     "candidate_sha": candidate_sha,
+                    "implementation_sha256": probe.get("implementation_sha256") or {},
+                    "refusal_codes": probe.get("refusal_codes") or [],
+                    "verdict_reason": probe.get("verdict_reason"),
                 },
             }
         return {
             "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
             "actual_implementation": "; ".join(VERIFIED_CANDIDATES[rid]["implementation"]),
             "relevant_test": "; ".join(VERIFIED_CANDIDATES[rid]["tests"]),
-            "executed_test_result": f"PROBE_FAILED exit={probe['exit_code']} {probe['summary_line']}",
+            "executed_test_result": (
+                f"PROBE_REFUSED exit={probe.get('exit_code')} "
+                f"reason={probe.get('verdict_reason')} "
+                f"{probe.get('summary_line')}"
+            ),
             "historical_source_sha": VERIFIED_CANDIDATES[rid]["historical_source_sha"],
             "evidence_paths": VERIFIED_CANDIDATES[rid]["implementation"],
         }
@@ -288,7 +369,9 @@ def build(*, run_probes: bool = True) -> dict:
     sha = _git_sha()
     probes = _run_probes(sha) if run_probes else {}
     if not run_probes and PROBES_JSON.exists():
-        probes = json.loads(PROBES_JSON.read_text())["probes"]
+        stored = json.loads(PROBES_JSON.read_text())
+        probes = stored.get("probes") or {}
+        # Stale tip: keep probes but disposition refuses VERIFIED on SHA mismatch.
 
     rows = []
     hist: dict[str, int] = {}
@@ -322,24 +405,31 @@ def build(*, run_probes: bool = True) -> dict:
         assert r["executed_test_result"].startswith("PASS"), r
         assert r["historical_source_sha"], r
         assert r["candidate_sha"] == sha
+        assert r["probe"] and (r["probe"].get("counts") or {}).get("passed", 0) >= 1
     return {
-        "schema": "orneur-foundation-02-requirement-matrix/2",
+        "schema": "orneur-foundation-02-requirement-matrix/3",
         "validator_check": "pretraining=95 numerator=0",
         "formal_accepted_count": 0,
         "formal_denominator": 95,
         "candidate_sha": sha,
         "main_base_sha": HISTORICAL["main_base"],
+        "prior_qualified_code_sha": HISTORICAL["prior_qualified_code_sha"],
         "register_graph_sha256": hashlib.sha256(GRAPH.read_bytes()).hexdigest(),
         "ledger_sha256": hashlib.sha256(LEDGER.read_bytes()).hexdigest(),
+        "lockfile_sha256": lockfile_digest(ROOT),
         "disposition_histogram": hist,
         "verified_engineering_count": len(verified),
         "verified_engineering_ids": [r["requirement_id"] for r in verified],
         "probes_path": str(PROBES_JSON.relative_to(ROOT)),
+        "training_authorization": "NO-GO",
         "note": (
             "engineering_disposition is not formal acceptance. "
-            "VERIFIED_ENGINEERING requires implementation paths + pytest probe PASS on candidate_sha. "
+            "VERIFIED_ENGINEERING requires implementation paths + honest pytest evidence "
+            "(>=1 passed; reject zero-collected / skip-only / xfail-only) on candidate_sha. "
+            "xfailed residuals are recorded separately and are never counted as PASS. "
             "historical_source_sha is when code landed; candidate_sha is the tip under test. "
-            "FORMALLY_ACCEPTED is never assigned by this script."
+            "prior_qualified_code_sha preserves the last independently tested code tip. "
+            "FORMALLY_ACCEPTED is never assigned by this script. Training remains NO-GO."
         ),
         "requirements": rows,
     }
@@ -350,10 +440,12 @@ def render_md(doc: dict) -> str:
         "# FOUNDATION-02 Requirement Matrix",
         "",
         f"**Candidate SHA:** `{doc['candidate_sha']}`  ",
+        f"**Prior qualified code SHA:** `{doc.get('prior_qualified_code_sha')}`  ",
         f"**Main base SHA:** `{doc['main_base_sha']}`  ",
         f"**Formal acceptance:** {doc['formal_accepted_count']} / {doc['formal_denominator']}  ",
         f"**Validator:** `{doc['validator_check']}`  ",
-        f"**VERIFIED_ENGINEERING (probed):** {doc['verified_engineering_count']} — "
+        f"**Training authorization:** **{doc.get('training_authorization', 'NO-GO')}**  ",
+        f"**VERIFIED_ENGINEERING (honest probes):** {doc['verified_engineering_count']} — "
         f"{', '.join(doc['verified_engineering_ids']) or '(none)'}  ",
         "",
         "## Disposition histogram (engineering only)",
@@ -396,6 +488,9 @@ def render_md(doc: dict) -> str:
         "- This matrix does **not** modify `acceptance_ledger.json`.",
         "- A passed engineering test does not become `FORMALLY_ACCEPTED`.",
         "- Training authorization remains **NO-GO**.",
+        "- Exit code 0 with zero collected / skip-only / xfail-only is **not** VERIFIED_ENGINEERING.",
+        "- `xfailed` residuals are distinguished from `passed`; an xfail is not a PASS.",
+        "- Probe commands must not embed machine-specific interpreter or site-package paths.",
         "- `historical_source_sha` ≠ proof the tip was the only SHA ever tested; probes run on `candidate_sha`.",
         "",
     ]
@@ -413,6 +508,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {OUT_MD.relative_to(ROOT)}")
     print("histogram", doc["disposition_histogram"])
     print("verified", doc["verified_engineering_ids"])
+    print("training_authorization", doc.get("training_authorization"))
     return 0
 
 

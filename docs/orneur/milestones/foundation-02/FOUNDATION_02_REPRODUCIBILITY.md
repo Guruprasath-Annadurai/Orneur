@@ -22,8 +22,26 @@ python -m pytest \
 
 Torch CPU + numpy + sentencepiece required for genesis tensor/tokenizer suites.
 
+## Evidence matrix rebuild (honest probes)
+
+```bash
+# Requires torch CPU + sentencepiece for genesis tensor/tokenizer suites.
+python scripts/foundation02/build_requirement_matrix.py
+# Matrix schema orneur-foundation-02-requirement-matrix/3
+# Probes schema orneur-foundation-02-verification-probes/3
+```
+
+Adversarial honesty (must stay green):
+
+```bash
+python -m pytest tests/test_foundation02_probe_honesty.py tests/test_foundation02_requirement_matrix.py -q
+```
+
 ## Guarantees
 
 - Deterministic unit CI must not launch real training (tripwires in auth tests).
 - No hardcoded workstation paths introduced by FOUNDATION-02 deliverables.
+- Probe builder must not inject `/home/ubuntu/...` site-packages or absolute `/workspace/.venv` into recorded argv.
+- Exit-0 with zero collected, skip-only, or xfail-only must not become `VERIFIED_ENGINEERING`.
 - Temporary directories used by tests; no protected ledger mutation.
+- Training authorization remains **NO-GO**.
