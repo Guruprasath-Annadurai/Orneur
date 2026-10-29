@@ -4,7 +4,7 @@
 
 1. Prior independently tested FOUNDATION-02 code SHA: `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` (CI `40860060023`).
 2. Honesty tip: `cd1e557a685b529c57bf4bf2f594b088cbeb5172`.
-3. Retest the **exact HEAD** of `cursor/foundation-02-phase1-evidence-closure-8108` (PR #140 lineage) after Phases 2–9 closure commits land and exact-head CI is green.
+3. Retest exact-head green tip `98069d833051c18a46f3fcfd42011cf7c83f7f6c` on `cursor/foundation-02-phase1-evidence-closure-8108` (PR #140). Test Suite [`40887059729`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40887059729) — 9/9 success (`9022 passed, 389 skipped, 43 deselected, 7 xfailed`). See `PHASES_2_9_EXACT_HEAD_CI.md`. Engineering probe tip remains `ad2b26fe054cad45c33f60da469fdbff31a9f652`.
 4. Primary report: `ORNEUR_PRETRAINING_FOUNDATION_FINAL_MASTER_ENGINEERING_REPORT.md`
 5. Evidence manifest: `FINAL_EVIDENCE_MANIFEST.json`
 6. Freeze package: `TRAINING_FREEZE_MANIFEST.json` — status **NOT_FROZEN** / **NO-GO**
