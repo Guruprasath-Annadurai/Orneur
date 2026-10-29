@@ -128,7 +128,17 @@ def _lease(session_id: str) -> bool:
         conn.close()
 
 
+def _count(state: str) -> None:
+    try:
+        from orca.serve import metrics
+
+        metrics.record_event("deletion", state)
+    except Exception:
+        pass
+
+
 def _finish(session_id: str, state: str, stores: dict) -> dict:
+    _count(state)
     conn = conversations._turns_conn()
     try:
         with conn:

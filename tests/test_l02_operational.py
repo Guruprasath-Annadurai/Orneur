@@ -263,3 +263,33 @@ def test_model_gateway_capacity_refusals_are_reported_as_server_busy_not_as_a_mo
             pe = public_error(wrapped, route="/api/stream")
             assert pe.code == code and pe.status in (503, 504), (type(exc).__name__, pe.code)
             assert "d" not in pe.message.split() and "traceback" not in pe.message.lower()
+
+
+# ── metrics ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_turn_outcomes_cancellations_deletions_and_refusals_are_counted_with_bounded_labels(client, fake):
+    import uuid
+
+    from orca.serve import metrics, ops
+
+    metrics.reset()
+    t, uid = _signup(client)
+    h = _hdr(t)
+    k1, k2 = "k-" + uuid.uuid4().hex, "k-" + uuid.uuid4().hex
+    with client.stream("POST", "/api/stream", json={"message": "metrics one", "model_variant": "core"}, headers={**h, "Idempotency-Key": k1}) as s:
+        "".join(s.iter_text())
+    client.post(f"/api/turns/{k2}/cancel", headers=h)
+    chat = client.post("/api/chat", json={"message": "hello there friend"}, headers=h)
+    assert chat.status_code == 200, chat.text
+    sid = chat.json()["session_id"]
+    client.delete(f"/api/session/{sid}", headers=h)
+    ops.begin_drain()
+    client.post("/api/stream", json={"message": "x"}, headers=h)
+    text = client.get("/metrics").text
+    for needle in ('event="turn_outcome",label="committed:none"', 'event="turn_outcome",label="cancelled:cancelled_before_admission"', 'event="turn_cancel_requested"',
+                   'event="deletion",label="complete"', 'event="refusal",label="server_draining"'):
+        assert needle in text, needle
+    assert k1 not in text and uid not in text and sid not in text, "no identifier may appear in a metric"
+    for i in range(300):
+        metrics.record_event("refusal", f"label-{i}")
+    assert text.count("orca_events_total{") < 200 and len([l for l in client.get("/metrics").text.splitlines() if l.startswith("orca_events_total{")]) <= 201

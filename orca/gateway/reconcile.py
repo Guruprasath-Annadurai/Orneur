@@ -47,6 +47,12 @@ def _db() -> sqlite3.Connection:
 
 
 def _audit(conn, kind, rid, action, outcome) -> None:
+    try:
+        from orca.serve import metrics
+
+        metrics.record_event("reconcile_action", f"{kind}:{action}:{'ok' if str(outcome).startswith(('ok','referenced','announced')) else 'failed'}")
+    except Exception:
+        pass
     conn.execute("INSERT INTO reconcile_audit (ts, kind, resource_id, action, outcome) VALUES (?,?,?,?,?)", (time.time(), kind, rid, action, outcome))
 
 

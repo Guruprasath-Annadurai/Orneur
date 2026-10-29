@@ -77,11 +77,23 @@ def mark_running(user_id: str, key: str, session_id: str, fence: str, epoch: int
             "WHERE user_id=? AND request_key=? AND state IN ('admitted','running')", (session_id, fence, int(epoch or 0), _now(), user_id, key))
 
 
+def _count(state: str, reason: str | None) -> None:
+    try:
+        from orca.serve import metrics
+
+        metrics.record_event("turn_outcome", f"{state}:{reason or 'none'}")
+    except Exception:
+        pass
+
+
 def finish(user_id: str, key: str, state: str, reason: str | None = None) -> bool:
     """Compare-and-set to a terminal state from a non-terminal one. Returns False when the record was already terminal (e.g. committed)."""
     assert state in TERMINAL and state != "committed"
-    return _update("UPDATE turn_requests SET state=?, reason=?, updated_at=? WHERE user_id=? AND request_key=? "
+    changed = _update("UPDATE turn_requests SET state=?, reason=?, updated_at=? WHERE user_id=? AND request_key=? "
                    "AND state NOT IN ('committed','not_committed','cancelled','superseded')", (state, (reason or "")[:80] or None, _now(), user_id, key))
+    if changed:
+        _count(state, reason)
+    return changed
 
 
 def request_cancel(user_id: str, key: str, session_id: str | None = None) -> dict:
@@ -95,6 +107,7 @@ def request_cancel(user_id: str, key: str, session_id: str | None = None) -> dic
             if row is None:
                 conn.execute("INSERT INTO turn_requests (user_id, request_key, session_id, state, reason, cancel_requested, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
                              (user_id, key, session_id, "cancelled", "cancelled_before_admission", 1, now, now))
+                _count("cancelled", "cancelled_before_admission")
             elif row["state"] not in TERMINAL:
                 conn.execute("UPDATE turn_requests SET cancel_requested=1, updated_at=? WHERE user_id=? AND request_key=?", (now, user_id, key))
     finally:
@@ -152,6 +165,7 @@ def view(user_id: str, key: str) -> dict | None:
                     state, reason = row["state"], row["reason"]
                 else:
                     state, reason = resolved, why
+                    _count(state, reason)
             elif row["cancel_requested"]:
                 state = "cancel_requested"
         return {

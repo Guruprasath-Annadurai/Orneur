@@ -276,6 +276,7 @@ async def drain_middleware(request: Request, call_next):
     from orca.serve import ops
 
     if ops.draining() and request.method == "POST" and request.url.path in _DRAIN_REFUSED_PATHS:
+        metrics.record_event("refusal", "server_draining")
         e = coded_error("server_draining")
         return JSONResponse(e.as_json(), status_code=e.status, headers={"Retry-After": "5"})
     return await call_next(request)
@@ -924,6 +925,8 @@ def _admit_message_quota(user, request: Request, kind: str = "message"):
 
     from orca.serve import ops
 
+    if ops.disk_critical():
+        metrics.record_event("refusal", "disk_critical")
     if not conversations.store_available() or ops.disk_critical():
         # Checked BEFORE the model runs: a signed-in turn that cannot be committed must not be generated, charged, or presented as saved.
         # (L02-06: a volume that is out of space is the same condition - the commit would fail after the answer was produced and paid for.)
@@ -1034,6 +1037,10 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
                 message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_text)
             except Exception:
                 _logger.debug("message version seed failed", exc_info=True)
+        try:
+            metrics.record_event("turn_outcome", "committed:none")
+        except Exception:
+            pass
         if committed.reason == "idempotent" and request_key:
             from orca.serve import turn_requests as _tr
             rec = _tr.view(user.id, request_key) or {}
@@ -2703,6 +2710,7 @@ async def _stream_dispatch(
                     kernel_slot.acquire()
                 except streaming.StreamingUnavailable:
                     kernel_slot = None
+                    metrics.record_event("refusal", "server_busy")
                     yield f"data: {json.dumps(coded_error('server_busy').as_sse())}\n\n"
                     return
                 # LANDMARK-01 B-01: the Kernel runs CONCURRENTLY with this response. Authentication, ownership, entitlement, moderation, atomic
@@ -3316,6 +3324,7 @@ async def turn_cancel(request_key: str, user: User | None = Depends(get_current_
         rec = await asyncio.to_thread(turn_requests.request_cancel, user.id, request_key)
     except Exception:
         return JSONResponse({"state": "outcome_unknown", "request_key": request_key, "retryable": True}, status_code=503, headers={"Retry-After": "2"})
+    metrics.record_event("turn_cancel_requested", rec.get("state", "none"))
     audit.log("turn_cancel_requested", user_id=user.id, detail={"request_key_hash": hashlib.sha256(request_key.encode()).hexdigest()[:12], "state": rec.get("state")})
     return JSONResponse({k: v for k, v in rec.items() if k not in ("request_hash", "turn_id")}, status_code=200 if rec.get("terminal") else 202)
 
