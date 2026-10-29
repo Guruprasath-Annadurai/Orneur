@@ -206,8 +206,15 @@ def delete_account(user_id: str) -> dict:
     """
     session_ids = get_user_session_ids(user_id)
     session_results = []
+    from orca.serve import deletions
+
     for sid in session_ids:
-        session_results.append(_delete_session_data(sid))
+        # L02-01: every session gets a durable deletion identity first, so a stale worker cannot resurrect it and the sweep finishes it if a store fails.
+        deletions.begin(sid, user_id)
+        view, raw = deletions.run_with_report(sid, user_id)
+        report = dict(raw) if raw is not None else {"session_id": sid}
+        report["deletion"] = {"deletion_id": view["deletion_id"], "state": view["state"], "access_revoked": True}
+        session_results.append(report)
         _remove_session_title(sid)
 
     stripe_result = None

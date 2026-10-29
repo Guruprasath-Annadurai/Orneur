@@ -297,7 +297,11 @@ def test_the_purge_deletes_only_idle_conversations_of_users_who_asked_for_it(cli
         _backdate_session_activity(sid, long_ago)
     r = purge_expired_conversations()
     assert r["deleted_session_ids"] == [old_a] and r["errors"] == 0
-    assert _msgs(client, ha, old_a)["total"] == 0 and _msgs(client, ha, new_a)["total"] == 2 and _msgs(client, hb, old_b)["total"] == 2
+    # L02-01: a purged conversation is access-revoked (404), stronger than "readable but empty"; the store itself is verified empty.
+    assert client.get(f"/api/session/{old_a}/messages", headers=ha).status_code == 404
+    from orca.serve import conversations as _conv
+    assert _conv.turns_for_session(old_a) == []
+    assert _msgs(client, ha, new_a)["total"] == 2 and _msgs(client, hb, old_b)["total"] == 2
     assert purge_expired_conversations()["deleted"] == 0                      # idempotent
 
 

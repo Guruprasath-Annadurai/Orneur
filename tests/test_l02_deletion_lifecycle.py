@@ -262,3 +262,50 @@ def test_next_turn_model_context_excludes_deleted_material(env):
     _commit(other, uid, user_text="hi", assistant="hello")
     ctx = repr(conversations.turns_for_session(other))
     assert "Nightingale-ZX" not in ctx
+
+
+def test_retention_purge_does_not_count_or_release_a_deletion_a_store_failed(env, monkeypatch):
+    """Baseline defect: the retention purge ignored `_delete_session_data` errors, released ownership and reported the conversation deleted."""
+    client, h, uid, sid, _ = env
+    _commit(sid, uid)
+    assert client.put("/api/auth/settings/retention", json={"retention_days": 1}, headers=h).status_code == 200
+    import sqlite3, time
+
+    from orca.serve import conversations
+
+    old = time.time() - 40 * 86400
+    conn = sqlite3.connect(str(conversations._turns_db()))
+    try:
+        conn.execute("UPDATE conversation_turns SET created_at=? WHERE session_id=?", (old, sid))
+        conn.execute("UPDATE session_authority SET updated_at=? WHERE session_id=?", (old, sid))
+        conn.commit()
+    finally:
+        conn.close()
+    heal = _break_vector(monkeypatch)
+    from orca.serve.retention import purge_expired_conversations
+
+    r = purge_expired_conversations()
+    assert r["deleted"] == 0 and r["errors"] == 1, r
+    from orca.auth.store import get_user_session_ids
+    from orca.serve import deletions
+
+    assert sid in get_user_session_ids(uid)
+    assert deletions.get(sid)["state"] == "partial"
+    heal()
+    assert deletions.resume_pending() == 1
+    assert deletions.get(sid)["state"] == "complete" and sid not in get_user_session_ids(uid)
+
+
+def test_account_deletion_tombstones_every_session_and_reports_partial_honestly(env, monkeypatch):
+    client, h, uid, sid, _ = env
+    _commit(sid, uid)
+    heal = _break_vector(monkeypatch)
+    r = client.post("/api/auth/account/delete", json={"password": "correcthorsebatterystaple"}, headers=h)
+    assert r.status_code == 200, r.text
+    from orca.serve import conversations, deletions
+
+    job = deletions.get(sid)
+    assert job is not None and job["state"] == "partial", "the account is gone but the unfinished session is tombstoned and will be swept"
+    assert conversations.acquire_authority(sid, uid, uuid.uuid4().hex) is None
+    heal()
+    assert deletions.resume_pending() == 1 and deletions.get(sid)["state"] == "complete"

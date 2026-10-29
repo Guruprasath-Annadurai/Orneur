@@ -161,10 +161,15 @@ def classify(result: dict) -> dict[str, str]:
 
 def run(session_id: str, user_id: str) -> dict:
     """Run (or resume) the cleanup cascade for an already-begun deletion. Blocking: call from a worker thread. Returns the deletion view."""
+    return run_with_report(session_id, user_id)[0]
+
+
+def run_with_report(session_id: str, user_id: str) -> tuple[dict, dict | None]:
+    """``run`` plus the cascade's raw per-store report (None when another worker holds the lease / it was already complete)."""
     from orca.serve.account_delete import _delete_session_data, _remove_session_title
 
     if not _lease(session_id):
-        return get(session_id) or begin(session_id, user_id)         # another worker holds the lease (or it is already complete)
+        return (get(session_id) or begin(session_id, user_id)), None  # another worker holds the lease (or it is already complete)
     try:
         result = _delete_session_data(session_id)
         try:
@@ -179,10 +184,10 @@ def run(session_id: str, user_id: str) -> dict:
         if ok:
             from orca.auth.store import release_session
             release_session(session_id, user_id)
-        return _finish(session_id, "complete" if ok else "partial", stores)
+        return _finish(session_id, "complete" if ok else "partial", stores), result
     except Exception:
         _logger.warning("deletion cascade crashed; left partial for retry", exc_info=True)
-        return _finish(session_id, "partial", {"cascade": "failed"})
+        return _finish(session_id, "partial", {"cascade": "failed"}), None
 
 
 def resume_pending(limit: int = 20) -> int:
