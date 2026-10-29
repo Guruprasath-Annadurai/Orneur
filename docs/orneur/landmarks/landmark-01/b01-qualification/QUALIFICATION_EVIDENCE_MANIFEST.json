@@ -1,0 +1,210 @@
+{
+  "manifest_version": "3.1.0",
+  "qualification_landmark": "LANDMARK-01-B01",
+  "timestamp": "2026-10-29T10:12:27.851586+00:00",
+  "authority": "Antigravity \u2014 Independent Qualification Authority",
+  "candidate": {
+    "pr": 136,
+    "title": "LANDMARK-01: B-01 final candidate -- incremental SSE chatbot streaming",
+    "worktree": "/home/pc/projects/Orneur-b01",
+    "head_sha": "9cb864c99ad323d11626063498a7d1cef0d7d4b5",
+    "pinned_head_sha": "9cb864c99ad323d11626063498a7d1cef0d7d4b5",
+    "code_bearing_sha": "01444cb084e530cd2aca1f5ed24a5e767c8b143d",
+    "branch": "claude/b01-real-sse-chatbot-integration",
+    "clean": true
+  },
+  "harness": {
+    "pr": 133,
+    "worktree": "/home/pc/projects/Orneur",
+    "head_sha": "0fb6cbe8a983b6329fc5f32a7fa955f1c99f1fa9",
+    "branch": "antigravity/qualification-landmark-01",
+    "clean": true
+  },
+  "test_execution_summary": {
+    "suite_results": {
+      "independent_adversarial_dlp": {
+        "type": "INDEPENDENT_ADVERSARIAL",
+        "passed": 67,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 4.871,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest /home/pc/projects/Orneur/tests/qualification/test_independent_adversarial_dlp.py -v -p no:cacheprovider"
+      },
+      "b01_raw_delta_lifecycle": {
+        "type": "DETERMINISTIC_UNIT",
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 2.292,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_raw_delta_lifecycle.py -v -p no:cacheprovider"
+      },
+      "b01_stream_cleanup": {
+        "type": "DETERMINISTIC_UNIT",
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 16.727,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_stream_cleanup.py -v -p no:cacheprovider"
+      },
+      "b01_stream_dlp_equivalence": {
+        "type": "DETERMINISTIC_UNIT",
+        "passed": 43,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 1.252,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_stream_dlp_equivalence.py -v -p no:cacheprovider"
+      },
+      "canonical_quota_admission": {
+        "type": "DETERMINISTIC_UNIT",
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 11.393,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_canonical_quota_admission.py -v -p no:cacheprovider"
+      },
+      "b01_refusal_protocol": {
+        "type": "DETERMINISTIC_UNIT",
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 9.335,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_refusal_protocol.py -v -p no:cacheprovider"
+      },
+      "journey_b01_streaming_live": {
+        "type": "LIVE_FIXTURE",
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 22.92,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_streaming_live.py -v -p no:cacheprovider"
+      },
+      "journey_concurrency_live": {
+        "type": "LIVE_FIXTURE_MULTIWORKER",
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 42.175,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_journey_concurrency_live.py -v -p no:cacheprovider"
+      },
+      "b01_cancel_race_live": {
+        "type": "LIVE_FIXTURE",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 24.395,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_cancel_race_live.py -v -p no:cacheprovider"
+      },
+      "journey_browser_streaming_fixture": {
+        "type": "LIVE_FIXTURE_BROWSER",
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 55.586,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_browser_streaming.py -k fixture -v -p no:cacheprovider"
+      },
+      "journey_b01_real_ollama_live": {
+        "type": "REAL_MODEL",
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 18.577,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_real_ollama_live.py -v -p no:cacheprovider"
+      },
+      "journey_browser_streaming_real_ollama": {
+        "type": "REAL_MODEL_BROWSER",
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 28.907,
+        "exit_code": 0,
+        "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_browser_streaming.py -k real -v -p no:cacheprovider"
+      },
+      "frontend_node_unit": {
+        "type": "FRONTEND_UNIT",
+        "passed": 89,
+        "failed": 0,
+        "skipped": 0,
+        "duration_s": 0.176,
+        "exit_code": 0,
+        "command": "/home/pc/projects/.journey-tools/node-v22.11.0-linux-x64/bin/node --test tests/frontend/test_active_conversation.mjs tests/frontend/test_b01_stop_upstream.mjs tests/frontend/test_b11_inline_edit.mjs tests/frontend/test_logout_revocation.mjs tests/frontend/test_sse_diagnostics.mjs tests/frontend/test_view_ownership_epoch.mjs"
+      }
+    },
+    "total_qualification_tests_executed": 299,
+    "total_qualification_tests_passed": 299,
+    "total_qualification_tests_failed": 0,
+    "total_qualification_tests_skipped": 0,
+    "overall_status": "QUALIFIED"
+  },
+  "blocker_register_status": {
+    "p0_outstanding": 0,
+    "p1_outstanding": 0,
+    "closed_in_b01": [
+      "B-01",
+      "B-01a",
+      "B-01b",
+      "B-01c",
+      "B-01d",
+      "B-01e",
+      "B-02"
+    ],
+    "p2_limitations": [
+      "B-04",
+      "B-06",
+      "L-01"
+    ],
+    "p3_limitations": [
+      "B-05",
+      "B-07",
+      "B-08",
+      "B-09",
+      "B-10",
+      "B-11",
+      "L-02",
+      "L-03",
+      "L-04",
+      "L-05",
+      "L-06"
+    ]
+  },
+  "verdicts": {
+    "1_default_chat_streaming": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED"
+    },
+    "2_security_and_dlp": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED"
+    },
+    "3_cancellation_and_persistence": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED"
+    },
+    "4_integrated_product_candidate": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED_FOR_STAGING"
+    },
+    "5_controlled_staging": {
+      "verdict": "ACCEPTED",
+      "status": "READY_FOR_CONTROLLED_STAGING"
+    },
+    "6_global_production": {
+      "verdict": "NOT_ACCEPTED",
+      "status": "BLOCKED"
+    },
+    "7_native_model_training": {
+      "verdict": "NOT_APPLICABLE",
+      "status": "PROHIBITED"
+    }
+  }
+}

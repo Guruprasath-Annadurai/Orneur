@@ -411,3 +411,58 @@ jobs:
 
       - name: Run the full verification script (build, reproducibility, both exit-code scenarios, resource/network-mode checks, cleanup)
         run: bash scripts/rse_docker_lab_verify.sh
+
+  b01-independent-qualification:
+    name: LANDMARK-01 B-01 Independent Qualification (PR #136 Pinned SHA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Harness Repository (PR #133)
+        uses: actions/checkout@v4
+        with:
+          path: harness
+
+      - name: Checkout Candidate Repository (PR #136 at pinned SHA)
+        uses: actions/checkout@v4
+        with:
+          repository: Guruprasath-Annadurai/Orneur
+          ref: 9cb864c99ad323d11626063498a7d1cef0d7d4b5
+          path: candidate
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv pip install --system -e "./harness[dev]"
+
+      - name: Assert exact candidate SHA
+        shell: bash
+        run: |
+          cd candidate
+          CANDIDATE_SHA=$(git rev-parse HEAD)
+          PINNED_SHA="9cb864c99ad323d11626063498a7d1cef0d7d4b5"
+          echo "Candidate HEAD: $CANDIDATE_SHA"
+          if [ "$CANDIDATE_SHA" != "$PINNED_SHA" ]; then
+            echo "FATAL: Candidate SHA mismatch: got $CANDIDATE_SHA, expected $PINNED_SHA"
+            exit 2
+          fi
+
+      - name: Run independent qualification harness integrity regression suite
+        shell: bash
+        run: |
+          cd harness
+          export ORNEUR_CANDIDATE_PATH="$GITHUB_WORKSPACE/candidate"
+          python -m pytest tests/qualification/test_qualification_harness_integrity.py -v -p no:cacheprovider
+
+      - name: Run independent adversarial DLP qualification suite
+        shell: bash
+        run: |
+          cd harness
+          export ORNEUR_CANDIDATE_PATH="$GITHUB_WORKSPACE/candidate"
+          python -m pytest tests/qualification/test_independent_adversarial_dlp.py -v -p no:cacheprovider

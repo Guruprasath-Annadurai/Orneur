@@ -1,0 +1,110 @@
+{
+  "manifest_version": "2.0.0",
+  "qualification_landmark": "LANDMARK-01",
+  "timestamp": "2026-10-29T04:25:00.000000+00:00",
+  "candidate": {
+    "pr": 134,
+    "title": "LANDMARK-01: secure real chatbot integration",
+    "worktree": "/home/pc/projects/Orneur-landmark01",
+    "sha": "8d72baab4ebe4ce3a6aa4a76385e18e1c1fba788",
+    "branch": "claude/landmark-01-secure-chatbot-integration",
+    "clean": true,
+    "ci_run_id": 40810963975,
+    "ci_status": "SUCCESS"
+  },
+  "comparison_baseline": {
+    "pr": 132,
+    "title": "FOUNDATION LANDMARK-01: secure inference, authoritative memory, reliable serving",
+    "sha": "1f7102da928891eedd6f11553877097214c5c3e2",
+    "branch": "cursor/foundation-landmark-01-backend-closure-1cdf",
+    "ci_run_id": 40737221159,
+    "ci_status": "SUCCESS"
+  },
+  "architectural_ancestor": {
+    "pr": 130,
+    "sha": "497073d2dfb45f82554fb260db3fe4d87b0b5019",
+    "fencing_architecture": "SQLITE_SESSION_AUTHORITY_EPOCHS"
+  },
+  "harness": {
+    "pr": 133,
+    "worktree": "/home/pc/projects/Orneur",
+    "sha": "b5000ec09acf5799afeed581a5e924c681c73eaf",
+    "branch": "antigravity/qualification-landmark-01",
+    "ci_run_id": 40736755445,
+    "ci_status": "SUCCESS"
+  },
+  "environment": {
+    "os": "Ubuntu 24.04 LTS (WSL2)",
+    "python_executable": "/home/pc/projects/Orneur/.venv/bin/python3",
+    "python_version": "3.11.18",
+    "pytest_version": "9.2.0",
+    "ollama_endpoint": "http://localhost:11434",
+    "ollama_model": "llama3.2:1b",
+    "redis_endpoint": "localhost:6379",
+    "browser_tools": "/home/pc/projects/.journey-tools",
+    "chromium_headless": true
+  },
+  "evidence_classes": {
+    "VERIFIED_REAL": [
+      "tests/journey/test_journey_api_live.py",
+      "tests/journey/test_journey_browser.py",
+      "tests/journey/test_journey_concurrency_live.py",
+      "tests/test_reliability_failures.py",
+      "tests/test_temporary_chat_multiprocess.py",
+      "tests/test_multiworker_edit_consistency.py",
+      "tests/test_redis_independent_processes.py"
+    ],
+    "VERIFIED_DETERMINISTIC": [
+      "tests/test_canonical_quota_admission.py",
+      "tests/test_canonical_turn_authority.py",
+      "tests/test_canonical_route_dlp.py",
+      "tests/test_auth_invalid_bearer_refused.py",
+      "tests/test_landmark_integration_fixes.py",
+      "tests/test_g020_agent_tool_authority.py",
+      "tests/journey/test_journey_browser_fixture.py"
+    ]
+  },
+  "test_execution_summary": {
+    "canonical_quota_admission": { "passed": 12, "failed": 0, "skipped": 0 },
+    "canonical_turn_authority": { "passed": 12, "failed": 0, "skipped": 0 },
+    "canonical_route_dlp": { "passed": 8, "failed": 0, "skipped": 0 },
+    "auth_invalid_bearer_refused": { "passed": 12, "failed": 0, "skipped": 0 },
+    "landmark_integration_fixes": { "passed": 7, "failed": 0, "skipped": 0 },
+    "reliability_failures": { "passed": 11, "failed": 0, "skipped": 0 },
+    "temporary_chat_multiprocess": { "passed": 5, "failed": 0, "skipped": 0 },
+    "agent_tool_authority_g020": { "passed": 59, "failed": 0, "skipped": 0 },
+    "journey_api_live_real_ollama": { "passed": 19, "failed": 0, "skipped": 0 },
+    "journey_browser_real_chromium": { "passed": 19, "failed": 0, "skipped": 0 },
+    "journey_browser_fixture_streaming": { "passed": 10, "failed": 0, "skipped": 0 },
+    "journey_concurrency_multiworker": { "passed": 9, "failed": 0, "skipped": 0 },
+    "total_qualification_tests_executed": 173,
+    "total_qualification_tests_passed": 173,
+    "total_qualification_tests_failed": 0,
+    "total_qualification_tests_skipped": 0
+  },
+  "empirical_benchmarks": {
+    "ollama_cold_ttft_ms": 152.2,
+    "ollama_warm_ttft_avg_ms": 13.2,
+    "ollama_completion_avg_ms": 60.6,
+    "e2e_turnaround_avg_ms": 1350.0
+  },
+  "blocker_summary": {
+    "outstanding_p0_count": 0,
+    "outstanding_p1_count": 1,
+    "p1_blocker_ids": ["B-01"],
+    "outstanding_p2_count": 3,
+    "p2_gap_ids": ["B-04", "B-05", "B-06"],
+    "outstanding_p3_count": 5,
+    "p3_limitation_ids": ["B-07", "B-08", "B-09", "B-10", "B-11"]
+  },
+  "verdict": {
+    "integrated_candidate_status": "QUALIFIED_WITH_NONBLOCKING_LIMITATIONS",
+    "security_status": "INDEPENDENTLY_QUALIFIED",
+    "distributed_fencing_status": "INDEPENDENTLY_QUALIFIED",
+    "real_browser_journey_status": "INDEPENDENTLY_QUALIFIED",
+    "public_chatbot_release_recommendation": "NO-GO",
+    "global_production_recommendation": "NO-GO",
+    "native_model_training_authorization": "NOT_AUTHORIZED",
+    "primary_gating_blocker": "B-01 (Plain-chat single replayed chunk delivery)"
+  }
+}
