@@ -163,5 +163,13 @@
     "statement": "All engineering-owned Phase 0/1 requirements have a defined work route; FOUNDATION-02 recovered from PR #138; no hidden second acceptance register; training remains NO-GO."
   },
   "phase1_honesty_probe_tip": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
-  "phase1_disposition": "ENGINEERING_COMPLETE \u2014 AWAITING_INDEPENDENT_REVIEW"
+  "phase1_disposition": "ENGINEERING_COMPLETE \u2014 AWAITING_INDEPENDENT_REVIEW",
+  "phase1_exact_head_ci": {
+    "tip": "b3fbda01ea1f4cb23a5fa6da5cd6398a4f3d862a",
+    "test_suite_run": "40866502460",
+    "checks": 9,
+    "conclusion": "success",
+    "deterministic_summary": "9007 passed, 389 skipped, 43 deselected, 7 xfailed",
+    "url": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40866502460"
+  }
 }

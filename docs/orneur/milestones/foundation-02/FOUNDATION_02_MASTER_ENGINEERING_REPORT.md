@@ -50,7 +50,8 @@ VERIFIED_ENGINEERING IDs (probed): G4, G5, C01, C02, DATA-1, DATA-2, TRAIN-1, TR
 
 ## Exact-head CI
 
-Green on `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` — Test Suite run `40860060023` (19/19 checks success).
+Prior green on `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4` — Test Suite run `40860060023` (19/19 checks success).  
+Honesty corrective tip `cd1e557a685b529c57bf4bf2f594b088cbeb5172`; exact-head CI green on `b3fbda01ea1f4cb23a5fa6da5cd6398a4f3d862a` — Test Suite [`40866502460`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40866502460) (PR #140). Antigravity independent retest still required.
 
-**Engineering status:** `VERIFIED_ENGINEERING — READY_FOR_INDEPENDENT_RETEST`  
+**Engineering status:** `ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW` (evidence-tool honesty)  
 Formal acceptance remains **0/95**. Training remains **NO-GO**.

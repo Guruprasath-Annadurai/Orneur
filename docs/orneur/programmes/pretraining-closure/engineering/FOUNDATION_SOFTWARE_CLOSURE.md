@@ -3,6 +3,7 @@
 **Disposition:** `ENGINEERING_COMPLETE — AWAITING_INDEPENDENT_REVIEW` (evidence-tool honesty only)  
 **Corrective PR:** [#140](https://github.com/Guruprasath-Annadurai/Orneur/pull/140) (bases on FOUNDATION-02 PR #138 branch)  
 **Honesty probe tip:** `cd1e557a685b529c57bf4bf2f594b088cbeb5172`  
+**Exact-head CI tip:** `b3fbda01ea1f4cb23a5fa6da5cd6398a4f3d862a` — Test Suite [`40866502460`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40866502460) (9/9 success)  
 **Training authorization:** **NO-GO**  
 **Formal acceptance change:** none (ledger remains empty)
 
