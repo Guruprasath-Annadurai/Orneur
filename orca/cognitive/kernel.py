@@ -428,7 +428,15 @@ class CognitiveKernel:
         exactly the canonical path Phase 3 spec §27 requires (Kernel ->
         model policy -> ModelGateway -> deployment/runtime), reusing the
         EXISTING tier router (orca/serve/registry.py) and wiring bridge
-        (orca/gateway/wiring.py) unchanged, per Phase 2.1's own cutover."""
+        (orca/gateway/wiring.py) unchanged, per Phase 2.1's own cutover.
+
+        LANDMARK-01 B-01: when ``request.on_raw_delta`` is set, this method
+        consumes ``ModelGateway.stream()`` and awaits the hook for each
+        real ``InferenceChunk.delta``. Those deltas are **raw** (see
+        ``orca.cognitive.streaming``) — never browser-safe. Without the
+        hook, behavior is unchanged (``generate()``).
+        """
+        import contextlib
         import uuid
 
         from orca.gateway.contracts import InferenceRequest
@@ -443,17 +451,50 @@ class CognitiveKernel:
             current_user_text=objective,
             user_id=request.tenant if request is not None else None,
         )
+        want_stream = request is not None and request.on_raw_delta is not None
         inference_request = InferenceRequest(
             request_id=str(uuid.uuid4()), trace_id=trace_id,
             model_id=gateway_brain.model_id, model_version=gateway_brain.model_version,
-            messages=messages, max_tokens=1024,
+            messages=messages, max_tokens=1024, stream=want_stream,
         )
-        response = await self._gateway().generate(inference_request, allow_experimental=gateway_brain.allow_experimental)
+        if not want_stream:
+            response = await self._gateway().generate(inference_request, allow_experimental=gateway_brain.allow_experimental)
+            usage = {
+                "prompt_tokens": response.prompt_tokens, "completion_tokens": response.completion_tokens,
+                "total_tokens": (response.prompt_tokens or 0) + (response.completion_tokens or 0),
+            }
+            return response.output, response.resolved_version, usage
+
+        # Genuine upstream incremental generation — not a post-hoc split of
+        # a completed generate() payload.
+        parts: list[str] = []
+        resolved_version = gateway_brain.model_version or ""
+        prompt_tokens = 0
+        completion_tokens = 0
+        upstream = self._gateway().stream(inference_request, allow_experimental=gateway_brain.allow_experimental)
+        try:
+            async with contextlib.aclosing(upstream) as chunks:
+                async for chunk in chunks:
+                    if chunk.resolved_version:
+                        resolved_version = chunk.resolved_version
+                    if chunk.prompt_tokens is not None:
+                        prompt_tokens = chunk.prompt_tokens
+                    if chunk.completion_tokens is not None:
+                        completion_tokens = chunk.completion_tokens
+                    if chunk.delta:
+                        parts.append(chunk.delta)
+                        # Raw boundary: hook receives unredacted provider text.
+                        await request.on_raw_delta(chunk.delta)
+        except BaseException:
+            # aclosing already closed the async generator on CancelledError /
+            # provider failure; re-raise so execute() maps or propagates.
+            raise
         usage = {
-            "prompt_tokens": response.prompt_tokens, "completion_tokens": response.completion_tokens,
-            "total_tokens": (response.prompt_tokens or 0) + (response.completion_tokens or 0),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
         }
-        return response.output, response.resolved_version, usage
+        return "".join(parts), resolved_version, usage
 
     async def _answer_with_truth_fabric(
         self, request: CognitiveRequest, plan, resolved_tier: str, doc_store, sm, trace_builder, start: float,
