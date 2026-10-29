@@ -3093,7 +3093,13 @@ async function sendMessage(runId) {
           // generic fallback string below, discarding the server's own
           // specific, often actionable message. Pre-dates this
           // integration work; not caused by it.
-          appendUnavailableNote(ev.text || 'An error occurred while generating a response.', { retryText: text });
+          if (ev.code === 'conflict' && _authToken && /still being processed/i.test(ev.text || '')) {
+            // L02-03: the browser re-sent the SAME request (same Idempotency-Key) after its connection dropped, and the server correctly refused to run it twice because the
+            // first attempt is still in progress. That is not an error the person should see: ask the server what became of the original.
+            reconcileOutcome(myIdempotencyKey, text);
+          } else {
+            appendUnavailableNote(ev.text || 'An error occurred while generating a response.', { retryText: text });
+          }
         }
       } catch (e) {
         logMalformed(e);

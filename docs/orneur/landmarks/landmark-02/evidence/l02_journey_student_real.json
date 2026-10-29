@@ -1,0 +1,75 @@
+{
+  "recorded_at": "2026-10-29T16:08:23+0000",
+  "persona": "student",
+  "environment": {
+    "mode": "real",
+    "provider": "real Ollama llama3.2:1b (third-party weights)",
+    "model_tag": "llama3.2:1b",
+    "browser": "Chromium via Playwright 1.49.1",
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18"
+  },
+  "command": "pytest tests/journey/test_l02_customer_journeys.py -k student_real",
+  "steps": {
+    "S1_create_account_in_the_page_and_verify_the_address_by_the_emailed_link": {
+      "ok": true,
+      "detail": "signup -> no session -> sign-in refused -> link opened (not spent) -> confirmed -> link reuse refused"
+    },
+    "S2_sign_in_and_see_which_model_will_answer": {
+      "ok": true,
+      "detail": "selector shows 'Genesis'; panel text: 'Genesis\\nEXPERIMENTAL \u2014 Experimental model -- not qualified.\\nDetails\\nNovus\\nEXPERIMENTAL \u2014 Experimental model -- not qualified.\\nDetails\\nAeternum\\nEXPERIMENTAL \u2014 Ex'"
+    },
+    "S3_a_learning_question_streams_progressively_and_names_the_model_that_answered": {
+      "ok": true,
+      "detail": "chunks=352 dom_states=342 served_model=llama3.2:1b lifecycle=EXPERIMENTAL disclosure='Experimental model -- not qualified.'"
+    },
+    "S4_a_follow_up_uses_the_earlier_context": {
+      "ok": true,
+      "detail": "4 committed messages; provider-side context checked by the wrapper"
+    },
+    "S5_upload_a_study_document_and_ask_a_grounded_question_with_visible_sources": {
+      "ok": true,
+      "detail": "grounding=retrieved_not_cited sources=[('study-notes.txt', 'Consulted, not cited')] delivery=replayed"
+    },
+    "S6_a_question_the_document_cannot_answer_gets_a_truthful_uncertainty_path_and_no_invented_source": {
+      "ok": true,
+      "detail": "grounding=none; the model was told the documents do not contain it (provider-side check by the wrapper); answer starts: \"I can't answer that.\""
+    },
+    "S7_stop_generation_mid_answer_and_the_page_says_what_really_happened": {
+      "ok": true,
+      "detail": "transcript unchanged at 8 messages; note: 'a'"
+    },
+    "S8_after_an_interruption_the_conversation_is_recovered_from_the_server": {
+      "ok": true,
+      "detail": "8 messages restored after reload"
+    },
+    "S9_delete_the_conversation_and_everything_stored_with_it": {
+      "ok": true,
+      "detail": "row removed; API now answers 404 for the conversation"
+    },
+    "S10_log_out_and_the_old_token_stops_working": {
+      "ok": true,
+      "detail": "token revoked server-side"
+    },
+    "PAGE_ERRORS": {
+      "ok": true,
+      "detail": ""
+    }
+  },
+  "passed": 10,
+  "failed": [],
+  "server_log_tail": null,
+  "provider_side_checks": {
+    "S4_followup_context_contains_the_earlier_question": true,
+    "S5_document_text_reached_the_model": true,
+    "S6_model_was_told_the_documents_do_not_contain_the_answer": true,
+    "provider_streams_open_after_stop": 0,
+    "deletion_state": [
+      "complete"
+    ],
+    "turns_left_in_store": 0,
+    "documents_left_in_registry": 0
+  }
+}

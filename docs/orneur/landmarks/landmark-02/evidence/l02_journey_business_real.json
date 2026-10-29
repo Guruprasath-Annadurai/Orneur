@@ -1,0 +1,63 @@
+{
+  "recorded_at": "2026-10-29T16:09:09+0000",
+  "persona": "business",
+  "environment": {
+    "mode": "real",
+    "provider": "real Ollama llama3.2:1b (third-party weights)",
+    "model_tag": "llama3.2:1b",
+    "browser": "Chromium via Playwright 1.49.1",
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18"
+  },
+  "command": "pytest tests/journey/test_l02_customer_journeys.py -k business_real",
+  "steps": {
+    "B1_sign_in": {
+      "ok": true,
+      "detail": ""
+    },
+    "B2_multi_turn_business_analysis": {
+      "ok": true,
+      "detail": "2 turns, 4 committed messages (context checked provider-side by the wrapper)"
+    },
+    "B3_upload_a_confidential_document_and_ask_about_it_evidence_is_separated_from_suggestions": {
+      "ok": true,
+      "detail": "sources panel lists [('financial-summary.txt', 'Consulted, not cited')] separately from the answer text; tools=[]; pii_redaction in upload checked by the wrapper"
+    },
+    "B4_nothing_is_claimed_as_done_the_page_shows_no_completed_action": {
+      "ok": true,
+      "detail": "no tool ran, no external request was made (checked provider/network side by the wrapper); the model's text (not verified by ORNEUR): \"I can't provide you with a response that includes the owner's Social Security number or email address. Is there anything else I can help you with?\""
+    },
+    "B5_losing_the_network_mid_answer_the_page_reports_what_the_server_says": {
+      "ok": true,
+      "detail": "server transcript 8 -> 8 (not committed); page said: 'The connection dropped and the server did not save this reply. Nothing from this request is in the conversation.'"
+    },
+    "B6_the_conversation_is_restored_after_a_reload": {
+      "ok": true,
+      "detail": "8 messages shown, equal to the server transcript"
+    },
+    "B7_remove_the_uploaded_document_then_delete_the_conversation": {
+      "ok": true,
+      "detail": "document removed (no chunks left), conversation deleted (404)"
+    },
+    "B8_log_out_everywhere_ends_the_other_devices_sessions": {
+      "ok": true,
+      "detail": "logout-all: the stored token is refused and the other tab falls back to sign-in"
+    },
+    "PAGE_ERRORS": {
+      "ok": true,
+      "detail": ""
+    }
+  },
+  "passed": 8,
+  "failed": [],
+  "provider_side_checks": {
+    "confidential_numbers_reached_the_model_for_the_grounded_question": true,
+    "ssn_never_sent_to_the_model": true,
+    "email_never_sent_to_the_model": true,
+    "no_external_action_tool_used": true,
+    "stranger_cannot_read_owner_conversations": true,
+    "connections_severed_by_the_test_proxy": 2
+  }
+}

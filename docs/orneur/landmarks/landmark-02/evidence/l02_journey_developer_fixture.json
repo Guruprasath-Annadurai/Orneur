@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-10-29T16:10:02+0000",
+  "persona": "developer",
+  "environment": {
+    "mode": "fixture",
+    "provider": "FakeOllama fixture",
+    "model_tag": null,
+    "browser": "Chromium via Playwright 1.49.1",
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18"
+  },
+  "command": "pytest tests/journey/test_l02_customer_journeys.py -k developer_fixture",
+  "steps": {
+    "D1_sign_in": {
+      "ok": true,
+      "detail": ""
+    },
+    "D2_a_coding_answer_renders_as_readable_multiline_code": {
+      "ok": true,
+      "detail": "1 code block(s); 7 lines; white-space=pre; first lines: 'def is_palindrome(s):\\n    \"\"\"Return True if s reads the same forwards and backwards.\"\"\"\\n    cleaned '"
+    },
+    "D3_streaming_never_leaves_broken_markup_and_final_text_equals_saved_text": {
+      "ok": true,
+      "detail": "dom_states=56; no raw fences; saved 394 chars"
+    },
+    "D4_a_follow_up_about_the_previous_code_carries_it_as_context": {
+      "ok": true,
+      "detail": "committed 4 messages; context checked provider-side by the wrapper"
+    },
+    "D5_a_long_answer_completes_scrolls_and_is_saved_once": {
+      "ok": true,
+      "detail": "394 chars saved; shown == saved"
+    },
+    "D6_stop_then_retry_is_safe_one_completed_turn_and_no_phantom": {
+      "ok": true,
+      "detail": "transcript 6 -> 8; retry control not offered (stopped note had none): re-sent manually"
+    },
+    "D7_provider_failure_is_explained_without_internals_and_is_not_charged": {
+      "ok": true,
+      "detail": "message shown: 'The model backend could not complete this request. Please try again.'"
+    },
+    "D8_the_assistant_does_not_present_suggested_code_as_executed": {
+      "ok": true,
+      "detail": "no tool ran (done.tools=[]); the model's reply (NOT verified by ORNEUR, shown for the record): 'Here is the function:\\n\\n\\ndef is_palindrome(s):\\n    \"\"\"Return True if s reads the same forwards and backwards.\"\"\"\\n    cleaned = \\'\\'.join(c.lower() for c in s if c.isalnum())\\n    return cleaned == cleaned'"
+    },
+    "PAGE_ERRORS": {
+      "ok": true,
+      "detail": ""
+    }
+  },
+  "passed": 8,
+  "failed": [],
+  "provider_side_checks": {
+    "D4_previous_code_was_in_the_follow_up_context": true,
+    "tools_offered_to_the_planner": [
+      "investor_research",
+      "memory_recall",
+      "web_search"
+    ],
+    "no_code_execution_or_file_or_shell_tool_offered": true
+  }
+}

@@ -160,3 +160,11 @@ test('sign-in and sign-up handlers print structured refusals as text and handle 
   const success = signup.indexOf('onAuthSuccess(d)');
   assert.ok(guard > 0 && success > guard, 'the verification_required branch must return before onAuthSuccess');
 });
+
+test('a same-key re-send that the server refuses as "still being processed" is reconciled, not shown as an error', () => {
+  const i = source.indexOf("ev.code === 'conflict' && _authToken");
+  assert.ok(i > 0);
+  const block = source.slice(i, i + 900);
+  assert.match(block, /reconcileOutcome\(myIdempotencyKey, text\)/);
+  assert.match(block, /else \{\s*appendUnavailableNote\(ev\.text/);
+});
