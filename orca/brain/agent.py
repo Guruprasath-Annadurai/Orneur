@@ -59,6 +59,7 @@ class ToolCall:
     tool: str
     args: dict
     result: str = ""
+    refused: str | None = None     # L02-02f: stable refusal code when the independent authorization gate denied the call (the tool did not run)
 
 
 @dataclass
@@ -87,6 +88,7 @@ class AgentLoop:
         on_thought: Callable[[str], None] | None = None,
         reflect: bool = True,
         route_tool_reasoning_via_society: bool = False,
+        on_tool_event: Callable[[dict], None] | None = None,
     ):
         """
         `route_tool_reasoning_via_society` (Phase 8 spec §17-18): when
@@ -108,16 +110,20 @@ class AgentLoop:
         self.reflect = reflect
         self._route_tool_reasoning_via_society = route_tool_reasoning_via_society
         self._history: list[dict] = []
+        self._on_tool_event = on_tool_event or (lambda _e: None)
+        self._provenance = None
 
-    def run(self, user_input: str, system: str | None = None) -> tuple[str, AgentTrace]:
+    def run(self, user_input: str, system: str | None = None, provenance=None) -> tuple[str, AgentTrace]:
         """Full agent cycle — returns (final_response, trace)."""
         trace = AgentTrace(user_input=user_input)
+        self._provenance = provenance
         sys_prompt = system or CORE_SYSTEM_WITH_TOOLS.format(
             tools=", ".join(self.tools.all_names())
         )
 
         # ── Step 1: Plan ─────────────────────────────────────────────────────
-        plan = self._plan(user_input, sys_prompt)
+        # L02-02f: with provenance the planner sees only what the USER typed - retrieved passages are not put in front of the tool planner at all.
+        plan = self._plan(provenance.user_text if provenance is not None else user_input, sys_prompt)
         trace.plan_action = plan.get("action", "direct")
         self.on_thought(f"[plan] {trace.plan_action}")
 
@@ -161,17 +167,19 @@ class AgentLoop:
         self,
         user_input: str,
         system: str | None = None,
+        provenance=None,
     ) -> tuple[Iterator[str], AgentTrace]:
         """
         Streaming version. Tools and planning happen before streaming starts.
         Returns (stream_iterator, trace) — iterate the stream for chunks.
         """
         trace = AgentTrace(user_input=user_input)
+        self._provenance = provenance
         sys_prompt = system or CORE_SYSTEM_WITH_TOOLS.format(
             tools=", ".join(self.tools.all_names())
         )
 
-        plan = self._plan(user_input, sys_prompt)
+        plan = self._plan(provenance.user_text if provenance is not None else user_input, sys_prompt)
         trace.plan_action = plan.get("action", "direct")
         self.on_thought(f"[plan] {trace.plan_action}")
 
@@ -277,15 +285,33 @@ class AgentLoop:
             return {"action": "direct"}
 
     def _execute_tools(self, calls: list[dict], trace: AgentTrace) -> str:
+        from orca.tools.authorization import ToolDenied, authorize
+
         results = []
-        for call in calls[:MAX_TOOL_ROUNDS]:
+        ran = 0
+        for call in (calls if isinstance(calls, list) else [])[:MAX_TOOL_ROUNDS]:
+            if not isinstance(call, dict):
+                continue
             tool_name = call.get("tool", "")
             args = call.get("args", {})
+            # L02-02f: the model proposed this call; it is allowed only if the independent gate says so (schema, provenance, budget).
+            try:
+                schema = self.tools.schema_for(str(tool_name)) if hasattr(self.tools, "schema_for") else None
+                if hasattr(self.tools, "schema_for") and schema is None:
+                    raise ToolDenied("tool_not_available")         # unknown, or not offered on this surface: one stable refusal for both
+                authorize(str(tool_name), args, schema, self._provenance, calls_so_far=ran)
+            except ToolDenied as denied:
+                trace.tool_calls.append(ToolCall(tool=str(tool_name)[:60], args={}, result="", refused=denied.code))
+                results.append(f"[{str(tool_name)[:60]}]\nTool call not authorized.")
+                self._on_tool_event({"event": "tool_call_refused", "tool": str(tool_name)[:60], "reason": denied.code})
+                continue
             self.on_thought(f"[tool] {tool_name}({_fmt_args(args)})")
             result = self.tools.call(tool_name, args)
+            ran += 1
             tc = ToolCall(tool=tool_name, args=args, result=result[:3000])
             trace.tool_calls.append(tc)
             results.append(f"[{tool_name}]\n{result[:3000]}")
+            self._on_tool_event({"event": "tool_call", "tool": str(tool_name)[:60]})
         return "\n\n".join(results)
 
     def _reflect(self, original_input: str, draft: str, sys_prompt: str) -> str:

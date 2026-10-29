@@ -107,6 +107,11 @@ class ToolRegistry:
     def all_names(self) -> list[str]:
         return list(self._tools.keys())
 
+    def schema_for(self, name: str) -> dict | None:
+        """The declared parameter schema of a registered tool (None if unknown) - used by orca.tools.authorization."""
+        tool = self._tools.get(_canonical_tool_name(name) if self.surface == SURFACE_WEB else name)
+        return tool.params if tool else None
+
     def schema_list(self) -> list[dict]:
         return [
             {"name": t.name, "description": t.description, "parameters": t.params}
@@ -278,7 +283,7 @@ def _build_web_registry(memory_engine=None) -> ToolRegistry:
         description="Search the web for current information, documentation, or facts",
         fn=lambda query, n=5: search_and_ground(query, n=n)[0],
         params={"type": "object", "properties": {"query": {"type": "string", "description": "Search query"},
-                                                  "n": {"type": "integer", "description": "Number of results", "default": 5}},
+                                                  "n": {"type": "integer", "description": "Number of results", "default": 5, "minimum": 1, "maximum": 5}},
                 "required": ["query"]},
     ))
     registry.register(Tool(

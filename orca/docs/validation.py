@@ -14,6 +14,8 @@ MAX_FILENAME_CHARS = 120
 MAX_EXTRACTED_CHARS = 2_000_000          # ~2 MB of text per document
 MAX_CHUNKS_PER_DOC = 2_000
 MAX_DOCS_PER_SESSION = 20
+MAX_DOCS_PER_USER = 200
+MAX_BYTES_PER_USER = 1024 * 1024 * 1024        # per account, across conversations
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f​-‏ -‮⁦-⁩]")
 _UNSAFE = re.compile(r"[<>\"'`\\|?*:;{}\[\]$]")
@@ -50,10 +52,14 @@ def validate_content(filename: str, data: bytes) -> None:
     head = data[:8]
     if ext == ".pdf" and not data[:1024].lstrip().startswith(b"%PDF-"):
         raise UploadRejected("content_mismatch", "This file is not a valid PDF.")
-    if ext == ".docx" and not head.startswith(b"PK\x03\x04"):
-        raise UploadRejected("content_mismatch", "This file is not a valid DOCX document.")
+    if ext == ".docx":
+        if not head.startswith(b"PK\x03\x04"):
+            raise UploadRejected("content_mismatch", "This file is not a valid DOCX document.")
+        inspect_zip(data, filename)
     if ext in _TEXT_EXT:
         sample = data[:65536]
+        if head.startswith((b"\xff\xfe", b"\xfe\xff")):
+            raise UploadRejected("unsupported_encoding", "This text file is UTF-16. Save it as UTF-8 and upload it again.")
         if b"\x00" in sample:
             raise UploadRejected("content_mismatch", "This file looks binary, not text.")
         if head.startswith((b"%PDF-", b"PK\x03\x04", b"\x7fELF", b"MZ")):
@@ -62,7 +68,41 @@ def validate_content(filename: str, data: bytes) -> None:
             sample.decode("utf-8")
         except UnicodeDecodeError as exc:
             if exc.start < len(sample) - 4:                            # a multi-byte character cut by the sample boundary is not corruption
-                raise UploadRejected("content_mismatch", "This file is not valid UTF-8 text.")
+                raise UploadRejected("unsupported_encoding", "This text file is not UTF-8. Save it as UTF-8 and upload it again.")
+
+
+MAX_ZIP_ENTRIES = 2000
+MAX_ZIP_UNCOMPRESSED = 200 * 1024 * 1024
+MAX_ZIP_RATIO = 200
+
+
+def inspect_zip(data: bytes, filename: str = "") -> None:
+    """Pre-parse structure check for a ZIP-based container (DOCX): cheap, reads only the central directory. Refuses decompression bombs, path-traversal member
+    names, encrypted members and anything that is not a real DOCX package. Nothing is decompressed here."""
+    import io
+    import zipfile
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        infos = zf.infolist()
+    except Exception:
+        raise UploadRejected("content_mismatch", "This file is not a valid DOCX document.")
+    if len(infos) > MAX_ZIP_ENTRIES:
+        raise UploadRejected("container_unsafe", "This document contains too many parts.")
+    total = 0
+    for info in infos:
+        total += info.file_size
+        name = info.filename.replace("\\", "/")
+        if name.startswith("/") or ".." in name.split("/") or (len(name) > 1 and name[1] == ":"):
+            raise UploadRejected("container_unsafe", "This document contains an unsafe part name.")
+        if info.flag_bits & 0x1:
+            raise UploadRejected("container_unsafe", "Encrypted documents are not supported.")
+        if info.file_size > 1024 * 1024 and info.compress_size and info.file_size / info.compress_size > MAX_ZIP_RATIO:
+            raise UploadRejected("container_unsafe", "This document expands to an unsafe size.")
+    if total > MAX_ZIP_UNCOMPRESSED:
+        raise UploadRejected("container_unsafe", "This document expands to an unsafe size.")
+    if filename.lower().endswith(".docx") and "word/document.xml" not in {i.filename for i in infos}:
+        raise UploadRejected("content_mismatch", "This file is not a valid DOCX document.")
 
 
 async def read_bounded(upload, limit: int) -> bytes:

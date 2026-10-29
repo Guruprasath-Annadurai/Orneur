@@ -1159,7 +1159,7 @@ class _Session:
         brain = brain_for_tier_resolution(tier_resolution, viewer_user_id=self.user_id)
         self._ctx = ContextManager(brain)
         tools = build_registry(memory_engine=self.memory, surface="web")  # G-020: no shell/file/exec tools on the web
-        self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id)
+        self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id, on_tool_event=self._audit_tool_event)
         self._brain = brain
 
         if self._restored_history:
@@ -1201,6 +1201,13 @@ class _Session:
     def ctx(self):
         self._ensure_agent()
         return self._ctx
+
+    def _audit_tool_event(self, event: dict) -> None:
+        """L02-02f: tool use is audited by tool name and refusal code only - never by argument text (it can carry private content)."""
+        try:
+            audit.log(event.get("event", "tool_call"), user_id=self.user_id, detail={"session_id": self.id, "tool": event.get("tool"), "reason": event.get("reason")})
+        except Exception:
+            pass
 
     def touch(self):
         self.last_active = time.time()
@@ -2021,7 +2028,7 @@ async def _chat_dispatch(
         # real capabilities the existing AgentLoop path provides; the
         # Kernel already decided this is needed, this is not a bypass.
         try:
-            final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
+            final, trace = await asyncio.to_thread(lambda: sess.agent.run(enriched, persona_system, **_provenance_kw(req.message, rag_result)))
         except Exception as e:
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
@@ -2525,7 +2532,7 @@ async def _stream_dispatch(
             else:
                 try:
                     gen, trace = await asyncio.to_thread(
-                        lambda: sess.agent.stream(enriched if enriched is not None else _enrich(req.message), persona_system)
+                        lambda: sess.agent.stream(enriched if enriched is not None else _enrich(req.message), persona_system, **_provenance_kw(req.message, rag_result))
                     )
                     # Send tool activity if any
                     if trace.plan_action == "tools":
@@ -2857,6 +2864,32 @@ def _temporary_block(session_id: str):
     if decision is None:
         return None
     return _temporary_http(decision)
+
+
+def _user_doc_usage(user_id: str) -> tuple[int, int]:
+    """(documents, bytes) the account currently holds across all of its conversations (registry view; documents being deleted still count until removed)."""
+    from orca.auth.store import get_user_session_ids
+
+    docs = size = 0
+    for sid in get_user_session_ids(user_id):
+        for d in list_docs(sid, include_deleting=True):
+            docs += 1
+            size += int(d.get("size_bytes", 0) or 0)
+    return docs, size
+
+
+def _tool_provenance(user_text: str, rag_result):
+    """L02-02f: what the tool gate needs to know about where the turn's text came from. None when no retrieved passage is in play (the shape checks still run)."""
+    from orca.tools.authorization import Provenance
+
+    passages = tuple(i.get("text", "") for i in ((getattr(rag_result, "citation_dna", None) or {}).values())) if rag_result is not None else ()
+    return Provenance(user_text=user_text, untrusted=passages) if passages else None
+
+
+def _provenance_kw(user_text: str, rag_result) -> dict:
+    """Keyword form of the provenance (empty when no retrieved passage is in play, so the agent is called exactly as before)."""
+    prov = _tool_provenance(user_text, rag_result)
+    return {"provenance": prov} if prov is not None else {}
 
 
 def _document_prompt_prefix(rag_result) -> str:
@@ -3564,7 +3597,8 @@ async def upload_doc(
     user: User | None = Depends(get_current_user_optional),
 ):
     """Upload a document for RAG — extract, chunk, embed, and store."""
-    from orca.docs import validation as _val
+    from orca.docs import validation as _val, safe_extract as _safe_extract
+    from orca.docs.store import DocLimitExceeded, find_doc_by_sha
 
     ratelimit.enforce(request, ratelimit.DOC_UPLOAD, extra_key="doc_upload")
     # L02-02: ownership / liveness of the conversation is decided BEFORE a byte of the file is read or parsed (a stranger or a deleted conversation must
@@ -3587,8 +3621,35 @@ async def upload_doc(
     except _val.UploadRejected as e:
         return JSONResponse({"error": str(e), "code": e.code}, status_code=e.status)
 
+    import hashlib
+    sha = hashlib.sha256(data).hexdigest()
+    dup = find_doc_by_sha(sess.id, sha)
+    if dup is not None:                                    # the same bytes are already in this conversation: no second copy, no second charge of indexing work
+        return {"doc_id": dup["doc_id"], "filename": dup["filename"], "chunks": dup.get("chunk_count", 0), "size_bytes": dup.get("size_bytes", len(data)),
+                "session_id": sess.id, "duplicate": True}
+    if user is not None:
+        used_docs, used_bytes = _user_doc_usage(user.id)
+        if used_docs >= _val.MAX_DOCS_PER_USER or used_bytes + len(data) > _val.MAX_BYTES_PER_USER:
+            return JSONResponse({"error": "You have reached your document storage limit. Delete some documents to upload more.", "code": "storage_quota_exceeded"}, status_code=413)
     try:
-        text = await asyncio.to_thread(extract, filename, data)
+        if Path(filename).suffix.lower() in _safe_extract.CONTAINER_EXT:
+            text = await _safe_extract.extract_isolated(filename, data)         # PDF/DOCX parsers run in a bounded child process
+        else:
+            text = await asyncio.to_thread(extract, filename, data)
+    except _val.UploadRejected as e:
+        return JSONResponse({"error": str(e), "code": e.code}, status_code=e.status)
+    except _safe_extract.ExtractUnavailable as e:
+        return JSONResponse(
+            public_error(ImportError("extractor"), route="/api/docs/upload", user_id=user.id if user else None, code="extractor_unavailable",
+                         message="This file type isn't supported on this deployment.").as_json(),
+            status_code=422,
+        )
+    except _safe_extract.ExtractFailed as e:
+        return JSONResponse(
+            public_error(e, route="/api/docs/upload", user_id=user.id if user else None, code="extraction_failed",
+                         message="This file could not be read.").as_json(),
+            status_code=422,
+        )
     except ValueError as e:
         # The extractor raises ValueError only for caller-fixable input
         # problems ("Unsupported file type: .xyz"); that text is safe and useful.
@@ -3630,7 +3691,15 @@ async def upload_doc(
     stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
     if stored <= 0:
         return JSONResponse({"error": "This document could not be indexed.", "code": "index_failed"}, status_code=500)
-    register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data))
+    try:
+        entry = register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data), sha256=sha, max_docs=_val.MAX_DOCS_PER_SESSION)
+    except DocLimitExceeded:
+        await asyncio.to_thread(sess.doc_store.delete_doc_detailed, doc_id)           # the chunks just written belong to nothing: remove them
+        return JSONResponse({"error": f"This conversation already has {_val.MAX_DOCS_PER_SESSION} documents. Delete one to add another.", "code": "too_many_documents"}, status_code=422)
+    if entry["doc_id"] != doc_id:                                                   # a concurrent identical upload won the registry: drop our duplicate chunks
+        await asyncio.to_thread(sess.doc_store.delete_doc_detailed, doc_id)
+        return {"doc_id": entry["doc_id"], "filename": entry["filename"], "chunks": entry.get("chunk_count", 0), "size_bytes": entry.get("size_bytes", len(data)),
+                "session_id": sess.id, "duplicate": True}
 
     audit.log("doc_upload", user_id=user.id if user else None,
               detail={"filename": filename, "chunks": stored, "bytes": len(data),
