@@ -1,7 +1,7 @@
 {
   "manifest_version": "3.1.0",
   "qualification_landmark": "LANDMARK-01-B01",
-  "timestamp": "2026-10-29T09:50:44.067149+00:00",
+  "timestamp": "2026-10-29T10:12:27.851586+00:00",
   "authority": "Antigravity \u2014 Independent Qualification Authority",
   "candidate": {
     "pr": 136,
@@ -16,7 +16,7 @@
   "harness": {
     "pr": 133,
     "worktree": "/home/pc/projects/Orneur",
-    "head_sha": "d9d5fb816bdf67a6d96a75f8c37d6e4b85c138e6",
+    "head_sha": "0fb6cbe8a983b6329fc5f32a7fa955f1c99f1fa9",
     "branch": "antigravity/qualification-landmark-01",
     "clean": true
   },
@@ -27,7 +27,7 @@
         "passed": 67,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 3.924,
+        "duration_s": 4.871,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest /home/pc/projects/Orneur/tests/qualification/test_independent_adversarial_dlp.py -v -p no:cacheprovider"
       },
@@ -36,7 +36,7 @@
         "passed": 21,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 2.246,
+        "duration_s": 2.292,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_raw_delta_lifecycle.py -v -p no:cacheprovider"
       },
@@ -45,7 +45,7 @@
         "passed": 2,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 15.888,
+        "duration_s": 16.727,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_stream_cleanup.py -v -p no:cacheprovider"
       },
@@ -54,7 +54,7 @@
         "passed": 43,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 1.15,
+        "duration_s": 1.252,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_stream_dlp_equivalence.py -v -p no:cacheprovider"
       },
@@ -63,7 +63,7 @@
         "passed": 12,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 11.17,
+        "duration_s": 11.393,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_canonical_quota_admission.py -v -p no:cacheprovider"
       },
@@ -72,7 +72,7 @@
         "passed": 8,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 8.907,
+        "duration_s": 9.335,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/test_b01_refusal_protocol.py -v -p no:cacheprovider"
       },
@@ -81,7 +81,7 @@
         "passed": 17,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 22.345,
+        "duration_s": 22.92,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_streaming_live.py -v -p no:cacheprovider"
       },
@@ -90,7 +90,7 @@
         "passed": 11,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 40.187,
+        "duration_s": 42.175,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_journey_concurrency_live.py -v -p no:cacheprovider"
       },
@@ -99,7 +99,7 @@
         "passed": 1,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 24.445,
+        "duration_s": 24.395,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_cancel_race_live.py -v -p no:cacheprovider"
       },
@@ -108,7 +108,7 @@
         "passed": 15,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 55.275,
+        "duration_s": 55.586,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_browser_streaming.py -k fixture -v -p no:cacheprovider"
       },
@@ -117,7 +117,7 @@
         "passed": 2,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 14.7,
+        "duration_s": 18.577,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_real_ollama_live.py -v -p no:cacheprovider"
       },
@@ -126,7 +126,7 @@
         "passed": 11,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 27.337,
+        "duration_s": 28.907,
         "exit_code": 0,
         "command": "/home/pc/projects/Orneur/.venv/bin/python -m pytest tests/journey/test_b01_browser_streaming.py -k real -v -p no:cacheprovider"
       },
@@ -135,7 +135,7 @@
         "passed": 89,
         "failed": 0,
         "skipped": 0,
-        "duration_s": 0.157,
+        "duration_s": 0.176,
         "exit_code": 0,
         "command": "/home/pc/projects/.journey-tools/node-v22.11.0-linux-x64/bin/node --test tests/frontend/test_active_conversation.mjs tests/frontend/test_b01_stop_upstream.mjs tests/frontend/test_b11_inline_edit.mjs tests/frontend/test_logout_revocation.mjs tests/frontend/test_sse_diagnostics.mjs tests/frontend/test_view_ownership_epoch.mjs"
       }
@@ -143,7 +143,8 @@
     "total_qualification_tests_executed": 299,
     "total_qualification_tests_passed": 299,
     "total_qualification_tests_failed": 0,
-    "total_qualification_tests_skipped": 0
+    "total_qualification_tests_skipped": 0,
+    "overall_status": "QUALIFIED"
   },
   "blocker_register_status": {
     "p0_outstanding": 0,
