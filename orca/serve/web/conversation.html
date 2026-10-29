@@ -1876,18 +1876,11 @@ function updateSendEnabled() {
   btn.classList.toggle('disabled', !canSend);
 }
 
-// AUDIT-B10: honest scope, stated plainly -- this stops the BROWSER from
-// reading further bytes (the exact same _abandonActiveStream() already
-// used internally when switching conversations/accounts). It does NOT
-// confirm the backend itself stopped generating or running tools: the
-// current /api/stream handler has no observed request.is_disconnected()
-// check or dedicated cancel endpoint with a server-acknowledged terminal
-// state (grepped; none found), so per the B10 contract's own explicit
-// instruction -- "A mere HTTP 200 on a cancel request acceptance is not
-// proof work stopped" / "never claim 'Stopped'" when backend cancellation
-// isn't guaranteed -- the resulting UI state reuses the existing, already
-// honest "interrupted" badge/note rather than inventing a confirmed-
-// "Stopped" label this interface cannot actually back up.
+// AUDIT-B10 (updated for LANDMARK-01 B-01): Stop always ends the browser's own read immediately (_abandonActiveStream). What it may SAY about the
+// server depends on what the server announced for THIS request:
+//   - {type:'stream', delivery:'upstream', cancellable:true}: real model tokens were arriving; closing the connection makes /api/stream cancel the model
+//     call, release the turn and not commit the turn, so the message says the connection was closed and the partial reply was not saved.
+//   - anything else (frontier passthrough, a replayed answer, no stream event yet): the old, deliberately modest wording - no confirmed stop is claimed.
 async function stopGeneration() {
   if (!isStreaming) return;
   const container = document.getElementById('reading-container');

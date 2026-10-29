@@ -365,3 +365,85 @@ async def test_real_kernel_stop_mid_stream_stops_the_provider_early(kernel_stack
     emitted = len(got)
     await asyncio.sleep(0.2)
     assert run.channel.delivered == emitted and run.done, "nothing more may be produced after Stop"
+
+
+# ---- the Truth-Fabric draft is never streamed, redaction precedes memory ingestion ---------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_truth_fabric_draft_tokens_never_reach_the_raw_delta_hook(kernel_stack, monkeypatch):
+    """A Truth-Fabric answer is only a DRAFT until verify_answer() accepts it (it may still abstain). Streaming its tokens would show unverified text, so the
+    Kernel withholds the hooks for that call: the answer is delivered whole, after verification (and the API labels it a replay, truthfully)."""
+    from types import SimpleNamespace
+
+    from orca.cognitive import kernel as kernel_mod
+    from orca.truth.contracts import EvidenceState
+
+    kernel, runtime, _gw = kernel_stack
+    seen = []
+    real = kernel_mod.CognitiveKernel._answer_directly
+
+    async def spy(self, objective, tier, trace_id, request=None, route_info=None):
+        seen.append(request)
+        return await real(self, objective, tier, trace_id, request=request, route_info=route_info)
+
+    class FakeFabric:
+        async def assess_evidence(self, *a, **k):
+            return SimpleNamespace(evidence_state=EvidenceState.SUFFICIENT, context_block="", evidence=[], sources=[])
+
+        async def verify_answer(self, text, assessed, **k):
+            return SimpleNamespace(evidence_state=EvidenceState.SUFFICIENT, citation_coverage={}, counter_evidence=None, sources=[], evidence=[], claims=[])
+
+    monkeypatch.setattr(kernel_mod.CognitiveKernel, "_answer_directly", spy)
+    monkeypatch.setattr("orca.truth.truth_fabric.TruthFabric", FakeFabric)
+    delivered: list[str] = []
+
+    async def hook(delta):
+        delivered.append(delta)
+
+    result = await kernel.execute(CognitiveRequest(objective="Who won the 2022 world cup? cite your sources", on_raw_delta=hook))
+    assert result.status == CognitiveState.COMPLETED and result.evidence_state is not None, "this prompt must take the Truth Fabric branch"
+    assert result.output == "Hello world"
+    assert delivered == [], "draft tokens were handed to the raw-delta hook before verification"
+    assert len(seen) == 1 and seen[0].on_raw_delta is None and seen[0].on_served is None
+    assert runtime.stream_calls == 0 and runtime.generate_calls == 1, "the draft is generated whole (non-streaming)"
+
+
+@pytest.mark.asyncio
+async def test_on_served_is_announced_once_with_the_resolved_deployment_before_the_first_delta(kernel_stack):
+    kernel, runtime, _gw = kernel_stack
+    order: list[tuple[str, object]] = []
+
+    async def served(info):
+        order.append(("served", dict(info)))
+
+    async def delta(d):
+        order.append(("delta", d))
+
+    result = await kernel.execute(CognitiveRequest(objective="Say hello.", on_raw_delta=delta, on_served=served))
+    assert [k for k, _ in order].count("served") == 1 and order[0][0] == "served", order
+    info = order[0][1]
+    assert info["model"] == "fixture-llama3.2:1b" == result.resolved_model and info["tier"] == result.resolved_tier
+    assert info["deployment_id"] == "dep-b01-fixture" and info["runtime"] == "fake" and info["degraded"] is False
+
+
+@pytest.mark.asyncio
+async def test_working_memory_ingestion_receives_the_redacted_answer_not_the_raw_one(kernel_stack, monkeypatch):
+    kernel, runtime, _gw = kernel_stack
+    secret = "sk-" + "a1B2c3D4e5F6g7H8i9J0k1L2"
+    runtime.chunks = [f"your key is {secret} ok"]
+    ingested = []
+
+    def spy_ingest(session_id, objective, output_text):
+        ingested.append(output_text)
+        return None
+
+    monkeypatch.setattr("orca.memory.turn_ingest.maybe_ingest_turn", spy_ingest)
+    for hook in (None, (lambda d: _noop(d))):
+        ingested.clear()
+        result = await kernel.execute(CognitiveRequest(objective="what is my key", session_id="wm-redaction", on_raw_delta=hook))
+        assert secret in result.output, "the Kernel's own result is raw by contract; callers must redact"
+        assert ingested and secret not in ingested[0] and "REDACTED" in ingested[0]
+
+
+async def _noop(delta):
+    return None
