@@ -1,0 +1,92 @@
+[
+  {
+    "path": "Kernel abstains (policy / evidence / budget / model unavailable)",
+    "http_status": 200,
+    "body": "sse",
+    "code": "request_abstained",
+    "event": "error"
+  },
+  {
+    "path": "conversation busy (another turn holds it)",
+    "http_status": 200,
+    "body": "sse",
+    "code": "session_busy",
+    "event": "error"
+  },
+  {
+    "path": "conversation owned by another account",
+    "http_status": 404,
+    "body": "json",
+    "code": "session_not_found"
+  },
+  {
+    "path": "daily quota exhausted",
+    "http_status": 200,
+    "body": "sse",
+    "code": "quota_exceeded",
+    "event": "error"
+  },
+  {
+    "path": "durable store unavailable",
+    "http_status": 200,
+    "body": "sse",
+    "code": "history_unavailable",
+    "event": "error"
+  },
+  {
+    "path": "image/video generation intent (not available yet)",
+    "http_status": 200,
+    "body": "sse",
+    "code": "lens_not_available",
+    "event": "error"
+  },
+  {
+    "path": "input moderation block",
+    "http_status": 200,
+    "body": "sse",
+    "code": "content_refused",
+    "event": "error"
+  },
+  {
+    "path": "invalid / expired / revoked bearer",
+    "http_status": 401,
+    "body": "json",
+    "code": "auth_required"
+  },
+  {
+    "path": "model access denied (tier not on the plan)",
+    "http_status": 200,
+    "body": "sse",
+    "code": "model_access_denied",
+    "event": "error"
+  },
+  {
+    "path": "provider failure AFTER output (truncated generation)",
+    "http_status": 200,
+    "body": "sse",
+    "code": "backend_error",
+    "event": "error",
+    "quota": "spent (established policy)",
+    "persisted": false
+  },
+  {
+    "path": "provider failure BEFORE any output",
+    "http_status": 200,
+    "body": "sse",
+    "code": "backend_error",
+    "event": "error",
+    "quota": "refunded"
+  },
+  {
+    "path": "rate limit (60/min/IP)",
+    "http_status": 429,
+    "body": "json",
+    "code": "rate_limited"
+  },
+  {
+    "path": "temporary chat closed / expired",
+    "http_status": 409,
+    "body": "json",
+    "code": "temporary_closed"
+  }
+]

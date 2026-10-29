@@ -58,7 +58,7 @@ def test_B1_new_conversation_streams_a_real_ollama_answer(server, alice, tap):
     arrival = []
     import json, uuid
     with alice.http.stream("POST", "/api/stream", headers={**alice.headers, "Idempotency-Key": str(uuid.uuid4())},
-                           json={"message": "Name three colours, comma separated.", "session_id": None, "model_variant": "core"}) as r:
+                           json={"message": "Write about 80 words describing the sea.", "session_id": None, "model_variant": "core"}) as r:
         assert r.status_code == 200, r.read()
         events = []
         for line in r.iter_lines():
@@ -69,15 +69,14 @@ def test_B1_new_conversation_streams_a_real_ollama_answer(server, alice, tap):
     assert kinds[0] == "session" and "generation" in kinds, kinds
     chunks = [i for i, k in enumerate(kinds) if k == "chunk"]
     assert kinds[-1] == "done", f"stream did not end with a real done event: {kinds[-3:]}\n{server.log_tail(15)}"
+    # B-01 closed: the DEFAULT path streams the model's own tokens. No "replayed" fallback is accepted any more.
     delivery = next(e for e in events if e["type"] == "stream")
-    if delivery["delivery"] == "upstream":
-        assert len(chunks) >= 2, f"upstream delivery must be incremental: {kinds}"
-        assert arrival[chunks[-1]] > arrival[chunks[0]], "all chunks arrived at once: not streamed"
-    else:
-        # The Cognitive Kernel answers plain chat through the NON-streaming ModelGateway.generate(); the product says so rather than
-        # faking typing: one chunk, labelled replayed, not cancellable. (Incremental delivery is proven by the controlled fixture test.)
-        assert delivery == {"type": "stream", "delivery": "replayed", "cancellable": False}, delivery
-        assert len(chunks) == 1 and events[chunks[0]].get("replayed") is True, kinds
+    assert delivery == {"type": "stream", "delivery": "upstream", "cancellable": True}, delivery
+    assert not any(e.get("replayed") for e in events)
+    assert len(chunks) >= 3, f"upstream delivery must be incremental: {kinds}"
+    assert arrival[chunks[-1]] - arrival[chunks[0]] > 0.2, "all chunks arrived at once: not streamed"
+    assert arrival[chunks[0]] < arrival[-1] - 0.2, "the first chunk only arrived with the end of the stream"
+    assert events[-1]["delivery"] == "upstream" and events[-1]["persisted"] == "saved"
     assert answer_of(events).strip()
     assert len(tap.requests) > before, "no request reached Ollama: this was not a real model answer"
     ident = next(e for e in events if e["type"] == "model")["identity"]
@@ -343,7 +342,51 @@ def test_E3_edit_on_server_B_is_seen_by_server_A_with_real_redis(two_servers, ta
 
 def test_B1b_controlled_multichunk_provider_is_delivered_incrementally(tmp_path_factory):
     """LIVE_API + FIXTURE provider. A short real model answer can legitimately arrive as one chunk, so incremental delivery is proven with a provider
-    that emits 6 chunks 0.4s apart. A loaded document routes the turn through the AgentLoop (genuinely upstream-streamed) path."""
+    that emits 6 chunks 0.4s apart. PLAIN chat (no document): since the B-01 integration the Kernel's own gateway deltas are what is forwarded."""
+    import json
+    import uuid
+
+    import httpx
+
+    from tests.fake_ollama import FakeOllama
+    from tests.journey.harness import JOURNEY_MODEL, LiveServer, User
+
+    pieces = [f"piece{i} " for i in range(6)]
+    fake = FakeOllama(models=(JOURNEY_MODEL,), chunks=pieces, reply="".join(pieces), chunk_delay=0.4)
+    with fake:
+        home = tmp_path_factory.mktemp("journey-fixture-home")
+        srv = LiveServer(home, extra_env={"ORNEUR_OLLAMA_HOST": fake.host, "OLLAMA_HOST": fake.host})
+        try:
+            srv.wait_ready()
+            u = User(srv.base, "fixture")
+            sid = str(uuid.uuid4())
+            t0 = time.time()
+            arrival, events = [], []
+            with u.http.stream("POST", "/api/stream", headers=u.headers,
+                               json={"message": "hi", "session_id": sid, "model_variant": "core"}) as r:
+                assert r.status_code == 200
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        events.append(json.loads(line[6:]))
+                        arrival.append(time.time() - t0)
+            kinds = [e["type"] for e in events]
+            assert next(e for e in events if e["type"] == "stream")["delivery"] == "upstream", kinds
+            idx = [i for i, k in enumerate(kinds) if k == "chunk"]
+            assert len(idx) >= 4, f"expected the provider's chunks to be forwarded individually: {kinds}"
+            spread = arrival[idx[-1]] - arrival[idx[0]]
+            assert spread >= 1.2, f"chunks arrived together ({spread:.2f}s spread): the stream was buffered, not incremental"
+            assert "".join(e["text"] for e in events if e["type"] == "chunk") == "".join(pieces)
+            assert kinds[-1] == "done"
+        finally:
+            srv.stop()
+
+
+# ------------------------------------------------ E5: the canary challenge, asserted on the bytes the model was actually sent
+
+
+def test_B1c_document_session_is_still_streamed_upstream_through_the_agent_loop(tmp_path_factory):
+    """LIVE_API + FIXTURE provider. A short real model answer can legitimately arrive as one chunk, so incremental delivery is proven with a provider
+    that emits 6 chunks 0.4s apart. A loaded document routes the turn through the AgentLoop path (the Kernel's draft would be discarded for RAG - B-06), which was always upstream-streamed and must stay so."""
     import json
     import uuid
 

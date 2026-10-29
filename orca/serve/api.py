@@ -920,7 +920,11 @@ _ABSTENTION_MESSAGES = {
 }
 
 
-async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None, session_id: str | None = None):
+_KERNEL_DOCS_DEFAULT = object()      # "look the doc store up the way the Kernel always has" (see _run_cognitive_kernel)
+
+
+async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None, session_id: str | None = None, *,
+                                doc_store=_KERNEL_DOCS_DEFAULT, on_raw_delta=None, on_served=None):
     """
     Phase 3.1: the Cognitive Kernel is now AUTHORITATIVE for planning and,
     where possible, execution of /api/chat and /api/stream requests (see
@@ -969,9 +973,11 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
                 c for c in entitlement.allowed_model_classes if class_rank(c) <= class_rank(requested_class)
             }
 
+    # LANDMARK-01 B-01: ``on_raw_delta`` / ``on_served`` are the Kernel's INTERNAL raw-stream hooks (orca.cognitive.streaming). Only
+    # /api/stream passes them, and only to a consumer that runs every delta through StreamRedactor. /api/chat never does.
     cognitive_request = CognitiveRequest(
         objective=message, session_id=session_id, requested_mode=model_variant,
-        tenant=user.id if user else None,
+        tenant=user.id if user else None, on_raw_delta=on_raw_delta, on_served=on_served,
     )
 
     # Phase 4: a lightweight lookup into the existing module-level
@@ -981,7 +987,8 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
     # ALREADY-LIVE session's DocStore is used; a brand-new session simply
     # has no doc_store yet, which TruthFabric already handles honestly
     # (no evidence found, not a fabricated citation).
-    doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
+    if doc_store is _KERNEL_DOCS_DEFAULT:
+        doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
     return await kernel.execute(cognitive_request, entitlement=entitlement, doc_store=doc_store)
 
 
@@ -2089,7 +2096,41 @@ async def stream_chat(
             _release_all()
 
     response.body_iterator = _releasing_iterator()
-    return response
+    return _ReleasingStreamingResponse(response, _release_all)
+
+
+class _ReleasingStreamingResponse(StreamingResponse):
+    """A StreamingResponse that ALWAYS runs ``release`` when the ASGI call ends.
+
+    The generator wrapper above releases the quota reservation, turn authority and idempotency slot in its ``finally`` - but an async generator that was never
+    started has no ``finally`` to run. A client that disconnects before the first body byte makes Starlette cancel ``stream_response`` before it iterates the body,
+    which stranded the quota keepalive and the authority heartbeat (the conversation then looked busy and the reservation kept being renewed). Releasing here
+    covers that case; every release is idempotent, so the common path is unchanged."""
+
+    def __init__(self, inner: "StreamingResponse", release):
+        super().__init__(inner.body_iterator, status_code=inner.status_code, media_type=inner.media_type, background=inner.background)
+        self.raw_headers = inner.raw_headers
+        self._release = release
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._release()
+
+
+def _abstained_stream(cognitive_result, user):
+    """The SSE body for a turn the Kernel declined (same wording whether it declined before or while streaming)."""
+    audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
+        "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
+    })
+    reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
+    _a = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
+                     reason=(reason_key or "UNSPECIFIED").lower())
+
+    async def _abstain_stream():
+        yield f"data: {json.dumps(_a.as_sse())}\n\n"
+    return _abstain_stream()
 
 
 async def _stream_dispatch(
@@ -2157,27 +2198,6 @@ async def _stream_dispatch(
                 yield f"data: {json.dumps(_busy.as_sse())}\n\n"
             return StreamingResponse(_busy_err(), media_type="text/event-stream")
 
-    try:
-        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
-    except Exception as e:
-        code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
-        audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
-        _f = public_error(e, route="/api/stream", user_id=user.id if user else None)
-        async def _fail_stream():
-            yield f"data: {json.dumps(_f.as_sse())}\n\n"
-        return StreamingResponse(_fail_stream(), media_type="text/event-stream")
-
-    if cognitive_result.status == CognitiveState.ABSTAINED:
-        audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
-            "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
-        })
-        reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
-        _a = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
-                         reason=(reason_key or "UNSPECIFIED").lower())
-        async def _abstain_stream():
-            yield f"data: {json.dumps(_a.as_sse())}\n\n"
-        return StreamingResponse(_abstain_stream(), media_type="text/event-stream")
-
     # Cost-aware escalation — same resolution + routing decision /api/chat
     # applies, checked here too since /api/stream was the one live-chat path
     # that always talked to the local Ollama model regardless of operator
@@ -2185,9 +2205,56 @@ async def _stream_dispatch(
     # construction: the frontier branch below doesn't touch the
     # Ollama-specific _Session/AgentLoop machinery at all, matching
     # /api/chat's frontier-passthrough path.
-    backend_resolution = _resolve_backend_for_chat(req.model_variant)
-    backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
-    _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
+    #
+    # LANDMARK-01 B-01: this now happens BEFORE the Kernel runs, because the answer to "can the Kernel's tokens be streamed to the browser as
+    # they are generated?" depends on it. Streaming needs (a) the local Ollama backend (frontier backends are synchronous passthroughs)
+    # and (b) a session with no loaded documents (a document session may discard the Kernel's draft for the RAG pipeline - B-06 - and the
+    # Kernel withholds its raw tokens for Truth-Fabric drafts, which are unverified until the Kernel finishes).
+    try:
+        backend_resolution = _resolve_backend_for_chat(req.model_variant)
+        backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+    except Exception:
+        # No usable backend for the tier. The Kernel used to run first and answer this with a clean "model unavailable" abstention, so keep
+        # that order: run it, and resolve again afterwards exactly as before (raising then only if the Kernel did not already decline).
+        backend_resolution = routing_decision = None
+
+    sess = None
+    cognitive_result = None
+    stream_kernel = False
+    kernel_doc_store = _KERNEL_DOCS_DEFAULT
+    if backend_resolution is not None and backend_resolution.backend == "ollama":
+        # What the Kernel has always been given: the doc store of an ALREADY-LIVE session, never one built just for it.
+        kernel_doc_store = _sessions[req.session_id].doc_store if req.session_id and req.session_id in _sessions else None
+        sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
+        blocked = _temporary_block(sess.id)
+        if blocked is not None:
+            return blocked
+        stream_kernel = sess.doc_store.count() == 0
+
+    if not stream_kernel:
+        try:
+            # (callers and tests substitute this function; keep its original call shape unless a doc store must be passed explicitly)
+            _kernel_kw = {} if kernel_doc_store is _KERNEL_DOCS_DEFAULT else {"doc_store": kernel_doc_store}
+            cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id, **_kernel_kw)
+        except Exception as e:
+            code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
+            audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
+            _f = public_error(e, route="/api/stream", user_id=user.id if user else None)
+            async def _fail_stream():
+                yield f"data: {json.dumps(_f.as_sse())}\n\n"
+            return StreamingResponse(_fail_stream(), media_type="text/event-stream")
+
+        if cognitive_result.status == CognitiveState.ABSTAINED:
+            return StreamingResponse(_abstained_stream(cognitive_result, user), media_type="text/event-stream")
+        _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
+        if backend_resolution is None:
+            backend_resolution = _resolve_backend_for_chat(req.model_variant)
+            backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+            if backend_resolution.backend == "ollama":
+                sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
+                blocked = _temporary_block(sess.id)
+                if blocked is not None:
+                    return blocked
 
     if backend_resolution.backend != "ollama":
         persona_system = get_persona_system(backend_resolution.tier)
@@ -2252,12 +2319,12 @@ async def _stream_dispatch(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
-    blocked = _temporary_block(sess.id)
-    if blocked is not None:
-        return blocked
-    mem_ctx = sess.memory.recall_context(req.message, n=3)
-    enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
+    # (the session was built and checked above, before the Kernel ran)
+    def _enrich(message: str) -> str:
+        mem_ctx = sess.memory.recall_context(message, n=3)
+        return f"[Relevant memory]\n{mem_ctx}\n\n{message}" if mem_ctx else message
+
+    enriched = None if stream_kernel else _enrich(req.message)      # a streamed turn only needs it if the Kernel defers to the agent loop
 
     # Kernel's direct-answer path is used whenever the Kernel actually
     # produced an answer -- either because this session has no loaded
@@ -2275,10 +2342,10 @@ async def _stream_dispatch(
     # every session that had any document loaded -- exactly backwards,
     # since that is precisely when Truth Fabric's evidence grounding
     # matters most.
-    if cognitive_result.output is not None:
+    if cognitive_result is not None and cognitive_result.output is not None:
         # The Kernel already ran the model: the unit is spent even if the client never reads the stream.
         _consume_message_quota(user, request)
-    use_kernel_direct = cognitive_result.output is not None and (
+    use_kernel_direct = cognitive_result is not None and cognitive_result.output is not None and (
         sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None
     )
 
@@ -2318,18 +2385,100 @@ async def _stream_dispatch(
             return
         ta = request.state.turn_authority
         fence = ta.fence
-        identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
+        nonlocal cognitive_result, use_kernel_direct, enriched
+        identity = None if stream_kernel else _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
+        full = ""
+        tool_names: list[str] = []
+        plan_action = "direct"
+        delivery = "upstream"
+        streamed_upstream = False
+        kernel_run = None
         try:
-            yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
+            if stream_kernel:
+                # LANDMARK-01 B-01: the Kernel runs CONCURRENTLY with this response. Authentication, ownership, entitlement, moderation, atomic
+                # quota admission and the turn authority were all settled before this generator was created; only now is the model called.
+                from orca.cognitive.streaming import ConsumerGone, KernelRun
+                from orca.serve.stream_dlp import StreamRedactor
+
+                served: dict = {}
+
+                async def _remember_served(info: dict) -> None:
+                    served.update(info)
+
+                kernel_run = KernelRun(lambda hook: _run_cognitive_kernel(
+                    req.message, user, req.model_variant, session_id=sess.id, doc_store=kernel_doc_store,
+                    on_raw_delta=hook, on_served=_remember_served,
+                )).start()
+                redactor = StreamRedactor()
+                raw_kernel_text = ""
+                try:
+                    async with contextlib.aclosing(kernel_run.deltas(is_gone=request.is_disconnected)) as raw_deltas:
+                        async for raw_delta in raw_deltas:
+                            _consume_message_quota(user, request)       # the first model output spends the unit; a later Stop must not refund it
+                            if not streamed_upstream:
+                                streamed_upstream = True
+                                # Proven by the data: a real gateway delta has arrived, so this IS an upstream stream and closing the connection
+                                # cancels it. (Never announced earlier, when the Kernel might still defer or abstain.) The served model is named from
+                                # what the gateway resolved for this very call (`on_served`), in the established order: model, stream, chunks.
+                                early = _model_identity(requested_variant=req.model_variant, served_tier=served.get("tier"), served_model=served.get("model"),
+                                                        reason="entitlement_limit" if served.get("degraded") else None, viewer_user_id=user.id if user else None)
+                                yield f"data: {json.dumps({'type': 'model', 'identity': early})}\n\n"
+                                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                            raw_kernel_text += raw_delta
+                            safe_delta = redactor.push(raw_delta)
+                            if safe_delta:
+                                full += safe_delta
+                                yield f"data: {json.dumps({'type': 'chunk', 'text': safe_delta})}\n\n"
+                            if await request.is_disconnected():
+                                raise ConsumerGone()
+                    cognitive_result = await kernel_run.result()
+                except ConsumerGone:
+                    redactor.cancel()
+                    audit.log("stream_client_disconnected", user_id=user.id if user else None, detail={"chars_sent": len(full), "phase": "kernel_stream"})
+                    return
+                except Exception as e:
+                    redactor.cancel()
+                    code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
+                    audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code, "after_output": streamed_upstream})
+                    yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
+                    return
+
+                if cognitive_result.status == CognitiveState.ABSTAINED:
+                    redactor.cancel()
+                    async for part in _abstained_stream(cognitive_result, user):
+                        yield part
+                    return
+                _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
+                use_kernel_direct = cognitive_result.output is not None
+                if cognitive_result.output is not None:
+                    _consume_message_quota(user, request)
+                if streamed_upstream and (not use_kernel_direct or cognitive_result.output != raw_kernel_text):
+                    # Deltas reached the client but the Kernel's completed answer is not the text they added up to: refuse to call that a turn.
+                    redactor.cancel()
+                    audit.log("stream_integrity_failure", user_id=user.id if user else None, detail={"session_id": sess.id})
+                    yield f"data: {json.dumps(coded_error('internal_error').as_sse())}\n\n"
+                    return
+                if streamed_upstream:
+                    tail = redactor.finish()
+                    if tail:
+                        full += tail
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': tail})}\n\n"
+                    full = redactor.safe_text() or full           # what the client saw is exactly what is stored and later fed back to the model
+                if enriched is None and not use_kernel_direct:
+                    enriched = _enrich(req.message)
+                identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
+                if streamed_upstream and identity != early:
+                    audit.log("model_identity_corrected", user_id=user.id if user else None, detail={"session_id": sess.id})
+                    yield f"data: {json.dumps({'type': 'model', 'identity': identity, 'corrected': True})}\n\n"
+
+            if not streamed_upstream:
+                yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
             if rag_result and rag_result.sources:
                 yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
 
-            full = ""
-            tool_names: list[str] = []
-            plan_action = "direct"
-            delivery = "upstream"
-
-            if use_kernel_direct:
+            if streamed_upstream:
+                plan_action = "cognitive_direct"
+            elif use_kernel_direct:
                 plan_action = "cognitive_direct"
                 delivery = "replayed"
                 # The Kernel's answer is complete here, so it is scanned as one text BEFORE it is sent or stored: what the client sees,
@@ -2345,7 +2494,7 @@ async def _stream_dispatch(
             else:
                 try:
                     gen, trace = await asyncio.to_thread(
-                        lambda: sess.agent.stream(enriched, persona_system)
+                        lambda: sess.agent.stream(enriched if enriched is not None else _enrich(req.message), persona_system)
                     )
                     # Send tool activity if any
                     if trace.plan_action == "tools":
@@ -2458,7 +2607,13 @@ async def _stream_dispatch(
                 _idem_complete_stream(request, sess.id, full, _done_event)     # a turn that was NOT saved is not cached: a retry must be a real retry
             yield f"data: {json.dumps(_done_event)}\n\n"
         finally:
-            _release_turn(request)
+            # The Kernel task is always awaited to completion here (cancelled first if it is still running), so no producer, gateway
+            # iterator or channel waiter outlives the request; the turn authority is released even if that wait is itself cancelled.
+            try:
+                if kernel_run is not None:
+                    await kernel_run.aclose()
+            finally:
+                _release_turn(request)
 
     return StreamingResponse(
         _event_stream(),

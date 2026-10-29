@@ -87,7 +87,7 @@ def cluster(tmp_path_factory):
     """FIXTURE provider + two ORNEUR workers (shared home, shared real Redis, short turn timings so a hung-worker takeover takes seconds)."""
     client = _redis()
     _scrub_redis(client)
-    fake = FakeOllama(models=(JOURNEY_MODEL,), reply="FIXTURE-ANSWER", chunks=("FIXTURE-", "ANSWER"))
+    fake = FakeOllama(models=(JOURNEY_MODEL,), reply="FIXTURE-ANSWER")       # (the streamed pieces follow `reply` unless a test sets `chunks`)
     fake.__enter__()
     home = tmp_path_factory.mktemp("cluster-home")
     env = {
@@ -110,11 +110,15 @@ def cluster(tmp_path_factory):
         fake.__exit__(None, None, None)
 
 
+def _reset_provider(fake: FakeOllama) -> None:
+    fake.pre_response_delay, fake.chunk_delay, fake._chunks, fake.reply = 0.0, 0.0, None, "FIXTURE-ANSWER"
+    fake.fail_status = fake.truncate_after = None
+
+
 def _fresh_user(cluster, label: str) -> User:
     u = User(cluster["a"].base, label)
     u.token_b = _login(cluster["b"].base, u)
-    cluster["fake"].pre_response_delay = 0.0
-    cluster["fake"].reply = "FIXTURE-ANSWER"
+    _reset_provider(cluster["fake"])
     return u
 
 
@@ -126,8 +130,7 @@ def shared_user(cluster):
 
 @pytest.fixture
 def user(cluster, shared_user):
-    cluster["fake"].pre_response_delay = 0.0
-    cluster["fake"].reply = "FIXTURE-ANSWER"
+    _reset_provider(cluster["fake"])
     return shared_user
 
 
@@ -347,7 +350,7 @@ def test_I2_secret_split_across_provider_chunks_never_reaches_wire_or_disk(clust
     try:
         ev = _events(user, {"message": "show keys", "session_id": sid})
     finally:
-        fake.chunks = ["FIXTURE-", "ANSWER"]
+        fake._chunks = None
     wire = json.dumps(ev)
     assert SECRET not in wire and AWS not in wire, "a credential split across chunks reached the browser"
     assert [e for e in ev if e["type"] == "done"][0]["persisted"] == "saved"
@@ -388,3 +391,87 @@ def test_G3_logout_all_on_one_worker_revokes_every_device_token_on_every_worker(
     assert len(cluster["fake"].requests) == before, "a revoked token caused a model dispatch"
     fresh = _login(a, u)
     assert httpx.get(f"{b}/api/auth/me", headers={"Authorization": f"Bearer {fresh}"}, timeout=30).status_code == 200
+
+
+# ------------------------------------------------------------------------------------------------ B-01: the streamed default path across workers
+
+def _stream_until(base: str, token: str, body: dict, *, stop_after_chunks: int | None = None, on_chunk=None):
+    """Stream from ``base``; call ``on_chunk(n)`` after each chunk and optionally hang up after ``stop_after_chunks``. Returns the events seen."""
+    events, n = [], 0
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": str(uuid.uuid4())}
+    with httpx.Client(base_url=base, timeout=180) as c:
+        with c.stream("POST", "/api/stream", json={"model_variant": "core", **body}, headers=headers) as r:
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    ev = json.loads(line[6:])
+                    events.append(ev)
+                    if ev["type"] == "chunk":
+                        n += 1
+                        if on_chunk:
+                            on_chunk(n)
+                        if stop_after_chunks and n >= stop_after_chunks:
+                            break
+    return events
+
+
+def test_S12_worker_stalled_MID_STREAM_cannot_commit_after_a_successor_took_over(cluster, user):
+    """B-01 / S12. Worker A is streaming real provider deltas to the client when it hangs (SIGSTOP) after the 2nd chunk. Its authority lapses, worker B takes
+    the conversation and commits, A resumes and finishes reading the provider. A must NOT commit (SQLite epoch fence), must tell its client the turn was not
+    saved, and the next prompt must be built from B's turn only."""
+    fake, a, b = cluster["fake"], cluster["a"], cluster["b"]
+    sid = str(uuid.uuid4())
+    fake.chunks, fake.chunk_delay = [f"A{i} " for i in range(14)], 0.5
+    result = {}
+
+    def stall(n):
+        if n == 2 and "stopped" not in result:
+            result["stopped"] = True
+            a.proc.send_signal(signal.SIGSTOP)                    # A hangs mid-stream: no heartbeat, no lease renewal
+
+    def run_a():
+        result["a"] = _stream_until(a.base, user.token, {"message": "mid stream question", "session_id": sid}, on_chunk=stall)
+
+    t = threading.Thread(target=run_a)
+    t.start()
+    for _ in range(100):
+        if result.get("stopped"):
+            break
+        time.sleep(0.1)
+    assert result.get("stopped"), "worker A never streamed two chunks"
+    try:
+        time.sleep(6.0)                                           # > SQLite authority TTL (3s) and Redis lease (4s)
+        fake.chunks = ["B-", "SUCCESSOR"]
+        on_b = _events(user, {"message": "successor question", "session_id": sid}, token=user.token_b, base=b.base)
+        done_b = [e for e in on_b if e["type"] == "done"]
+        assert done_b and done_b[0]["persisted"] == "saved", on_b
+    finally:
+        a.proc.send_signal(signal.SIGCONT)
+    t.join(timeout=90)
+    events_a = result["a"]
+    assert sum(e["type"] == "chunk" for e in events_a) >= 2, "A had streamed real chunks to its client before it stalled"
+    assert not any(e["type"] == "done" and e.get("persisted") == "saved" for e in events_a), f"the superseded streaming worker reported its turn as saved: {events_a[-3:]}"
+    assert any(e.get("code") == "turn_superseded" or (e["type"] == "done" and e.get("persisted") == "failed") for e in events_a), events_a[-3:]
+    assert _transcript(b.base, user.token_b, sid) == [("user", "successor question"), ("assistant", "B-SUCCESSOR")]
+    fake.chunks = ["RECOVERED"]
+    nxt = _events(user, {"message": "what do you remember?", "session_id": sid})
+    assert [e for e in nxt if e["type"] == "done"][0]["persisted"] == "saved", nxt
+    ctx = _answering_call(fake, "what do you remember?")
+    assert ctx and "successor question" in ctx and "B-SUCCESSOR" in ctx
+    assert "mid stream question" not in ctx and "A0 A1" not in ctx, f"the superseded turn leaked into the next prompt:\n{ctx}"
+
+
+def test_S5_Stop_on_one_worker_frees_the_conversation_for_the_other_worker_at_once(cluster, user):
+    fake, a, b = cluster["fake"], cluster["a"], cluster["b"]
+    sid = str(uuid.uuid4())
+    fake.chunks, fake.chunk_delay = [f"S{i} " for i in range(40)], 0.2
+    fake.stream_aborted.clear()
+    ev_a = _stream_until(a.base, user.token, {"message": "long one", "session_id": sid}, stop_after_chunks=3)
+    assert sum(e["type"] == "chunk" for e in ev_a) == 3
+    t0 = time.monotonic()
+    fake.chunks, fake.chunk_delay = ["PROMPT-", "OK"], 0.0
+    on_b = _events(user, {"message": "immediately on B", "session_id": sid}, token=user.token_b, base=b.base)
+    assert not any(e.get("code") == "session_busy" for e in on_b), "the other worker still saw the conversation as busy after Stop"
+    assert [e for e in on_b if e["type"] == "done"][0]["persisted"] == "saved"
+    assert time.monotonic() - t0 < 5
+    assert fake.stream_aborted.wait(5), "the provider was never told to stop"
+    assert _transcript(b.base, user.token_b, sid) == [("user", "immediately on B"), ("assistant", "PROMPT-OK")]

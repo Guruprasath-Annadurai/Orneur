@@ -32,16 +32,18 @@ _PEM_END = re.compile(r"-----END [A-Z ]*PRIVATE KEY-----")
 _PEM_MARKER = "PRIVATE KEY-----"
 _PEM_LEAD = "-----BEGIN "
 
-# Suffixes that are not yet a complete token/bearer/github secret but could become one.
-_INCOMPLETE_TOKEN = (
-    re.compile(r"(?:^|[^A-Za-z0-9])(s|sk|sk-|sk-[A-Za-z0-9]{1,19})$"),
-    re.compile(r"(?:^|[^A-Za-z0-9])(sk-ant-?[A-Za-z0-9-]{0,19})$"),
-    re.compile(r"(?:^|[^A-Za-z0-9])(A|AK|AKI|AKIA[0-9A-Z]{0,15})$"),
-    re.compile(r"(?:^|[^A-Za-z0-9])(B|Be|Bea|Bear|Beare|Bearer)$"),
-    re.compile(r"(?:^|[^A-Za-z0-9])(Bearer[\t ]+[A-Za-z0-9._-]{0,19})$"),
-    re.compile(r"(?:^|[^A-Za-z0-9])(g|gh|gh[pousr]|gh[pousr]_[A-Za-z0-9]{0,19})$"),
+# A secret that could still GROW or still be completed by the next delta. Matches only at a word boundary (a secret must start at one: the
+# patterns in orca.serve.dlp are ``\b``-anchored) and only when it reaches the end of the buffer, so ``keys`` ending in "s" is plain text while
+# ``... sk-a1B2`` / ``Bearer abc`` / a complete-but-unterminated ``sk-<24 chars>`` are all held until a character that ends them arrives.
+# (Holding a *complete* key until it is terminated is what keeps its last few characters from being released after the redaction marker.)
+_OPEN_TAIL = re.compile(
+    r"(?<![A-Za-z0-9_])(?:"
+    r"sk-[A-Za-z0-9\-]*|s|sk"
+    r"|AKIA[0-9A-Z]*|A|AK|AKI"
+    r"|Bearer\s+[A-Za-z0-9._\-]*|Bearer|Beare|Bear|Bea|Be|B"
+    r"|gh[pousr]_[A-Za-z0-9]*|gh[pousr]|gh|g"
+    r")\Z"                                                  # \Z, not $: "$" also matches before a trailing newline, which would hold a CLOSED token
 )
-
 
 class _Phase(str, Enum):
     NORMAL = "normal"
@@ -51,21 +53,15 @@ class _Phase(str, Enum):
     CANCELLED = "cancelled"
 
 
-def _is_incomplete_token_suffix(suffix: str) -> bool:
-    if not suffix:
-        return False
-    padded = suffix if not suffix[0].isalnum() else " " + suffix
-    return any(pattern.search(padded) or pattern.search(suffix) for pattern in _INCOMPLETE_TOKEN)
+def _token_hold_suffix_len(text: str, prev: str = "") -> int:
+    """Length of the suffix of ``text`` that may be the start (or the still-growing body) of a secret and so must not be released yet.
 
-
-def _token_hold_suffix_len(text: str) -> int:
+    ``prev`` is the character released just before ``text`` (word-boundary context for a candidate that starts at the very beginning)."""
     if not text:
         return 0
-    maxn = min(len(text), MAX_HOLD_CHARS)
-    for n in range(maxn, 0, -1):
-        if _is_incomplete_token_suffix(text[-n:]):
-            return n
-    return 0
+    ctx = prev[-1:] if prev else ""
+    m = _OPEN_TAIL.search(ctx + text, len(ctx))        # the context character only supplies the word-boundary check; it is never part of a match
+    return len(m.group(0)) if m is not None else 0
 
 
 def _is_pem_begin_prefix(s: str) -> bool:
@@ -99,9 +95,9 @@ def _is_pem_begin_prefix(s: str) -> bool:
 def _pem_header_hold_from(text: str) -> int | None:
     """Index from which an incomplete PEM BEGIN header must be held, else None.
 
-    Short dash runs (1-2 chars) are only held at a boundary (start of buffer
-    or after whitespace) so streamed prose like ``pong-`` is not split, while
-    character-by-character ``-----BEGIN`` still accumulates from the first dash.
+    A trailing run of dashes is ALWAYS held, wherever it follows (LANDMARK-01 B-01): releasing the first one or two dashes of ``-----BEGIN`` because
+    they followed a non-space character (``key.-----BEGIN ...``) meant the header could never be recognised again and the whole PEM body streamed out.
+    Holding costs a dash of latency until the next delta (or the end of the stream), nothing else.
     """
     if not text:
         return None
@@ -111,10 +107,6 @@ def _pem_header_hold_from(text: str) -> int | None:
         suf = text[start:]
         if not _is_pem_begin_prefix(suf):
             continue
-        if len(suf) < 3:
-            prev = text[start - 1] if start > 0 else None
-            if prev is not None and not prev.isspace():
-                continue
         return start
     return None
 
@@ -139,6 +131,7 @@ class StreamRedactor:
         self._total = 0
         self._phase = _Phase.NORMAL
         self._pem_from = 0  # index into _hold where PEM body/header starts
+        self._prev = ""  # last character released (word-boundary context for what is still held)
 
     @property
     def phase(self) -> str:
@@ -150,15 +143,15 @@ class StreamRedactor:
         if not delta:
             return ""
         if not isinstance(delta, str) or len(delta) > MAX_DELTA_CHARS:
-            return self._fail()
+            return self._record(self._fail())
         self._total += len(delta)
         if self._total > MAX_TOTAL_CHARS:
-            return self._fail()
+            return self._record(self._fail())
         self._hold += delta
         return self._drain()
 
     def finish(self) -> str:
-        """End of stream. Never flushes incomplete/oversized sensitive holds."""
+        """End of stream. Never flushes an incomplete PEM block or an oversized hold; everything else is released as the one-shot scan would."""
         if self._phase == _Phase.CANCELLED:
             return ""
         if self._phase == _Phase.FAILED:
@@ -166,39 +159,34 @@ class StreamRedactor:
             return ""
         if self._phase in (_Phase.PEM_HEADER, _Phase.PEM_BODY):
             # Incomplete PEM construct at end-of-stream: fail closed.
-            return self._fail()
+            return self._record(self._fail())
         if not self._hold:
             return ""
-        # Final token pass — still withhold anything that looks incomplete/oversized.
-        if _token_hold_suffix_len(self._hold) == len(self._hold) and len(self._hold) > MAX_HOLD_CHARS:
-            return self._fail()
-        if re.search(r"sk-[A-Za-z0-9]{20,}$", self._hold) or re.search(r"gh[pousr]_[A-Za-z0-9]{20,}$", self._hold):
-            if len(self._hold) > MAX_HOLD_CHARS:
-                return self._fail()
-        scanned = scan_output(self._hold)
-        # If the hold was only an incomplete secret prefix, redact_secrets leaves it
-        # intact — withhold rather than emit a dangling sk-/Bearer/gh prefix.
-        if _token_hold_suffix_len(scanned["safe_text"]) == len(scanned["safe_text"]) and scanned["safe_text"]:
-            # Pure incomplete prefix with no complete secret: drop closed (empty),
-            # not a leak. Empty is safer than emitting "sk-" / "Bearer".
-            self._hold = ""
-            return ""
-        tail = scanned["safe_text"]
+        if _token_hold_suffix_len(self._hold, self._prev) > MAX_HOLD_CHARS:
+            return self._record(self._fail())
+        # The stream has ended, so nothing can grow any more: what is held is released exactly as the non-streaming route would redact it
+        # (complete secrets become markers; a fragment shorter than the DLP's own 20-character definition of a secret is ordinary text -
+        # "... a Bearer token" and "... keys" must keep their last words).
+        tail = scan_output(self._hold)["safe_text"]
         self._hold = ""
-        if tail:
-            self._emitted.append(tail)
-        return tail
+        return self._record(tail)
 
     def cancel(self) -> None:
         self._phase = _Phase.CANCELLED
         self._hold = ""
         self._pem_from = 0
 
+    def _record(self, text: str) -> str:
+        if text:
+            self._emitted.append(text)
+            self._prev = text[-1]
+        return text
+
     def _fail(self) -> str:
+        """Fail closed: drop whatever is held and return the overflow marker. The caller records/returns the marker exactly once."""
         self._phase = _Phase.FAILED
         self._hold = ""
         self._pem_from = 0
-        self._emitted.append(_REDACT_OVERFLOW)
         return _REDACT_OVERFLOW
 
     def safe_text(self) -> str:
@@ -214,6 +202,7 @@ class StreamRedactor:
                     break
                 if piece:
                     out.append(piece)
+                    self._prev = piece[-1]
                 continue
             if self._phase == _Phase.PEM_HEADER:
                 piece = self._drain_pem_header()
@@ -221,16 +210,15 @@ class StreamRedactor:
                     break
                 if piece:
                     out.append(piece)
+                    self._prev = piece[-1]
                 continue
             piece = self._drain_normal()
             if piece is None:
                 break
             if piece:
                 out.append(piece)
-        emitted = "".join(out)
-        if emitted:
-            self._emitted.append(emitted)
-        return emitted
+                self._prev = piece[-1]
+        return self._record("".join(out))
 
     def _drain_pem_body(self) -> str | None:
         body = self._hold[self._pem_from :]
@@ -294,7 +282,7 @@ class StreamRedactor:
         # Incomplete PEM header at the end? Prefer a longer token hold when
         # both apply (e.g. ``sk-`` must not lose its trailing dash to PEM).
         pem_at = _pem_header_hold_from(self._hold)
-        token_n = _token_hold_suffix_len(self._hold)
+        token_n = _token_hold_suffix_len(self._hold, self._prev)
         if pem_at is not None:
             pem_n = len(self._hold) - pem_at
             if token_n >= pem_n:
@@ -315,18 +303,10 @@ class StreamRedactor:
         return scan_output(text)["safe_text"]
 
     def _release_with_token_hold(self) -> str | None:
-        scanned = scan_output(self._hold)
-        self._hold = scanned["safe_text"]
-        if len(self._hold) > MAX_HOLD_CHARS:
-            if re.search(r"sk-[A-Za-z0-9]{20,}$", self._hold) or re.search(
-                r"gh[pousr]_[A-Za-z0-9]{20,}$", self._hold
-            ):
-                self._fail()
-                return _REDACT_OVERFLOW
-        n_hold = _token_hold_suffix_len(self._hold)
+        n_hold = _token_hold_suffix_len(self._hold, self._prev)
         if n_hold > MAX_HOLD_CHARS:
             self._fail()
             return _REDACT_OVERFLOW
-        emit = self._hold[:-n_hold] if n_hold else self._hold
-        self._hold = self._hold[-n_hold:] if n_hold else ""
+        head, self._hold = self._hold[: len(self._hold) - n_hold], self._hold[len(self._hold) - n_hold :]
+        emit = scan_output(head)["safe_text"] if head else ""
         return emit if emit else None

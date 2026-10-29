@@ -195,6 +195,10 @@ class OllamaTap:
 
         self.upstream = upstream.rstrip("/")
         self.requests: list[dict] = []
+        self.relayed_lines = 0          # NDJSON lines (generated pieces) relayed from Ollama to ORNEUR
+        self.client_aborts = 0          # times ORNEUR hung up on a response that was still streaming (evidence that it stopped the model call)
+        self.open_streams = 0
+        self.abort_log: list[dict] = []
         tap = self
 
         class H(BaseHTTPRequestHandler):
@@ -222,13 +226,26 @@ class OllamaTap:
                 self.send_header("Content-Type", headers.get("Content-Type", "application/json"))
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
-                while True:
-                    chunk = resp.read1(65536) if hasattr(resp, "read1") else resp.read(65536)
-                    if not chunk:
-                        break
-                    self.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
-                    self.wfile.flush()
-                self.wfile.write(b"0\r\n\r\n")
+                tap.open_streams += 1
+                try:
+                    while True:
+                        chunk = resp.read1(65536) if hasattr(resp, "read1") else resp.read(65536)
+                        if not chunk:
+                            break
+                        tap.relayed_lines += chunk.count(b"\n")
+                        self.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
+                        self.wfile.flush()
+                    self.wfile.write(b"0\r\n\r\n")
+                except (BrokenPipeError, ConnectionResetError):
+                    # ORNEUR closed its connection while Ollama was still generating. Closing the upstream response here is what tells Ollama to stop.
+                    tap.client_aborts += 1
+                    tap.abort_log.append({"at": time.time(), "lines_relayed": tap.relayed_lines})
+                    try:
+                        resp.close()
+                    except Exception:
+                        pass
+                finally:
+                    tap.open_streams -= 1
 
             do_GET = do_POST = do_DELETE = _forward
 

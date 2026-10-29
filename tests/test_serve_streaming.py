@@ -129,7 +129,7 @@ def test_stream_endpoint_keeps_serving_other_requests_while_generating(monkeypat
     monkeypatch.setattr(api_module, "_get_session", lambda *a, **k: _stub_session(slow))
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
 
-    async def not_direct(message, user, model_variant, session_id=None):
+    async def not_direct(message, user, model_variant, session_id=None, **_internal_stream_hooks):
         result = await _fake_cognitive_result(message, user, model_variant, session_id)
         result.output = None  # force the agent-stream path, not the kernel-direct path
         return result
@@ -235,7 +235,7 @@ def test_stream_endpoint_returns_server_busy_without_waiting_when_saturated(monk
             monkeypatch.setattr(api_module, "_get_session", lambda *a, **k: _stub_session(holder))
             monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
 
-            async def not_direct(message, user, model_variant, session_id=None):
+            async def not_direct(message, user, model_variant, session_id=None, **_internal_stream_hooks):
                 result = await _fake_cognitive_result(message, user, model_variant, session_id)
                 result.output = None
                 return result
@@ -321,7 +321,7 @@ def test_real_client_disconnect_closes_the_backend_generator_end_to_end(monkeypa
     monkeypatch.setattr(api_module, "_get_session", lambda *a, **k: _stub_session(slow))
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
 
-    async def not_direct(message, user, model_variant, session_id=None):
+    async def not_direct(message, user, model_variant, session_id=None, **_internal_stream_hooks):
         result = await _fake_cognitive_result(message, user, model_variant, session_id)
         result.output = None
         return result
@@ -537,7 +537,7 @@ def test_real_socket_disconnect_closes_the_backend_generator_and_frees_admission
     monkeypatch.setattr(api_module, "_get_session", lambda *a, **k: _stub_session(slow))
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
 
-    async def not_direct(message, user, model_variant, session_id=None):
+    async def not_direct(message, user, model_variant, session_id=None, **_internal_stream_hooks):
         result = await _fake_cognitive_result(message, user, model_variant, session_id)
         result.output = None
         return result

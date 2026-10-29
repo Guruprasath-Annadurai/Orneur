@@ -1,0 +1,37 @@
+{
+  "provider_pieces": 8,
+  "provider_delay_s": 0.35,
+  "chunk_events_received": 8,
+  "provider_write_offsets_s": [
+    0.636,
+    0.986,
+    1.336,
+    1.686,
+    2.037,
+    2.387,
+    2.737,
+    3.088
+  ],
+  "client_receive_offsets_s": [
+    0.644,
+    0.987,
+    1.337,
+    1.687,
+    2.038,
+    2.388,
+    2.738,
+    3.09
+  ],
+  "receive_minus_write_s": [
+    0.009,
+    0.001,
+    0.001,
+    0.001,
+    0.001,
+    0.001,
+    0.001,
+    0.003
+  ],
+  "max_receive_lag_s": 0.009,
+  "first_chunk_received_before_provider_finished": true
+}

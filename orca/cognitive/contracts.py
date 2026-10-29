@@ -222,6 +222,10 @@ class CognitiveRequest:
     # accumulated CognitiveResult.output. None → existing generate() path.
     # Raw / unredacted — callers MUST StreamRedactor before external use.
     on_raw_delta: RawDeltaHook | None = None
+    # LANDMARK-01 B-01 final integration: awaited ONCE, immediately before the first raw delta, with what the gateway actually resolved for
+    # this call (tier / model version / deployment / runtime / whether the entitlement downgraded it). Lets the API announce the served model
+    # from a fact instead of a guess. Ignored unless ``on_raw_delta`` is set.
+    on_served: Callable[[dict[str, Any]], Awaitable[None]] | None = None
 
 
 # ── Context ──────────────────────────────────────────────────────────────

@@ -1,0 +1,4 @@
+E               assert b'"type": "chunk"' in b'HTTP/1.1 200 OK\r\ndate: Thu, 29 Oct 2026 06:38:00 GMT\r\nserver: uvicorn\r\ncache-control: no-cache\r\nx-accel-buff..."type": "generation", "generation_id": "06613e35-217b-4bda-91b6-6b79ccfc8c37", "session_id": "991810d9-leak6"}\n\n\r\n'
+E                +  where b'HTTP/1.1 200 OK\r\ndate: Thu, 29 Oct 2026 06:38:00 GMT\r\nserver: uvicorn\r\ncache-control: no-cache\r\nx-accel-buff..."type": "generation", "generation_id": "06613e35-217b-4bda-91b6-6b79ccfc8c37", "session_id": "991810d9-leak6"}\n\n\r\n' = _read_until(<socket.socket fd=49, family=2, type=1, proto=6, laddr=('127.0.0.1', 51512), raddr=('127.0.0.1', 40275)>, b'"type": "chunk"')
+FAILED tests/test_b01_stream_cleanup.py::test_abandoned_streams_leave_no_task_stream_reservation_or_authority
+1 failed, 12 warnings in 22.94s
