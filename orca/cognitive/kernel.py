@@ -20,6 +20,7 @@ evidence.py, policy.py, planner.py, budget.py, state_machine.py, trace.py)
 """
 from __future__ import annotations
 
+import dataclasses
 import time
 
 from orca.cognitive import metrics
@@ -274,7 +275,10 @@ class CognitiveKernel:
             # about to happen, so MODEL_CALLS is enforced pre-flight.
             consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
             tier = resolved_tier
-            output_text, resolved_model, usage = await self._answer_directly(objective_for_model, tier, request.trace_id, request=request)
+            output_text, resolved_model, usage = await self._answer_directly(
+                objective_for_model, tier, request.trace_id, request=request,
+                route_info={"degraded": degraded, "degradation_reason": degradation_reason},
+            )
             # TOKENS can only be known AFTER the call completes -- record
             # actual consumption for observability, but don't retroactively
             # fail an already-completed, already-useful response over it;
@@ -359,7 +363,9 @@ class CognitiveKernel:
             return
         try:
             from orca.memory.turn_ingest import maybe_ingest_turn
-            episode = maybe_ingest_turn(request.session_id, request.objective, output_text)
+            from orca.serve import dlp
+            # The model's raw text may carry a credential; what is remembered is the same redacted text the client is shown (LANDMARK-01 B-01).
+            episode = maybe_ingest_turn(request.session_id, request.objective, dlp.scan_output(output_text or "")["safe_text"])
         except Exception:
             episode = None
 
@@ -423,7 +429,7 @@ class CognitiveKernel:
             return request.objective
         return f"{request.objective}\n\n[Relevant remembered context -- may be stale, verify if load-bearing]\n" + "\n".join(lines)
 
-    async def _answer_directly(self, objective: str, tier: str, trace_id: str, request: CognitiveRequest | None = None) -> tuple[str, str, dict]:
+    async def _answer_directly(self, objective: str, tier: str, trace_id: str, request: CognitiveRequest | None = None, route_info: dict | None = None) -> tuple[str, str, dict]:
         """The one place the Kernel actually reaches ModelGateway --
         exactly the canonical path Phase 3 spec §27 requires (Kernel ->
         model policy -> ModelGateway -> deployment/runtime), reusing the
@@ -471,12 +477,19 @@ class CognitiveKernel:
         resolved_version = gateway_brain.model_version or ""
         prompt_tokens = 0
         completion_tokens = 0
+        served_announced = False
         upstream = self._gateway().stream(inference_request, allow_experimental=gateway_brain.allow_experimental)
         try:
             async with contextlib.aclosing(upstream) as chunks:
                 async for chunk in chunks:
                     if chunk.resolved_version:
                         resolved_version = chunk.resolved_version
+                    if not served_announced and request.on_served is not None:
+                        served_announced = True
+                        await request.on_served({
+                            "tier": tier, "model": resolved_version, "deployment_id": getattr(chunk, "deployment_id", None),
+                            "runtime": getattr(chunk, "runtime", None), **(route_info or {}),
+                        })
                     if chunk.prompt_tokens is not None:
                         prompt_tokens = chunk.prompt_tokens
                     if chunk.completion_tokens is not None:
@@ -628,7 +641,12 @@ class CognitiveKernel:
             objective_with_context = (
                 f"{request.objective}\n\n[Retrieved context]\n{assessed.context_block}" if assessed.context_block else request.objective
             )
-            output_text, resolved_model, usage = await self._answer_directly(objective_with_context, resolved_tier, request.trace_id, request=request)
+            # The Truth Fabric answer is only a DRAFT until verify_answer() below accepts it (it may still abstain), so its tokens must never be
+            # forwarded to a client as they are generated: the raw-delta hooks are withheld for this call (LANDMARK-01 B-01).
+            output_text, resolved_model, usage = await self._answer_directly(
+                objective_with_context, resolved_tier, request.trace_id,
+                request=dataclasses.replace(request, on_raw_delta=None, on_served=None),
+            )
 
             is_audit_grade = plan.evidence_requirement.level.value == "AUDIT_GRADE"
             final = await truth_fabric.verify_answer(output_text, assessed, budget=plan.budget, run_counter_evidence=is_audit_grade)

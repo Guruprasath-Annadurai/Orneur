@@ -460,7 +460,9 @@ def test_stream_chunks_and_cooperative_cancel(ollama_fixture):
         session_id="cancel-a",
         synthetic_provider=True,
     )
-    assert body["chunks"] == ["pong-", "ok"]
+    # The provider sends "pong-" then "ok". The redactor now holds a trailing dash run until the next delta (a PEM header can begin with one), so the
+    # SSE partition is "pong" / "-ok"; what is asserted is what matters: two real chunks, and the exact text, neither merged nor altered.
+    assert len(body["chunks"]) == 2 and "".join(body["chunks"]) == "pong-ok"
     assert body["text"] == "pong-ok"
     assert body["finish_reason"] == "stop"
     assert body["handlers_forcibly_stopped"] is False

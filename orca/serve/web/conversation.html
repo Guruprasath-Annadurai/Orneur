@@ -695,6 +695,9 @@ let _activeStreamController = null;
 // server-confirmed cancellation in that case.
 let _activeGenerationId = null;
 let _activeGenerationCancellable = false;
+// LANDMARK-01 B-01: true only after the server sent {type:'stream', delivery:'upstream', cancellable:true} for THIS request, i.e. real model
+// tokens are arriving and closing the connection (Stop) cancels the model call on the server.
+let _activeStreamUpstream = false;
 // INTEGRATION Phase E (2026-10-24, PR #96): real correlated-runs
 // plumbing (POST /api/runs, X-Run-Id, GET /api/runs/{id}). No UI
 // control in this codebase currently creates or exposes a "run" --
@@ -1895,6 +1898,7 @@ async function stopGeneration() {
   const wasThinkingOnly = lastAnswer ? !!lastAnswer.querySelector('.thinking') : false;
   const genId = _activeGenerationId;
   const cancellable = _activeGenerationCancellable;
+  const upstreamStop = _activeStreamUpstream;
   const myToken = _authToken;
   // Always end the local connection immediately -- the user asked to
   // stop NOW, regardless of whether the server can confirm a true
@@ -1911,6 +1915,13 @@ async function stopGeneration() {
     } else {
       markMessageInterrupted(lastAnswer, reason);
     }
+  }
+
+  if (upstreamStop) {
+    // LANDMARK-01 B-01: the server announced a real, cancellable upstream stream. Aborting the request closes that connection, and the
+    // server cancels the model call and does not commit the turn. The text above is what had been received; it is not saved.
+    showLocal('Generation stopped. The model connection was closed, and this partial reply was not saved to the conversation.');
+    return;
   }
 
   if (!genId || !cancellable) {
@@ -2875,6 +2886,7 @@ async function sendMessage(runId) {
   // state, per ORNEUR_B10_GENERATION_HANDOFF.md.
   _activeGenerationId = null;
   _activeGenerationCancellable = false;
+  _activeStreamUpstream = false;
   _activeGenerationRunId = null;
   const myIdempotencyKey = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
   updateSendEnabled();
@@ -2957,6 +2969,8 @@ async function sendMessage(runId) {
           // was started with X-Run-Id (null otherwise -- "existing
           // clients keep working", per the contract).
           _activeGenerationRunId = ev.run_id || null;
+        } else if (ev.type === 'stream') {
+          _activeStreamUpstream = ev.delivery === 'upstream' && ev.cancellable === true;
         } else if (ev.type === 'thinking') {
           const t = thinkEl.querySelector('.thinking-text');
           if (t) t.textContent = ev.text;
