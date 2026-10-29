@@ -1,0 +1,257 @@
+{
+  "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+  "probes": {
+    "AUTH-1": {
+      "requirement_id": "AUTH-1",
+      "claim": "Fail-closed training / native-pretraining authorization entry points",
+      "implementation_paths": [
+        "orca/train/authorization.py",
+        "orca/genesis/governance/authorization.py"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_training_authorization_gate.py",
+        "tests/test_genesis_governance_authorization.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_training_authorization_gate.py",
+        "tests/test_genesis_governance_authorization.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "128 passed, 1 warning in 3.35s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "G4": {
+      "requirement_id": "G4",
+      "claim": "Committed authorization record is NOT_AUTHORIZED; adversarial assurance suite",
+      "implementation_paths": [
+        "orca/train/authorization.py",
+        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_training_authorization_assurance.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_training_authorization_assurance.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "23 passed, 1 xfailed in 0.91s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "G5": {
+      "requirement_id": "G5",
+      "claim": "Empty authority registry with pinned digest; no key can authorize",
+      "implementation_paths": [
+        "orca/train/authorization.py",
+        "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_training_authorization_gate.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_training_authorization_gate.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "92 passed, 1 warning in 3.11s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "TRAIN-1": {
+      "requirement_id": "TRAIN-1",
+      "claim": "CPU synthetic training mathematics / primitives",
+      "implementation_paths": [
+        "orca/genesis/training/primitives.py",
+        "orca/genesis/training/math_qualification.py"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_cursor_training_math.py",
+        "tests/test_genesis_training_primitives.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_cursor_training_math.py",
+        "tests/test_genesis_training_primitives.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "30 passed in 2.10s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "TRAIN-2": {
+      "requirement_id": "TRAIN-2",
+      "claim": "Synthetic checkpoint integrity and resume refusal paths",
+      "implementation_paths": [
+        "orca/genesis/training/checkpoint_integrity.py",
+        "orca/genesis/training/resumable_checkpoint.py"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_genesis_checkpoint_integrity.py",
+        "tests/test_genesis_resumable_checkpoint.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_genesis_checkpoint_integrity.py",
+        "tests/test_genesis_resumable_checkpoint.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "52 passed in 8.90s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "C01": {
+      "requirement_id": "C01",
+      "claim": "GENESIS architecture config/interface synthetic tests",
+      "implementation_paths": [
+        "orca/genesis/model/config.py",
+        "orca/genesis/model/transformer.py"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_genesis_model_architecture.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_genesis_model_architecture.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "23 passed in 1.20s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "C02": {
+      "requirement_id": "C02",
+      "claim": "Tokenizer framework + robustness synthetic tests",
+      "implementation_paths": [
+        "orca/genesis/tokenizer/framework.py",
+        "orca/genesis/tokenizer/robustness.py"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_genesis_tokenizer.py",
+        "tests/test_cursor_tokenizer_robustness.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_genesis_tokenizer.py",
+        "tests/test_cursor_tokenizer_robustness.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "34 passed in 0.36s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "DATA-1": {
+      "requirement_id": "DATA-1",
+      "claim": "Dataset manifest / pipeline admission (synthetic; not formal DATA-1 acceptance)",
+      "implementation_paths": [
+        "orca/genesis/data/manifest.py",
+        "orca/genesis/data/pipeline.py"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_genesis_data_manifest.py",
+        "tests/test_cursor_pipeline_admission.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_genesis_data_manifest.py",
+        "tests/test_cursor_pipeline_admission.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "37 passed in 0.48s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    },
+    "DATA-2": {
+      "requirement_id": "DATA-2",
+      "claim": "Contamination checking helpers (synthetic; not formal DATA-2 acceptance)",
+      "implementation_paths": [
+        "orca/genesis/data/contamination.py"
+      ],
+      "missing_implementation": [],
+      "test_paths": [
+        "tests/test_genesis_data_contamination.py"
+      ],
+      "missing_tests": [],
+      "historical_source_sha": "fc1eb1d",
+      "candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+      "pytest_command": [
+        "/workspace/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=no",
+        "tests/test_genesis_data_contamination.py"
+      ],
+      "exit_code": 0,
+      "summary_line": "18 passed in 0.33s",
+      "passed_probe": true,
+      "stderr_tail": ""
+    }
+  }
+}

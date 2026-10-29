@@ -2,12 +2,12 @@
 
 | Change | Kind | Evidence |
 |---|---|---|
-| Recover foundation-p0 branch into FOUNDATION-02 worktree | recovery | branch from `fc1eb1d` |
-| Cherry-pick gap register `255d25a` | docs/tests | gap register markdown |
-| Cherry-pick readiness gate `eaa3eac` | code/tests | `readiness_gate.py` |
-| Resolve `__init__.py` add/add conflict | maintainability | combined docstring |
-| Add serving-contract handoff | F02-10 | `serving_contract.py` + tests |
-| Build 95-row engineering matrix | F02-01 | `FOUNDATION_02_REQUIREMENT_MATRIX.*` |
-| Evidence package under milestones/foundation-02 | F02-12/13 | this directory |
+| Recover foundation-p0 + gap/readiness | recovery | prior commits on branch |
+| Initial evidence package | F02-01..13 | `b384348` |
+| Harden serving contract capability states | F02-10 corrective | `serving_contract.py` + adversarial tests |
+| Matrix v2 probe-backed VERIFIED_ENGINEERING | F02-01 corrective | `build_requirement_matrix.py` + probes JSON |
+| Downgrade FINAL-1 to IMPLEMENTED_UNVERIFIED | honesty | matrix |
+| Classify audit-tail truncation residual | F02-02 residual | `FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md` |
 
 No protected ledger, trust root, or founder signature was modified.
+No changes to Claude PR #136.

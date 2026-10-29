@@ -1,19 +1,35 @@
 # FOUNDATION-02 Requirement Matrix
 
-**Source SHA:** `52e74597ae0185bbbddcd45a70e86b006955229e`  
+**Candidate SHA:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
+**Main base SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Formal acceptance:** 0 / 95  
 **Validator:** `pretraining=95 numerator=0`  
+**VERIFIED_ENGINEERING (probed):** 9 — G4, G5, C01, C02, DATA-1, DATA-2, TRAIN-1, TRAIN-2, AUTH-1  
 
 ## Disposition histogram (engineering only)
 
 | Disposition | Count |
 |---|---:|
 | `BLOCKED` | 16 |
-| `IMPLEMENTED_UNVERIFIED` | 20 |
-| `NOT_IMPLEMENTED` | 49 |
-| `VERIFIED_ENGINEERING` | 10 |
+| `IMPLEMENTED_UNVERIFIED` | 19 |
+| `NOT_IMPLEMENTED` | 51 |
+| `VERIFIED_ENGINEERING` | 9 |
 
-## Rows
+## VERIFIED_ENGINEERING evidence
+
+| ID | Historical SHA | Candidate SHA | Tests | Result |
+|---|---|---|---|---|
+| G4 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_training_authorization_assurance.py | PASS (23 passed, 1 xfailed in 0.91s) |
+| G5 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_training_authorization_gate.py | PASS (92 passed, 1 warning in 3.11s) |
+| C01 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_model_architecture.py | PASS (23 passed in 1.20s) |
+| C02 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_tokenizer.py; tests/test_cursor_tokenizer_robustness.py | PASS (34 passed in 0.36s) |
+| DATA-1 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_data_manifest.py; tests/test_cursor_pipeline_admission.py | PASS (37 passed in 0.48s) |
+| DATA-2 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_data_contamination.py | PASS (18 passed in 0.33s) |
+| TRAIN-1 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_cursor_training_math.py; tests/test_genesis_training_primitives.py | PASS (30 passed in 2.10s) |
+| TRAIN-2 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_genesis_checkpoint_integrity.py; tests/test_genesis_resumable_checkpoint.py | PASS (52 passed in 8.90s) |
+| AUTH-1 | `fc1eb1d` | `b384348fa3bc789585bf69d81a772c8a4d75d493` | tests/test_training_authorization_gate.py; tests/test_genesis_governance_authorization.py | PASS (128 passed, 1 warning in 3.35s) |
+
+## All rows
 
 | ID | Register status | Engineering disposition | Founder-controlled |
 |---|---|---|---|
@@ -93,7 +109,7 @@
 | HW-21 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | HW-24 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | HW-FORGE | NOT_STARTED | `NOT_IMPLEMENTED` | False |
-| SUP-1 | NOT_STARTED | `IMPLEMENTED_UNVERIFIED` | False |
+| SUP-1 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | SUP-3 | UNMERGED_NOT_ACCEPTED | `IMPLEMENTED_UNVERIFIED` | False |
 | P2-1 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | P2-2 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
@@ -105,16 +121,17 @@
 | MODEL-2R | NOT_AUTHORIZED | `BLOCKED` | True |
 | MODEL-1 | NOT_AUTHORIZED | `BLOCKED` | True |
 | QUAL-1 | NOT_AUTHORIZED | `BLOCKED` | True |
-| QUAL-2 | NOT_STARTED | `IMPLEMENTED_UNVERIFIED` | False |
+| QUAL-2 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | QUAL-3 | NOT_STARTED | `NOT_IMPLEMENTED` | False |
 | TRAIN-1 | NOT_STARTED | `VERIFIED_ENGINEERING` | False |
 | TRAIN-2 | NOT_STARTED | `VERIFIED_ENGINEERING` | False |
 | AUTH-1 | NOT_VERIFIABLE | `VERIFIED_ENGINEERING` | True |
 | R65 | NOT_VERIFIABLE | `BLOCKED` | True |
-| FINAL-1 | NOT_STARTED | `VERIFIED_ENGINEERING` | False |
+| FINAL-1 | NOT_STARTED | `IMPLEMENTED_UNVERIFIED` | False |
 
 ## Policy
 
 - This matrix does **not** modify `acceptance_ledger.json`.
 - A passed engineering test does not become `FORMALLY_ACCEPTED`.
 - Training authorization remains **NO-GO**.
+- `historical_source_sha` ≠ proof the tip was the only SHA ever tested; probes run on `candidate_sha`.

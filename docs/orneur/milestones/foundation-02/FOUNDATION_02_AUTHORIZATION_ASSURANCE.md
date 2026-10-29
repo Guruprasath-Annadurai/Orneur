@@ -1,6 +1,6 @@
 # FOUNDATION-02 Authorization Assurance
 
-**Tip context:** `52e74597ae0185bbbddcd45a70e86b006955229e`  
+**Parent tip:** `b384348fa3bc789585bf69d81a772c8a4d75d493`  
 **Verdict:** Fail-closed for ORNEUR training entry points. **NO-GO** for real training.
 
 ## Surfaces audited
@@ -13,15 +13,7 @@
 | GENESIS native `authorize_native_pretraining` | separate signing domain; empty registry + empty ledger |
 | Readiness gate | reports blockers; never authorizes execution |
 
-## Negative properties covered by tests
-
-Missing/invalid/expired/revoked grants, stale SHA, wrong family/dataset bindings
-(where applicable), grant tampering, env-var bypass attempts, concurrent budget
-exhaustion, audit-chain tamper detection (residual: tail truncation xfail).
-
 ## Residuals (honest)
 
-1. Same-process attackers can edit source / call internals.
-2. Operator scripts and offline notebooks are outside the gate.
-3. Audit tail truncation remains a documented residual (xfail).
-4. Empty authority registries mean **nothing can authorize** until founder provisioning.
+See `FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md` (P2).  
+`test_truncating_the_audit_log_tail_is_detected` remains `@pytest.mark.xfail(strict=True)` — **not a pass**.
