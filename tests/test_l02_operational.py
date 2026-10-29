@@ -293,3 +293,16 @@ def test_turn_outcomes_cancellations_deletions_and_refusals_are_counted_with_bou
     for i in range(300):
         metrics.record_event("refusal", f"label-{i}")
     assert text.count("orca_events_total{") < 200 and len([l for l in client.get("/metrics").text.splitlines() if l.startswith("orca_events_total{")]) <= 201
+
+
+def test_the_data_directory_backup_group_does_not_shadow_the_existing_orca_backup_command():
+    """`orca backup --keep N` (documented cron entry) must keep working; the L02-06 data-directory tooling lives under `orca data-backup`."""
+    from typer.testing import CliRunner
+
+    from orca.cli import app
+
+    runner = CliRunner()
+    legacy = runner.invoke(app, ["backup", "--help"])
+    assert legacy.exit_code == 0 and "--keep" in legacy.output
+    new = runner.invoke(app, ["data-backup", "--help"])
+    assert new.exit_code == 0 and all(w in new.output for w in ("create", "verify", "restore"))

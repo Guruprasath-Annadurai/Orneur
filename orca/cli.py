@@ -1605,7 +1605,7 @@ def serve(
 
 
 backup_app = typer.Typer(help="Consistent backup / verified restore of the ORNEUR data directory (L02-06).")
-app.add_typer(backup_app, name="backup")
+app.add_typer(backup_app, name="data-backup")
 
 
 @backup_app.command("create")
