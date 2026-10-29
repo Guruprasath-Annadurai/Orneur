@@ -134,13 +134,13 @@
       "requirement_id": "TRAIN-1",
       "was": "CPU training-math primitives (wrong mapping)",
       "now": "Hash lock of train extra + SHA-pinned dry-run command",
-      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+      "engineering_classification": "VERIFIED_ENGINEERING"
     },
     {
       "requirement_id": "TRAIN-2",
       "was": "Checkpoint integrity suites (wrong mapping)",
       "now": "Synthetic dry-run log proving locks remain false",
-      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+      "engineering_classification": "VERIFIED_ENGINEERING"
     }
   ]
 }
