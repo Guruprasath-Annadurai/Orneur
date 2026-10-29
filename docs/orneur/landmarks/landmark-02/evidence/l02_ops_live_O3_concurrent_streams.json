@@ -1,0 +1,40 @@
+{
+  "recorded_at": "2026-10-29T15:47:04+0000",
+  "environment": {
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18",
+    "wsl2": true
+  },
+  "concurrent_streams_attempted": 24,
+  "completed_and_saved": 20,
+  "refused_or_errored": 4,
+  "refusal_codes": [
+    "server_busy"
+  ],
+  "wall_s": 12.74,
+  "latency_s_median": 5.99,
+  "latency_s_max": 12.7,
+  "rss_mb": {
+    "idle": 125.7,
+    "peak": 350.4,
+    "after": 262.2
+  },
+  "fds": {
+    "idle": 44,
+    "peak": 131,
+    "after": 127
+  },
+  "threads": {
+    "idle": 41,
+    "peak": 108,
+    "after": 92
+  },
+  "stream_slots_in_use_after": 0,
+  "semantic_cache_fds_held": 3,
+  "vector_index_fds_held": 80,
+  "fds_per_conversation": 3.46,
+  "provider": "fixture (30 chunks x 50 ms)",
+  "note": "one workstation; not a capacity figure"
+}

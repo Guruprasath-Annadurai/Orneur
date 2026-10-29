@@ -110,6 +110,7 @@ async def _retention_loop():
         await asyncio.sleep(_RETENTION_INTERVAL_S)
 
 
+_STREAM_MAX_S = float(os.environ.get("ORNEUR_STREAM_MAX_S", "900"))
 _DELETE_REQUEST_BUDGET_S = float(os.environ.get("ORNEUR_DELETE_REQUEST_BUDGET_S", "20"))
 _DELETION_SWEEP_INTERVAL_S = float(os.environ.get("ORNEUR_DELETION_SWEEP_S", "60"))
 
@@ -150,6 +151,9 @@ async def _lifespan(_app: FastAPI):
     finally:
         _retention_task.cancel()
         _sweep_task.cancel()
+        from orca.serve import ops as _ops
+
+        _ops.close_inflight_as_shutdown()          # turns still running here will never commit: say so durably before the process exits
     # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
     # wait=False: blocking the event loop here to join every worker would
     # itself hang shutdown behind a slow backend call -- the same class of
@@ -259,6 +263,21 @@ async def security_headers_middleware(request: Request, call_next):
     if request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
     return response
+
+
+_DRAIN_REFUSED_PATHS = ("/api/stream", "/api/chat", "/api/ultra", "/api/vision", "/api/docs/upload")
+
+
+@app.middleware("http")
+async def drain_middleware(request: Request, call_next):
+    """L02-06: after a stop signal the server finishes what it is already doing and refuses NEW work with a retryable 503, before any model call or quota is touched.
+    Health and read endpoints keep answering so an orchestrator can watch it drain."""
+    from orca.serve import ops
+
+    if ops.draining() and request.method == "POST" and request.url.path in _DRAIN_REFUSED_PATHS:
+        e = coded_error("server_draining")
+        return JSONResponse(e.as_json(), status_code=e.status, headers={"Retry-After": "5"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -710,6 +729,9 @@ def _turn_begin(user, key: str, session_id: str | None, req_hash: str | None = N
 def _turn_mark_running(request: Request, ta) -> None:
     tk = _turn_key(request)
     if tk and ta is not None and ta.epoch:
+        from orca.serve import ops as _ops
+
+        _ops.inflight_add(tk[0], tk[1])
         try:
             from orca.serve import turn_requests as tr
 
@@ -723,6 +745,9 @@ def _turn_finish(request: Request, *, error_code: str | None = None, persisted: 
     tk = _turn_key(request)
     if not tk:
         return
+    from orca.serve import ops as _ops
+
+    _ops.inflight_remove(tk[0], tk[1])
     try:
         from orca.serve import turn_requests as tr
 
@@ -745,6 +770,12 @@ def _make_is_gone(request: Request):
     async def gone() -> bool:
         if await request.is_disconnected():
             request.state.client_gone = True
+            return True
+        t0 = getattr(request.state, "_t0", None)
+        if t0 is None:
+            request.state._t0 = t0 = time.monotonic()
+        if time.monotonic() - t0 > _STREAM_MAX_S:                                     # L02-06: a total deadline; per-chunk idle limits alone never end a slow trickle
+            request.state.deadline_exceeded = True
             return True
         tk = _turn_key(request)
         if tk:
@@ -890,8 +921,11 @@ def _admit_message_quota(user, request: Request, kind: str = "message"):
         return None
     from orca.serve import conversations
 
-    if not conversations.store_available():
+    from orca.serve import ops
+
+    if not conversations.store_available() or ops.disk_critical():
         # Checked BEFORE the model runs: a signed-in turn that cannot be committed must not be generated, charged, or presented as saved.
+        # (L02-06: a volume that is out of space is the same condition - the commit would fail after the answer was produced and paid for.)
         return coded_error("history_unavailable")
     from orca.auth.store import QuotaError, reserve_quota
 
@@ -1800,6 +1834,25 @@ async def readyz():
         dependencies["core_database"] = {"status": "unavailable", "reason": str(e)}
         ready = False  # never advertise READY while session/auth correctness cannot be guaranteed
 
+    # L02-06: the transcript database is REQUIRED in every profile (nothing can be committed without it); storage headroom, Redis, backlogs and stream load are reported.
+    from orca.serve import ops
+
+    dependencies["transcript_store"] = ops.transcript_store_report()
+    if dependencies["transcript_store"]["status"] != "ok":
+        ready = False
+    dependencies["disk"] = ops.disk_report()
+    if dependencies["disk"]["state"] == "critical":
+        ready = False                         # new turns would be refused anyway; do not advertise readiness
+    dependencies["file_descriptors"] = ops.fd_report()
+    if dependencies["file_descriptors"]["state"] == "critical":
+        ready = False
+    dependencies["redis"] = ops.redis_report()
+    dependencies["maintenance_backlog"] = ops.backlog_report()
+    dependencies["streams"] = ops.stream_report()
+    if ops.draining():
+        dependencies["lifecycle"] = {"status": "draining"}
+        ready = False
+
     status_code = 200 if ready else 503
     return JSONResponse({"status": "ready" if ready else "not_ready", "dependencies": dependencies}, status_code=status_code)
 
@@ -2638,8 +2691,19 @@ async def _stream_dispatch(
         delivery = "upstream"
         streamed_upstream = False
         kernel_run = None
+        kernel_slot = None
         try:
             if stream_kernel:
+                # L02-06: the Kernel stream path is a long-lived upstream connection like any other and takes an admission slot too (it used to be uncapped: with
+                # ORNEUR_MAX_CONCURRENT_STREAMS=3, ten simultaneous streams all ran). At capacity the request is refused here - before any model call - and the
+                # quota reservation is refunded by the release path.
+                kernel_slot = streaming.StreamAdmission()
+                try:
+                    kernel_slot.acquire()
+                except streaming.StreamingUnavailable:
+                    kernel_slot = None
+                    yield f"data: {json.dumps(coded_error('server_busy').as_sse())}\n\n"
+                    return
                 # LANDMARK-01 B-01: the Kernel runs CONCURRENTLY with this response. Authentication, ownership, entitlement, moderation, atomic
                 # quota admission and the turn authority were all settled before this generator was created; only now is the model called.
                 from orca.cognitive.streaming import ConsumerGone, KernelRun
@@ -2679,6 +2743,10 @@ async def _stream_dispatch(
                     cognitive_result = await kernel_run.result()
                 except ConsumerGone:
                     redactor.cancel()
+                    if getattr(request.state, "deadline_exceeded", False):
+                        audit.log("stream_deadline_exceeded", user_id=user.id if user else None, detail={"chars_sent": len(full), "limit_s": _STREAM_MAX_S})
+                        yield f"data: {json.dumps(coded_error('request_timeout').as_sse())}\n\n"          # the client is still here: tell it, nothing is committed
+                        return
                     audit.log("stream_client_disconnected", user_id=user.id if user else None, detail={"chars_sent": len(full), "phase": "kernel_stream"})
                     return
                 except Exception as e:
@@ -2860,6 +2928,8 @@ async def _stream_dispatch(
                 if kernel_run is not None:
                     await kernel_run.aclose()
             finally:
+                if kernel_slot is not None:
+                    kernel_slot.release()
                 _release_turn(request)
 
     return StreamingResponse(

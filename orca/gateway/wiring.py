@@ -18,6 +18,7 @@ of duplicating that config here.
 from __future__ import annotations
 
 import hashlib
+import os
 import logging
 import re
 import threading
@@ -179,6 +180,15 @@ def refresh_live_announcement() -> None:
         log.debug("live announcement failed", exc_info=True)
 
 
+def _model_max_concurrency() -> int:
+    """Simultaneous requests ORNEUR sends to the local model server (default 4, as before). The gateway queues up to 4x this many more and refuses beyond that with a
+    retryable ``server_busy``. Operators size it to the model server's real parallelism (e.g. OLLAMA_NUM_PARALLEL)."""
+    try:
+        return max(1, min(256, int(os.environ.get("ORNEUR_MODEL_MAX_CONCURRENCY", "4"))))
+    except ValueError:
+        return 4
+
+
 def _announce(deployment_id: str) -> None:
     _announced_ids.add(deployment_id)
     refresh_live_announcement()
@@ -252,7 +262,7 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
             lifecycle=deployment_lifecycle,
             health=DeploymentHealth.READY.value,
             warmup_completed=True,
-            max_concurrency=4,
+            max_concurrency=_model_max_concurrency(),
             context_limit=CONFIG.brain.context_length,
         )
         gw.register_deployment(deployment)

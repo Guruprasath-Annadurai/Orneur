@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-10-29T15:47:11+0000",
+  "environment": {
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18",
+    "wsl2": true
+  },
+  "stream_capacity": 3,
+  "attempted": 10,
+  "completed": 3,
+  "refused_server_busy": 7,
+  "quota_units_spent": 3
+}

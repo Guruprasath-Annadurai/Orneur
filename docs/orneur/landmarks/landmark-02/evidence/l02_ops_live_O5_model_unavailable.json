@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-10-29T15:47:27+0000",
+  "environment": {
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18",
+    "wsl2": true
+  },
+  "error_event": {
+    "code": "model_unavailable",
+    "text": "This model is not available right now. Please choose another model or try again later."
+  },
+  "seconds_to_refuse_the_turn": 0.07,
+  "readyz_503_after_s": 14.2,
+  "readiness_cache_ttl_s": 15,
+  "quota_units_after_failed_turn": 1,
+  "note": "the turn fails immediately and uncharged-if-no-output; readiness lags by up to the 15 s model-list cache. Recovery after the provider returns is covered by tests/test_l02_turn_recovery.py (fail then retry same key)"
+}

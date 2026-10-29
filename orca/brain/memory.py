@@ -658,11 +658,22 @@ class EpisodicMemory:
 class SemanticMemory:
     """Distilled facts/concepts persisted across all sessions via disk cache."""
 
+    _shared: dict = {}
+    _shared_lock = __import__("threading").Lock()
+
     def __init__(self):
         # "semantic" is created by diskcache itself if missing; validate it
         # (and refuse a symlink/foreign-owned pre-existing entry) first.
         semantic_dir = _mkdir_owner_only(CACHE_DIR / "semantic")
-        self._cache = open_cache(semantic_dir)  # SafeDisk: never unpickles (orca/safe_cache.py)
+        # L02-06: ONE cache object per directory per process. Every conversation used to open its own diskcache (a SQLite database plus its WAL = 2 file descriptors and
+        # a connection per thread), none of them ever closed: measured on a live server, 72 sessions held 58+ open copies and descriptors grew 34 -> 356 until the
+        # process would have hit its descriptor limit. diskcache.Cache is thread-safe, so sharing it is correct.
+        key = str(semantic_dir)
+        with SemanticMemory._shared_lock:
+            cache = SemanticMemory._shared.get(key)
+            if cache is None:
+                cache = SemanticMemory._shared[key] = open_cache(semantic_dir)  # SafeDisk: never unpickles (orca/safe_cache.py)
+        self._cache = cache
 
     def store_fact(self, key: str, value: Any) -> None:
         self._cache[f"fact:{key}"] = value

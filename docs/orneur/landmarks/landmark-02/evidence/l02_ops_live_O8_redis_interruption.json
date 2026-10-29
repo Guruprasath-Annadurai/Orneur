@@ -1,0 +1,27 @@
+{
+  "recorded_at": "2026-10-29T15:48:07+0000",
+  "environment": {
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18",
+    "wsl2": true
+  },
+  "redis_before": {
+    "status": "ok",
+    "role": "advisory"
+  },
+  "readyz_during": 200,
+  "readyz_seconds_during_outage": 1.01,
+  "redis_during": {
+    "status": "unavailable",
+    "role": "advisory",
+    "detail": "no answer within 1s"
+  },
+  "turn_during_outage": "done",
+  "turn_persisted": "saved",
+  "redis_after": {
+    "status": "ok",
+    "role": "advisory"
+  }
+}
