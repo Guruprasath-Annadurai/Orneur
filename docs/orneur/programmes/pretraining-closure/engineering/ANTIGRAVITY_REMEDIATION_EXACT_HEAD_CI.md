@@ -3,8 +3,8 @@
 | Item | Value |
 |---|---|
 | Remediation code tip (probe authority) | `78e6ad65617741cd92af6df4b4a37543930e4ced` |
-| Evidence commit tip | *(filled after docs commit + CI)* |
-| CI run | *(filled after green CI)* |
+| Evidence commit tip | `42a3b79b0d82ff1655f4c02c23c1e0837be85d0f` |
+| CI run | *(filled after green CI on this tip)* |
 | Formal acceptance | **0/95** |
 | Training | **NO-GO** |
 | VERIFIED_ENGINEERING | **16** |
