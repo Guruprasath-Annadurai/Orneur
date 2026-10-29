@@ -1,0 +1,122 @@
+{
+  "manifest_version": "3.0.0",
+  "qualification_landmark": "LANDMARK-01-B01",
+  "timestamp": "2026-10-29T08:55:00.000000+00:00",
+  "authority": "Antigravity — Independent Qualification Authority",
+  "candidate": {
+    "pr": 136,
+    "title": "LANDMARK-01: B-01 final candidate -- incremental SSE chatbot streaming",
+    "worktree": "/home/pc/projects/Orneur-b01",
+    "head_sha": "9cb864c99ad323d11626063498a7d1cef0d7d4b5",
+    "code_bearing_sha": "01444cb084e530cd2aca1f5ed24a5e767c8b143d",
+    "branch": "claude/b01-real-sse-chatbot-integration",
+    "ci_run_id": 40840798823,
+    "ci_status": "SUCCESS"
+  },
+  "harness": {
+    "pr": 133,
+    "worktree": "/home/pc/projects/Orneur",
+    "branch": "antigravity/qualification-landmark-01",
+    "independent_suite": "tests/qualification/test_independent_adversarial_dlp.py"
+  },
+  "environment": {
+    "os": "Ubuntu 24.04 LTS (WSL2 Linux 6.6.36.6-microsoft-standard-WSL2)",
+    "python_executable": "/home/pc/projects/Orneur/.venv/bin/python",
+    "python_version": "3.11.18",
+    "pytest_version": "9.2.0",
+    "node_version": "v22.11.0",
+    "ollama_endpoint": "http://localhost:11434",
+    "ollama_model": "llama3.2:1b",
+    "redis_endpoint": "0.0.0.0:6379",
+    "browser_tools": "/home/pc/projects/.journey-tools",
+    "chromium_headless": true
+  },
+  "evidence_classes": {
+    "VERIFIED_REAL_MODEL": [
+      "tests/journey/test_b01_real_ollama_live.py (2 tests)",
+      "tests/journey/test_b01_browser_streaming.py::test_real_ollama_browser_journey (11 tests)"
+    ],
+    "VERIFIED_LIVE_FIXTURE": [
+      "tests/journey/test_b01_streaming_live.py (17 tests)",
+      "tests/journey/test_journey_concurrency_live.py (11 tests)",
+      "tests/journey/test_b01_cancel_race_live.py (1 test)",
+      "tests/journey/test_b01_browser_streaming.py::test_fixture_browser_journey (15 tests)"
+    ],
+    "VERIFIED_DETERMINISTIC_UNIT": [
+      "tests/test_b01_raw_delta_lifecycle.py (21 tests)",
+      "tests/test_b01_stream_cleanup.py (2 tests)",
+      "tests/test_b01_stream_dlp_equivalence.py (43 tests)",
+      "tests/test_canonical_quota_admission.py (12 tests)",
+      "tests/test_b01_refusal_protocol.py (8 tests)",
+      "tests/frontend/*.mjs (89 tests)"
+    ],
+    "VERIFIED_INDEPENDENT_ADVERSARIAL": [
+      "tests/qualification/test_independent_adversarial_dlp.py (67 tests)"
+    ]
+  },
+  "test_execution_summary": {
+    "suite_results": {
+      "journey_b01_streaming_live": { "passed": 17, "failed": 0, "skipped": 0, "type": "LIVE_FIXTURE" },
+      "journey_b01_real_ollama_live": { "passed": 2, "failed": 0, "skipped": 0, "type": "REAL_MODEL" },
+      "b01_raw_delta_lifecycle": { "passed": 21, "failed": 0, "skipped": 0, "type": "DETERMINISTIC_UNIT" },
+      "b01_stream_cleanup": { "passed": 2, "failed": 0, "skipped": 0, "type": "DETERMINISTIC_UNIT" },
+      "b01_stream_dlp_equivalence": { "passed": 43, "failed": 0, "skipped": 0, "type": "DETERMINISTIC_UNIT" },
+      "canonical_quota_admission": { "passed": 12, "failed": 0, "skipped": 0, "type": "DETERMINISTIC_UNIT" },
+      "b01_refusal_protocol": { "passed": 8, "failed": 0, "skipped": 0, "type": "DETERMINISTIC_UNIT" },
+      "journey_concurrency_live": { "passed": 11, "failed": 0, "skipped": 0, "type": "LIVE_FIXTURE_MULTIWORKER" },
+      "b01_cancel_race_live": { "passed": 1, "failed": 0, "skipped": 0, "type": "LIVE_FIXTURE" },
+      "journey_browser_streaming_fixture": { "passed": 15, "failed": 0, "skipped": 0, "type": "LIVE_FIXTURE_BROWSER" },
+      "journey_browser_streaming_real_ollama": { "passed": 11, "failed": 0, "skipped": 0, "type": "REAL_MODEL_BROWSER" },
+      "frontend_node_unit": { "passed": 89, "failed": 0, "skipped": 0, "type": "FRONTEND_UNIT" },
+      "independent_adversarial_dlp": { "passed": 67, "failed": 0, "skipped": 0, "type": "INDEPENDENT_ADVERSARIAL" }
+    },
+    "total_qualification_tests_executed": 299,
+    "total_qualification_tests_passed": 299,
+    "total_qualification_tests_failed": 0,
+    "total_qualification_tests_skipped": 0
+  },
+  "blocker_register_status": {
+    "p0_outstanding": 0,
+    "p1_outstanding": 0,
+    "closed_in_b01": ["B-01", "B-01a", "B-01b", "B-01c", "B-01d", "B-01e", "B-02"],
+    "p2_limitations": ["B-04", "B-06", "L-01"],
+    "p3_limitations": ["B-05", "B-07", "B-08", "B-09", "B-10", "B-11", "L-02", "L-03", "L-04", "L-05", "L-06"]
+  },
+  "verdicts": {
+    "1_default_chat_streaming": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED",
+      "summary": "Verified progressive upstream streaming from ModelGateway to client SSE chunks without replay buffering. Confirmed with both delayed provider fixtures and real llama3.2:1b."
+    },
+    "2_security_and_dlp": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED",
+      "summary": "Verified stateful redactor across 67 independent adversarial split tests (1-23 char chunks) and 36,000 differential runs. 0 leaks across wire SSE, SQLite DB, and outbound context. Memory contamination on both /api/chat and /api/stream eliminated."
+    },
+    "3_cancellation_and_persistence": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED",
+      "summary": "Verified client Stop aborts upstream model inference, cancels queue holds, releases leases, and creates no phantom turns in SQLite. Quota refund verified before first chunk; spent upon delivery."
+    },
+    "4_integrated_product_candidate": {
+      "verdict": "ACCEPTED",
+      "status": "QUALIFIED_FOR_STAGING",
+      "summary": "PR #136 successfully resolves B-01 and satisfies all Landmark-01 integration and security requirements."
+    },
+    "5_controlled_staging": {
+      "verdict": "ACCEPTED",
+      "status": "READY_FOR_CONTROLLED_STAGING",
+      "summary": "Candidate is certified for deployment to controlled staging environments under bounded concurrency."
+    },
+    "6_global_production": {
+      "verdict": "NOT_ACCEPTED",
+      "status": "BLOCKED",
+      "summary": "Blocked pending resolution of operational limitations: B-04 (CI Ollama runner), B-06 (document session dual-stream), B-07 (severed connection outcomes), B-10 (email verification), and B-11 (orphan deployment cleanup)."
+    },
+    "7_native_model_training": {
+      "verdict": "NOT_APPLICABLE",
+      "status": "PROHIBITED",
+      "summary": "The candidate uses third-party llama3.2:1b weights served by Ollama. No native model training pipeline, pre-training corpus, or custom weights exist or are qualified."
+    }
+  }
+}
