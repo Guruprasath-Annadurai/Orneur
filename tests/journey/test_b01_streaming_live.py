@@ -20,12 +20,17 @@ import pytest
 from tests.fake_ollama import FakeOllama
 from tests.journey.harness import JOURNEY_MODEL, LiveServer, User
 
+EVIDENCE = Path(os.environ.get("ORNEUR_B01_EVIDENCE_DIR", "/tmp/orneur-b01-evidence"))
 SECRET = "sk-" + "a1B2c3D4e5F6g7H8i9J0k1L2"
 AWS = "AKIAIOSFODNN7EXAMPLE"
 GH = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3"
 BEARER = "Bearer " + "eyJhbGciOiJIUzI1NiJ9abcdefghijkl"
 PEM = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz0123456789\n-----END RSA PRIVATE KEY-----"
 LEAKS = (SECRET, AWS, GH, "eyJhbGciOiJIUzI1NiJ9abcdefghijkl", "MIIEowIBAAKCAQEAxyz0123456789")
+
+
+ASYNCIO_HYGIENE = ("Task exception was never retrieved", "Task was destroyed but it is pending", "was never awaited", "async generator ignored GeneratorExit",
+                   "Exception ignored in", "coroutine ignored GeneratorExit")
 
 
 @pytest.fixture(scope="module")
@@ -40,6 +45,10 @@ def stack(tmp_path_factory):
     finally:
         srv.stop()
         fake.__exit__(None, None, None)
+        # The server's own log must carry no asyncio hygiene warning from the abandoned/cancelled streams this module created.
+        log = srv.log_path.read_text(errors="replace")
+        bad = [m for m in ASYNCIO_HYGIENE if m in log]
+        assert not bad, f"server log contains asyncio hygiene warnings: {bad}"
 
 
 @pytest.fixture
@@ -137,7 +146,7 @@ def test_S1_default_chat_delivers_real_upstream_deltas_before_generation_ends(en
     # Truthful labelling: an upstream, cancellable stream is announced before its first chunk; nothing here is a replay.
     stream_ev = next(e for e in events if e["type"] == "stream")
     assert stream_ev["delivery"] == "upstream" and stream_ev["cancellable"] is True
-    assert types.index("stream") < types.index("chunk") < types.index("done")
+    assert types.index("session") < types.index("generation") < types.index("model") < types.index("stream") < types.index("chunk") < types.index("done"), types[:8]
     assert not any(e.get("replayed") for e in events)
     done = events[-1]
     assert done["type"] == "done" and done["delivery"] == "upstream" and done["persisted"] == "saved"
@@ -153,6 +162,16 @@ def test_S1_default_chat_delivers_real_upstream_deltas_before_generation_ends(en
     # The model event names what the gateway actually resolved, and the done event confirms the same identity.
     model_ev = next(e for e in events if e["type"] == "model")
     assert model_ev["identity"] == done["model_identity"] and model_ev["identity"].get("served_model")
+    # Measured evidence: when the provider WROTE each piece vs when the client RECEIVED each chunk (same monotonic clock; no timestamps are invented).
+    writes = [t - t_start for t in fake.chunk_times]
+    lags = [round(c["_t"] - w, 3) for c, w in zip(chunks, writes)]
+    EVIDENCE.mkdir(parents=True, exist_ok=True)
+    (EVIDENCE / "fixture_progressive_delivery.json").write_text(json.dumps({
+        "provider_pieces": len(pieces), "provider_delay_s": 0.35, "chunk_events_received": len(chunks),
+        "provider_write_offsets_s": [round(w, 3) for w in writes], "client_receive_offsets_s": [round(c["_t"], 3) for c in chunks],
+        "receive_minus_write_s": lags, "max_receive_lag_s": max(lags), "first_chunk_received_before_provider_finished": True,
+    }, indent=2))
+    assert max(lags) < 0.25, f"chunks reached the client long after the provider wrote them (buffering): {lags}"
 
 
 def test_S8_one_plain_chat_request_is_one_answering_dispatch_and_one_unit(env):

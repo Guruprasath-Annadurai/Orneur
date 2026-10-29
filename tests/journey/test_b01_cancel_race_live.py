@@ -29,6 +29,10 @@ FULL = "".join(PIECES)
 ROUNDS = 36
 
 
+ASYNCIO_HYGIENE = ("Task exception was never retrieved", "Task was destroyed but it is pending", "was never awaited", "async generator ignored GeneratorExit",
+                   "Exception ignored in", "coroutine ignored GeneratorExit")
+
+
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory):
     fake = FakeOllama(models=(JOURNEY_MODEL,), chunks=PIECES, chunk_delay=0.02)
@@ -41,6 +45,10 @@ def stack(tmp_path_factory):
     finally:
         srv.stop()
         fake.__exit__(None, None, None)
+        # The server's own log must carry no asyncio hygiene warning from the abandoned/cancelled streams this module created.
+        log = srv.log_path.read_text(errors="replace")
+        bad = [m for m in ASYNCIO_HYGIENE if m in log]
+        assert not bad, f"server log contains asyncio hygiene warnings: {bad}"
 
 
 def _usage(user):

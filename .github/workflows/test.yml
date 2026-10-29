@@ -227,6 +227,7 @@ jobs:
           node --test tests/frontend/test_b11_inline_edit.mjs
           node --test tests/frontend/test_view_ownership_epoch.mjs
           node --test tests/frontend/test_active_conversation.mjs
+          node --test tests/frontend/test_b01_stop_upstream.mjs
 
       - name: Set up Python (to actually serve the static file, not just read it off disk)
         uses: actions/setup-python@v5
@@ -320,7 +321,10 @@ jobs:
           ORNEUR_JOURNEY_TOOLS: /tmp/journey-tools
           ORNEUR_JOURNEY_REDIS_RESTART_CMD: docker restart $(docker ps -q --filter ancestor=redis:7-alpine)
         run: |
-          python -m pytest tests/journey/test_journey_browser_fixture.py tests/journey/test_journey_concurrency_live.py -p no:cacheprovider -v
+          python -m pytest tests/journey/test_journey_browser_fixture.py tests/journey/test_journey_concurrency_live.py \
+            tests/journey/test_b01_streaming_live.py tests/journey/test_b01_cancel_race_live.py -p no:cacheprovider -v
+          # B-01: the approved page, real Chromium, streamed default path (fixture provider only - the real-Ollama half is workstation-only)
+          python -m pytest tests/journey/test_b01_browser_streaming.py -k fixture -p no:cacheprovider -v
 
       - name: Upload journey screenshots on failure
         if: failure()

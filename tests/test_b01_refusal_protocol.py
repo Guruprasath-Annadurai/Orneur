@@ -221,3 +221,16 @@ def test_zz_write_the_measured_table():
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     (EVIDENCE / "refusal_protocol.json").write_text(json.dumps(sorted(TABLE, key=lambda r: r["path"]), indent=2))
     assert TABLE, "no refusal path was measured"
+
+
+def test_an_anonymous_caller_is_streamed_without_persistence_or_quota(client, fake):
+    """No account: the answer is still streamed from the Kernel's deltas, but nothing is stored (``persisted: not_applicable``) and there is no quota ticket."""
+    fake.chunks = ["anon ", "answer"]
+    before = len(fake.requests)
+    status, kind, events = _post(client, None, {"message": "hello anonymous", "model_variant": "nano"})
+    assert (status, kind) == (200, "sse"), (status, events)
+    done = events[-1]
+    assert done["type"] == "done" and done["persisted"] == "not_applicable" and done["delivery"] == "upstream", events[-3:]
+    assert "".join(e["text"] for e in events if e["type"] == "chunk") == "anon answer"
+    assert next(e for e in events if e["type"] == "stream") == {"type": "stream", "delivery": "upstream", "cancellable": True}
+    assert len(fake.requests) > before

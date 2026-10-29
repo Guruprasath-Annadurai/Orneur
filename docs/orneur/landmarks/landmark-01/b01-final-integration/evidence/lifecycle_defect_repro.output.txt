@@ -1,0 +1,8 @@
+== 1. handoff lifecycle against the ORIGINAL channel (15befec) ==
+HANG: the consumer waited 2s for a terminal signal that the sample only sends after the consumer has finished
+== 2. close() on a FULL original channel ==
+tasks before close()=1 after close()=2 -> UNTRACKED background task created
+fail() on a full channel also spawned a task: True
+== 3. the corrected bridge (this branch), same shape of use ==
+terminated by itself: seen=['a', 'b', 'c'] result=RESULT state=ended terminal_observed=1
+close() on a full channel: tasks before=3 after=3; drained=['x']

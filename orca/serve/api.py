@@ -2398,11 +2398,12 @@ async def _stream_dispatch(
                             if not streamed_upstream:
                                 streamed_upstream = True
                                 # Proven by the data: a real gateway delta has arrived, so this IS an upstream stream and closing the connection
-                                # cancels it. (Never announced earlier, when the Kernel might still defer or abstain.)
-                                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
+                                # cancels it. (Never announced earlier, when the Kernel might still defer or abstain.) The served model is named from
+                                # what the gateway resolved for this very call (`on_served`), in the established order: model, stream, chunks.
                                 early = _model_identity(requested_variant=req.model_variant, served_tier=served.get("tier"), served_model=served.get("model"),
                                                         reason="entitlement_limit" if served.get("degraded") else None, viewer_user_id=user.id if user else None)
                                 yield f"data: {json.dumps({'type': 'model', 'identity': early})}\n\n"
+                                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
                             raw_kernel_text += raw_delta
                             safe_delta = redactor.push(raw_delta)
                             if safe_delta:
