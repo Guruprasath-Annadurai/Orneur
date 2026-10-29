@@ -2190,14 +2190,19 @@ async def _stream_dispatch(
     # they are generated?" depends on it. Streaming needs (a) the local Ollama backend (frontier backends are synchronous passthroughs)
     # and (b) a session with no loaded documents (a document session may discard the Kernel's draft for the RAG pipeline - B-06 - and the
     # Kernel withholds its raw tokens for Truth-Fabric drafts, which are unverified until the Kernel finishes).
-    backend_resolution = _resolve_backend_for_chat(req.model_variant)
-    backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+    try:
+        backend_resolution = _resolve_backend_for_chat(req.model_variant)
+        backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+    except Exception:
+        # No usable backend for the tier. The Kernel used to run first and answer this with a clean "model unavailable" abstention, so keep
+        # that order: run it, and resolve again afterwards exactly as before (raising then only if the Kernel did not already decline).
+        backend_resolution = routing_decision = None
 
     sess = None
     cognitive_result = None
     stream_kernel = False
     kernel_doc_store = _KERNEL_DOCS_DEFAULT
-    if backend_resolution.backend == "ollama":
+    if backend_resolution is not None and backend_resolution.backend == "ollama":
         # What the Kernel has always been given: the doc store of an ALREADY-LIVE session, never one built just for it.
         kernel_doc_store = _sessions[req.session_id].doc_store if req.session_id and req.session_id in _sessions else None
         sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
@@ -2208,7 +2213,9 @@ async def _stream_dispatch(
 
     if not stream_kernel:
         try:
-            cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id, doc_store=kernel_doc_store)
+            # (callers and tests substitute this function; keep its original call shape unless a doc store must be passed explicitly)
+            _kernel_kw = {} if kernel_doc_store is _KERNEL_DOCS_DEFAULT else {"doc_store": kernel_doc_store}
+            cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id, **_kernel_kw)
         except Exception as e:
             code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
             audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
@@ -2220,6 +2227,14 @@ async def _stream_dispatch(
         if cognitive_result.status == CognitiveState.ABSTAINED:
             return StreamingResponse(_abstained_stream(cognitive_result, user), media_type="text/event-stream")
         _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
+        if backend_resolution is None:
+            backend_resolution = _resolve_backend_for_chat(req.model_variant)
+            backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+            if backend_resolution.backend == "ollama":
+                sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
+                blocked = _temporary_block(sess.id)
+                if blocked is not None:
+                    return blocked
 
     if backend_resolution.backend != "ollama":
         persona_system = get_persona_system(backend_resolution.tier)

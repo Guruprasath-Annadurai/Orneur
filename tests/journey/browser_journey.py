@@ -208,11 +208,10 @@ with sync_playwright() as pw:
         delivery = next((e["ev"] for e in log if e["ev"]["type"] == "stream"), None)
         assert delivery is not None and kinds[-1] == "done", f"browser did not receive a complete stream: {kinds}"
         chunk_evs = [e for e in log if e["ev"]["type"] == "chunk"]
-        if delivery["delivery"] == "upstream":
-            assert len(chunk_evs) >= 2 and len([s for s in seen if s > 0]) >= 2, f"upstream delivery rendered in one piece: {seen}"
-        else:
-            # Kernel direct answers come from the non-streaming gateway call: the product labels that honestly instead of faking typing.
-            assert delivery == {"type": "stream", "delivery": "replayed", "cancellable": False} and len(chunk_evs) == 1 and chunk_evs[0]["ev"].get("replayed") is True, delivery
+        # B-01 closed: plain chat is delivered from the model's own tokens, rendered progressively - never a single replayed chunk.
+        assert delivery == {"type": "stream", "delivery": "upstream", "cancellable": True}, delivery
+        assert len(chunk_evs) >= 3 and len([s for s in seen if s > 0]) >= 3, f"upstream delivery rendered in too few steps: chunks={len(chunk_evs)} seen={seen}"
+        assert not any(e["ev"].get("replayed") for e in log if e["ev"]["type"] == "chunk")
         state["answer1"] = final
         shot(page, "B1_streamed_answer_light")
         report("B1_new_conversation_streams_real_answer", True, f"delivery={delivery['delivery']} chunks={len(chunk_evs)} distinct lengths seen: {seen[:12]}")
