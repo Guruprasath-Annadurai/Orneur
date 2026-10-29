@@ -43,141 +43,94 @@ HISTORICAL = {
 }
 
 # Candidate probe definitions: only these may become VERIFIED_ENGINEERING.
-# Each requires implementation path(s), pytest node ids, and a recorded probe run.
+# Mappings MUST match register_graph.json evidence_required (not convenient filenames).
+# Independently qualified by Antigravity (limited scope): C04, C05, C17–C21.
 VERIFIED_CANDIDATES = {
-    "AUTH-1": {
-        "implementation": [
-            "orca/train/authorization.py",
-            "orca/genesis/governance/authorization.py",
-        ],
-        "tests": [
-            "tests/test_training_authorization_gate.py",
-            "tests/test_genesis_governance_authorization.py",
-        ],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "Fail-closed training / native-pretraining authorization entry points",
-    },
-    "G4": {
-        "implementation": [
-            "orca/train/authorization.py",
-            "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
-        ],
-        "tests": ["tests/test_training_authorization_assurance.py"],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "Committed authorization record is NOT_AUTHORIZED; adversarial assurance suite",
-    },
-    "G5": {
-        "implementation": [
-            "orca/train/authorization.py",
-            "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json",
-        ],
-        "tests": ["tests/test_training_authorization_gate.py"],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "Empty authority registry with pinned digest; no key can authorize",
-    },
-    "TRAIN-1": {
-        "implementation": [
-            "orca/genesis/training/primitives.py",
-            "orca/genesis/training/math_qualification.py",
-        ],
-        "tests": [
-            "tests/test_cursor_training_math.py",
-            "tests/test_genesis_training_primitives.py",
-        ],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "CPU synthetic training mathematics / primitives",
-    },
-    "TRAIN-2": {
-        "implementation": [
-            "orca/genesis/training/checkpoint_integrity.py",
-            "orca/genesis/training/resumable_checkpoint.py",
-        ],
-        "tests": [
-            "tests/test_genesis_checkpoint_integrity.py",
-            "tests/test_genesis_resumable_checkpoint.py",
-        ],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "Synthetic checkpoint integrity and resume refusal paths",
-    },
+    # C01: Refusal log from the signed registry path showing an unregistered id refused.
     "C01": {
-        "implementation": ["orca/genesis/model/config.py", "orca/genesis/model/transformer.py"],
-        "tests": ["tests/test_genesis_model_architecture.py"],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "GENESIS architecture config/interface synthetic tests",
+        "implementation": ["orca/rse/imp1/authority.py", "orca/rse/imp1/codec.py"],
+        "tests": ["tests/rse/test_c01_c02_registry_refusal.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Signed-registry Crown path refuses unregistered entry id (ABSENT)",
     },
+    # C02: Consumer refusal record for a stale or unknown registry.
     "C02": {
-        "implementation": ["orca/genesis/tokenizer/framework.py", "orca/genesis/tokenizer/robustness.py"],
-        "tests": [
-            "tests/test_genesis_tokenizer.py",
-            "tests/test_cursor_tokenizer_robustness.py",
-        ],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "Tokenizer framework + robustness synthetic tests",
+        "implementation": ["orca/rse/imp1/authority.py", "orca/rse/imp1/codec.py"],
+        "tests": ["tests/rse/test_c01_c02_registry_refusal.py", "tests/rse/test_imp1r_final.py"],
+        "historical_source_sha": "b384348",
+        "claim": "Consumer / accept_registry refuse stale or unknown registry binding",
     },
-    "DATA-1": {
-        "implementation": ["orca/genesis/data/manifest.py", "orca/genesis/data/pipeline.py"],
-        "tests": [
-            "tests/test_genesis_data_manifest.py",
-            "tests/test_cursor_pipeline_admission.py",
-        ],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "Dataset manifest / pipeline admission (synthetic; not formal DATA-1 acceptance)",
-    },
-    "DATA-2": {
-        "implementation": ["orca/genesis/data/contamination.py"],
-        "tests": ["tests/test_genesis_data_contamination.py"],
-        "historical_source_sha": "fc1eb1d",
-        "claim": "Contamination checking helpers (synthetic; not formal DATA-2 acceptance)",
-    },
-    # Phase 2 RSE software semantics (engineering verification ≠ formal acceptance / mainline).
+    # C04: Refusal record for a ceiling above the policy cap.
     "C04": {
         "implementation": ["orca/rse/imp1/authority.py", "orca/rse/imp1/codec.py"],
         "tests": ["tests/rse/test_imp1_registry_crown.py"],
         "historical_source_sha": "b384348",
-        "claim": "Policy ceiling refusal / synthetic policy caps (RSE IMP-1)",
+        "claim": "Policy ceiling / RESOURCE_CAP refusal (independently qualified)",
     },
+    # C05: Validator output refusing a confusable name.
     "C05": {
         "implementation": ["orca/rse/imp1/codec.py"],
         "tests": ["tests/rse/test_imp1_registry_crown.py"],
         "historical_source_sha": "b384348",
-        "claim": "Confusable registry name refusal (RSE IMP-1)",
+        "claim": "Confusable registry name refusal (independently qualified)",
     },
+    # C17–C21: OCR1 vector / frame / sender / origin acceptance conditions.
     "C17": {
         "implementation": ["orca/rse/imp4/ocr1.py"],
         "tests": ["tests/rse/test_imp4_ocr1.py"],
         "historical_source_sha": "b384348",
-        "claim": "OCR1 enc validity / zero-shared-secret abort vectors",
+        "claim": "OCR1 enc validity / zero-shared-secret abort (independently qualified)",
     },
     "C18": {
         "implementation": ["orca/rse/imp4/ocr1.py"],
         "tests": ["tests/rse/test_imp4_ocr1.py"],
         "historical_source_sha": "b384348",
-        "claim": "RFC 9180 profile vectors used by OCR1",
+        "claim": "RFC 9180 profile vectors used by OCR1 (independently qualified)",
     },
     "C19": {
         "implementation": ["orca/rse/imp4/ocr1.py"],
         "tests": ["tests/rse/test_imp4_ocr1.py"],
         "historical_source_sha": "b384348",
-        "claim": "Missing/duplicate/reordered/extra/truncated/foreign frame verdicts",
+        "claim": "Missing/duplicate/reordered/extra/truncated/foreign frame verdicts (independently qualified)",
     },
     "C20": {
         "implementation": ["orca/rse/imp4/ocr1.py"],
         "tests": ["tests/rse/test_imp4_ocr1.py"],
         "historical_source_sha": "b384348",
-        "claim": "Unknown or revoked sender refusal",
+        "claim": "Unknown or revoked sender refusal (independently qualified)",
     },
     "C21": {
         "implementation": ["orca/rse/imp4/ocr1.py"],
         "tests": ["tests/rse/test_imp4_ocr1.py"],
         "historical_source_sha": "b384348",
-        "claim": "Bad origin signature rejected before key use",
+        "claim": "Bad origin signature rejected before key use (independently qualified)",
+    },
+    # TRAIN-1: A hash lock of the train extra and one dry-run command pinned to a SHA.
+    "TRAIN-1": {
+        "implementation": [
+            "orca/train/dryrun/lockcheck.py",
+            "requirements/train.txt",
+            "orca/train/dryrun/cli.py",
+        ],
+        "tests": ["tests/test_trainprep_lock_env.py"],
+        "historical_source_sha": "fc1eb1d",
+        "claim": "Hash-locked train extra (requirements/train.txt) + SHA-bound dry-run command surface",
+    },
+    # TRAIN-2: Synthetic dry-run log showing corpus/qual/model/GPU/training locks still false.
+    "TRAIN-2": {
+        "implementation": [
+            "orca/train/dryrun/cli.py",
+            "orca/rse/imp1/locks.py",
+            "docs/orneur/status/trainprep/dryrun_result.json",
+        ],
+        "tests": ["tests/test_trainprep_cli.py"],
+        "historical_source_sha": "fc1eb1d",
+        "claim": "Synthetic dry-run proves authorization locks remain false; no training",
     },
 }
 
-# Explicit downgrades: worksheet / docs alone are not VERIFIED_ENGINEERING.
-# Antigravity remediation: nine over-promoted rows whose original acceptance
-# conditions require witness/journal/isolation artifacts (or private holdout
-# access) that software unit probes must not substitute.
+# Explicit classifications from register_graph acceptance conditions.
+# Software tests must not substitute founder / physical / private-corpus artifacts.
 FORCE_UNVERIFIED = {
     "FINAL-1": (
         "IMPLEMENTED_UNVERIFIED",
@@ -239,9 +192,39 @@ FORCE_UNVERIFIED = {
         "Eval-boundary helpers deny training-identity holdout reads in unit tests; original QUAL-2 requires accepted failed-read isolation evidence (depends on QUAL-1/P2-2)",
         "orca/pretrain_foundation/eval_boundary.py",
     ),
+    "DATA-1": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Synthetic manifest/admission helpers exist; acceptance requires a provenance manifest bound to the DATA-3 creation digest (no protected corpus)",
+        "orca/genesis/data/manifest.py",
+    ),
+    "DATA-2": (
+        "IMPLEMENTED_UNVERIFIED",
+        "Contamination helpers exist; acceptance requires holdout-separation bound to creation digest and holdout fingerprints (no protected corpus)",
+        "orca/genesis/data/contamination.py",
+    ),
+    "SUP-3": (
+        "IMPLEMENTED_UNVERIFIED",
+        "RSE hash-lock / audit software exists; acceptance requires the lock on the SHA merged to main",
+        "requirements/rse.txt",
+    ),
 }
 
 FORCE_BLOCKED = {
+    "G4": (
+        "BLOCKED",
+        "Founder purchase authorization and named hardware selection absent (register NOT_AUTHORIZED)",
+        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+    ),
+    "G5": (
+        "BLOCKED",
+        "Provisioning / key-creation ceremony record absent (register NOT_AUTHORIZED)",
+        "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json",
+    ),
+    "AUTH-1": (
+        "BLOCKED",
+        "Signed founder budget record (number, currency, signature) absent (register NOT_VERIFIABLE)",
+        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+    ),
     "G8": ("BLOCKED", "Founder corpus-generation grant absent", "orca/pretrain_foundation/readiness_gate.py"),
     "G10": ("BLOCKED", "Founder training permission absent", "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"),
     "MODEL-1": ("BLOCKED", "No authorized native training identity", "orca/genesis/model/family_registry.py"),
@@ -254,6 +237,28 @@ FORCE_BLOCKED = {
     "DATA-5": ("BLOCKED", "Independent custody evidence absent", "orca/pretrain_foundation/readiness_gate.py"),
     "R65": ("BLOCKED", "Unmapped placeholder; cannot be signed", "docs/orneur/acceptance/register_graph.json"),
     "G1": ("BLOCKED", "Independent architecture review file not found", "docs/orneur/acceptance/register_graph.json"),
+}
+
+# Independently qualified engineering IDs (Antigravity LIMITED TO TESTED SCOPE).
+INDEPENDENTLY_QUALIFIED_ENGINEERING_IDS = ("C04", "C05", "C17", "C18", "C19", "C20", "C21")
+# Data admission controls are qualified software but do not satisfy a counted DATA-* acceptance row.
+QUALIFIED_UNCOUNTED_SOFTWARE = {
+    "capability_id": "DATA_ADMISSION_CONTROLS",
+    "canonical_requirement_id": None,
+    "reason": (
+        "Remote-origin refusal and training-bound license/jail admission are independently "
+        "exercised software controls; they do not satisfy DATA-1 (provenance manifest bound to "
+        "DATA-3 creation digest) or DATA-2 (contamination/holdout separation on a protected corpus)."
+    ),
+    "implementation": [
+        "orca/pretrain_foundation/corpus_controls.py",
+        "orca/genesis/data/pipeline.py",
+    ],
+    "tests": [
+        "tests/test_pretraining_phase_closure.py",
+        "tests/test_pretraining_call_chain_integration.py",
+        "tests/test_cursor_pipeline_admission.py",
+    ],
 }
 
 
@@ -556,18 +561,21 @@ def build(*, run_probes: bool = True) -> dict:
         "antigravity_remediation_downgrades": [
             "C09", "C10", "C11", "C12", "C13", "C14", "C15", "C45", "QUAL-2",
         ],
+        "independently_qualified_engineering_ids": list(INDEPENDENTLY_QUALIFIED_ENGINEERING_IDS),
+        "qualified_uncounted_software": QUALIFIED_UNCOUNTED_SOFTWARE,
         "probes_path": str(PROBES_JSON.relative_to(ROOT)),
         "training_authorization": "NO-GO",
         "note": (
             "engineering_disposition is not formal acceptance. "
+            "Mappings are derived from register_graph.json evidence_required only. "
             "VERIFIED_ENGINEERING requires implementation paths + honest pytest evidence "
             "(>=1 passed; reject zero-collected / skip-only / mixed skips / xfail-only) "
             "on a complete matching candidate_sha. "
-            "xfailed residuals are recorded separately and are never counted as PASS. "
-            "Nine Antigravity remediation downgrades restore IMPLEMENTED_UNVERIFIED for "
-            "rows whose original acceptance conditions are not satisfied by software tests. "
-            "historical_source_sha is when code landed; candidate_sha is the tip under test. "
-            "prior_qualified_code_sha preserves the last independently tested code tip. "
+            "Independently qualified engineering (Antigravity LIMITED TO TESTED SCOPE): "
+            "C04, C05, C17–C21. Data admission controls are qualified uncounted software "
+            "(no eighth fabricated requirement ID). "
+            "G4/G5/AUTH-1 remain BLOCKED (founder artifacts). "
+            "DATA-1/DATA-2 remain IMPLEMENTED_UNVERIFIED (no protected corpus). "
             "FORMALLY_ACCEPTED is never assigned by this script. Training remains NO-GO."
         ),
         "requirements": rows,

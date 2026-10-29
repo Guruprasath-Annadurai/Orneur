@@ -1,0 +1,146 @@
+{
+  "schema": "orneur-independent-audit-eight-row-reconciliation/1",
+  "independent_verdict": "INDEPENDENTLY_QUALIFIED_ENGINEERING — LIMITED TO TESTED SCOPE",
+  "reviewed_candidate_sha": "97d4c83a16f56fca3c934cd7954ae8db6cfeb6d1",
+  "denominator": 95,
+  "fabricated_eighth_id": false,
+  "independently_qualified_counted_rows": [
+    {
+      "requirement_id": "C04",
+      "exact_acceptance_condition": "Refusal record for a ceiling above the policy cap.",
+      "actual_implemented_control": "orca/rse/imp1/authority.py crown_validate RESOURCE_CAP refusal",
+      "exact_tests": ["tests/rse/test_imp1_registry_crown.py::test_policy_caps_are_synthetic_and_refuse_raises"],
+      "independent_qualification_reference": "Antigravity LIMITED TO TESTED SCOPE on 97d4c83",
+      "remaining_acceptance_dependencies": ["Own-evidence reviewer acceptance on merged SHA", "G3 independent review"],
+      "engineering_classification": "VERIFIED_ENGINEERING"
+    },
+    {
+      "requirement_id": "C05",
+      "exact_acceptance_condition": "Validator output refusing a confusable name.",
+      "actual_implemented_control": "orca/rse/imp1/codec.py name_skeleton / confusable refusal",
+      "exact_tests": ["tests/rse/test_imp1_registry_crown.py::test_names_reject_charset_and_confusables_without_broadening_dots"],
+      "independent_qualification_reference": "Antigravity LIMITED TO TESTED SCOPE on 97d4c83",
+      "remaining_acceptance_dependencies": ["Own-evidence reviewer acceptance on merged SHA", "G3 independent review"],
+      "engineering_classification": "VERIFIED_ENGINEERING"
+    },
+    {
+      "requirement_id": "C17",
+      "exact_acceptance_condition": "Vector test for enc validity and the zero-shared-secret abort.",
+      "actual_implemented_control": "orca/rse/imp4/ocr1.py enc validity + zero-shared-secret abort",
+      "exact_tests": ["tests/rse/test_imp4_ocr1.py"],
+      "independent_qualification_reference": "Antigravity LIMITED TO TESTED SCOPE on 97d4c83",
+      "remaining_acceptance_dependencies": ["Own-evidence reviewer acceptance on merged SHA"],
+      "engineering_classification": "VERIFIED_ENGINEERING"
+    },
+    {
+      "requirement_id": "C18",
+      "exact_acceptance_condition": "Test log reproducing the RFC 9180 vectors used by this profile.",
+      "actual_implemented_control": "orca/rse/imp4/ocr1.py RFC 9180 profile vectors",
+      "exact_tests": ["tests/rse/test_imp4_ocr1.py"],
+      "independent_qualification_reference": "Antigravity LIMITED TO TESTED SCOPE on 97d4c83",
+      "remaining_acceptance_dependencies": ["Own-evidence reviewer acceptance on merged SHA"],
+      "engineering_classification": "VERIFIED_ENGINEERING"
+    },
+    {
+      "requirement_id": "C19",
+      "exact_acceptance_condition": "Per-case verdicts for missing, duplicate, reordered, extra, truncated, and foreign frames.",
+      "actual_implemented_control": "orca/rse/imp4/ocr1.py frame-order / integrity verdicts",
+      "exact_tests": ["tests/rse/test_imp4_ocr1.py"],
+      "independent_qualification_reference": "Antigravity LIMITED TO TESTED SCOPE on 97d4c83",
+      "remaining_acceptance_dependencies": ["Own-evidence reviewer acceptance on merged SHA"],
+      "engineering_classification": "VERIFIED_ENGINEERING"
+    },
+    {
+      "requirement_id": "C20",
+      "exact_acceptance_condition": "Resolver log refusing an unknown or revoked sender.",
+      "actual_implemented_control": "orca/rse/imp4/ocr1.py unknown/revoked sender refusal",
+      "exact_tests": ["tests/rse/test_imp4_ocr1.py"],
+      "independent_qualification_reference": "Antigravity LIMITED TO TESTED SCOPE on 97d4c83",
+      "remaining_acceptance_dependencies": ["Own-evidence reviewer acceptance on merged SHA"],
+      "engineering_classification": "VERIFIED_ENGINEERING"
+    },
+    {
+      "requirement_id": "C21",
+      "exact_acceptance_condition": "Verify log showing a bad origin signature is rejected before key use.",
+      "actual_implemented_control": "orca/rse/imp4/ocr1.py bad origin signature rejected before key use",
+      "exact_tests": ["tests/rse/test_imp4_ocr1.py"],
+      "independent_qualification_reference": "Antigravity LIMITED TO TESTED SCOPE on 97d4c83",
+      "remaining_acceptance_dependencies": ["Own-evidence reviewer acceptance on merged SHA"],
+      "engineering_classification": "VERIFIED_ENGINEERING"
+    }
+  ],
+  "eighth_credit_without_canonical_id": {
+    "capability_id": "DATA_ADMISSION_CONTROLS",
+    "canonical_requirement_id": null,
+    "exact_acceptance_condition": null,
+    "actual_implemented_control": "refuse_remote_origin + process_training_bound_corpus license/jail admission",
+    "exact_tests": [
+      "tests/test_pretraining_phase_closure.py",
+      "tests/test_pretraining_call_chain_integration.py"
+    ],
+    "independent_qualification_reference": "Antigravity credited data admission controls without naming an eighth counted ID",
+    "remaining_acceptance_dependencies": [
+      "DATA-1 requires provenance manifest bound to DATA-3 creation digest",
+      "DATA-2 requires contamination/holdout separation on a protected corpus",
+      "G8 founder corpus-generation grant"
+    ],
+    "engineering_classification": "QUALIFIED_UNCOUNTED_SOFTWARE_CAPABILITY",
+    "note": "Do not fabricate an eighth requirement ID. Matrix denominator remains 95."
+  },
+  "mis_mapped_rows_corrected": [
+    {
+      "requirement_id": "C01",
+      "was": "GENESIS transformer architecture tests",
+      "now": "Signed-registry Crown ABSENT refusal for unregistered entry id",
+      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+    },
+    {
+      "requirement_id": "C02",
+      "was": "Tokenizer robustness tests",
+      "now": "Consumer/accept_registry stale or unknown registry refusal",
+      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+    },
+    {
+      "requirement_id": "G4",
+      "was": "VERIFIED_ENGINEERING via authorization unit tests",
+      "now": "BLOCKED — founder purchase authorization + named hardware selection required",
+      "engineering_classification": "BLOCKED"
+    },
+    {
+      "requirement_id": "G5",
+      "was": "VERIFIED_ENGINEERING via empty registry unit tests",
+      "now": "BLOCKED — key ceremony / provisioning authorization required",
+      "engineering_classification": "BLOCKED"
+    },
+    {
+      "requirement_id": "AUTH-1",
+      "was": "VERIFIED_ENGINEERING via authorize_training fail-closed tests",
+      "now": "BLOCKED — signed founder budget record required",
+      "engineering_classification": "BLOCKED"
+    },
+    {
+      "requirement_id": "DATA-1",
+      "was": "VERIFIED_ENGINEERING via synthetic manifest/pipeline tests",
+      "now": "IMPLEMENTED_UNVERIFIED — no DATA-3-bound provenance manifest",
+      "engineering_classification": "IMPLEMENTED_UNVERIFIED"
+    },
+    {
+      "requirement_id": "DATA-2",
+      "was": "VERIFIED_ENGINEERING via contamination helpers",
+      "now": "IMPLEMENTED_UNVERIFIED — no protected-corpus holdout separation result",
+      "engineering_classification": "IMPLEMENTED_UNVERIFIED"
+    },
+    {
+      "requirement_id": "TRAIN-1",
+      "was": "CPU training-math primitives (wrong mapping)",
+      "now": "Hash lock of train extra + SHA-pinned dry-run command",
+      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+    },
+    {
+      "requirement_id": "TRAIN-2",
+      "was": "Checkpoint integrity suites (wrong mapping)",
+      "now": "Synthetic dry-run log proving locks remain false",
+      "engineering_classification": "VERIFIED_ENGINEERING_PENDING_PROBE_REBUILD"
+    }
+  ]
+}

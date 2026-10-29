@@ -116,20 +116,23 @@ def build() -> dict:
         },
         "honest_final_disposition": {
             "engineering_completed": (
-                "Phase 0/1 evidence honesty with skip/SHA refusal; "
-                "RSE software probes retained for C04/C05/C17-C21 only; "
-                "Phase 2-9 boundary modules + call-chain integration; freeze package NO-GO"
+                "Register-aligned matrix correction; C01/C02 signed-registry refusals; "
+                "TRAIN-1 hash lock + TRAIN-2 synthetic dry-run locks-false evidence; "
+                "independently qualified C04/C05/C17–C21 preserved; data-admission uncounted capability recorded"
             ),
             "engineering_incomplete": (
                 "Physical/custody HW gates; independent second codec (C16); mainline merge (G2/G3); "
-                "formal acceptance process; nine Antigravity downgrades remain IMPLEMENTED_UNVERIFIED "
-                "(C09-C15, C45, QUAL-2) until original acceptance artifacts exist"
+                "formal acceptance process; journal/witness/holdout rows remain IMPLEMENTED_UNVERIFIED; "
+                "DATA-1/DATA-2 require protected corpus artifacts"
             ),
             "antigravity_remediation_downgrades": matrix.get("antigravity_remediation_downgrades")
             or ["C09", "C10", "C11", "C12", "C13", "C14", "C15", "C45", "QUAL-2"],
+            "independently_qualified_engineering_ids": matrix.get("independently_qualified_engineering_ids")
+            or ["C04", "C05", "C17", "C18", "C19", "C20", "C21"],
+            "qualified_uncounted_software": matrix.get("qualified_uncounted_software"),
             "founder_controlled_blockers": [
-                "G1", "G8", "G10", "DEC-K", "C08", "C44", "C27", "R65", "DATA-3", "DATA-5",
-                "MODEL-1", "MODEL-2R", "QUAL-1", "FINAL-2",
+                "G1", "G4", "G5", "G8", "G10", "AUTH-1", "DEC-K", "C08", "C44", "C27", "R65",
+                "DATA-3", "DATA-5", "MODEL-1", "MODEL-2R", "QUAL-1", "FINAL-2",
             ],
             "external_blockers": sorted(PHYSICAL_REQUIREMENT_IDS),
             "independent_qualification_pending": True,
@@ -138,6 +141,9 @@ def build() -> dict:
             "phases_0_9_fully_complete_claim": False,
         },
         "probe_evidence_tip": matrix.get("candidate_sha"),
+        "eight_row_reconciliation": str(
+            (ENG / "INDEPENDENT_AUDIT_EIGHT_ROW_RECONCILIATION.json").relative_to(ROOT)
+        ),
     }
     return doc
 
@@ -159,7 +165,13 @@ def render_md(doc: dict) -> str:
         f"- Honesty probe tip: `{doc['honesty_probe_tip']}`",
         f"- Disposition histogram: `{json.dumps(doc['disposition_histogram'], sort_keys=True)}`",
         f"- VERIFIED_ENGINEERING IDs: {', '.join(doc['verified_engineering_ids'] or []) or '(none)'}",
+        f"- Independently qualified (counted): "
+        f"{', '.join(doc['honest_final_disposition'].get('independently_qualified_engineering_ids') or [])}",
+        f"- Qualified uncounted software: "
+        f"`{(doc['honest_final_disposition'].get('qualified_uncounted_software') or {}).get('capability_id')}` "
+        f"(no fabricated eighth requirement ID)",
         f"- Probe evidence tip: `{doc.get('probe_evidence_tip')}`",
+        f"- Eight-row reconciliation: `{doc.get('eight_row_reconciliation')}`",
         f"- Antigravity remediation downgrades: "
         f"{', '.join(doc['honest_final_disposition'].get('antigravity_remediation_downgrades') or [])}",
         f"- Readiness blockers: {', '.join(doc['readiness_blockers'])}",

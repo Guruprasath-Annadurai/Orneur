@@ -99,12 +99,29 @@ def test_antigravity_nine_downgrades_are_not_verified_engineering():
     for rid in downgraded:
         assert by_id[rid]["engineering_disposition"] == "IMPLEMENTED_UNVERIFIED", rid
         assert rid not in matrix["verified_engineering_ids"]
-    # Software-vector RSE rows that remain probe-eligible stay listed only if verified.
-    for rid in ("C04", "C05", "C17", "C18", "C19", "C20", "C21"):
-        assert by_id[rid]["engineering_disposition"] in {
-            "VERIFIED_ENGINEERING",
-            "IMPLEMENTED_UNVERIFIED",
-        }
+
+
+def test_register_aligned_verified_and_blocked_rows():
+    """Matrix dispositions must track original acceptance conditions, not convenience tests."""
+    matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
+    by_id = {r["requirement_id"]: r for r in matrix["requirements"]}
+    independent = {"C04", "C05", "C17", "C18", "C19", "C20", "C21"}
+    assert set(matrix.get("independently_qualified_engineering_ids") or []) == independent
+    for rid in independent:
+        assert by_id[rid]["engineering_disposition"] == "VERIFIED_ENGINEERING", rid
+    # Founder / budget rows cannot be software-verified.
+    for rid in ("G4", "G5", "AUTH-1"):
+        assert by_id[rid]["engineering_disposition"] == "BLOCKED", rid
+    # DATA-* acceptance requires protected corpus artifacts.
+    for rid in ("DATA-1", "DATA-2"):
+        assert by_id[rid]["engineering_disposition"] == "IMPLEMENTED_UNVERIFIED", rid
+    # C01/C02 must bind to registry refusal paths when verified.
+    for rid in ("C01", "C02"):
+        if by_id[rid]["engineering_disposition"] == "VERIFIED_ENGINEERING":
+            assert "rse" in (by_id[rid].get("actual_implementation") or "").lower()
+    uncounted = matrix.get("qualified_uncounted_software") or {}
+    assert uncounted.get("canonical_requirement_id") is None
+    assert uncounted.get("capability_id") == "DATA_ADMISSION_CONTROLS"
 
 
 def test_probe_digests_match_current_implementation_files():
