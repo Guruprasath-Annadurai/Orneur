@@ -1,0 +1,57 @@
+{
+  "schema": "l02-evidence-manifest/1",
+  "milestone_status": "PARTIAL",
+  "independently_qualified": false,
+  "baseline": "9cb864c99ad323d11626063498a7d1cef0d7d4b5",
+  "last_product_code_sha": "11801a8",
+  "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/139",
+  "waves": {
+    "L02-01": "IMPLEMENTED_VERIFIED_ENGINEERING",
+    "L02-02": "IMPLEMENTED_VERIFIED_ENGINEERING",
+    "L02-03": "NOT_STARTED",
+    "L02-04": "NOT_STARTED",
+    "L02-05": "NOT_STARTED",
+    "L02-06": "NOT_STARTED",
+    "L02-07": "NOT_STARTED",
+    "L02-08": "NOT_STARTED"
+  },
+  "ci": {
+    "code_bearing_run": 40862564360,
+    "conclusion": "success",
+    "deterministic": "9129 passed, 398 skipped, 152 deselected, 6 xfailed",
+    "journeys_fixture": "39 passed",
+    "docs_head_run": 40862662385
+  },
+  "evidence": [
+    {
+      "class": "DET+FIXTURE",
+      "cmd": "pytest tests/test_l02_deletion_lifecycle.py tests/test_l02_doc_store_deletion.py tests/test_l02_document_dispatch.py tests/test_l02_document_rag.py",
+      "note": "FakeOllama test double"
+    },
+    {
+      "class": "DEFECT_REPRO",
+      "files": [
+        "evidence/l02_01_baseline_defect_9cb864c.txt",
+        "evidence/l02_01_doc_delete_baseline_defect_9cb864c.txt",
+        "evidence/l02_02_document_rag_baseline_red_9cb864c.txt"
+      ]
+    },
+    {
+      "class": "LIVE+REAL (workstation, third-party llama3.2:1b weights)",
+      "cmd": "ORNEUR_JOURNEY_MODEL=llama3.2:1b pytest tests/journey/test_l02_document_real_live.py",
+      "files": [
+        "evidence/l02_real_document_turn_dispatches.json",
+        "evidence/l02_real_unrelated_question.json",
+        "evidence/l02_real_document_stop.json",
+        "evidence/real_ollama_document_runs/"
+      ],
+      "note": "baseline vs branch: discarded Kernel answers 1,1,1 vs 0,0,0 for a plain-plan document question; latency not claimed"
+    }
+  ],
+  "skipped": "398 pre-existing conditional skips in CI deterministic job; 6 xfail",
+  "not_run": [
+    "real-Ollama journeys in CI",
+    "live Redis-down deletion journey",
+    "real browser journeys for L02"
+  ]
+}
