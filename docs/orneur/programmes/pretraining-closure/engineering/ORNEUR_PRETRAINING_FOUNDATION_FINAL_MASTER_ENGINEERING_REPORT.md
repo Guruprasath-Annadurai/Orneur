@@ -1,7 +1,7 @@
 # ORNEUR — PRETRAINING FOUNDATION FINAL MASTER ENGINEERING REPORT
 
-**Generated (UTC):** 2026-10-29T15:36:02Z  
-**Final engineering SHA:** `54bb272d4329b59c4694ff5ab41605a7dc6539c7`  
+**Generated (UTC):** 2026-10-29T15:56:10Z  
+**Final engineering SHA:** `d6794245b77bc417d9a0d66e52804f5177bbfc17`  
 **Prior qualified code SHA:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Training authorization:** **NO-GO**  
 **Formal acceptance:** **0 / 95**  
@@ -15,7 +15,7 @@
 - VERIFIED_ENGINEERING IDs: C01, C02, C04, C05, C17, C18, C19, C20, C21, TRAIN-1, TRAIN-2
 - Independently qualified (counted): C04, C05, C17, C18, C19, C20, C21
 - Qualified uncounted software: `DATA_ADMISSION_CONTROLS` (no fabricated eighth requirement ID)
-- Probe evidence tip: `54bb272d4329b59c4694ff5ab41605a7dc6539c7`
+- Probe evidence tip: `d6794245b77bc417d9a0d66e52804f5177bbfc17`
 - Eight-row reconciliation: `docs/orneur/programmes/pretraining-closure/engineering/INDEPENDENT_AUDIT_EIGHT_ROW_RECONCILIATION.json`
 - Antigravity remediation downgrades: C09, C10, C11, C12, C13, C14, C15, C45, QUAL-2
 - Readiness blockers: r65_unmapped, c27_unmet, trust_anchors_absent, protected_corpus_evidence_absent, private_evaluation_unfrozen, foundation_not_selected, compute_unqualified, independent_reviews_missing, real_data_licensing_unresolved, training_authorization_absent
@@ -168,8 +168,8 @@
 
 ## F. Final qualification evidence
 
-- Candidate SHA: `54bb272d4329b59c4694ff5ab41605a7dc6539c7`
-- Artifact digests: `{"freeze_manifest": "bbb438baa619cf33b1ed998e53be30b51e66dfdaee602d4b9ffd993672f23e26", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "3ac7bd0e2ba8fdbc11482b697e4810fa50a6a56ecf5fae2ce839b1b7dfafc300", "probes": "95ce5979b705fd4c7fc3d98b3405c2ca4f274d74efbf9dc7231765755d78bbf7", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
+- Candidate SHA: `d6794245b77bc417d9a0d66e52804f5177bbfc17`
+- Artifact digests: `{"freeze_manifest": "d050b14e494b8930a0607003cbb84f3102343056371b388eaf0084fa247f41be", "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570", "matrix": "7bfa6e88ad553531ee486557e556e0827dba8388e6150aa686215c7dbccb3c68", "probes": "78628e8b684deff7fe52577afe04d5c067ad72db97390c8102be8440b7c12cbe", "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7"}`
 - Reproduction:
   - `python scripts/acceptance/validate_register_graph.py --check`
   - `python -m pytest tests/test_foundation02_probe_honesty.py tests/test_pretraining_phase_closure.py -q`

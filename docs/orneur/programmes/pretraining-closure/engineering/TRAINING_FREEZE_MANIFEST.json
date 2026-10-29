@@ -4,7 +4,7 @@
   "package": {
     "status": "NOT_FROZEN",
     "training_authorization": "NO-GO",
-    "code_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+    "code_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
     "model_configuration_digest": "5710f93023f8a387faccdb322c103d3fc436491a0d62f76ba31e492a378fdd7e",
     "tokenizer_digest": null,
     "dataset_digest": null,

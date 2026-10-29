@@ -3,7 +3,7 @@
   "validator_check": "pretraining=95 numerator=0",
   "formal_accepted_count": 0,
   "formal_denominator": 95,
-  "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+  "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
   "main_base_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
   "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
   "register_graph_sha256": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7",
@@ -78,7 +78,7 @@
       "evidence_paths": [
         "docs/orneur/acceptance/register_graph.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/acceptance/register_graph.json",
       "executed_test_result": "N/A_BLOCKED",
@@ -97,7 +97,7 @@
       "actual_implementation": "Artefacts/PRs exist but executed tip evidence / independent qualification incomplete",
       "evidence_path": "Main is 464b602f3f259b56f139c3304828baa660e6b860. Manifest V3 was not edited.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Main is 464b602f3f259b56f139c3304828baa660e6b860. Manifest V3 was not edited.",
       "executed_test_result": "NOT_PROBED",
@@ -118,7 +118,7 @@
       "actual_implementation": "Artefacts/PRs exist but executed tip evidence / independent qualification incomplete",
       "evidence_path": "IMP-2/3/4 code is unmerged on PR #8. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance. RSE_MASTER_BLOCK_1_EVIDENCE.md on that SHA still says independent acceptance is pending.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "IMP-2/3/4 code is unmerged on PR #8. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance. RSE_MASTER_BLOCK_1_EVIDENCE.md on that SHA still says independent acceptance is pending.",
       "executed_test_result": "NOT_PROBED",
@@ -141,7 +141,7 @@
       "evidence_paths": [
         "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
       "executed_test_result": "N/A_BLOCKED",
@@ -164,7 +164,7 @@
       "evidence_paths": [
         "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json",
       "executed_test_result": "N/A_BLOCKED",
@@ -185,7 +185,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Synthetic tests only. No hardware log.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "One acceptance-run record that cites each real-hardware artifact by its own id. The record is not a copy of those artifacts.",
       "executed_test_result": "NOT_RUN",
@@ -238,7 +238,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No Crown inventory.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Custody record for a Crown machine that is not the daily driver, with its own serial.",
       "executed_test_result": "NOT_RUN",
@@ -261,7 +261,7 @@
       "evidence_paths": [
         "orca/pretrain_foundation/readiness_gate.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
       "executed_test_result": "N/A_BLOCKED",
@@ -282,7 +282,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Not started.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "A second Crown milestone: an independent dedicated Crown device, with its own serial, before qualification or training.",
       "executed_test_result": "NOT_RUN",
@@ -305,7 +305,7 @@
       "evidence_paths": [
         "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
       "executed_test_result": "N/A_BLOCKED",
@@ -326,7 +326,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "R-EXF in RSE12_06 \u00a75 says egress control blocks training authorization. No environment is named.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "A P2 gate record that names the environment. Attestation, egress, and counter logs stay on their own rows.",
       "executed_test_result": "NOT_RUN",
@@ -351,7 +351,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "training_authorized() returns false. No infrastructure record.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "A training-infrastructure record: pinned software identity, dry-run log pointer, and the P2 environment id.",
       "executed_test_result": "NOT_RUN",
@@ -378,7 +378,7 @@
         "orca/rse/imp1/codec.py",
         "tests/rse/test_c01_c02_registry_refusal.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_c01_c02_registry_refusal.py",
       "executed_test_result": "PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0",
@@ -396,7 +396,7 @@
           "summary_line": "4 passed in 0.25s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
           "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
@@ -425,13 +425,13 @@
         "tests/rse/test_c01_c02_registry_refusal.py",
         "tests/rse/test_imp1r_final.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_c01_c02_registry_refusal.py; tests/rse/test_imp1r_final.py",
-      "executed_test_result": "PASS (8 passed in 0.28s) passed=8 xfailed=0 skipped=0",
+      "executed_test_result": "PASS (8 passed in 0.30s) passed=8 xfailed=0 skipped=0",
       "probe": {
         "exit_code": 0,
-        "summary_line": "8 passed in 0.28s",
+        "summary_line": "8 passed in 0.30s",
         "counts": {
           "passed": 8,
           "failed": null,
@@ -440,10 +440,10 @@
           "xpassed": null,
           "errors": null,
           "collected": null,
-          "summary_line": "8 passed in 0.28s",
+          "summary_line": "8 passed in 0.30s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
           "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
@@ -471,13 +471,13 @@
         "orca/rse/imp1/codec.py",
         "tests/rse/test_imp1_registry_crown.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_imp1_registry_crown.py",
-      "executed_test_result": "PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0",
+      "executed_test_result": "PASS (16 passed in 0.30s) passed=16 xfailed=0 skipped=0",
       "probe": {
         "exit_code": 0,
-        "summary_line": "16 passed in 0.29s",
+        "summary_line": "16 passed in 0.30s",
         "counts": {
           "passed": 16,
           "failed": null,
@@ -486,10 +486,10 @@
           "xpassed": null,
           "errors": null,
           "collected": null,
-          "summary_line": "16 passed in 0.29s",
+          "summary_line": "16 passed in 0.30s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
           "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
@@ -516,7 +516,7 @@
         "orca/rse/imp1/codec.py",
         "tests/rse/test_imp1_registry_crown.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_imp1_registry_crown.py",
       "executed_test_result": "PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0",
@@ -534,7 +534,7 @@
           "summary_line": "16 passed in 0.29s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
         },
@@ -559,7 +559,7 @@
       "evidence_paths": [
         "orca/rse/imp3/freshness.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp3/freshness.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -582,7 +582,7 @@
       "evidence_paths": [
         "orca/rse/imp3/freshness.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp3/freshness.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -605,7 +605,7 @@
       "evidence_paths": [
         "orca/rse/imp2/machine.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp2/machine.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -628,7 +628,7 @@
       "evidence_paths": [
         "orca/rse/imp3/ledger.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp3/ledger.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -651,7 +651,7 @@
       "evidence_paths": [
         "orca/rse/imp3/ledger.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp3/ledger.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -674,7 +674,7 @@
       "evidence_paths": [
         "orca/rse/imp3/ledger.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp3/ledger.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -698,7 +698,7 @@
         "orca/rse/imp4/ocr1.py",
         "tests/rse/test_imp4_ocr1.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_imp4_ocr1.py",
       "executed_test_result": "PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0",
@@ -716,7 +716,7 @@
           "summary_line": "22 passed in 0.41s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
         },
@@ -742,13 +742,13 @@
         "orca/rse/imp4/ocr1.py",
         "tests/rse/test_imp4_ocr1.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_imp4_ocr1.py",
-      "executed_test_result": "PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
       "probe": {
         "exit_code": 0,
-        "summary_line": "22 passed in 0.41s",
+        "summary_line": "22 passed in 0.42s",
         "counts": {
           "passed": 22,
           "failed": null,
@@ -757,10 +757,10 @@
           "xpassed": null,
           "errors": null,
           "collected": null,
-          "summary_line": "22 passed in 0.41s",
+          "summary_line": "22 passed in 0.42s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
         },
@@ -786,7 +786,7 @@
         "orca/rse/imp4/ocr1.py",
         "tests/rse/test_imp4_ocr1.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_imp4_ocr1.py",
       "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
@@ -804,7 +804,7 @@
           "summary_line": "22 passed in 0.42s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
         },
@@ -830,7 +830,7 @@
         "orca/rse/imp4/ocr1.py",
         "tests/rse/test_imp4_ocr1.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_imp4_ocr1.py",
       "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
@@ -848,7 +848,7 @@
           "summary_line": "22 passed in 0.42s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
         },
@@ -874,13 +874,13 @@
         "orca/rse/imp4/ocr1.py",
         "tests/rse/test_imp4_ocr1.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "b384348",
       "relevant_test": "tests/rse/test_imp4_ocr1.py",
-      "executed_test_result": "PASS (22 passed in 0.43s) passed=22 xfailed=0 skipped=0",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
       "probe": {
         "exit_code": 0,
-        "summary_line": "22 passed in 0.43s",
+        "summary_line": "22 passed in 0.42s",
         "counts": {
           "passed": 22,
           "failed": null,
@@ -889,10 +889,10 @@
           "xpassed": null,
           "errors": null,
           "collected": null,
-          "summary_line": "22 passed in 0.43s",
+          "summary_line": "22 passed in 0.42s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
         },
@@ -917,7 +917,7 @@
       "evidence_paths": [
         "orca/rse/imp2/machine.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp2/machine.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -940,7 +940,7 @@
       "evidence_paths": [
         "orca/rse/imp3/ledger.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp3/ledger.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -964,7 +964,7 @@
       "evidence_paths": [
         "orca/rse/imp1/codec.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/rse/imp1/codec.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -986,7 +986,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Rendered-card digest showing the consumer rendered the received signed bytes.",
       "executed_test_result": "NOT_RUN",
@@ -1007,7 +1007,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Typed-entry record for the SAS and the Intent Sheet fields.",
       "executed_test_result": "NOT_RUN",
@@ -1030,7 +1030,7 @@
       "evidence_paths": [
         "orca/pretrain_foundation/compute_scenarios.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/pretrain_foundation/compute_scenarios.py",
       "executed_test_result": "N/A_BLOCKED",
@@ -1053,7 +1053,7 @@
       "evidence_paths": [
         "orca/pretrain_foundation/independent_codec.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/pretrain_foundation/independent_codec.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -1076,7 +1076,7 @@
       "evidence_paths": [
         "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
       "executed_test_result": "N/A_BLOCKED",
@@ -1097,7 +1097,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Mount and key-state record showing the vault stayed locked through key-absent phase 1.",
       "executed_test_result": "NOT_RUN",
@@ -1119,7 +1119,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Sandbox policy dump from a real checker showing no key, no network, and bounded I/O.",
       "executed_test_result": "NOT_RUN",
@@ -1141,7 +1141,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "TPM policy test: image PCR and PCR 7 named, wrong PCR denied, wrong PIN denied, altered UKI denied.",
       "executed_test_result": "NOT_RUN",
@@ -1163,7 +1163,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "TPM NV denial record for an older image, including the counter value.",
       "executed_test_result": "NOT_RUN",
@@ -1185,7 +1185,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Per-step power-cut report for the NV update. A simulator report is only the partial credit the freeze allows.",
       "executed_test_result": "NOT_RUN",
@@ -1207,7 +1207,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Firmware key list showing only owner Secure Boot keys.",
       "executed_test_result": "NOT_RUN",
@@ -1229,7 +1229,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Offline quote record against the pinned attestation key, including measured PCR values.",
       "executed_test_result": "NOT_RUN",
@@ -1251,7 +1251,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Kernel report that IOMMU groups are enforced, or that the named DMA buses are absent.",
       "executed_test_result": "NOT_RUN",
@@ -1272,7 +1272,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Kernel log of USB default-deny with the single allow-listed medium class.",
       "executed_test_result": "NOT_RUN",
@@ -1293,7 +1293,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Enumeration digest showing radios absent or hardware-off.",
       "executed_test_result": "NOT_RUN",
@@ -1314,7 +1314,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Measured netdev digest showing no usable network device per link class.",
       "executed_test_result": "NOT_RUN",
@@ -1336,7 +1336,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Platform report for management engine or out-of-band management. A network-capable controller that cannot be disabled disqualifies the machine.",
       "executed_test_result": "NOT_RUN",
@@ -1357,7 +1357,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Firmware settings record: setup password, locked boot order, internal drive only, network boot disabled.",
       "executed_test_result": "NOT_RUN",
@@ -1378,7 +1378,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "LUKS2 header check.",
       "executed_test_result": "NOT_RUN",
@@ -1400,7 +1400,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Storage scan report, before and after, with a planted marker found by the negative test.",
       "executed_test_result": "NOT_RUN",
@@ -1422,7 +1422,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No hardware report for this control.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Crown isolation inventory digest with its own serial.",
       "executed_test_result": "NOT_RUN",
@@ -1445,7 +1445,7 @@
       "evidence_paths": [
         "docs/orneur/status/PRETRAINING_FOUNDATION_QUALIFICATION_BLUEPRINT.md"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/status/PRETRAINING_FOUNDATION_QUALIFICATION_BLUEPRINT.md",
       "executed_test_result": "N/A_BLOCKED",
@@ -1464,7 +1464,7 @@
       "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
       "evidence_path": "Class K is unsupported. No re-enrolment record.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Re-enrolment records for a TPM or board replacement that refuse a lower-generation restore, produced by an authorized class-K path.",
       "executed_test_result": "N/A_BLOCKED",
@@ -1487,7 +1487,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No pair of build reports was produced in this pass.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Two independent build reports whose digests match, compared on Crown.",
       "executed_test_result": "NOT_RUN",
@@ -1508,7 +1508,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Software floors are not a sealed Crown card.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Floor-check log refusing a lower card and a lower sealed floor.",
       "executed_test_result": "NOT_RUN",
@@ -1529,7 +1529,7 @@
       "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
       "evidence_path": "No floor card.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Signed comparison receipt containing both floor-card serials.",
       "executed_test_result": "N/A_BLOCKED",
@@ -1550,7 +1550,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No recovery kit.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Refusal log for a recovery kit below the effective floor.",
       "executed_test_result": "NOT_RUN",
@@ -1571,7 +1571,7 @@
       "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
       "evidence_path": "No ceremony record.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Epoch checkpoint and LUKS slot rotation record after recovery-media theft response.",
       "executed_test_result": "N/A_BLOCKED",
@@ -1592,7 +1592,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Not implemented. Table marks P2 and future.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Qualification bit-budget counter log from the chamber.",
       "executed_test_result": "NOT_RUN",
@@ -1613,7 +1613,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Not implemented.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Evidence that restoring qualification state does not refund the budget. The freeze types this UNP.",
       "executed_test_result": "NOT_RUN",
@@ -1634,7 +1634,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Refusal records showing a T-complete record cannot authorize W, and W-complete cannot authorize D.",
       "executed_test_result": "NOT_RUN",
@@ -1655,7 +1655,7 @@
       "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
       "evidence_path": "No approved foundation entry. model_selection_authorized() returns false.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Registry entry containing the foundation provenance digests before any use.",
       "executed_test_result": "N/A_BLOCKED",
@@ -1676,7 +1676,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Budget numbers exist in the freeze. No drill record.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "A drill measurement of boots, media moves, witness trips, token touches, and typed SAS counts.",
       "executed_test_result": "NOT_RUN",
@@ -1697,7 +1697,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Witness serial recorded on a machine used for nothing else, different from the Crown serial and the Forge serial.",
       "executed_test_result": "NOT_RUN",
@@ -1718,7 +1718,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "TPM 2.0 capability record for the Witness. Absence disqualifies the machine.",
       "executed_test_result": "NOT_RUN",
@@ -1739,7 +1739,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "TPM NV capability record showing a counter index and policy comparison on NV.",
       "executed_test_result": "NOT_RUN",
@@ -1760,7 +1760,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Measurement record showing the role code and its version inside the measured image.",
       "executed_test_result": "NOT_RUN",
@@ -1781,7 +1781,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Build record of the owner-signed unified kernel image and the boot measurement that matches it.",
       "executed_test_result": "NOT_RUN",
@@ -1802,7 +1802,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Custody record that a paper recovery passphrase exists, with no secret and no passphrase value in git.",
       "executed_test_result": "NOT_RUN",
@@ -1823,7 +1823,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Firmware or physical record that the wired port is unused, blocked, or firmware-disabled.",
       "executed_test_result": "NOT_RUN",
@@ -1844,7 +1844,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Update log showing firmware and OS updates came only from the owner-approved offline registry.",
       "executed_test_result": "NOT_RUN",
@@ -1865,7 +1865,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Registry record of the approved artifacts and the offline distribution used to install them.",
       "executed_test_result": "NOT_RUN",
@@ -1886,7 +1886,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Custody record for the Witness location. Seals are HW-20P and do not satisfy this row.",
       "executed_test_result": "NOT_RUN",
@@ -1907,7 +1907,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Capacity record for RAM, storage, and CPU against the largest planned bundle and the sandboxed checker.",
       "executed_test_result": "NOT_RUN",
@@ -1928,7 +1928,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Inventory showing the Witness has no GPU.",
       "executed_test_result": "NOT_RUN",
@@ -1949,7 +1949,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "No Forge inventory.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Forge serial different from the Witness serial and the Crown serial.",
       "executed_test_result": "NOT_RUN",
@@ -1970,7 +1970,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "PR #13 live head 0328123361756b9732fc57886754d6d09c4b9c46. Push run 37973767347 succeeded for that head. Pull-request run 37973770477 also succeeded and is not the exact-SHA proof. Ancestor cd95befd196c57d1885be208532a1c9a32991a39 push run 37972786151 succeeded. GitHub reviews length 0. A green harness run is not two independent training-image digests.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Two independent build digests of the training image, plus the lock used to build them.",
       "executed_test_result": "NOT_RUN",
@@ -1993,7 +1993,7 @@
       "evidence_paths": [
         "requirements/rse.txt"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "requirements/rse.txt",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -2014,7 +2014,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "The freeze marks provider root of trust UNPROVEN.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Attestation evidence for a named training environment. No provider is selected by this row.",
       "executed_test_result": "NOT_RUN",
@@ -2035,7 +2035,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Residual text only.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "An egress test showing the training identity cannot open a forbidden path.",
       "executed_test_result": "NOT_RUN",
@@ -2056,7 +2056,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "max_spend_usd is 0. network_provider_inference_allowed is false. gpu_allowed is false.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "A training-environment test that a spend above the configured cap is refused. The cap value may remain 0.",
       "executed_test_result": "NOT_RUN",
@@ -2079,7 +2079,7 @@
       "evidence_paths": [
         "orca/genesis/data/manifest.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/genesis/data/manifest.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -2102,7 +2102,7 @@
       "evidence_paths": [
         "orca/genesis/data/contamination.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/genesis/data/contamination.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -2128,7 +2128,7 @@
       "evidence_paths": [
         "orca/pretrain_foundation/readiness_gate.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
       "executed_test_result": "N/A_BLOCKED",
@@ -2151,7 +2151,7 @@
       "evidence_paths": [
         "orca/pretrain_foundation/readiness_gate.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
       "executed_test_result": "N/A_BLOCKED",
@@ -2174,7 +2174,7 @@
       "evidence_paths": [
         "orca/genesis/model/family_registry.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/genesis/model/family_registry.py",
       "executed_test_result": "N/A_BLOCKED",
@@ -2197,7 +2197,7 @@
       "evidence_paths": [
         "orca/genesis/model/family_registry.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/genesis/model/family_registry.py",
       "executed_test_result": "N/A_BLOCKED",
@@ -2220,7 +2220,7 @@
       "evidence_paths": [
         "orca/pretrain_foundation/readiness_gate.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
       "executed_test_result": "N/A_BLOCKED",
@@ -2243,7 +2243,7 @@
       "evidence_paths": [
         "orca/pretrain_foundation/eval_boundary.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "orca/pretrain_foundation/eval_boundary.py",
       "executed_test_result": "ARTIFACT_ONLY",
@@ -2265,7 +2265,7 @@
       "actual_implementation": "No verified engineering closure for this counted row yet",
       "evidence_path": "Critical categories are named. Numeric thresholds for the other categories are not set.",
       "evidence_paths": [],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "Numeric thresholds frozen before any candidate result, for every category the policy says is critical and for the categories it leaves unset.",
       "executed_test_result": "NOT_RUN",
@@ -2291,13 +2291,13 @@
         "orca/train/dryrun/cli.py",
         "tests/test_trainprep_lock_env.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "fc1eb1d",
       "relevant_test": "tests/test_trainprep_lock_env.py",
-      "executed_test_result": "PASS (31 passed in 1.10s) passed=31 xfailed=0 skipped=0",
+      "executed_test_result": "PASS (31 passed in 1.14s) passed=31 xfailed=0 skipped=0",
       "probe": {
         "exit_code": 0,
-        "summary_line": "31 passed in 1.10s",
+        "summary_line": "31 passed in 1.14s",
         "counts": {
           "passed": 31,
           "failed": null,
@@ -2306,10 +2306,10 @@
           "xpassed": null,
           "errors": null,
           "collected": null,
-          "summary_line": "31 passed in 1.10s",
+          "summary_line": "31 passed in 1.14s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/train/dryrun/lockcheck.py": "1b0b5aa265783dd9c0a4f0a7725cf7a2c9c0d15c880a1d8dcd7239e81221fd8d",
           "requirements/train.txt": "5330ae5c5bd3ca4bf35a1a3e9e8dc871dbc344a03bd3dce88a854536551f3733",
@@ -2339,13 +2339,13 @@
         "docs/orneur/status/trainprep/dryrun_result.json",
         "tests/test_train2_dryrun_locks_evidence.py"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": "fc1eb1d",
       "relevant_test": "tests/test_train2_dryrun_locks_evidence.py",
-      "executed_test_result": "PASS (4 passed in 0.28s) passed=4 xfailed=0 skipped=0",
+      "executed_test_result": "PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0",
       "probe": {
         "exit_code": 0,
-        "summary_line": "4 passed in 0.28s",
+        "summary_line": "4 passed in 0.25s",
         "counts": {
           "passed": 4,
           "failed": null,
@@ -2354,10 +2354,10 @@
           "xpassed": null,
           "errors": null,
           "collected": null,
-          "summary_line": "4 passed in 0.28s",
+          "summary_line": "4 passed in 0.25s",
           "parseable": true
         },
-        "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
         "implementation_sha256": {
           "orca/train/dryrun/cli.py": "332178dc7d18934cbd06bccd026998959b95b7165af8e1031f34de16ef800eb5",
           "orca/rse/imp1/locks.py": "fadf9c4309b060492677c4b0f182c01fe5a857b52e8549fa9904a08fba136862",
@@ -2384,7 +2384,7 @@
       "evidence_paths": [
         "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
       "executed_test_result": "N/A_BLOCKED",
@@ -2405,7 +2405,7 @@
       "evidence_paths": [
         "docs/orneur/acceptance/register_graph.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/acceptance/register_graph.json",
       "executed_test_result": "N/A_BLOCKED",
@@ -2426,7 +2426,7 @@
       "evidence_paths": [
         "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json"
       ],
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "historical_source_sha": null,
       "relevant_test": "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json",
       "executed_test_result": "ARTIFACT_ONLY",

@@ -1,6 +1,6 @@
 {
   "schema": "orneur-foundation-02-verification-probes/3",
-  "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+  "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
   "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
   "lockfile_sha256": {
     "uv.lock": "3af0d6934c1a4d0cc9f6a5b9e8fbffa9daa43bc8e8aec85069b0bd9552f5b86d",
@@ -39,7 +39,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -86,7 +86,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -99,7 +99,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "8 passed in 0.28s",
+      "summary_line": "8 passed in 0.30s",
       "counts": {
         "passed": 8,
         "failed": null,
@@ -108,7 +108,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "8 passed in 0.28s",
+        "summary_line": "8 passed in 0.30s",
         "parseable": true
       },
       "passed_probe": true,
@@ -133,7 +133,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -145,7 +145,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "16 passed in 0.29s",
+      "summary_line": "16 passed in 0.30s",
       "counts": {
         "passed": 16,
         "failed": null,
@@ -154,7 +154,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "16 passed in 0.29s",
+        "summary_line": "16 passed in 0.30s",
         "parseable": true
       },
       "passed_probe": true,
@@ -177,7 +177,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -221,7 +221,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -265,7 +265,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -277,7 +277,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "22 passed in 0.41s",
+      "summary_line": "22 passed in 0.42s",
       "counts": {
         "passed": 22,
         "failed": null,
@@ -286,7 +286,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "22 passed in 0.41s",
+        "summary_line": "22 passed in 0.42s",
         "parseable": true
       },
       "passed_probe": true,
@@ -309,7 +309,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -353,7 +353,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -397,7 +397,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "b384348",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -409,7 +409,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "22 passed in 0.43s",
+      "summary_line": "22 passed in 0.42s",
       "counts": {
         "passed": 22,
         "failed": null,
@@ -418,7 +418,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "22 passed in 0.43s",
+        "summary_line": "22 passed in 0.42s",
         "parseable": true
       },
       "passed_probe": true,
@@ -445,7 +445,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -457,7 +457,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "31 passed in 1.10s",
+      "summary_line": "31 passed in 1.14s",
       "counts": {
         "passed": 31,
         "failed": null,
@@ -466,7 +466,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "31 passed in 1.10s",
+        "summary_line": "31 passed in 1.14s",
         "parseable": true
       },
       "passed_probe": true,
@@ -493,7 +493,7 @@
       ],
       "missing_tests": [],
       "historical_source_sha": "fc1eb1d",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "pytest_command": [
         "python",
         "-m",
@@ -505,7 +505,7 @@
       "python_resolved": "/usr/bin/python3",
       "pythonpath": "/workspace",
       "exit_code": 0,
-      "summary_line": "4 passed in 0.28s",
+      "summary_line": "4 passed in 0.25s",
       "counts": {
         "passed": 4,
         "failed": null,
@@ -514,7 +514,7 @@
         "xpassed": null,
         "errors": null,
         "collected": null,
-        "summary_line": "4 passed in 0.28s",
+        "summary_line": "4 passed in 0.25s",
         "parseable": true
       },
       "passed_probe": true,

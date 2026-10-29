@@ -1,6 +1,6 @@
 # FOUNDATION-02 Requirement Matrix
 
-**Candidate SHA:** `54bb272d4329b59c4694ff5ab41605a7dc6539c7`  
+**Candidate SHA:** `d6794245b77bc417d9a0d66e52804f5177bbfc17`  
 **Prior qualified code SHA:** `4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4`  
 **Main base SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
 **Formal acceptance:** 0 / 95  
@@ -21,17 +21,17 @@
 
 | ID | Historical SHA | Candidate SHA | Tests | Result |
 |---|---|---|---|---|
-| C01 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_c01_c02_registry_refusal.py | PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0 |
-| C02 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_c01_c02_registry_refusal.py; tests/rse/test_imp1r_final.py | PASS (8 passed in 0.28s) passed=8 xfailed=0 skipped=0 |
-| C04 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0 |
-| C05 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0 |
-| C17 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0 |
-| C18 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0 |
-| C19 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
-| C20 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
-| C21 | `b384348` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.43s) passed=22 xfailed=0 skipped=0 |
-| TRAIN-1 | `fc1eb1d` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/test_trainprep_lock_env.py | PASS (31 passed in 1.10s) passed=31 xfailed=0 skipped=0 |
-| TRAIN-2 | `fc1eb1d` | `54bb272d4329b59c4694ff5ab41605a7dc6539c7` | tests/test_train2_dryrun_locks_evidence.py | PASS (4 passed in 0.28s) passed=4 xfailed=0 skipped=0 |
+| C01 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_c01_c02_registry_refusal.py | PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0 |
+| C02 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_c01_c02_registry_refusal.py; tests/rse/test_imp1r_final.py | PASS (8 passed in 0.30s) passed=8 xfailed=0 skipped=0 |
+| C04 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.30s) passed=16 xfailed=0 skipped=0 |
+| C05 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_imp1_registry_crown.py | PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0 |
+| C17 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0 |
+| C18 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
+| C19 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
+| C20 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
+| C21 | `b384348` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/rse/test_imp4_ocr1.py | PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0 |
+| TRAIN-1 | `fc1eb1d` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/test_trainprep_lock_env.py | PASS (31 passed in 1.14s) passed=31 xfailed=0 skipped=0 |
+| TRAIN-2 | `fc1eb1d` | `d6794245b77bc417d9a0d66e52804f5177bbfc17` | tests/test_train2_dryrun_locks_evidence.py | PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0 |
 
 ## All rows
 

@@ -1,6 +1,6 @@
 {
   "schema": "orneur-pretraining-foundation-final-master-engineering-report/1",
-  "generated_at_utc": "2026-10-29T15:36:02Z",
+  "generated_at_utc": "2026-10-29T15:56:10Z",
   "training_authorization": "NO-GO",
   "formal_acceptance": {
     "numerator": 0,
@@ -9,7 +9,7 @@
   "starting_main_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
   "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
   "honesty_probe_tip": "cd1e557a685b529c57bf4bf2f594b088cbeb5172",
-  "final_engineering_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+  "final_engineering_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
   "pr_lineage": [
     "#138 FOUNDATION-02",
     "#140 Phase 0/1 honesty + Phases 2-9 closure"
@@ -96,7 +96,7 @@
   },
   "c16_status": "IMPLEMENTED_UNVERIFIED_PRIMARY_ONLY \u2014 awaiting independent second codec",
   "infra_record": {
-    "code_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+    "code_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
     "lockfile_digests": {
       "uv.lock": "3af0d6934c1a4d0cc9f6a5b9e8fbffa9daa43bc8e8aec85069b0bd9552f5b86d",
       "pyproject.toml": "56de80a4ee6a157b38b7d9aa51281541ec3409fab243346d5c10fbe0ad8b6757"
@@ -110,7 +110,7 @@
   "freeze_package": {
     "status": "NOT_FROZEN",
     "training_authorization": "NO-GO",
-    "code_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+    "code_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
     "model_configuration_digest": "5710f93023f8a387faccdb322c103d3fc436491a0d62f76ba31e492a378fdd7e",
     "tokenizer_digest": null,
     "dataset_digest": null,
@@ -152,7 +152,7 @@
       "register_status": "NOT_VERIFIABLE",
       "missing_evidence": "Name a reviewer who did not author RSE-ARCH-1.2, and record where the review is stored.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -165,7 +165,7 @@
       "register_status": "PRESENT_ON_MAIN",
       "missing_evidence": "The integration check still matches the manifest.",
       "executed_test_result": "NOT_PROBED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -178,7 +178,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "The merged SHA has its own main push CI and a review that is not a copied slogan.",
       "executed_test_result": "NOT_PROBED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -191,7 +191,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The authorization names the machines. This register does not purchase them.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -204,7 +204,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "A founder act changes the authorization. This register does not create a secret.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -217,7 +217,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator who runs the acceptance. The reviewer is not that operator. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -230,7 +230,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the Crown custodian. No purchase is authorized here. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -243,7 +243,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The founder changes that file. This register does not.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -256,7 +256,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the device. This row does not purchase it. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -269,7 +269,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The reviewer accepts the design record. Runner authorization is QUAL-1, a separate artifact.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -282,7 +282,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the P2 operator. No provider is selected here.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -295,7 +295,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The infrastructure record exists. GPU permission is FINAL-2, after readiness.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -308,7 +308,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -320,8 +320,8 @@
       "formal_acceptance": false,
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
-      "executed_test_result": "PASS (8 passed in 0.28s) passed=8 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "executed_test_result": "PASS (8 passed in 0.30s) passed=8 xfailed=0 skipped=0",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -333,8 +333,8 @@
       "formal_acceptance": false,
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
-      "executed_test_result": "PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "executed_test_result": "PASS (16 passed in 0.30s) passed=16 xfailed=0 skipped=0",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -347,7 +347,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -360,7 +360,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -373,7 +373,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -386,7 +386,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -399,7 +399,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -412,7 +412,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -425,7 +425,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -438,7 +438,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -450,8 +450,8 @@
       "formal_acceptance": false,
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
-      "executed_test_result": "PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -464,7 +464,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -477,7 +477,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -489,8 +489,8 @@
       "formal_acceptance": false,
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
-      "executed_test_result": "PASS (22 passed in 0.43s) passed=22 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -503,7 +503,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -516,7 +516,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -529,7 +529,7 @@
       "register_status": "DESIGNED_ONLY",
       "missing_evidence": "The verify log shows two distinct tokens. C08 remains its own row.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -542,7 +542,7 @@
       "register_status": "DESIGNED_ONLY",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -555,7 +555,7 @@
       "register_status": "DESIGNED_ONLY",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -568,7 +568,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "Two physical tokens produce the log. This row does not create a secret by itself.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -581,7 +581,7 @@
       "register_status": "DESIGNED_ONLY",
       "missing_evidence": "Name a second codec implementer who is not Cursor.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -594,7 +594,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The single-token refusal is logged on hardware tokens.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -607,7 +607,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -620,7 +620,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -633,7 +633,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -646,7 +646,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -659,7 +659,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -672,7 +672,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -685,7 +685,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -698,7 +698,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -711,7 +711,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -724,7 +724,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -737,7 +737,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -750,7 +750,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -763,7 +763,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -776,7 +776,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -789,7 +789,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -802,7 +802,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -815,7 +815,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The decision is recorded. C27 is still a separate mandatory row.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -828,7 +828,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Do not implement class K under this row. Wait for a founder architecture-change authorization that is not this register.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": true
     },
@@ -841,7 +841,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The comparison record is accepted. SUP-1's harness log is not this comparison.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -854,7 +854,7 @@
       "register_status": "DESIGNED_ONLY",
       "missing_evidence": "The floor-check log is accepted together with a sealed floor. C41 remains separate.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -867,7 +867,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The receipt names both serials.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": true
     },
@@ -880,7 +880,7 @@
       "register_status": "DESIGNED_ONLY",
       "missing_evidence": "The below-floor kit is refused in the log.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -893,7 +893,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The epoch record exists and contains no secret.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": true
     },
@@ -906,7 +906,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The budget log is accepted. C47 is a separate monotonicity artifact.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -919,7 +919,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Name the chamber operator. A synthetic counter is not this artifact.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -932,7 +932,7 @@
       "register_status": "DESIGNED_ONLY",
       "missing_evidence": "A reviewer accepts this row's own artifact on the merged SHA.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -945,7 +945,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The registry entry is accepted. The selection record remains MODEL-1.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -958,7 +958,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the operator who runs the drill. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -971,7 +971,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -984,7 +984,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -997,7 +997,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1010,7 +1010,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1023,7 +1023,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1036,7 +1036,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1049,7 +1049,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1062,7 +1062,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1075,7 +1075,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1088,7 +1088,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1101,7 +1101,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1114,7 +1114,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1127,7 +1127,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the Forge custodian. No purchase is authorized here. Purchase stays on G4.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1140,7 +1140,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "C39's comparison exists. A harness repair log does not pass C39.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1153,7 +1153,7 @@
       "register_status": "UNMERGED_NOT_ACCEPTED",
       "missing_evidence": "The same job is green on the merge commit on main.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1166,7 +1166,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the environment operator. No provider contract is authorized here.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1179,7 +1179,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The egress test log is accepted.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1192,7 +1192,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The refusal test is accepted. Raising the cap is FINAL-2.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": true
     },
@@ -1205,7 +1205,7 @@
       "register_status": "NOT_ACCEPTED",
       "missing_evidence": "Founder names who assembles the manifest. This row generates no corpus.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1218,7 +1218,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The oracle output is accepted. G8 does not pass this row.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1231,7 +1231,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names the corpus operator after G8. This row does not generate a corpus and does not implement class K.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1244,7 +1244,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "Founder names a custodian who did not create the corpus. This row does not generate a corpus.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1257,7 +1257,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The research-only scope record exists. Commercial rights remain MODEL-2C.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -1270,7 +1270,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The selection record exists and stays inside the research-only scope. It does not set training_authorized().",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -1283,7 +1283,7 @@
       "register_status": "NOT_AUTHORIZED",
       "missing_evidence": "The founder changes the runner state. This register does not.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -1296,7 +1296,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The failed-read log is accepted.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1309,7 +1309,7 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The threshold freeze is recorded before a candidate run.",
       "executed_test_result": "NOT_RUN",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1321,8 +1321,8 @@
       "formal_acceptance": false,
       "register_status": "NOT_STARTED",
       "missing_evidence": "The lock and the command log name the same SHA.",
-      "executed_test_result": "PASS (31 passed in 1.10s) passed=31 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "executed_test_result": "PASS (31 passed in 1.14s) passed=31 xfailed=0 skipped=0",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1334,8 +1334,8 @@
       "formal_acceptance": false,
       "register_status": "NOT_STARTED",
       "missing_evidence": "The log shows the locks still false. The run does not flip them.",
-      "executed_test_result": "PASS (4 passed in 0.28s) passed=4 xfailed=0 skipped=0",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "executed_test_result": "PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     },
@@ -1348,7 +1348,7 @@
       "register_status": "NOT_VERIFIABLE",
       "missing_evidence": "The record exists. Until then this row blocks a readiness percentage.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -1361,7 +1361,7 @@
       "register_status": "NOT_VERIFIABLE",
       "missing_evidence": "Founder supplies the complete exact text. Do not paraphrase it.",
       "executed_test_result": "N/A_BLOCKED",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": true,
       "physical_gate": false
     },
@@ -1374,17 +1374,17 @@
       "register_status": "NOT_STARTED",
       "missing_evidence": "The worksheet matches a fresh run of the validator. Founder authorization is still FINAL-2.",
       "executed_test_result": "ARTIFACT_ONLY",
-      "candidate_sha": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
       "founder_controlled_dependency": false,
       "physical_gate": false
     }
   ],
   "artifact_digests": {
-    "matrix": "3ac7bd0e2ba8fdbc11482b697e4810fa50a6a56ecf5fae2ce839b1b7dfafc300",
-    "probes": "95ce5979b705fd4c7fc3d98b3405c2ca4f274d74efbf9dc7231765755d78bbf7",
+    "matrix": "7bfa6e88ad553531ee486557e556e0827dba8388e6150aa686215c7dbccb3c68",
+    "probes": "78628e8b684deff7fe52577afe04d5c067ad72db97390c8102be8440b7c12cbe",
     "register_graph": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7",
     "ledger": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-    "freeze_manifest": "bbb438baa619cf33b1ed998e53be30b51e66dfdaee602d4b9ffd993672f23e26"
+    "freeze_manifest": "d050b14e494b8930a0607003cbb84f3102343056371b388eaf0084fa247f41be"
   },
   "honest_final_disposition": {
     "engineering_completed": "Register-aligned matrix correction; C01/C02 signed-registry refusals; TRAIN-1 hash lock + TRAIN-2 synthetic dry-run locks-false evidence; independently qualified C04/C05/C17\u2013C21 preserved; data-admission uncounted capability recorded",
@@ -1485,6 +1485,6 @@
     "training_authorization_status": "NO-GO",
     "phases_0_9_fully_complete_claim": false
   },
-  "probe_evidence_tip": "54bb272d4329b59c4694ff5ab41605a7dc6539c7",
+  "probe_evidence_tip": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
   "eight_row_reconciliation": "docs/orneur/programmes/pretraining-closure/engineering/INDEPENDENT_AUDIT_EIGHT_ROW_RECONCILIATION.json"
 }
