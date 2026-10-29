@@ -28,6 +28,7 @@ class ScoredChunk:
     score: float = 0.0
     source: str = ""     # which retriever found it: dense | bm25 | hyde | multiquery
     doc_id: str = ""     # L02-02: the document this chunk belongs to (chunk identity = doc_id + chunk_idx)
+    suspect: bool = False  # L02-02e: the passage addresses the judge (score/verdict/role syntax); it was NOT shown to a model and scores 0
 
 
 def reciprocal_rank_fusion(
@@ -56,12 +57,15 @@ def reciprocal_rank_fusion(
 
 
 _RERANK_PROMPT = """\
-Rate how relevant this passage is to the query, on a scale of 0-10.
+{preamble}
+
+Rate how relevant the passage is to the query, on a scale of 0-10.
 Only reply with the number, nothing else.
 
 Query: {query}
 
-Passage: {passage}
+Passage:
+{passage}
 
 Relevance score (0-10):"""
 
@@ -88,11 +92,11 @@ def _ollama_generate(prompt: str, host: str, model: str) -> str:
 
 
 def _parse_score(raw: str) -> float:
-    match = re.search(r"(\d+(\.\d+)?)", raw)
-    if not match:
-        return 0.0
-    val = float(match.group(1))
-    return max(0.0, min(10.0, val))
+    """L02-02e: strict. Anything but a bare integer 0-10 is "not scored" and scores 0.0 - it never counts as relevant."""
+    from orca.docs.judge import parse_score
+
+    val = parse_score(raw)
+    return 0.0 if val is None else val
 
 
 def cross_encoder_rerank(
@@ -112,10 +116,15 @@ def cross_encoder_rerank(
     against Ollama rather than serially, since Ollama can queue/batch requests
     far faster than N sequential round-trips.
     """
+    from orca.docs.judge import JUDGE_PREAMBLE, looks_like_judge_injection, untrusted_block
+
     def _score_one(c: dict) -> ScoredChunk:
-        passage = c["text"][:800]  # truncate to keep rerank calls fast
+        if looks_like_judge_injection(c["text"]):
+            # L02-02e: a passage that addresses the scorer never reaches the scorer; it cannot pick its own score.
+            return ScoredChunk(text=c["text"], filename=c.get("filename", ""), chunk_idx=c.get("chunk_idx", 0), score=0.0,
+                               source=c.get("source", ""), doc_id=c.get("doc_id", ""), suspect=True)
         raw = _ollama_generate(
-            _RERANK_PROMPT.format(query=query, passage=passage),
+            _RERANK_PROMPT.format(preamble=JUDGE_PREAMBLE, query=query, passage=untrusted_block(c["text"], 800)),
             host=ollama_host,
             model=llm_model,
         )

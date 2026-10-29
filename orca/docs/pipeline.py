@@ -57,6 +57,7 @@ class RAGResult:
     stage_timings_ms: dict = field(default_factory=dict)
     used_fallback: bool = False
     sufficient: Optional[bool] = None  # L02-02: the sufficiency checker's verdict (None = not evaluated)
+    suspect_passages: int = 0          # L02-02e: retrieved passages that address the judge/scorer (kept as evidence, never shown to a model judge)
 
     @property
     def evidence(self) -> str:
@@ -160,6 +161,8 @@ def run_deep_rag(
     else:
         final_chunks = prefiltered[:top_k_final]
     timings["cross_encoder_rerank"] = int((time.monotonic() - t0) * 1000)
+    from orca.docs.judge import looks_like_judge_injection
+    result.suspect_passages = sum(1 for c in final_chunks if looks_like_judge_injection(c.get("text", "")))
 
     # ── Stage 6: Sufficiency Check (+ one corrective round) ──────────────────
     t0 = time.monotonic()

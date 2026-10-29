@@ -29,6 +29,8 @@ class SufficiencyVerdict:
 
 
 _SUFFICIENCY_PROMPT = """\
+{preamble}
+
 Judge whether the CONTEXT below contains enough information to fully answer the QUERY.
 
 QUERY: {query}
@@ -50,6 +52,8 @@ Reply with ONLY the new query text, nothing else."""
 
 
 _CONTRADICTION_PROMPT = """\
+{preamble}
+
 Compare these passages ONLY for direct factual contradictions — where two passages
 assert opposite things about the SAME specific claim (e.g. one says a value is 10,
 another says it's 20; one says a feature was removed, another says it still exists).
@@ -102,35 +106,36 @@ def check_sufficiency(
             missing_info="No documents retrieved at all.",
         )
 
+    from orca.docs.judge import JUDGE_PREAMBLE, looks_like_judge_injection, parse_verdict, safe_label, untrusted_block
+
+    verdict = SufficiencyVerdict(sufficient=True, confidence=0.7)     # the unjudged default; ``judged`` stays False and callers must not treat it as a verdict
+    if any(looks_like_judge_injection(c.get("text", "")) for c in chunks):
+        return verdict      # L02-02e: a passage that addresses the judge is never shown to it; the sufficiency of this set is simply "not judged"
+
     context = "\n\n".join(
-        f"[{c.get('filename','?')} #{c.get('chunk_idx',0)}] {c['text'][:500]}"
+        f"[{safe_label(c.get('filename','?'))} #{int(c.get('chunk_idx',0) or 0)}]\n{untrusted_block(c['text'], 500)}"
         for c in chunks
     )
 
     raw = _ollama_generate(
-        _SUFFICIENCY_PROMPT.format(query=query, context=context),
+        _SUFFICIENCY_PROMPT.format(preamble=JUDGE_PREAMBLE, query=query, context=context),
         host=ollama_host, model=llm_model, max_tokens=150,
     )
 
-    verdict = SufficiencyVerdict(sufficient=True, confidence=0.7)  # optimistic default
-    try:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            data = json.loads(match.group())
-            verdict.sufficient   = bool(data.get("sufficient", True))
-            verdict.confidence   = float(data.get("confidence", 0.7))
-            verdict.missing_info = str(data.get("missing_info", ""))
-            verdict.judged = True
-    except Exception:
-        pass  # keep optimistic default — don't block the pipeline on a parse miss
+    data = parse_verdict(raw)              # strict: exact shape, real boolean, confidence in [0,1]; anything else is "not judged"
+    if data is not None:
+        verdict.sufficient, verdict.confidence, verdict.missing_info, verdict.judged = data["sufficient"], data["confidence"], data["missing_info"], True
 
     if not verdict.sufficient and verdict.missing_info:
+        from orca.docs.judge import clean_query
+
         reformed = _ollama_generate(
             _REFORM_PROMPT.format(missing_info=verdict.missing_info, query=query),
             host=ollama_host, model=llm_model, max_tokens=60,
         )
-        if reformed:
-            verdict.reformed_query = reformed
+        cleaned = clean_query(reformed)
+        if cleaned:
+            verdict.reformed_query = cleaned
 
     return verdict
 
@@ -144,18 +149,23 @@ def detect_contradictions(
     if len(chunks) < 2:
         return []
 
+    from orca.docs.judge import JUDGE_PREAMBLE, looks_like_judge_injection, untrusted_block
+
+    if any(looks_like_judge_injection(c.get("text", "")) for c in chunks):
+        return []           # L02-02e: passages that address the judge are not put in front of it
     passages = "\n\n".join(
-        f"[{i+1}] {c['text'][:400]}" for i, c in enumerate(chunks)
+        f"[{i+1}]\n{untrusted_block(c['text'], 400)}" for i, c in enumerate(chunks)
     )
     raw = _ollama_generate(
-        _CONTRADICTION_PROMPT.format(passages=passages),
+        _CONTRADICTION_PROMPT.format(preamble=JUDGE_PREAMBLE, passages=passages),
         host=ollama_host, model=llm_model, max_tokens=200,
     )
     try:
-        match = re.search(r"\[.*\]", raw, re.DOTALL)
-        if match:
-            items = json.loads(match.group())
-            return [str(i) for i in items if isinstance(i, str)]
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", (raw or "").strip()).strip()
+        items, end = json.JSONDecoder().raw_decode(text) if text.startswith("[") else (None, 0)
+        if isinstance(items, list) and not text[end:].strip():
+            # bounded: at most 5 short plain strings; they are shown to the user as findings, never executed
+            return [re.sub(r"[\x00-\x1f\x7f]", " ", i)[:200] for i in items if isinstance(i, str)][:5]
     except Exception:
         pass
     return []
