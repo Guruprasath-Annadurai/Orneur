@@ -21,7 +21,10 @@ Assessment/candidate only. **Not** merge authorization. **Not** training-ready. 
 | Merge-tip TREE | `7a980d4ae918bc4dbec374772a2ec20e36d3107f` |
 | Canonical main (unchanged) | `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a` |
 | Branch | `cursor/master-02-integration-candidate-316a` |
-| Draft PR | _filled after open_ |
+| PR tip (harness+docs) | `f36d854594aa0b022591a0059d2d90d6109ae1a7` |
+| Harness commit | `d63bd1f` |
+| Docs commit | `f36d854` |
+| Draft PR | https://github.com/Guruprasath-Annadurai/Orneur/pull/145 |
 
 ### Preserved source PR identities
 

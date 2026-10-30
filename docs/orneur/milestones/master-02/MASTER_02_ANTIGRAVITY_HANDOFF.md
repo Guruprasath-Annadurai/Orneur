@@ -10,7 +10,7 @@
 | Merge-tip HEAD | `7fb78a3d9c522edff26335a551ceadc5d500f941` |
 | Merge-tip TREE | `7a980d4ae918bc4dbec374772a2ec20e36d3107f` |
 | Base | `main` @ `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a` |
-| Draft PR | (filled after open — see `MASTER_02_CTO_HANDOFF.md`) |
+| Draft PR | https://github.com/Guruprasath-Annadurai/Orneur/pull/145 |
 
 ## Included source identities (must remain ancestors)
 
