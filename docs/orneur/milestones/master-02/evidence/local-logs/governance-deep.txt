@@ -1,0 +1,82 @@
+# local log excerpt: governance-deep
+# captured on merge-tip tree 7a980d4ae918bc4dbec374772a2ec20e36d3107f
+  },
+  "environment_class": null,
+  "expires_at": null,
+  "issued_at": null,
+  "limits": {
+    "max_epochs": 0,
+    "max_lora_rank": 0,
+    "max_runs": 0,
+    "max_seq_length": 0,
+    "max_spend_usd": 0,
+    "max_wall_clock_minutes": 0
+  },
+  "model": {
+    "base_model": null,
+    "base_model_revision": null,
+    "family": null
+  },
+  "permissions": {
+    "gpu_allowed": false
+  },
+  "purpose": null,
+  "reviewed_commit_sha": null,
+  "schema_version": "orneur-training-authorization/1",
+  "signature": null,
+  "status": "NOT_AUTHORIZED"
+}
+=== capability_truth ===
+serving_facts {'runtime': 'ollama', 'location': 'local', 'weights_origin': 'third_party', 'native_orneur_weights': False, 'native_family_status': None}
+{
+  "schema": "orneur.capabilities/1",
+  "model": {
+    "served_by": "third-party open-weights model through a local Ollama runtime (see /api/models for the exact tag per tier)",
+    "native_orneur_models": {
+      "genesis": "INTERFACE_ONLY",
+      "novus": "NOT_AVAILABLE",
+      "aeternum": "NOT_AVAILABLE",
+      "note": "No ORNEUR-trained weights are available; tier names are product labels, not native models. No benchmark claim is made."
+    }
+  },
+  "capabilities": {
+    "streaming_chat": {
+      "status": "implemented",
+      "scope": "plain-chat answers on the local Ollama runtime are streamed from the model as it generates; evidence-routed (Truth Fabric) answers are delivered whole, labelled 'replayed'",
+      "evidence": [
+        "tests/test_b01_raw_delta_lifecycle.py",
+        "tests/journey/test_b01_streaming_live.py"
+      ]
+    },
+    "stop_cancellation": {
+      "status": "implemented",
+      "scope": "Stop closes the upstream model connection; nothing is committed for a stopped turn",
+      "evidence": [
+        "tests/test_l02_turn_recovery.py"
+      ]
+    },
+    "document_grounding": {
+      "status": "implemented",
+      "scope": "uploaded documents are retrieved, quoted as untrusted evidence, cited by source; the model is told when the documents do not contain the answer",
+      "evidence": [
+        "tests/test_l02_document_rag.py",
+        "tests/test_l02_judge_trust_boundary.py"
+      ]
+    },
+    "verified_answers": {
+      "status": "partial",
+      "scope": "an answer is described as verified only when the Truth Fabric checked its claims against retrieved evidence; ordinary answers are model text, not verified",
+      "evidence": [
+        "tests/test_cognitive_kernel_truth_fabric_integration.py"
+      ]
+    },
+    "conversation_history_and_deletion": {
+      "status": "implemented",
+      "scope": "conversations are saved per account and deletion is authoritative across the application's stores; copies outside the application (host backups
+=== GENESIS/NOVUS/AETERNUM probes ===
+exports ['NATIVE_FAMILY_STATUS', 'STATUSES', 'annotations', 'capabilities', 'native_weights_available', 'serving_facts', 'system_facts_for_model']
+serving_facts => {"runtime": "ollama", "location": "local", "weights_origin": "third_party", "native_orneur_weights": false, "native_family_status": null}
+capabilities => {"schema": "orneur.capabilities/1", "model": {"served_by": "third-party open-weights model through a local Ollama runtime (see /api/models for the exact tag per tier)", "native_orneur_models": {"genesis": "INTERFACE_ONLY", "novus": "NOT_AVAILABLE", "aeternum": "NOT_AVAILABLE", "note": "No ORNEUR-trained weights are available; tier names are product labels, not native models. No benchmark claim is made."}}, "capabilities": {"streaming_chat": {"status": "implemented", "scope": "plain-chat answers on the local Ollama runtime are streamed from the model as it generates; evidence-routed (Truth Fabric) answers are delivered whole, labelled 'replayed'", "evidence": ["tests/test_b01_raw_delta_lifecycle.py", "tests/journey/test_b01_streaming_live.py"]}, "stop_cancellation": {"status": "implemented", "scope": "Stop closes the upstream model connection; nothing is committed for a stopped turn", "evidence": ["tests/test_l02_turn_recovery.py"]}, "document_grounding": {"status": "implemented", "scope": "uploaded documents are retrieved, quoted as untrusted evidence, cited by source; the model is told when the documents do not contain the answer", "evidence": ["tests/test_l02_document_rag.py", "tests/test_l02_judge_trust_boundary.py"]}, "verified_answers": {"status": "partial", "scope": "an answer is described as verified only when the Truth Fabric checked its claims against retrieved evidence; ordinary answers are model text, not verified", "evidence": ["tests/test_cognitive_kernel_truth_f
+=== FastAPI smoke ===
+title ORNEUR API
+routes 69
