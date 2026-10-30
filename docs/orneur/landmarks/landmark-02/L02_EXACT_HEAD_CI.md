@@ -2,8 +2,8 @@
 
 Branch `claude/landmark-02-customer-trust-reliability`, draft PR #139, stacked on PR #136 (`9cb864c99ad323d11626063498a7d1cef0d7d4b5`, not modified). Mandatory jobs: all 10 jobs of `test.yml`.
 
-## Final code-bearing SHA: `faee97576bebee41b0cf307ccb1fa2089d4d2dbe` — run 40993535386 — **success, 10/10 jobs (Journeys job passed on a re-run of the failed job, see below)**
-Deterministic Unit Tests **9331 passed, 0 failed, 399 skipped, 189 deselected, 6 xfailed**; Journeys (fixture provider) 39 + 15 + 23 + 3 passed (the L02 live deletion/recovery/operations/account and customer-journey fixture suites are included); frontend Node tests, Genesis security/sandbox, training math, container build + boot smoke, RSE jobs, dependency scans: success. Skips/xfails are the pre-existing conditional ones (PR #136 head: 398 skipped; the L02 test files skip nothing: 246 passed, 0 skipped locally). Commits after this SHA change only documentation/evidence and a test-harness diagnostic (`tests/journey/harness.py` prints the server-log tail when a live server exits early).
+## Final code-bearing SHA: `70b2960a410301b02afb2a098554d4a71467a04b` — run 40998377463 — **success, 10/10 jobs, first attempt**
+Deterministic Unit Tests **9332 passed, 0 failed, 399 skipped, 189 deselected, 6 xfailed**; Journeys (fixture provider) 39 + 15 + 23 + 3 passed (includes the L02 live deletion/recovery/operations/account and customer-journey fixture suites); frontend Node tests, Genesis security/sandbox, training math, container build + boot smoke, RSE jobs, dependency scans: success. Skips/xfails are the pre-existing conditional ones (PR #136 head: 398 skipped; the L02 test files skip nothing). Commits after this SHA change only documentation/evidence.
 
 ## Every run on this work, including failures
 | Head | Run | Result | Cause / repair |
@@ -18,7 +18,9 @@ Deterministic Unit Tests **9331 passed, 0 failed, 399 skipped, 189 deselected, 6
 | `bf614fb` | 40918762387 | **failure** | my new CLI test asserted `--keep` in colour-rendered help; the product fix (`orca backup` no longer shadowed) was correct |
 | `e27a4b2` | 40922563503 | success, 10/10 | 9330 passed |
 | `e9c7df1` (docs) | 40992019637 | **failure** | unrelated `test_browser_sovereign_mission.py::test_live_browser_mission_isolates_users`: `ValueError: filedescriptor out of range in select()` — a real latent defect: `orca/browser_engine/cdp.py` used `select()`, which fails for descriptors ≥ 1024 in a busy process (`proxy.py` already used `poll()`). Fixed with `poll()` + a test that is red without the fix |
-| **`faee975`** | **40993535386** | **attempt 1 failure; re-run of the failed job: success, 10/10** | attempt 1: the Journeys job's `test_l02_deletion_live.py` D1–D5 errored with `server exited early (code 1)` at startup; the server log was not retained, so the **cause is unknown** (it passed on three earlier heads and locally; the diff between those heads and this one does not touch server startup). The failed job was re-run once and passed. Not claimed as explained; the harness now prints the log tail so a recurrence is diagnosable |
+| `faee975` | 40993535386 | attempt 1 failure; re-run of the failed job: success | attempt 1: Journeys job, `test_l02_deletion_live.py` D1–D5 `server exited early (code 1)`; the log was not retained, so the cause was unknown at the time. Re-run passed. **Probably the same defect as the next row** (two workers cold-starting on one empty data directory) but that is an inference, not a proof |
+| `d5f1f2b` (docs) | 40996628549 | **failure** | with the harness now printing the server log: `sqlite3.OperationalError: database is locked` at `PRAGMA journal_mode=WAL` when two workers cold-started on the same empty data directory (`test_l02_account_live`). A real, pre-existing multi-worker cold-start race → bounded retry + 30 s busy timeout in `orca/auth/db.py`; regression test starts 16 processes together (red 1 of 3 runs without the fix — the race is probabilistic — green 6/6 with it) |
+| **`70b2960`** | **40998377463** | **success, 10/10, first attempt** | final code-bearing head |
 
 Documentation-only head: recorded in the PR description after the docs commit (a docs commit cannot name its own SHA).
 
