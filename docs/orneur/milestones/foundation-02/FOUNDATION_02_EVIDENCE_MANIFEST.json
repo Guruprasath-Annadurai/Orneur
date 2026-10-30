@@ -1,0 +1,86 @@
+{
+  "milestone": "FOUNDATION-02",
+  "branch": "cursor/foundation-02-pretraining-hardening-1cdf",
+  "draft_pr": 138,
+  "starting_main_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+  "reviewed_candidate_sha": "b384348fa3bc789585bf69d81a772c8a4d75d493",
+  "code_corrective_sha": "442e9cfb26700153ca1ae2d939ca3081eb8d21ff",
+  "matrix_probe_sha": "9ea450123f1a0f8ec34a6e92be50c216cea51326",
+  "formal_acceptance": {
+    "accepted": 0,
+    "denominator": 95
+  },
+  "training_authorization": "NO-GO",
+  "disposition_histogram": {
+    "BLOCKED": 16,
+    "IMPLEMENTED_UNVERIFIED": 19,
+    "VERIFIED_ENGINEERING": 9,
+    "NOT_IMPLEMENTED": 51
+  },
+  "verified_engineering_count": 9,
+  "verified_engineering_ids": [
+    "G4",
+    "G5",
+    "C01",
+    "C02",
+    "DATA-1",
+    "DATA-2",
+    "TRAIN-1",
+    "TRAIN-2",
+    "AUTH-1"
+  ],
+  "probes_path": "docs/orneur/milestones/foundation-02/FOUNDATION_02_VERIFICATION_PROBES.json",
+  "families": {
+    "GENESIS": "INTERFACE_ONLY",
+    "NOVUS": "NOT_AVAILABLE",
+    "AETERNUM": "NOT_AVAILABLE"
+  },
+  "serving_contract_corrective": "capability-state validation; INTERFACE_ONLY/NOT_AVAILABLE live-serving gaps closed",
+  "audit_tail_residual": "FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md",
+  "note": "matrix_probe_sha is the commit probes executed against; push tip may add docs-only commits on top and must re-clear CI",
+  "non_claims": [
+    "no real training",
+    "no paid compute",
+    "no formal acceptance mutation",
+    "no independent qualification claimed",
+    "no frontier-model superiority claims",
+    "xfail is not a pass"
+  ],
+  "artifacts": [
+    "FOUNDATION_02_ANTIGRAVITY_HANDOFF.md",
+    "FOUNDATION_02_ARCHITECTURE_TOKENIZER_INTEGRITY.md",
+    "FOUNDATION_02_AUDIT_TAIL_RESIDUAL.md",
+    "FOUNDATION_02_AUTHORIZATION_ASSURANCE.md",
+    "FOUNDATION_02_BLOCKER_REGISTER.md",
+    "FOUNDATION_02_CHECKPOINT_RECOVERY.md",
+    "FOUNDATION_02_COMPUTE_FEASIBILITY.md",
+    "FOUNDATION_02_CORRECTIVE_CHANGELOG.md",
+    "FOUNDATION_02_DATA_PROVENANCE.md",
+    "FOUNDATION_02_EVALUATION_INTEGRITY.md",
+    "FOUNDATION_02_EVIDENCE_MANIFEST.json",
+    "FOUNDATION_02_EXACT_HEAD_CI.md",
+    "FOUNDATION_02_MASTER_ENGINEERING_REPORT.md",
+    "FOUNDATION_02_MODEL_SERVING_CONTRACT.md",
+    "FOUNDATION_02_REPRODUCIBILITY.md",
+    "FOUNDATION_02_REQUIREMENT_MATRIX.json",
+    "FOUNDATION_02_REQUIREMENT_MATRIX.md",
+    "FOUNDATION_02_TRAINING_MATH_REPORT.md",
+    "FOUNDATION_02_VERIFICATION_PROBES.json"
+  ],
+  "branch_tip_sha": "b09b37cd48551365173f04441aa1324fc9b858b4",
+  "exact_head_green_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
+  "exact_head_ci": {
+    "test_suite_run": 40860060023,
+    "test_suite_url": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40860060023",
+    "eval_static_run": 40860060020,
+    "eval_static_url": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/40860060020",
+    "checks_success": 19,
+    "deterministic": {
+      "passed": 8989,
+      "skipped": 389,
+      "deselected": 43,
+      "xfailed": 7
+    }
+  },
+  "engineering_status": "VERIFIED_ENGINEERING \u2014 READY_FOR_INDEPENDENT_RETEST"
+}

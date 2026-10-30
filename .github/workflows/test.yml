@@ -140,11 +140,70 @@ jobs:
           uv pip install --system -e ".[dev]"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install "transformers>=4.45.0"
+          # GENESIS Foundation Sprint 1: sentencepiece backs
+          # orca/genesis/tokenizer/framework.py's tokenizer training and
+          # validation tests (tests/test_genesis_tokenizer.py). Same
+          # reasoning as torch/transformers above -- a real, lightweight,
+          # CPU-only dependency added to this already-heavier job rather
+          # than the main deterministic one.
+          pip install sentencepiece
+          # AUDIT-077 P0-03 (CTO security remediation directive): the
+          # Audit #077 requalification suites use real Ed25519 signing
+          # (cryptography) for their own synchronized adversarial setup --
+          # installed here, in this already-torch-bearing job, for the
+          # same reason transformers/sentencepiece are: these tests were
+          # previously collected ONLY locally, never in exact-head CI.
+          pip install cryptography
 
       - name: Run training-math regression
         run: |
           set -euo pipefail
-          pytest tests/test_train_losses.py tests/test_transformers_adapter.py -v
+          # AUDIT-077 P0-03: tests/test_audit077_master_requalification.py
+          # and tests/test_audit077_requalification_adversarial_deep.py are
+          # now REQUIRED CI gates for the first time (previously never
+          # executed in exact-head CI at all). Each carries exactly one
+          # (resp. two) INTENTIONAL vulnerability-demonstration test(s)
+          # that are SUPPOSED to fail now that the gap they demonstrate is
+          # fixed -- the one existing, established pattern this project
+          # already uses for every other historical audit evidence file
+          # (test_audit_genesis_hardening_adversarial.py,
+          # test_audit74_successor_adversarial_requalification.py,
+          # test_native_learning_engine_adversarial_audit.py -- none of
+          # which run in this CI job at all, specifically because of this).
+          # Rather than excluding these two files wholesale (which would
+          # repeat that same gap for THESE suites too), the three known,
+          # intended flips are deselected individually so every OTHER
+          # genuine acceptance test in both files -- 8/9 and 8/10
+          # respectively -- becomes a real, required, exact-head CI gate.
+          # Their flipped status is recorded in
+          # docs/orneur/status/ORNEUR_AUDIT077_P0_REMEDIATION_ENGINEERING_REPORT.md,
+          # never hidden.
+          # AUDIT-078 (CTO post-audit #078 execution directive): the
+          # independent final targeted requalification suite for PR #78
+          # (tests/test_audit078_final_requalification.py, 5 genuine
+          # acceptance tests, none a vulnerability-demonstration flip) is
+          # added as a required gate too -- reviewed and independently
+          # re-run (5/5 passed) before being added here.
+          pytest tests/test_train_losses.py tests/test_transformers_adapter.py \
+                 tests/test_genesis_model_architecture.py tests/test_genesis_training_primitives.py \
+                 tests/test_genesis_tokenizer.py tests/test_genesis_audit016_remediation.py \
+                 tests/test_genesis_scaling.py tests/test_genesis_checkpoint_integrity.py \
+                 tests/test_genesis_eval_adapter.py tests/test_genesis_training_orchestration.py \
+                 tests/test_genesis_data_manifest.py tests/test_genesis_data_pipeline.py \
+                 tests/test_genesis_data_contamination.py tests/test_genesis_data_multilingual.py \
+                 tests/test_genesis_cross_workstream_integration.py tests/test_genesis_workstream_a_end_to_end.py \
+                 tests/test_genesis_learning_step.py tests/test_genesis_data_loader.py \
+                 tests/test_genesis_resumable_checkpoint.py tests/test_genesis_learning_governance.py \
+                 tests/test_genesis_synthetic_learning_proof.py tests/test_audit_genesis_hardening_remediation.py \
+                 tests/test_genesis_isolated_worker.py tests/test_genesis_end_to_end_synthetic_integration.py \
+                 tests/test_audit077_master_requalification.py tests/test_audit077_requalification_adversarial_deep.py \
+                 tests/test_audit078_final_requalification.py \
+                 tests/test_cursor_training_math.py tests/test_cursor_keyed_cache.py \
+                 tests/test_cursor_tokenizer_multilingual.py \
+                 --deselect tests/test_audit077_master_requalification.py::test_audit077_domain_c_checkpoint_ledger_monotonicity_and_cross_run_boundary \
+                 --deselect tests/test_audit077_requalification_adversarial_deep.py::test_g01_intermediate_ancestor_substitution_toctou_escape_demonstration \
+                 --deselect tests/test_audit077_requalification_adversarial_deep.py::test_g02_internal_caller_allow_cross_run_migration_authority_bypass \
+                 -v
 
   container-build:
     name: Production Container Build + Boot Smoke
