@@ -19,6 +19,8 @@ import stat
 import struct
 from pathlib import Path
 
+from orca.serve.backup_errors import BackupAuthError, BackupError, BackupKeyError  # noqa: F401  (re-exported)
+
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -28,18 +30,6 @@ MAGIC = b"ORBK"
 VERSION = 1
 CHUNK = 1 << 20
 _MAX_FRAME = CHUNK + 16 + 1024
-
-
-class BackupError(Exception):
-    """Base class: every refusal in the backup tooling is one of these (never a raw library exception)."""
-
-
-class BackupKeyError(BackupError):
-    """The key is missing, malformed, or stored unsafely."""
-
-
-class BackupAuthError(BackupError):
-    """The archive failed authentication: wrong key, modified, truncated or not an ORNEUR backup."""
 
 
 def load_key(path: str | os.PathLike | None = None, *, forbid_inside: list[Path] | None = None) -> bytes:

@@ -37,3 +37,6 @@ Review first: `orca/serve/backup.py` (`restore`, `_extract`, `_apply_deletions`,
 | restored modes; two simultaneous restores; restore while a server runs; start a server during a restore | 0700/0600; "another restore is in progress"; "a server is running"; "a restore is in progress" |
 Not tried by us: NFS or other filesystems where `flock` is unreliable; processes started by an older version (no lock); racing the lock acquisition from many processes at the millisecond level; huge data directories.
 Reproduce: `pytest tests/test_l02_b6_corrective.py tests/test_l02_b6_backup.py tests/test_ops_backup.py tests/test_l02_operational.py`; live: `pytest tests/journey/test_l02_b6_backup_live.py`; red evidence: `evidence/b6c_*`. Legacy repro: copy `evidence/b6c_legacy_bypass_repro.py` into `tests/` and run it against `b1c56b9` (4 fail) and against the new head (it is expected to pass the same assertions).
+
+| start the server, call `/readyz`, delete a conversation/document/account in an environment WITHOUT `cryptography` (as the production image) | works; `data-backup <anything but recover>` prints the install hint and exits 2; `data-backup recover` works |
+(`tests/test_l02_b6_no_crypto_dependency.py` blocks the import in a fresh interpreter; please also try a real image build — the CI job *Production Container Build + Boot Smoke* is the check that caught this.)

@@ -530,10 +530,10 @@ def test_a_hard_crash_leaves_a_journal_that_blocks_use_until_recovered_and_recov
 def test_readiness_reports_not_ready_while_a_restore_is_unfinished(world, monkeypatch, client=None):
     from fastapi.testclient import TestClient
 
-    from orca.serve import backup as b
+    from orca.serve import datadir_lock
     from orca.serve.api import app
 
-    monkeypatch.setattr(b, "restore_pending", lambda home: True)
+    monkeypatch.setattr(datadir_lock, "restore_pending", lambda home: True)
     r = TestClient(app).get("/readyz")
     assert r.status_code == 503 and r.json()["dependencies"]["restore"]["status"] == "interrupted"
 

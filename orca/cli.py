@@ -1573,9 +1573,19 @@ app.add_typer(backup_app, name="data-backup")
 _KEY_OPT = typer.Option(None, "--key-file", help="file holding the 32-byte backup key (base64, mode 600). Default: $ORNEUR_BACKUP_KEY_FILE. Never generated implicitly.")
 
 
+def _need_crypto():
+    try:
+        import cryptography  # noqa: F401
+    except ImportError:
+        console.print("[red]encrypted backup needs the optional 'cryptography' package, which is not installed here.[/red]\nInstall it: [bold]pip install 'orneur[backup]'[/bold] "
+                      "(the server itself does not need it; there is deliberately no plaintext fallback).")
+        raise typer.Exit(2)
+
+
 def _backup_key(key_file, *extra_forbidden):
     from pathlib import Path
 
+    _need_crypto()
     from orca.config import ORCA_HOME
     from orca.serve.backup import BackupKeyError, load_key
 
@@ -1596,11 +1606,19 @@ def _backup_run(fn, *a, **k):
         raise typer.Exit(1)
 
 
+@backup_app.callback()
+def _backup_group(ctx: typer.Context):
+    """Everything here except `recover` needs the optional `cryptography` package (checked before any import of the backup modules)."""
+    if ctx.invoked_subcommand not in (None, "recover"):
+        _need_crypto()
+
+
 @backup_app.command("keygen")
 def backup_keygen(path: str = typer.Argument(..., help="where to write a NEW key (must not exist). Store it OUTSIDE the data directory and the backup location; losing it makes backups unreadable.")):
     """Explicit, one-off key creation. The key is yours to custody (never written next to a backup)."""
     from pathlib import Path
 
+    _need_crypto()
     from orca.config import ORCA_HOME
     from orca.serve.backup import write_new_key
 
@@ -1695,9 +1713,9 @@ def backup_recover():
     from pathlib import Path
 
     from orca.config import ORCA_HOME
-    from orca.serve import backup
+    from orca.serve import datadir_lock
 
-    r = backup.recover_interrupted(Path(ORCA_HOME))
+    r = datadir_lock.recover_interrupted(Path(ORCA_HOME))
     console.print("[green]rolled back an interrupted restore[/green]" if r["recovered"] else "nothing to recover")
 
 

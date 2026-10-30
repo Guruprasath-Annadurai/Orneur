@@ -16,12 +16,15 @@ States: `FIXED` = engineering-verified here; `BLOCKED` = needs a founder-control
 | B6-9 | P2 | restored files inherited loose permissions | FIXED (0700/0600) |
 | B6-10 | P2 | two restores, or a restore under a running server (and the reverse) could overlap | FIXED (flock; advisory, local filesystem) |
 
+| B6-11 | P1 | the server (lifespan, `/readyz`) and every deletion path imported `cryptography`, which the production image does not install: server would not start, deletions would fail (found by CI on `e5266c7`) | FIXED (stdlib-only error/lock/ledger modules; lazy KDF import; clear CLI message) |
+
 ## BLOCKED — founder / external decisions
 | ID | Item | Why it cannot be closed in code |
 |---|---|---|
 | **B6-B1** | **Key custody** (where keys live, copies, rotation, escrow, who may restore) | a custody policy, not an engineering choice; loss of the key makes every archive unrecoverable by design |
 | **B6-B2** | **Retention and destruction of historical backups; immutable / off-host storage** | an offline copy cannot be altered by a live deletion; only the holder can destroy it. No erasure of offline copies is claimed |
 | **B6-B3** | **Off-host anchoring of the deletion ledger** (WORM storage, second host, signed external log) | the only way to make *completeness* of deletion history verifiable. Without it a consistent rewrite of the ledger, or deletions after the newest copy kept elsewhere, are undetectable. Nothing was simulated |
+| B6-B5 | Whether the production image should include the `backup` extra (`cryptography`) so encrypted backups can run inside the container | changes the image's dependency surface and supply-chain review; not done. Until decided, backups run from a separate environment with `pip install 'orneur[backup]'`; the container cannot create or restore one |
 | B6-B4 | Postgres plaintext dumps (`*.pgdump`) | no automated, verifiable migration; manual offline procedure and retention decision (see `B6_LEGACY_MIGRATION.md`) |
 
 ## OPEN — accepted limitations

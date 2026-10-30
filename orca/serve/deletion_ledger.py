@@ -23,17 +23,13 @@ import time
 import uuid
 from pathlib import Path
 
-from orca.serve.backup_crypto import BackupAuthError, BackupError, derive
+from orca.serve.backup_errors import BackupAuthError, LedgerIntegrityError  # noqa: F401  (LedgerIntegrityError re-exported)
 
 _logger = logging.getLogger("orneur.deletion_ledger")
 
 LEDGER_NAME = "deletion_ledger.jsonl"
 KINDS = ("session", "doc", "user")
 ZERO = "0" * 64
-
-
-class LedgerIntegrityError(BackupError):
-    """The ledger file does not form a valid chain (removed/edited/reordered/forged/empty): it cannot be trusted as deletion history."""
 
 
 def _default_home() -> Path:
@@ -211,6 +207,8 @@ def merged(home: Path) -> list[dict]:
 
 
 def _mac(key: bytes, body: dict) -> str:
+    from orca.serve.backup_crypto import derive           # only the offline export/restore tooling needs `cryptography`; recording a deletion must work without it
+
     return hmac.new(derive(key, b"", b"orneur-ledger-v2"), _canon(body), hashlib.sha256).hexdigest()
 
 

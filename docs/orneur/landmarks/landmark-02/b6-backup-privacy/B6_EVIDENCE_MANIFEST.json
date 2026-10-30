@@ -49,7 +49,8 @@
   "B6-B1 key custody",
   "B6-B2 historical-backup retention / immutable or off-host storage",
   "B6-B3 off-host anchoring of the deletion ledger (completeness cannot be verified without it)",
-  "B6-B4 Postgres plaintext dumps"
+  "B6-B4 Postgres plaintext dumps",
+  "B6-B5 production image does not include the optional backup extra"
  ],
  "not_run": [
   "very large data directories",
@@ -63,7 +64,15 @@
   "finding": "P1 legacy backup/restore bypass (orca/ops/backup.py, orca backup, orca restore) on PR #143 candidate b1c56b9/ba36e74",
   "repro": "evidence/b6c_legacy_bypass_repro.py -> evidence/b6c_legacy_bypass_red_b1c56b9.txt (4 of 4 failed before the fix)",
   "red_before_fix": "evidence/b6c_corrective_tests_red_b1c56b9.txt (20 failed, 3 passed)",
-  "history_of_claims": "the first B6 delivery (code ba36e74, CI green) claimed the boundary was closed; that was incorrect and is corrected in B6_BACKUP_PRIVACY_REPORT.md section 7. The earlier green CI record is preserved in B6_EXACT_HEAD_CI.md."
+  "history_of_claims": "the first B6 delivery (code ba36e74, CI green) claimed the boundary was closed; that was incorrect and is corrected in B6_BACKUP_PRIVACY_REPORT.md section 7. The earlier green CI record is preserved in B6_EXACT_HEAD_CI.md.",
+  "ci_found_defect": {
+   "run": 41052123184,
+   "head": "e5266c7",
+   "job": "Production Container Build + Boot Smoke",
+   "cause": "server lifespan imported the backup module -> cryptography (optional, absent from the image)",
+   "red": "evidence/b6c_no_crypto_red_e5266c7.txt",
+   "fix": "stdlib-only backup_errors / datadir_lock; lazy KDF import in deletion_ledger; CLI dependency message; 'backup' extra"
+  }
  },
  "not_claimed": [
   "ledger is tamper-proof",
