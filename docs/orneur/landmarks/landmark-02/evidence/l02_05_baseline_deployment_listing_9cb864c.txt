@@ -1,0 +1,1 @@
+baseline 9cb864c: list_deployments RAISED JSONDecodeError - one damaged file makes EVERY deployment unlistable (Model Society routing reads this)

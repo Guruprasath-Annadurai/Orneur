@@ -34,7 +34,7 @@ function harness({ upstream, genId = null, cancellable = false, thinkingOnly = f
   };
   const ctx = {
     isStreaming: true,
-    _activeGenerationId: genId, _activeGenerationCancellable: cancellable, _activeStreamUpstream: upstream, _authToken: 't',
+    _activeGenerationId: genId, _activeGenerationCancellable: cancellable, _activeStreamUpstream: upstream, _activeRequestKey: null, _authToken: 't',
     document: { getElementById: () => ({ querySelector: () => lastAnswer }) },
     _abandonActiveStream: () => { calls.abandoned++; },
     markMessageInterrupted: (_div, reason) => calls.interrupted.push(reason),

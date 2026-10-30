@@ -1,0 +1,25 @@
+{
+  "model_tag": "llama3.2:1b",
+  "ollama_host": "http://localhost:11434",
+  "weights": "third-party (not an ORNEUR-native model)",
+  "recorded_at": "2026-10-29T11:03:57+0000",
+  "baseline_measure": true,
+  "question": "Summarize the uploaded document in two sentences.",
+  "dispatch_counts": {
+    "truth_fabric_answer": 0,
+    "truth_fabric_verification": 0,
+    "streamed_answer": 1,
+    "kernel_discarded_answer": 1,
+    "rag_stage": 3,
+    "side_call": 1
+  },
+  "total_provider_requests": 6,
+  "first_chunk_s": 2.987,
+  "done_s": 4.447,
+  "wall_s": 4.447,
+  "chunk_events": 130,
+  "grounding": "retrieved_not_cited",
+  "sources": 1,
+  "delivery": "upstream",
+  "route": "document_pipeline"
+}

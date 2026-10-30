@@ -1,0 +1,4 @@
+Reproduced on baseline 9cb864c (real route, TestClient, isolated ORNEUR_HOME). LongTermMemory.delete_session made to raise at its entry point.
+FIRST 200 {'deleted': True, ... 'long_term_vector_memory_logically_deleted': False, 'long_term_vector_memory_physical_reclamation': None, ...}   <- the `*_error` key is filtered out of the response
+OWNED_AFTER False      <- ownership claim released although a store failed
+RETRY 404              <- owner can no longer retry; nothing reaches the leftover store again

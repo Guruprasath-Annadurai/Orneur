@@ -43,12 +43,13 @@ def _decode(token: str) -> Optional[dict]:
         return None
 
 
-def make_verification_token(user_id: str, email: str) -> str:
-    return _encode({"sub": user_id, "email": email, "type": "verify", "exp": int(time.time()) + 86400})
+def make_verification_token(user_id: str, email: str, jti: str | None = None) -> str:
+    """``jti`` ties the signed link to a single-use row (orca.auth.account_security); a link without one cannot be consumed."""
+    return _encode({"sub": user_id, "email": email, "type": "verify", "exp": int(time.time()) + 86400, **({"jti": jti} if jti else {})})
 
 
-def make_reset_token(user_id: str, email: str) -> str:
-    return _encode({"sub": user_id, "email": email, "type": "reset",  "exp": int(time.time()) + 3600})
+def make_reset_token(user_id: str, email: str, jti: str | None = None) -> str:
+    return _encode({"sub": user_id, "email": email, "type": "reset",  "exp": int(time.time()) + 3600, **({"jti": jti} if jti else {})})
 
 
 def make_2fa_pending_token(user_id: str, email: str) -> str:

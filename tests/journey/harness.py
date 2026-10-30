@@ -94,7 +94,7 @@ class LiveServer:
         end = time.time() + timeout
         while time.time() < end:
             if self.proc.poll() is not None:
-                raise CapabilityMissing(f"server exited early (code {self.proc.returncode}); see {self.log_path}")
+                raise CapabilityMissing(f"server exited early (code {self.proc.returncode}); see {self.log_path}\n--- server.log tail ---\n{self.log_tail(25)}")
             try:
                 if httpx.get(f"{self.base}/livez", timeout=2).status_code == 200:
                     return
@@ -198,6 +198,7 @@ class OllamaTap:
         self.relayed_lines = 0          # NDJSON lines (generated pieces) relayed from Ollama to ORNEUR
         self.client_aborts = 0          # times ORNEUR hung up on a response that was still streaming (evidence that it stopped the model call)
         self.open_streams = 0
+        self.embed_calls = 0            # L02: /api/embeddings and /api/embed requests (proof that real embedding weights were used)
         self.abort_log: list[dict] = []
         tap = self
 
@@ -210,6 +211,8 @@ class OllamaTap:
             def _forward(self):
                 n = int(self.headers.get("content-length") or 0)
                 body = self.rfile.read(n) if n else None
+                if self.command == "POST" and self.path in ("/api/embeddings", "/api/embed"):
+                    tap.embed_calls += 1
                 if self.command == "POST" and self.path in ("/api/chat", "/api/generate") and body:
                     try:
                         tap.requests.append({"path": self.path, "body": json.loads(body)})

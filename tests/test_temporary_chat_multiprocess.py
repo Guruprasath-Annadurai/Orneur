@@ -154,6 +154,8 @@ def test_a_worker_that_arrives_after_the_closure_is_refused_and_leaves_no_rows_b
     rc, out, _ = _run(home, "close", sid)
     assert rc == 0 and out[0]["closed"]["state"] == "closed"
     rc, steps, err = _run(home, "committer", sid)
-    assert rc == 0 and steps[0]["outcome"] == "refused", (steps, err[-300:])
+    # L02-01e: the closure now writes a deletion tombstone, so the late worker is refused one step EARLIER (it cannot even take authority) rather than at
+    # the commit guard. Both are refusals; the invariant under test -- nothing is re-created -- is asserted just below and is unchanged.
+    assert rc == 0 and steps[0]["outcome"] in ("refused", "no-authority"), (steps, err[-300:])
     assert _db_rows(home, sid) == {"conversation_turns": 0, "session_authority": 0, "session_export_state": 0}
     assert _leaks(home, b"secret question") == []

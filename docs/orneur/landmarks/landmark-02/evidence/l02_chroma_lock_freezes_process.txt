@@ -1,0 +1,5 @@
+Observed 2026-10-29 on a real `orca serve` process (probe: scratchpad lockprobe.py, ORNEUR_HOME isolated, FakeOllama provider).
+Setup: one conversation created; a second process then held `BEGIN EXCLUSIVE` on memory/vectors/chroma.sqlite3 and docs/vectors/chroma.sqlite3, and the user sent DELETE /api/session/<id>.
+Result: /livez (an unrelated endpoint) timed out on every probe for 40+ s ("livez@5s FAIL ReadTimeout" ... "livez@41s FAIL ReadTimeout"), i.e. the WHOLE process was unresponsive.
+faulthandler dump (SIGABRT) showed the deletion worker thread inside chromadb/api/rust.py get_tenant (PersistentClient construction) and the main thread unable to run:
+the native chromadb client blocks while holding the GIL. Pre-existing (any chromadb call on a locked store has the same effect); not introduced by L02. Registered as L02-06a.

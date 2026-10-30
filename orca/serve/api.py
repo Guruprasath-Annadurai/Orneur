@@ -18,6 +18,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import contextlib
 import json
@@ -55,6 +56,7 @@ from orca.auth import auth_router, get_current_user, get_current_user_optional, 
 from orca.auth.rbac import require_permission
 from orca.auth.store import User, model_access_allowed
 from orca import audit
+from orca.serve import capability_truth
 from orca.lens.intent import detect_generation_intent
 
 from orca.brain.providers import get_brain
@@ -73,7 +75,7 @@ from orca.config import CONFIG, ORCA_HOME, orneur_env
 from orca.variants.ultra import OrcaUltra
 from orca.docs import (
     extract, SUPPORTED_EXTENSIONS, MAX_FILE_SIZE,
-    chunk_text, DocStore, register_doc, unregister_doc, list_docs,
+    chunk_text, DocStore, register_doc, unregister_doc, list_docs, mark_doc_deleting,
     run_deep_rag,
 )
 from orca.docs.citation_check import check_citations
@@ -109,13 +111,50 @@ async def _retention_loop():
         await asyncio.sleep(_RETENTION_INTERVAL_S)
 
 
+_STREAM_MAX_S = float(os.environ.get("ORNEUR_STREAM_MAX_S", "900"))
+_DELETE_REQUEST_BUDGET_S = float(os.environ.get("ORNEUR_DELETE_REQUEST_BUDGET_S", "20"))
+_DELETION_SWEEP_INTERVAL_S = float(os.environ.get("ORNEUR_DELETION_SWEEP_S", "60"))
+
+
+def _reconcile_resources() -> dict:
+    from orca.gateway import reconcile, wiring
+
+    wiring.refresh_live_announcement()                 # this worker still serves what it announced
+    return reconcile.sweep()
+
+
+async def _deletion_sweep_loop():
+    """L02-01/02: a deletion that a crash or an unavailable store left unfinished must not wait for the 6-hour retention pass. Each step is independent,
+    idempotent, bounded and lease-guarded, so several workers running this loop is safe."""
+    from orca.docs.store import sweep_document_deletions
+    from orca.serve import deletions, temporary_chat
+
+    while True:
+        for name, fn, args in (
+            ("deletion", deletions.resume_pending, ()),                                   # conversation deletions left partial / revoked
+            ("document", sweep_document_deletions, (CONFIG.ollama.host,)),               # documents left "deleting"
+            ("temporary chat", temporary_chat.expire_due, ()),                            # TTL-expired and failed temporary chats
+            ("resource reconciliation", _reconcile_resources, ()),                        # L02-05: orphan deployment records / document chunks / temp files
+        ):
+            try:
+                await asyncio.to_thread(fn, *args)
+            except Exception:
+                _logger.debug("%s sweep failed", name, exc_info=True)
+        await asyncio.sleep(_DELETION_SWEEP_INTERVAL_S)
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
     _retention_task = asyncio.create_task(_retention_loop())
+    _sweep_task = asyncio.create_task(_deletion_sweep_loop())
     try:
         yield
     finally:
         _retention_task.cancel()
+        _sweep_task.cancel()
+        from orca.serve import ops as _ops
+
+        _ops.close_inflight_as_shutdown()          # turns still running here will never commit: say so durably before the process exits
     # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
     # wait=False: blocking the event loop here to join every worker would
     # itself hang shutdown behind a slow backend call -- the same class of
@@ -225,6 +264,22 @@ async def security_headers_middleware(request: Request, call_next):
     if request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
     return response
+
+
+_DRAIN_REFUSED_PATHS = ("/api/stream", "/api/chat", "/api/ultra", "/api/vision", "/api/docs/upload")
+
+
+@app.middleware("http")
+async def drain_middleware(request: Request, call_next):
+    """L02-06: after a stop signal the server finishes what it is already doing and refuses NEW work with a retryable 503, before any model call or quota is touched.
+    Health and read endpoints keep answering so an orchestrator can watch it drain."""
+    from orca.serve import ops
+
+    if ops.draining() and request.method == "POST" and request.url.path in _DRAIN_REFUSED_PATHS:
+        metrics.record_event("refusal", "server_draining")
+        e = coded_error("server_draining")
+        return JSONResponse(e.as_json(), status_code=e.status, headers={"Retry-After": "5"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -616,6 +671,7 @@ def _hold_turn(request: Request, session_id: str, user) -> "PublicError | None":
         return coded_error("session_busy")
     ta.start_heartbeat()
     request.state.turn_authority = ta
+    _turn_mark_running(request, ta)
     return None
 
 
@@ -628,6 +684,133 @@ def _release_turn(request: Request) -> None:
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
+
+
+def _turn_key(request: Request):
+    """(user_id, request_key) of the durable turn-request record for this HTTP request, or None (anonymous / no Idempotency-Key)."""
+    return getattr(request.state, "turn_req", None)
+
+
+def _committed_payload(user_id: str, rec: dict) -> dict | None:
+    """The stored result of a request that already committed, read back from the transcript (the authority) - used to answer a late retry of the same key."""
+    from orca.serve import conversations
+
+    if not rec.get("session_id"):
+        return None
+    for t in conversations.turns_for_session(rec["session_id"]):
+        if t["turn_id"] == rec.get("turn_id"):
+            meta = t.get("meta") or {}
+            return {"session_id": rec["session_id"], "response": t["assistant_content"], "message_id": rec.get("message_id"),
+                    "user_message_id": rec.get("user_message_id"), "model_identity": meta.get("model_identity")}
+    return None
+
+
+def _turn_begin(user, key: str, session_id: str | None, req_hash: str | None = None):
+    """Admission record for this request. Returns ("proceed", None) | ("replay", payload) | ("cancelled", None) | ("mismatch", None)."""
+    from orca.serve import turn_requests as tr
+
+    try:
+        rec = tr.view(user.id, key)
+        if rec is not None and req_hash and rec.get("request_hash") and rec["request_hash"] != req_hash and rec["state"] == "committed":
+            return "mismatch", None
+        if rec is not None and rec["state"] == "committed":
+            payload = _committed_payload(user.id, rec)
+            if payload is not None:
+                return "replay", payload
+        if rec is not None and rec["state"] == "cancelled" and rec.get("reason") == "cancelled_before_admission":
+            return "cancelled", None
+        if rec is not None and rec["terminal"] and rec["state"] != "committed":
+            tr.reopen(user.id, key, session_id, req_hash)        # the same key, a new attempt after a closed one: a real retry
+        else:
+            tr.begin(user.id, key, session_id, req_hash)
+    except Exception:
+        _logger.warning("turn-request admission record failed", exc_info=True)           # the lifecycle record is an observation; it never blocks serving
+    return "proceed", None
+
+
+def _turn_mark_running(request: Request, ta) -> None:
+    tk = _turn_key(request)
+    if tk and ta is not None and ta.epoch:
+        from orca.serve import ops as _ops
+
+        _ops.inflight_add(tk[0], tk[1])
+        try:
+            from orca.serve import turn_requests as tr
+
+            tr.mark_running(tk[0], tk[1], ta.session_id, ta.fence, ta.epoch)
+        except Exception:
+            _logger.debug("turn-request running mark failed", exc_info=True)
+
+
+def _turn_finish(request: Request, *, error_code: str | None = None, persisted: str | None = None) -> None:
+    """Close the request record from the way the HTTP request ended. A record already ``committed`` is never touched (compare-and-set)."""
+    tk = _turn_key(request)
+    if not tk:
+        return
+    from orca.serve import ops as _ops
+
+    _ops.inflight_remove(tk[0], tk[1])
+    try:
+        from orca.serve import turn_requests as tr
+
+        if getattr(request.state, "turn_cancelled", False) or tr.cancel_requested(tk[0], tk[1]):
+            tr.finish(tk[0], tk[1], "cancelled", "user_stop")
+        elif persisted == "failed":
+            tr.finish(tk[0], tk[1], "not_committed", "persist_failed")
+        elif error_code:
+            tr.finish(tk[0], tk[1], "not_committed", error_code)
+        elif getattr(request.state, "client_gone", False):
+            tr.finish(tk[0], tk[1], "not_committed", "client_disconnected")
+        else:
+            tr.finish(tk[0], tk[1], "not_committed", "ended_without_commit")
+    except Exception:
+        _logger.debug("turn-request finish failed", exc_info=True)
+
+
+def _make_is_gone(request: Request):
+    """Cancellation check for the generation loops: the client left, OR the user pressed Stop (POST /api/turns/<key>/cancel) - the two are different facts."""
+    async def gone() -> bool:
+        if await request.is_disconnected():
+            request.state.client_gone = True
+            return True
+        t0 = getattr(request.state, "_t0", None)
+        if t0 is None:
+            request.state._t0 = t0 = time.monotonic()
+        if time.monotonic() - t0 > _STREAM_MAX_S:                                     # L02-06: a total deadline; per-chunk idle limits alone never end a slow trickle
+            request.state.deadline_exceeded = True
+            return True
+        tk = _turn_key(request)
+        if tk:
+            now = time.monotonic()
+            if now - getattr(request.state, "_cancel_poll_at", 0.0) >= 0.25:        # a Stop is noticed within a quarter second; not one query per streamed token
+                request.state._cancel_poll_at = now
+                from orca.serve import turn_requests as tr
+
+                if await asyncio.to_thread(tr.cancel_requested, tk[0], tk[1]):
+                    request.state.turn_cancelled = True
+                    return True
+            elif getattr(request.state, "turn_cancelled", False):
+                return True
+        return False
+    return gone
+
+
+def _idem_resolve_stale(user, key: str, req_hash: str, state: str, cached):
+    """L02-03: an idempotency row stuck ``in_progress`` after its worker died would refuse every retry for ten minutes while the outcome record already says the request
+    is NOT committed. When the durable record shows the request has ended (worker lost / superseded / not committed / cancelled) the stale row is released and the
+    retry proceeds as the new attempt it is. A live request stays a conflict."""
+    if state != "in_progress":
+        return state, cached
+    from orca.serve import idempotency, turn_requests as tr
+
+    try:
+        rec = tr.view(user.id, key)
+    except Exception:
+        return state, cached
+    if rec is not None and rec["terminal"] and rec["state"] != "committed":
+        idempotency.abort(user.id, key)
+        return idempotency.begin(user.id, key, req_hash)
+    return state, cached
 
 
 def _idem_begin_stream(req: "ChatRequest", request: Request, user):
@@ -648,7 +831,31 @@ def _idem_begin_stream(req: "ChatRequest", request: Request, user):
 
     if not idempotency.valid_key(key):
         return _one(coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.").as_sse())
-    state, cached = idempotency.begin(user.id, key, idempotency.request_hash(req.model_dump()))
+    req_hash = idempotency.request_hash(req.model_dump())
+    state, cached = _idem_resolve_stale(user, key, req_hash, *idempotency.begin(user.id, key, req_hash))
+    if state == "new":
+        # L02-03: the short-lived idempotency window has no record, but the durable one may: a request that already COMMITTED is answered from the transcript, never regenerated.
+        phase, payload = _turn_begin(user, key, req.session_id, req_hash)
+        if phase == "mismatch":
+            idempotency.abort(user.id, key)
+            return _one(coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.").as_sse())
+        if phase == "cancelled":
+            idempotency.abort(user.id, key)
+            return _one(coded_error("conflict", message="This request was cancelled before it started.").as_sse())
+    else:
+        phase, payload = "proceed", None
+    if phase == "replay":
+        idempotency.abort(user.id, key)
+        async def _replay_committed():
+            yield _sse({"type": "session", "session_id": payload["session_id"]})
+            if payload.get("model_identity"):
+                yield _sse({"type": "model", "identity": payload["model_identity"]})
+            yield _sse({"type": "stream", "delivery": "replayed", "cancellable": False})
+            yield _sse({"type": "chunk", "text": payload["response"], "replayed": True})
+            yield _sse({"type": "done", "message_id": payload["message_id"], "user_message_id": payload["user_message_id"], "persisted": "saved",
+                        "delivery": "replayed", "idempotent_replay": True, "model_identity": payload.get("model_identity")})
+        return StreamingResponse(_replay_committed(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Idempotent-Replay": "true"})
     if state == "in_progress":
         return _one(coded_error("conflict", message="A request with this Idempotency-Key is still being processed.").as_sse())
     if state == "mismatch":
@@ -664,6 +871,7 @@ def _idem_begin_stream(req: "ChatRequest", request: Request, user):
         return StreamingResponse(_replay(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Idempotent-Replay": "true"})
     request.state.idem = {"user_id": user.id, "key": key, "completed": False}
+    request.state.turn_req = (user.id, key)
     return None
 
 
@@ -715,8 +923,13 @@ def _admit_message_quota(user, request: Request, kind: str = "message"):
         return None
     from orca.serve import conversations
 
-    if not conversations.store_available():
+    from orca.serve import ops
+
+    if ops.disk_critical():
+        metrics.record_event("refusal", "disk_critical")
+    if not conversations.store_available() or ops.disk_critical():
         # Checked BEFORE the model runs: a signed-in turn that cannot be committed must not be generated, charged, or presented as saved.
+        # (L02-06: a volume that is out of space is the same condition - the commit would fail after the answer was produced and paid for.)
         return coded_error("history_unavailable")
     from orca.auth.store import QuotaError, reserve_quota
 
@@ -751,7 +964,8 @@ def _release_message_quota(request: Request) -> None:
         ticket.release()
 
 
-def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None, authority: "_TurnAuthority | None" = None) -> dict | None:
+def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None, authority: "_TurnAuthority | None" = None,
+                  request_key: str | None = None) -> dict | None:
     """Durable turn commit for SIGNED-IN users via SQLite fencing (same SoT as inference).
 
     Anonymous sessions are not persisted. Best-effort: history must never fail a
@@ -788,7 +1002,7 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
                 committed = conversations.commit_turn(
                     session_id, user_text, assistant_text,
                     user_id=user.id, turn_id=uuid.uuid4().hex,
-                    fence_token=held.fence, epoch=held.epoch, meta=meta,
+                    fence_token=held.fence, epoch=held.epoch, meta=meta, request_key=request_key,
                 )
             else:
                 # No pre-generation authority (new session id, frontier pass-through, legacy callers): acquire for the commit only.
@@ -801,18 +1015,36 @@ def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *,
                     committed = conversations.commit_turn(
                         session_id, user_text, assistant_text,
                         user_id=user.id, turn_id=uuid.uuid4().hex,
-                        fence_token=fence, epoch=auth.epoch, meta=meta,
+                        fence_token=fence, epoch=auth.epoch, meta=meta, request_key=request_key,
                     )
                 finally:
                     conversations.release_authority(session_id, fence, auth.epoch)
             if not committed.ok:
                 _logger.warning("conversation commit refused: %s", committed.reason)
+                if request_key:
+                    try:
+                        from orca.serve import turn_requests as _tr
+
+                        if committed.reason in ("stale_authority", "revision_conflict", "ownership_mismatch"):
+                            _tr.finish(user.id, request_key, "superseded", committed.reason)
+                        elif committed.reason != "request_closed":
+                            _tr.finish(user.id, request_key, "not_committed", committed.reason)
+                    except Exception:
+                        pass
                 return None
             try:
                 message_versions.seed(session_id, user.id, user_message_id, "user", user_text)
                 message_versions.seed(session_id, user.id, assistant_message_id, "assistant", assistant_text)
             except Exception:
                 _logger.debug("message version seed failed", exc_info=True)
+        try:
+            metrics.record_event("turn_outcome", "committed:none")
+        except Exception:
+            pass
+        if committed.reason == "idempotent" and request_key:
+            from orca.serve import turn_requests as _tr
+            rec = _tr.view(user.id, request_key) or {}
+            return {"user_message_id": rec.get("user_message_id") or user_message_id, "message_id": rec.get("message_id") or assistant_message_id}
         return {"user_message_id": user_message_id, "message_id": assistant_message_id}
     except Exception:
         _logger.debug("conversation persistence failed", exc_info=True)
@@ -989,6 +1221,10 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
     # (no evidence found, not a fabricated citation).
     if doc_store is _KERNEL_DOCS_DEFAULT:
         doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
+    # L02-02: every caller of this function answers a document session through the deep-RAG pipeline and discards a plain direct Kernel answer
+    # (only a Truth-Fabric-grounded answer is kept). Do not pay a model dispatch -- and a quota unit -- for an answer that will be thrown away.
+    if on_raw_delta is None and doc_store is not None and doc_store.count() > 0:
+        cognitive_request.defer_direct_answer = True
     return await kernel.execute(cognitive_request, entitlement=entitlement, doc_store=doc_store)
 
 
@@ -1106,7 +1342,7 @@ class _Session:
         self._agent = None
         self.served_model: str | None = None
         self.fallback_from: str | None = None
-        self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
+        self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host, enforce_registry=True)
         self.explain_store = ExplainStore()
         self.knowledge_graph = KnowledgeGraph(session_id=session_id)
         self.last_active = time.time()
@@ -1130,7 +1366,7 @@ class _Session:
         brain = brain_for_tier_resolution(tier_resolution, viewer_user_id=self.user_id)
         self._ctx = ContextManager(brain)
         tools = build_registry(memory_engine=self.memory, surface="web")  # G-020: no shell/file/exec tools on the web
-        self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id)
+        self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id, on_tool_event=self._audit_tool_event)
         self._brain = brain
 
         if self._restored_history:
@@ -1172,6 +1408,13 @@ class _Session:
     def ctx(self):
         self._ensure_agent()
         return self._ctx
+
+    def _audit_tool_event(self, event: dict) -> None:
+        """L02-02f: tool use is audited by tool name and refusal code only - never by argument text (it can carry private content)."""
+        try:
+            audit.log(event.get("event", "tool_call"), user_id=self.user_id, detail={"session_id": self.id, "tool": event.get("tool"), "reason": event.get("reason")})
+        except Exception:
+            pass
 
     def touch(self):
         self.last_active = time.time()
@@ -1258,6 +1501,14 @@ def _validate_session_id(session_id: str | None) -> None:
         raise HTTPException(status_code=422, detail="invalid session id")
 
 
+def _deleted_for_access(session_id: str) -> bool:
+    """A tombstoned conversation is a 404 - EXCEPT a temporary chat, whose closed/expired/failed states keep their own, established 409 contract
+    (``temporary_closed`` / ``temporary_expired`` / ``temporary_deletion_incomplete``); those are refused by ``_temporary_block`` right after."""
+    from orca.serve import deletions, temporary_chat
+
+    return deletions.is_tombstoned(session_id) and not temporary_chat.is_hidden(session_id)
+
+
 def _check_session_ownership(session_id: str | None, user_id: str | None) -> None:
     """The raise-only half of `_get_session()`'s access check, exposed
     separately so a route needing to check a session it is NOT about to
@@ -1271,7 +1522,8 @@ def _check_session_ownership(session_id: str | None, user_id: str | None) -> Non
         return
     _validate_session_id(session_id)
     from orca.auth.store import check_session_access
-    if not check_session_access(session_id, user_id):
+    from orca.serve import deletions
+    if not check_session_access(session_id, user_id) or _deleted_for_access(session_id):         # L02-01: a deleted conversation is gone for everyone, owner included
         raise HTTPException(status_code=404, detail="session not found")
 
 
@@ -1295,10 +1547,11 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
     `HTTPException(404)` (never 403) so an unauthorized caller cannot even
     confirm the session exists."""
     from orca.auth.store import claim_session
+    from orca.serve import deletions
 
     _validate_session_id(session_id)
     if session_id:
-        if not claim_session(session_id, user_id):
+        if _deleted_for_access(session_id) or not claim_session(session_id, user_id):
             raise HTTPException(status_code=404, detail="session not found")
         sid = session_id
     else:
@@ -1589,6 +1842,25 @@ async def readyz():
         dependencies["core_database"] = {"status": "unavailable", "reason": str(e)}
         ready = False  # never advertise READY while session/auth correctness cannot be guaranteed
 
+    # L02-06: the transcript database is REQUIRED in every profile (nothing can be committed without it); storage headroom, Redis, backlogs and stream load are reported.
+    from orca.serve import ops
+
+    dependencies["transcript_store"] = ops.transcript_store_report()
+    if dependencies["transcript_store"]["status"] != "ok":
+        ready = False
+    dependencies["disk"] = ops.disk_report()
+    if dependencies["disk"]["state"] == "critical":
+        ready = False                         # new turns would be refused anyway; do not advertise readiness
+    dependencies["file_descriptors"] = ops.fd_report()
+    if dependencies["file_descriptors"]["state"] == "critical":
+        ready = False
+    dependencies["redis"] = ops.redis_report()
+    dependencies["maintenance_backlog"] = ops.backlog_report()
+    dependencies["streams"] = ops.stream_report()
+    if ops.draining():
+        dependencies["lifecycle"] = {"status": "draining"}
+        ready = False
+
     status_code = 200 if ready else 503
     return JSONResponse({"status": "ready" if ready else "not_ready", "dependencies": dependencies}, status_code=status_code)
 
@@ -1741,7 +2013,20 @@ async def chat(
     if not idempotency.valid_key(key):
         e = coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.")
         return JSONResponse(e.as_json(), status_code=e.status)
-    state, cached = idempotency.begin(user.id, key, idempotency.request_hash(req.model_dump()))
+    req_hash = idempotency.request_hash(req.model_dump())
+    state, cached = _idem_resolve_stale(user, key, req_hash, *idempotency.begin(user.id, key, req_hash))
+    if state == "new":
+        phase, payload = _turn_begin(user, key, req.session_id, req_hash)       # L02-03: an already-committed request is answered from the transcript
+        if phase in ("mismatch", "cancelled", "replay"):
+            idempotency.abort(user.id, key)
+        if phase == "mismatch":
+            e = coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.")
+            return JSONResponse(e.as_json(), status_code=e.status)
+        if phase == "cancelled":
+            e = coded_error("conflict", message="This request was cancelled before it started.")
+            return JSONResponse(e.as_json(), status_code=e.status)
+        if phase == "replay":
+            return JSONResponse({**payload, "persisted": "saved", "idempotent_replay": True}, headers={"Idempotent-Replay": "true"})
     if state == "done":
         return JSONResponse(cached, headers={"Idempotent-Replay": "true"})
     if state == "in_progress":
@@ -1750,14 +2035,18 @@ async def chat(
     if state == "mismatch":
         e = coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.")
         return JSONResponse(e.as_json(), status_code=e.status)
+    request.state.turn_req = (user.id, key)
     try:
         result = await _chat_impl(req, request, user)
     except BaseException:
+        _turn_finish(request, error_code="error")
         idempotency.abort(user.id, key)
         raise
     if isinstance(result, dict):
+        _turn_finish(request, persisted=result.get("persisted"))
         idempotency.complete(user.id, key, result)
     else:
+        _turn_finish(request, error_code=f"http_{getattr(result, 'status_code', 0)}")
         idempotency.abort(user.id, key)                      # errors are not cached: a retry is a real retry
     return result
 
@@ -1979,8 +2268,7 @@ async def _chat_dispatch(
             # Never answer as if the uploaded documents had been consulted when retrieval failed.
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
-        if rag_result.context_block:
-            enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+        enriched = _document_prompt_prefix(rag_result) + enriched
     if kernel_answered:
         # Kernel's plan needed nothing beyond a direct model call --
         # answered via ModelGateway already, entitlement-reconciled. Skip
@@ -1991,11 +2279,11 @@ async def _chat_dispatch(
         # real capabilities the existing AgentLoop path provides; the
         # Kernel already decided this is needed, this is not a bypass.
         try:
-            final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
+            final, trace = await asyncio.to_thread(lambda: sess.agent.run(enriched, persona_system, **_provenance_kw(req.message, rag_result)))
         except Exception as e:
             _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
             return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
-        used_tools = [tc.tool for tc in trace.tool_calls]
+        used_tools = [tc.tool for tc in trace.tool_calls if not tc.refused]          # L02-08: only tools that ACTUALLY ran; a call the gate refused is not 'used'
         plan_action = trace.plan_action
 
     _consume_message_quota(user, request)
@@ -2022,7 +2310,7 @@ async def _chat_dispatch(
                           evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
     _ident = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered)
     # Durable commit first; derived state (live window, long-term memory, Redis-shared history) only for an accepted turn.
-    _persisted = _persist_turn(user, sess.id, req.message, final, identity=_ident, src=_src, authority=_ta)
+    _persisted = _persist_turn(user, sess.id, req.message, final, identity=_ident, src=_src, authority=_ta, request_key=(_turn_key(request) or (None, None))[1])
     _persist_status = "not_applicable" if user is None else ("saved" if _persisted else "failed")
     if _persist_status == "failed":
         audit.log("turn_not_persisted", user_id=user.id if user else None, detail={"session_id": sess.id})
@@ -2036,7 +2324,9 @@ async def _chat_dispatch(
             # call above (see orca/memory/turn_ingest.py's own docstring for why).
             from orca.memory.turn_ingest import maybe_ingest_turn
             maybe_ingest_turn(sess.id, req.message, final)
-        sess.persist_to_redis(fence_token=_ta.fence if _ta is not None else None)
+        from orca.serve import deletions as _deletions
+        if not _deletions.is_tombstoned(sess.id):                 # L02-01: never resurrect a deleted conversation's cache
+            sess.persist_to_redis(fence_token=_ta.fence if _ta is not None else None)
 
     audit.log("chat", user_id=user.id if user else None,
               detail={"model": sess.model_variant, "backend": "ollama", "data_left_infrastructure": False,
@@ -2065,9 +2355,12 @@ async def stream_chat(
     request: Request,
     user: User | None = Depends(get_current_user_optional),
 ):
+    seen = {"error": None, "persisted": None}
+
     def _release_all() -> None:
         _release_message_quota(request)
         _release_turn(request)
+        _turn_finish(request, error_code=seen["error"], persisted=seen["persisted"])
         _idem_abort_if_unfinished(request)
 
     early = _idem_begin_stream(req, request, user)
@@ -2091,7 +2384,21 @@ async def stream_chat(
         # commit; every other exit (error event, abstention, disconnect, cancel) refunds / releases here.
         try:
             async for part in inner:
+                if isinstance(part, str) and part.startswith("data: {"):
+                    if '"type": "error"' in part:
+                        try:
+                            seen["error"] = json.loads(part[6:]).get("code") or "error"
+                        except Exception:
+                            seen["error"] = "error"
+                    elif '"type": "done"' in part:
+                        try:
+                            seen["persisted"] = json.loads(part[6:]).get("persisted")
+                        except Exception:
+                            pass
                 yield part
+        except (asyncio.CancelledError, GeneratorExit):
+            request.state.client_gone = True           # the server stopped iterating because the client left
+            raise
         finally:
             _release_all()
 
@@ -2364,8 +2671,7 @@ async def _stream_dispatch(
             CONFIG.ollama.host,
             _model_name_for_variant(req.model_variant),
         )
-        if rag_result.context_block:
-            enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+        enriched = _document_prompt_prefix(rag_result) + enriched
 
     persona_system = get_persona_system(sess.model_variant)
     if mod_result.action == "support":
@@ -2393,8 +2699,20 @@ async def _stream_dispatch(
         delivery = "upstream"
         streamed_upstream = False
         kernel_run = None
+        kernel_slot = None
         try:
             if stream_kernel:
+                # L02-06: the Kernel stream path is a long-lived upstream connection like any other and takes an admission slot too (it used to be uncapped: with
+                # ORNEUR_MAX_CONCURRENT_STREAMS=3, ten simultaneous streams all ran). At capacity the request is refused here - before any model call - and the
+                # quota reservation is refunded by the release path.
+                kernel_slot = streaming.StreamAdmission()
+                try:
+                    kernel_slot.acquire()
+                except streaming.StreamingUnavailable:
+                    kernel_slot = None
+                    metrics.record_event("refusal", "server_busy")
+                    yield f"data: {json.dumps(coded_error('server_busy').as_sse())}\n\n"
+                    return
                 # LANDMARK-01 B-01: the Kernel runs CONCURRENTLY with this response. Authentication, ownership, entitlement, moderation, atomic
                 # quota admission and the turn authority were all settled before this generator was created; only now is the model called.
                 from orca.cognitive.streaming import ConsumerGone, KernelRun
@@ -2412,7 +2730,7 @@ async def _stream_dispatch(
                 redactor = StreamRedactor()
                 raw_kernel_text = ""
                 try:
-                    async with contextlib.aclosing(kernel_run.deltas(is_gone=request.is_disconnected)) as raw_deltas:
+                    async with contextlib.aclosing(kernel_run.deltas(is_gone=_make_is_gone(request))) as raw_deltas:
                         async for raw_delta in raw_deltas:
                             _consume_message_quota(user, request)       # the first model output spends the unit; a later Stop must not refund it
                             if not streamed_upstream:
@@ -2429,11 +2747,15 @@ async def _stream_dispatch(
                             if safe_delta:
                                 full += safe_delta
                                 yield f"data: {json.dumps({'type': 'chunk', 'text': safe_delta})}\n\n"
-                            if await request.is_disconnected():
+                            if await _make_is_gone(request)():
                                 raise ConsumerGone()
                     cognitive_result = await kernel_run.result()
                 except ConsumerGone:
                     redactor.cancel()
+                    if getattr(request.state, "deadline_exceeded", False):
+                        audit.log("stream_deadline_exceeded", user_id=user.id if user else None, detail={"chars_sent": len(full), "limit_s": _STREAM_MAX_S})
+                        yield f"data: {json.dumps(coded_error('request_timeout').as_sse())}\n\n"          # the client is still here: tell it, nothing is committed
+                        return
                     audit.log("stream_client_disconnected", user_id=user.id if user else None, detail={"chars_sent": len(full), "phase": "kernel_stream"})
                     return
                 except Exception as e:
@@ -2494,7 +2816,7 @@ async def _stream_dispatch(
             else:
                 try:
                     gen, trace = await asyncio.to_thread(
-                        lambda: sess.agent.stream(enriched if enriched is not None else _enrich(req.message), persona_system)
+                        lambda: sess.agent.stream(enriched if enriched is not None else _enrich(req.message), persona_system, **_provenance_kw(req.message, rag_result))
                     )
                     # Send tool activity if any
                     if trace.plan_action == "tools":
@@ -2521,7 +2843,7 @@ async def _stream_dispatch(
                             if safe_chunk:
                                 full += safe_chunk
                                 yield f"data: {json.dumps({'type': 'chunk', 'text': safe_chunk})}\n\n"
-                            if await request.is_disconnected():
+                            if await _make_is_gone(request)():
                                 redactor.cancel()
                                 audit.log("stream_client_disconnected", user_id=user.id if user else None,
                                           detail={"chars_sent": len(full)})
@@ -2536,7 +2858,7 @@ async def _stream_dispatch(
                         # The agent loop appended the RAW streamed text to its live window; the window is what the next turn / a Redis peer reuses.
                         _swap_last_assistant_in_window(sess, raw_text, full)
 
-                    tool_names = [tc.tool for tc in trace.tool_calls]
+                    tool_names = [tc.tool for tc in trace.tool_calls if not tc.refused]        # L02-08: executed tools only (refused calls are audited, not reported as used)
                     plan_action = trace.plan_action
 
                 except streaming.StreamingUnavailable as e:
@@ -2559,7 +2881,7 @@ async def _stream_dispatch(
                                   evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
                                   citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
                                   evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
-            persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id, authority=ta)
+            persisted = _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id, authority=ta, request_key=(_turn_key(request) or (None, None))[1])
             persist_status = "not_applicable" if user is None else ("saved" if persisted else "failed")
             if persist_status == "failed":
                 audit.log("turn_not_persisted", user_id=user.id if user else None, detail={"session_id": sess.id})
@@ -2570,10 +2892,12 @@ async def _stream_dispatch(
                     sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
                     from orca.memory.turn_ingest import maybe_ingest_turn
                     maybe_ingest_turn(sess.id, req.message, full)
-                sess.persist_to_redis(fence_token=fence)
+                from orca.serve import deletions as _deletions, temporary_chat
+                _gone = _deletions.is_tombstoned(sess.id)            # L02-01: deleted while this turn was finishing -> write nothing derived
+                if not _gone:
+                    sess.persist_to_redis(fence_token=fence)
 
-                from orca.serve import temporary_chat
-                if not temporary_chat.is_hidden(sess.id):
+                if not temporary_chat.is_hidden(sess.id) and not _gone:
                     asyncio.create_task(asyncio.to_thread(
                         sess.knowledge_graph.extract_and_add,
                         f"{req.message}\n{full}", "chat", sess.brain,
@@ -2613,6 +2937,8 @@ async def _stream_dispatch(
                 if kernel_run is not None:
                     await kernel_run.aclose()
             finally:
+                if kernel_slot is not None:
+                    kernel_slot.release()
                 _release_turn(request)
 
     return StreamingResponse(
@@ -2691,7 +3017,10 @@ async def list_sessions(
     if user is not None:
         from orca.auth.store import get_user_session_ids
 
+        from orca.serve import deletions
+
         owned = set(get_user_session_ids(user.id))
+        owned -= deletions.tombstoned_among(owned)                        # L02-01: a deletion in progress is already invisible
         episode_ids = [s for s in saved if s in owned]
         activity: dict[str, float] = {}
         for sid in owned:
@@ -2823,18 +3152,57 @@ def _temporary_block(session_id: str):
     return _temporary_http(decision)
 
 
-def _omit_long_term(session_id: str) -> bool:
-    from orca.serve import temporary_chat
+def _user_doc_usage(user_id: str) -> tuple[int, int]:
+    """(documents, bytes) the account currently holds across all of its conversations (registry view; documents being deleted still count until removed)."""
+    from orca.auth.store import get_user_session_ids
 
-    return temporary_chat.is_hidden(session_id)
+    docs = size = 0
+    for sid in get_user_session_ids(user_id):
+        for d in list_docs(sid, include_deleting=True):
+            docs += 1
+            size += int(d.get("size_bytes", 0) or 0)
+    return docs, size
+
+
+def _tool_provenance(user_text: str, rag_result):
+    """L02-02f: what the tool gate needs to know about where the turn's text came from. None when no retrieved passage is in play (the shape checks still run)."""
+    from orca.tools.authorization import Provenance
+
+    passages = tuple(i.get("text", "") for i in ((getattr(rag_result, "citation_dna", None) or {}).values())) if rag_result is not None else ()
+    return Provenance(user_text=user_text, untrusted=passages) if passages else None
+
+
+def _provenance_kw(user_text: str, rag_result) -> dict:
+    """Keyword form of the provenance (empty when no retrieved passage is in play, so the agent is called exactly as before)."""
+    prov = _tool_provenance(user_text, rag_result)
+    return {"provenance": prov} if prov is not None else {}
+
+
+def _document_prompt_prefix(rag_result) -> str:
+    """L02-02: what the model is told about the retrieved material. Retrieved text is quoted as untrusted evidence; an empty or insufficient retrieval is
+    stated to the model so it abstains instead of answering from general knowledge as if the documents supported it."""
+    from orca.docs.sufficiency import NO_EVIDENCE_NOTICE, PARTIAL_EVIDENCE_NOTICE, UNTRUSTED_HEADER
+
+    if rag_result is None:
+        return ""
+    if not rag_result.context_block:
+        return NO_EVIDENCE_NOTICE + "\n\n"
+    note = ("\n\n" + PARTIAL_EVIDENCE_NOTICE) if rag_result.sufficient is False else ""
+    return f"{UNTRUSTED_HEADER}\n{rag_result.context_block}{note}\n\n"
+
+
+def _omit_long_term(session_id: str) -> bool:
+    from orca.serve import deletions, temporary_chat
+
+    return temporary_chat.is_hidden(session_id) or deletions.is_tombstoned(session_id)      # L02-01: nothing derived is written for a deleted conversation
 
 
 def _stream_may_publish(session_id: str, fence: str) -> bool:
     if session_store.enabled() and not session_store.lease_held(session_id, fence):
         return False
-    from orca.serve import temporary_chat
+    from orca.serve import deletions, temporary_chat
 
-    return temporary_chat.enforce(session_id) is None
+    return temporary_chat.enforce(session_id) is None and not deletions.is_tombstoned(session_id)
 
 
 @app.get("/api/session/{session_id}/messages")
@@ -2868,7 +3236,10 @@ async def search_sessions(q: str, request: Request, limit: int = 20, user: User 
     owned = get_user_session_ids(user.id)
     from orca.serve import temporary_chat
 
-    visible = [sid for sid in owned if not temporary_chat.is_hidden(sid)]
+    from orca.serve import deletions
+
+    gone = deletions.tombstoned_among(owned)
+    visible = [sid for sid in owned if sid not in gone and not temporary_chat.is_hidden(sid)]
     return await asyncio.to_thread(conversations.search, visible, _session_titles, q, limit=max(1, min(int(limit), 50)))
 
 
@@ -2898,29 +3269,114 @@ async def export_session(session_id: str, format: str = "md", user: User | None 
     return PlainTextResponse(md, headers={"Content-Disposition": f'attachment; filename="orneur-{session_id[:8]}.md"'})
 
 
-@app.delete("/api/session/{session_id}")
-async def delete_conversation(session_id: str, user: User | None = Depends(get_current_user_optional)):
-    """Delete ONE of the caller's conversations and everything scoped to it (transcript, memory, documents, knowledge graph, titles). Owner only."""
+@app.get("/api/admin/reconcile")
+async def admin_reconcile(user: User = Depends(require_permission("manage_users"))):
+    """L02-05: what the resource reconciler has seen and done (counts, blocked items, recent actions). Resource identifiers only - no user content."""
+    from orca.gateway import reconcile
+    from orca.docs.store import pending_document_deletions
+    from orca.serve import deletions
+
+    d = await asyncio.to_thread(reconcile.diagnostics)
+    d["pending_document_deletions"] = len(await asyncio.to_thread(pending_document_deletions))
+    d["incomplete_conversation_deletions"] = await asyncio.to_thread(deletions.count_incomplete)
+    return d
+
+
+@app.get("/api/turns/{request_key}")
+async def turn_outcome(request_key: str, user: User | None = Depends(get_current_user_optional)):
+    """L02-03: the AUTHORITATIVE outcome of one of the caller's requests, by the Idempotency-Key it was sent with. Use it after a dropped connection instead of guessing.
+
+    ``state`` is one of admitted | running | cancel_requested | cancelled | committed | not_committed | superseded | unknown (the server has no record: it never saw the request
+    or refused it before admission - nothing was committed). When the authoritative store cannot be read the answer is 503 ``outcome_unknown`` - not a statement about the turn."""
     if user is None:
         e = coded_error("auth_required")
         return JSONResponse(e.as_json(), status_code=e.status)
-    _owned_session_or_404(session_id, user)
-    from orca.auth.store import get_user_session_ids, release_session
-    from orca.serve.account_delete import _delete_session_data, _remove_session_title
+    from orca.serve import idempotency, turn_requests
 
-    if session_id not in set(get_user_session_ids(user.id)):
-        raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
-    result = await asyncio.to_thread(_delete_session_data, session_id)
+    if not idempotency.valid_key(request_key):
+        e = coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.")
+        return JSONResponse(e.as_json(), status_code=e.status)
     try:
-        from orca.serve import message_versions
-        message_versions.delete_session(session_id)
+        rec = await asyncio.to_thread(turn_requests.view, user.id, request_key)
     except Exception:
-        pass
-    _remove_session_title(session_id)
+        return JSONResponse({"state": "outcome_unknown", "request_key": request_key, "retryable": True, "safe_to_retry": False,
+                             "message": "The outcome cannot be read right now. Your message may or may not have been saved. Ask again in a moment."}, status_code=503,
+                            headers={"Retry-After": "2"})
+    if rec is None:
+        return {"state": "unknown", "request_key": request_key, "safe_to_retry": True, "terminal": False,
+                "message": "The server has no record of this request. Nothing was saved."}
+    return {k: v for k, v in rec.items() if k not in ("request_hash", "turn_id")}          # internal fields stay internal
+
+
+@app.post("/api/turns/{request_key}/cancel")
+async def turn_cancel(request_key: str, user: User | None = Depends(get_current_user_optional)):
+    """L02-03: the user pressed Stop. Asks the running turn to stop (it confirms by ending - poll GET /api/turns/<key>); if the server has not seen the request yet it is
+    closed in advance so a late arrival is refused. Too late (already committed) is reported as such, never hidden."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import idempotency, turn_requests
+
+    if not idempotency.valid_key(request_key):
+        e = coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    try:
+        rec = await asyncio.to_thread(turn_requests.request_cancel, user.id, request_key)
+    except Exception:
+        return JSONResponse({"state": "outcome_unknown", "request_key": request_key, "retryable": True}, status_code=503, headers={"Retry-After": "2"})
+    metrics.record_event("turn_cancel_requested", rec.get("state", "none"))
+    audit.log("turn_cancel_requested", user_id=user.id, detail={"request_key_hash": hashlib.sha256(request_key.encode()).hexdigest()[:12], "state": rec.get("state")})
+    return JSONResponse({k: v for k, v in rec.items() if k not in ("request_hash", "turn_id")}, status_code=200 if rec.get("terminal") else 202)
+
+
+@app.delete("/api/session/{session_id}")
+async def delete_conversation(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Delete ONE of the caller's conversations and everything scoped to it (transcript, memory, documents, knowledge graph, titles). Owner only.
+
+    L02-01: writes a durable deletion identity first (access is revoked from that instant), then runs the idempotent cleanup cascade. The response
+    states what actually happened: ``200 {deleted: true}`` only when every store confirmed; ``202 {deleted: false, state: "partial"|"running"}``
+    when cleanup is unfinished (the conversation is already inaccessible; repeat the request or wait for the sweep). Never a false success."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.auth.store import get_user_session_ids
+    from orca.serve import deletions
+
+    _validate_session_id(session_id)
+    existing = await asyncio.to_thread(deletions.get, session_id)
+    if existing is None:
+        _owned_session_or_404(session_id, user)
+        if session_id not in set(get_user_session_ids(user.id)):
+            raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
+    elif existing["state"] != "complete":
+        # A repeat/resume is only for the person who started it.
+        if session_id not in set(get_user_session_ids(user.id)):
+            raise HTTPException(status_code=404, detail="session not found")
+    else:
+        raise HTTPException(status_code=404, detail="session not found")          # already fully deleted: indistinguishable from never having existed
+    job = await asyncio.to_thread(deletions.begin, session_id, user.id)
     _sessions.pop(session_id, None)
-    release_session(session_id, user.id)
-    audit.log("conversation_deleted", user_id=user.id, detail={"session_id": session_id})
-    return {"deleted": True, "session_id": session_id, "stores": {k: v for k, v in result.items() if not k.endswith("_error")}}
+    # The cascade touches several stores, any of which can be locked or slow. The request waits a bounded time; if the cascade is still running it keeps
+    # going in its worker thread (holding the lease) and the caller is told the truth: access revoked, state "running", retryable.
+    cascade = asyncio.ensure_future(asyncio.to_thread(deletions.run, session_id, user.id))
+    try:
+        job = await asyncio.wait_for(asyncio.shield(cascade), timeout=_DELETE_REQUEST_BUDGET_S)
+    except asyncio.TimeoutError:
+        job = await asyncio.to_thread(deletions.get, session_id) or job
+    for _ in range(25):                                                           # another worker holds the cleanup lease: give it a moment to finish
+        if job["state"] != "running":
+            break
+        await asyncio.sleep(0.2)
+        job = await asyncio.to_thread(deletions.get, session_id) or job
+    _sessions.pop(session_id, None)
+    audit.log("conversation_deleted", user_id=user.id, detail={"session_id": session_id, "deletion_id": job["deletion_id"], "state": job["state"]})
+    body = {
+        "deleted": job["deleted"], "state": job["state"], "session_id": session_id, "deletion_id": job["deletion_id"],
+        "access_revoked": True, "retryable": job["retryable"], "stores": {k: v for k, v in job["stores"].items() if not k.startswith("_")},
+        "vector_store_physical_reclamation": job["stores"].get("_vector_physical_reclamation"),
+        "retention": deletions.RETENTION_NOTICE,
+    }
+    return JSONResponse(body, status_code=200 if job["deleted"] else 202)
 
 
 @app.post("/api/session/save")
@@ -3073,6 +3529,15 @@ async def available_tools():
     }
 
 
+@app.get("/api/capabilities")
+async def capabilities_endpoint():
+    """L02-08: what this deployment can and cannot do, and who made the model - from facts, with the tests that back each claim. Public; contains no secrets or user data."""
+    from orca.auth import account_security as acct
+    from orca.auth.email import delivery_mode
+
+    return capability_truth.capabilities(email_delivery=delivery_mode(), verification_required=acct.verification_required())
+
+
 @app.get("/api/models")
 async def list_models():
     """
@@ -3119,6 +3584,7 @@ async def list_models():
             "lifecycle": decision.lifecycle,
             "publicly_served": decision.allowed,
             "disclosure": decision.label or ("Experimental model -- not qualified." if decision.lifecycle == "EXPERIMENTAL" else ""),
+            **capability_truth.serving_facts(tier),            # L02-08: runtime, weights origin (third party), native status - never inferred from the tier label
         }
 
     def _persona_claim_status(tier: str) -> dict:
@@ -3487,23 +3953,63 @@ async def upload_doc(
     user: User | None = Depends(get_current_user_optional),
 ):
     """Upload a document for RAG — extract, chunk, embed, and store."""
+    from orca.docs import validation as _val, safe_extract as _safe_extract
+    from orca.docs.store import DocLimitExceeded, find_doc_by_sha
+
     ratelimit.enforce(request, ratelimit.DOC_UPLOAD, extra_key="doc_upload")
+    if user is not None and not user.verified:
+        from orca.auth.account_security import verification_required
+        if verification_required():                          # L02-04: an unverified account cannot use stored-document features either
+            return JSONResponse({"error": "Verify your email address to upload documents.", "code": "email_verification_required"}, status_code=403)
+    # L02-02: ownership / liveness of the conversation is decided BEFORE a byte of the file is read or parsed (a stranger or a deleted conversation must
+    # not be able to make the server parse a hostile file), and the read itself is bounded.
+    sess = _get_session(session_id, user_id=user.id if user else None)
+    blocked = _temporary_block(sess.id)
+    if blocked is not None:
+        return blocked
     if file.filename and Path(file.filename).suffix.lower() not in SUPPORTED_EXTENSIONS:
         return JSONResponse(
-            {"error": f"Unsupported file type. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"},
+            {"error": f"Unsupported file type. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}", "code": "unsupported_file"},
             status_code=400,
         )
-
-    data = await file.read()
-    if len(data) > MAX_FILE_SIZE:
-        return JSONResponse(
-            {"error": f"File too large ({len(data)//1024//1024}MB). Max: {MAX_FILE_SIZE//1024//1024}MB"},
-            status_code=413,
-        )
-
-    filename = file.filename or "upload.txt"
+    if len(list_docs(sess.id, include_deleting=True)) >= _val.MAX_DOCS_PER_SESSION:
+        return JSONResponse({"error": f"This conversation already has {_val.MAX_DOCS_PER_SESSION} documents. Delete one to add another.", "code": "too_many_documents"}, status_code=422)
     try:
-        text = extract(filename, data)
+        data = await _val.read_bounded(file, MAX_FILE_SIZE)
+        filename = _val.safe_filename(file.filename)
+        _val.validate_content(filename, data)
+    except _val.UploadRejected as e:
+        return JSONResponse({"error": str(e), "code": e.code}, status_code=e.status)
+
+    import hashlib
+    sha = hashlib.sha256(data).hexdigest()
+    dup = find_doc_by_sha(sess.id, sha)
+    if dup is not None:                                    # the same bytes are already in this conversation: no second copy, no second charge of indexing work
+        return {"doc_id": dup["doc_id"], "filename": dup["filename"], "chunks": dup.get("chunk_count", 0), "size_bytes": dup.get("size_bytes", len(data)),
+                "session_id": sess.id, "duplicate": True}
+    if user is not None:
+        used_docs, used_bytes = _user_doc_usage(user.id)
+        if used_docs >= _val.MAX_DOCS_PER_USER or used_bytes + len(data) > _val.MAX_BYTES_PER_USER:
+            return JSONResponse({"error": "You have reached your document storage limit. Delete some documents to upload more.", "code": "storage_quota_exceeded"}, status_code=413)
+    try:
+        if Path(filename).suffix.lower() in _safe_extract.CONTAINER_EXT:
+            text = await _safe_extract.extract_isolated(filename, data)         # PDF/DOCX parsers run in a bounded child process
+        else:
+            text = await asyncio.to_thread(extract, filename, data)
+    except _val.UploadRejected as e:
+        return JSONResponse({"error": str(e), "code": e.code}, status_code=e.status)
+    except _safe_extract.ExtractUnavailable as e:
+        return JSONResponse(
+            public_error(ImportError("extractor"), route="/api/docs/upload", user_id=user.id if user else None, code="extractor_unavailable",
+                         message="This file type isn't supported on this deployment.").as_json(),
+            status_code=422,
+        )
+    except _safe_extract.ExtractFailed as e:
+        return JSONResponse(
+            public_error(e, route="/api/docs/upload", user_id=user.id if user else None, code="extraction_failed",
+                         message="This file could not be read.").as_json(),
+            status_code=422,
+        )
     except ValueError as e:
         # The extractor raises ValueError only for caller-fixable input
         # problems ("Unsupported file type: .xyz"); that text is safe and useful.
@@ -3522,7 +4028,9 @@ async def upload_doc(
         )
 
     if not text.strip():
-        return JSONResponse({"error": "No text could be extracted from this file."}, status_code=422)
+        return JSONResponse({"error": "No text could be extracted from this file.", "code": "no_text"}, status_code=422)
+    if len(text) > _val.MAX_EXTRACTED_CHARS:
+        return JSONResponse({"error": f"This document has too much text ({len(text):,} characters; the limit is {_val.MAX_EXTRACTED_CHARS:,}).", "code": "document_too_large"}, status_code=413)
 
     # PII redaction — scrubs SSNs, emails, phone numbers, and Luhn-valid
     # credit card numbers BEFORE the document is chunked/embedded into the
@@ -3537,10 +4045,21 @@ async def upload_doc(
 
     doc_id = str(uuid.uuid4())
     chunks = chunk_text(text, doc_id=doc_id, filename=filename)
+    if len(chunks) > _val.MAX_CHUNKS_PER_DOC:
+        return JSONResponse({"error": "This document is too large to index.", "code": "document_too_large"}, status_code=413)
 
-    sess = _get_session(session_id, user_id=user.id if user else None)
     stored = sess.doc_store.add_chunks(chunks, doc_id=doc_id, filename=filename)
-    register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data))
+    if stored <= 0:
+        return JSONResponse({"error": "This document could not be indexed.", "code": "index_failed"}, status_code=500)
+    try:
+        entry = register_doc(sess.id, doc_id, filename, chunk_count=stored, size_bytes=len(data), sha256=sha, max_docs=_val.MAX_DOCS_PER_SESSION)
+    except DocLimitExceeded:
+        await asyncio.to_thread(sess.doc_store.delete_doc_detailed, doc_id)           # the chunks just written belong to nothing: remove them
+        return JSONResponse({"error": f"This conversation already has {_val.MAX_DOCS_PER_SESSION} documents. Delete one to add another.", "code": "too_many_documents"}, status_code=422)
+    if entry["doc_id"] != doc_id:                                                   # a concurrent identical upload won the registry: drop our duplicate chunks
+        await asyncio.to_thread(sess.doc_store.delete_doc_detailed, doc_id)
+        return {"doc_id": entry["doc_id"], "filename": entry["filename"], "chunks": entry.get("chunk_count", 0), "size_bytes": entry.get("size_bytes", len(data)),
+                "session_id": sess.id, "duplicate": True}
 
     audit.log("doc_upload", user_id=user.id if user else None,
               detail={"filename": filename, "chunks": stored, "bytes": len(data),
@@ -3571,13 +4090,21 @@ async def delete_doc(
 ):
     """Remove a document and all its chunks from the session store."""
     sess = _get_session(session_id, user_id=user.id if user else None)
-    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id)):
+    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id, include_deleting=True)):
         # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
         return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
-    ok = sess.doc_store.delete_doc(doc_id)
-    unregister_doc(sess.id, doc_id)
-    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
-    return {"deleted": ok, "doc_id": doc_id, "session_id": sess.id}
+    mark_doc_deleting(sess.id, doc_id)                       # L02-02: out of every serving path first; physical removal follows
+    detail = await asyncio.to_thread(sess.doc_store.delete_doc_detailed, doc_id)
+    ok = bool(detail["ok"])
+    if ok:
+        unregister_doc(sess.id, doc_id)                      # L02-01: stays registered (and retryable) until every store confirmed
+    audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id, "ok": ok, "collection": detail["collection"], "fallback": detail["fallback"]})
+    body = {"deleted": ok, "doc_id": doc_id, "session_id": sess.id, "retryable": not ok,
+            "stores": {"vector_collection": detail["collection"], "keyword_index": detail["fallback"]},
+            # Honest scope (measured in the real-Ollama journey D6): removing a document removes its passages from retrieval. Text that earlier ANSWERS in this
+            # conversation quoted stays in the conversation (and in memory derived from it) until the conversation is deleted.
+            "derived_content": "Earlier answers in this conversation that quoted this document, and any memory derived from them, are not removed. Delete the conversation to remove them."}
+    return JSONResponse(body, status_code=200 if ok else 202)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

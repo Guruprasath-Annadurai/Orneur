@@ -698,6 +698,7 @@ let _activeGenerationCancellable = false;
 // LANDMARK-01 B-01: true only after the server sent {type:'stream', delivery:'upstream', cancellable:true} for THIS request, i.e. real model
 // tokens are arriving and closing the connection (Stop) cancels the model call on the server.
 let _activeStreamUpstream = false;
+let _activeRequestKey = null; // L02-03: the Idempotency-Key of the request now in flight; the server's record of that key is the authority on its outcome
 // INTEGRATION Phase E (2026-10-24, PR #96): real correlated-runs
 // plumbing (POST /api/runs, X-Run-Id, GET /api/runs/{id}). No UI
 // control in this codebase currently creates or exposes a "run" --
@@ -1881,6 +1882,51 @@ function updateSendEnabled() {
 //   - {type:'stream', delivery:'upstream', cancellable:true}: real model tokens were arriving; closing the connection makes /api/stream cancel the model
 //     call, release the turn and not commit the turn, so the message says the connection was closed and the partial reply was not saved.
 //   - anything else (frontier passthrough, a replayed answer, no stream event yet): the old, deliberately modest wording - no confirmed stop is claimed.
+/* ── L02-03: what actually happened to a request whose connection dropped ──────────────────────────────────────────────
+   A closed or failed connection says nothing about whether the server committed the turn. The server keeps one durable record per
+   request key (GET /api/turns/<key>); this asks it instead of guessing. Every message below states something the server reported. */
+async function fetchTurnOutcome(key) {
+  try {
+    const r = await fetch(`/api/turns/${encodeURIComponent(key)}`, { headers: _authHeaders() });
+    if (r.status === 401) return { state: 'auth' };
+    const body = await r.json().catch(() => null);
+    if (!body) return { state: 'outcome_unknown' };
+    return body; // includes the 503 {state:'outcome_unknown'} answer
+  } catch (e) {
+    return { state: 'outcome_unknown' };
+  }
+}
+
+async function reconcileOutcome(key, text, opts) {
+  const myToken = _authToken;
+  const quiet = opts && opts.quiet;
+  let out = { state: 'outcome_unknown' };
+  for (let i = 0; i < 8; i++) {
+    out = await fetchTurnOutcome(key);
+    if (myToken !== _authToken) return out;
+    if (out.state === 'auth') { _handleSessionExpired(); return out; }
+    if (!['admitted', 'running', 'cancel_requested'].includes(out.state)) break;
+    await new Promise((res) => setTimeout(res, 1500)); // the server is still working on it: ask again
+  }
+  if (myToken !== _authToken) return out;
+  if (out.state === 'committed') {
+    // The turn IS in the conversation. Show what the server saved rather than a failure.
+    if (out.session_id) { await openSession(out.session_id, (document.getElementById('conv-title') || {}).textContent || ''); }
+    if (!quiet) appendUnavailableNote('The connection dropped, but this message and its reply were saved. This is the saved conversation.');
+  } else if (out.state === 'cancelled') {
+    appendUnavailableNote('Generation was stopped. The server confirmed it; nothing from this request was saved.', { retryText: text });
+  } else if (out.state === 'not_committed' || out.state === 'superseded' || out.state === 'unknown') {
+    appendUnavailableNote(out.state === 'unknown'
+      ? 'The connection dropped before the server received this message. Nothing was saved.'
+      : 'The connection dropped and the server did not save this reply. Nothing from this request is in the conversation.', { retryText: text });
+  } else if (out.state === 'running' || out.state === 'admitted' || out.state === 'cancel_requested') {
+    appendUnavailableNote('The server is still working on this request. Check your conversation in a moment; sending it again now could duplicate it.');
+  } else {
+    appendUnavailableNote('The connection dropped and the server could not confirm whether this was saved. Reload your conversation to check before sending it again.');
+  }
+  return out;
+}
+
 async function stopGeneration() {
   if (!isStreaming) return;
   const container = document.getElementById('reading-container');
@@ -1893,6 +1939,11 @@ async function stopGeneration() {
   const cancellable = _activeGenerationCancellable;
   const upstreamStop = _activeStreamUpstream;
   const myToken = _authToken;
+  const stopKey = _activeRequestKey; // L02-03: the request the user is stopping
+  // L02-03: tell the server the user pressed Stop (a different fact from a dropped connection). Sent before the local connection is closed.
+  const cancelSent = stopKey && _authToken
+    ? fetch(`/api/turns/${encodeURIComponent(stopKey)}/cancel`, { method: 'POST', headers: _authHeaders(), keepalive: true }).catch(() => null)
+    : Promise.resolve(null);
   // Always end the local connection immediately -- the user asked to
   // stop NOW, regardless of whether the server can confirm a true
   // cancellation. This alone is never presented as a confirmed stop.
@@ -1914,6 +1965,16 @@ async function stopGeneration() {
     // LANDMARK-01 B-01: the server announced a real, cancellable upstream stream. Aborting the request closes that connection, and the
     // server cancels the model call and does not commit the turn. The text above is what had been received; it is not saved.
     showLocal('Generation stopped. The model connection was closed, and this partial reply was not saved to the conversation.');
+    // L02-03: the sentence above is the normal outcome, but a commit can win the race with Stop. Ask the server; correct the record if it did.
+    if (stopKey && _authToken) {
+      cancelSent.then(async () => {
+        const out = await fetchTurnOutcome(stopKey);
+        if (myToken === _authToken && out && out.state === 'committed') {
+          appendUnavailableNote('The reply had already finished and was saved before Stop took effect. It is in the conversation.');
+          if (out.session_id) openSession(out.session_id, '');
+        }
+      });
+    }
     return;
   }
 
@@ -2049,6 +2110,9 @@ function renderModelOptions() {
     if (typeof info.vision_capable === 'boolean') fields.push(['Vision input', info.vision_capable ? 'Supported' : 'Not supported']);
     if (info.fallback_active && info.resolved_model) fields.push(['Actually serving', info.resolved_model]);
     if (info.disclosure) fields.push(['Disclosure', info.disclosure]);
+    // L02-08: who made the weights, from the server (never inferred from the tier name)
+    if (info.weights_origin) fields.push(['Weights', info.native_orneur_weights ? 'ORNEUR-trained' : 'Third-party open model (not trained by ORNEUR)']);
+    if (info.runtime) fields.push(['Runs on', (info.location === 'local' ? 'Local ' : '') + info.runtime]);
     detailsPanel.innerHTML = fields.map(([k, v]) => `<div class="detail-row"><span class="detail-k">${esc(k)}</span><span class="detail-v">${esc(String(v))}</span></div>`).join('')
       || '<div class="detail-row"><span class="detail-v">No further verified attributes reported.</span></div>';
     // AUDIT-B05: ".open" is the authoritative toggle (the `.model-details`
@@ -2882,6 +2946,7 @@ async function sendMessage(runId) {
   _activeStreamUpstream = false;
   _activeGenerationRunId = null;
   const myIdempotencyKey = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
+  _activeRequestKey = myIdempotencyKey;
   updateSendEnabled();
   const thinkEl = appendThinking();
   // AUDIT-B81-P1-01: terminalState is the ONLY source of truth for
@@ -3031,7 +3096,13 @@ async function sendMessage(runId) {
           // generic fallback string below, discarding the server's own
           // specific, often actionable message. Pre-dates this
           // integration work; not caused by it.
-          appendUnavailableNote(ev.text || 'An error occurred while generating a response.', { retryText: text });
+          if (ev.code === 'conflict' && _authToken && /still being processed/i.test(ev.text || '')) {
+            // L02-03: the browser re-sent the SAME request (same Idempotency-Key) after its connection dropped, and the server correctly refused to run it twice because the
+            // first attempt is still in progress. That is not an error the person should see: ask the server what became of the original.
+            reconcileOutcome(myIdempotencyKey, text);
+          } else {
+            appendUnavailableNote(ev.text || 'An error occurred while generating a response.', { retryText: text });
+          }
         }
       } catch (e) {
         logMalformed(e);
@@ -3057,7 +3128,11 @@ async function sendMessage(runId) {
       // completion just because the socket closed.
       thinkEl.remove();
       if (answerEl) markMessageInterrupted(answerEl);
-      appendUnavailableNote('The response stream ended unexpectedly before completion.', { retryText: text });
+      if (_authToken) {
+        await reconcileOutcome(myIdempotencyKey, text); // L02-03: ask the server what happened instead of assuming failure
+      } else {
+        appendUnavailableNote('The response stream ended unexpectedly before completion.', { retryText: text });
+      }
     }
   } catch (e) {
     // AbortError fires when _abandonActiveStream() cancelled OUR OWN
@@ -3068,7 +3143,11 @@ async function sendMessage(runId) {
     if (isOwner()) {
       thinkEl.remove();
       if (answerEl) markMessageInterrupted(answerEl);
-      appendUnavailableNote('Network error while streaming the response.', { retryText: text });
+      if (_authToken) {
+        await reconcileOutcome(myIdempotencyKey, text); // L02-03: a network error is not the same as "not saved" - the server decides
+      } else {
+        appendUnavailableNote('Network error while streaming the response.', { retryText: text });
+      }
     }
   } finally {
     if (isOwner()) {
@@ -3370,11 +3449,13 @@ async function deleteConversation(row, sid) {
     if (myToken !== _authToken) return;
     if (r.status === 401) { _handleSessionExpired(); return; }
     if (!r.ok) throw new Error('delete failed');
+    const partial = r.status === 202; // L02-01: access is already revoked, but some stored data is still being removed (server retries) -- say so
     row.remove();
     _draftsByConversation.delete(_draftKeyFor(sid)); // AUDIT-B14: no point keeping a draft slot for a conversation that no longer exists
     if (sid === sessionId) newConversation(); // the open conversation was just deleted -- do not keep showing its now-gone content
     const list = document.getElementById('recents-list');
     if (!list.querySelector('.rec-row')) list.innerHTML = '<div class="recents-empty">No conversations yet</div>';
+    if (partial) appendUnavailableNote('This conversation is hidden and can no longer be opened, but some stored data could not be removed yet. ORNEUR will keep retrying.');
   } catch (e) {
     if (myToken !== _authToken) return;
     appendUnavailableNote('Could not delete this conversation. It has not been removed.');
@@ -3623,7 +3704,8 @@ async function doLogin() {
   try {
     const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass }) });
     const d = await r.json();
-    if (!r.ok) { errEl.textContent = d.detail || 'Sign in failed.'; return; }
+    // L02-04: a refusal can carry a structured detail ({error, code}); never print an object.
+    if (!r.ok) { errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Sign in failed.'; return; }
     if (d.requires_2fa) { errEl.textContent = '2FA is enabled on this account; use the main app to complete sign-in.'; return; }
     onAuthSuccess(d);
   } catch (e) {
@@ -3646,7 +3728,9 @@ async function doSignup() {
   try {
     const r = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass, name }) });
     const d = await r.json();
-    if (!r.ok) { errEl.textContent = d.detail || 'Signup failed.'; return; }
+    if (!r.ok) { errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Signup failed.'; return; }
+    // L02-04: when the operator requires a verified address the server issues no session at signup and answers every address the same way.
+    if (d.status === 'verification_required') { errEl.textContent = d.message || 'Check your email for a verification link to finish creating your account.'; return; }
     onAuthSuccess(d);
   } catch (e) {
     errEl.textContent = 'Network error. Try again.';

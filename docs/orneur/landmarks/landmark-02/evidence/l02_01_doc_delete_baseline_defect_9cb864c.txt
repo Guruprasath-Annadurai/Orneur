@@ -1,0 +1,4 @@
+baseline 9cb864c: delete_doc -> True
+collection count after delete: 0
+keyword fallback still contains text: True
+collection delete raises -> delete_doc returned: True | chunks still in collection: 1

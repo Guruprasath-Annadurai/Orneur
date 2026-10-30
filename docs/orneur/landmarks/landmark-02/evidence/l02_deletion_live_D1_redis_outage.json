@@ -1,0 +1,21 @@
+{
+  "recorded_at": "2026-10-29T17:08:24+0000",
+  "redis_keys_before": [
+    "orca:session:fbff8911-d6fd-4654-8e2d-39b81864d262"
+  ],
+  "partial_response_s": 6.75,
+  "partial_body_stores": {
+    "redis": "failed",
+    "memory": "ok",
+    "conversation_transcript": "ok",
+    "message_versions": "ok",
+    "long_term_vector_memory": "ok",
+    "docs": "ok",
+    "knowledge_graph": "ok",
+    "semantic_facts": "ok",
+    "memory_continuum": "ok"
+  },
+  "final_state": "complete",
+  "attempts": 2,
+  "redis_keys_after": []
+}

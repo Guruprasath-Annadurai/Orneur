@@ -1587,7 +1587,55 @@ def serve(
     from orca.config import orneur_env
     trusted_proxy_cidrs = orneur_env("TRUSTED_PROXY_CIDRS", "").strip()
     forwarded_allow_ips = [c.strip() for c in trusted_proxy_cidrs.split(",") if c.strip()] or "127.0.0.1"
-    uvicorn.run(create_app(), host=host, port=port, log_level="warning", proxy_headers=True, forwarded_allow_ips=forwarded_allow_ips)
+    # L02-06: graceful stop. The first SIGINT/SIGTERM marks the server as draining (readiness goes 503, new work is refused with a retryable 503) and uvicorn then
+    # waits at most ORNEUR_SHUTDOWN_GRACE_S for in-flight requests; a stream still running after that is cut, and its turn is NOT committed (the client asks
+    # GET /api/turns/<key> for the truth).
+    from orca.serve import ops
+
+    class _GracefulServer(uvicorn.Server):
+        def handle_exit(self, sig, frame):
+            ops.begin_drain()
+            super().handle_exit(sig, frame)
+
+    ops.raise_fd_limit()           # conversations keep vector-index files open; the usual 1024 default would be reached after a few hundred active conversations
+    grace = int(orneur_env("SHUTDOWN_GRACE_S", "20"))
+    config = uvicorn.Config(create_app(), host=host, port=port, log_level="warning", proxy_headers=True, forwarded_allow_ips=forwarded_allow_ips,
+                            timeout_graceful_shutdown=grace)
+    _GracefulServer(config).run()
+
+
+backup_app = typer.Typer(help="Consistent backup / verified restore of the ORNEUR data directory (L02-06).")
+app.add_typer(backup_app, name="data-backup")
+
+
+@backup_app.command("create")
+def backup_create(dest: str = typer.Argument(..., help="empty directory to write the backup into")):
+    """Snapshot the data directory (SQLite online backup + file copies + SHA-256 manifest). The backup contains user data and is not encrypted."""
+    from orca.config import ORCA_HOME
+    from orca.serve import backup
+
+    r = backup.create(ORCA_HOME, __import__("pathlib").Path(dest))
+    console.print(f"[green]backup written[/green]: {r['files']} files -> {r['path']}")
+
+
+@backup_app.command("verify")
+def backup_verify(path: str = typer.Argument(...)):
+    """Re-hash every file and run PRAGMA integrity_check on every database."""
+    from orca.serve import backup
+
+    r = backup.verify(__import__("pathlib").Path(path))
+    console.print("[green]backup OK[/green]" if r["ok"] else f"[red]backup FAILED[/red]: {r['problems']}")
+    raise typer.Exit(0 if r["ok"] else 1)
+
+
+@backup_app.command("restore")
+def backup_restore(path: str = typer.Argument(...), overwrite: bool = typer.Option(False, "--overwrite", help="allow a non-empty target (stop the server first)")):
+    """Verify, then restore into the data directory. Refuses a non-empty target unless --overwrite."""
+    from orca.config import ORCA_HOME
+    from orca.serve import backup
+
+    r = backup.restore(__import__("pathlib").Path(path), ORCA_HOME, overwrite=overwrite)
+    console.print(f"[green]restored[/green] {r['restored_files']} files into {ORCA_HOME}")
 
 
 if __name__ == "__main__":

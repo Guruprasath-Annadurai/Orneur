@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-10-29T17:08:32+0000",
+  "status": 202,
+  "stores": {
+    "long_term_vector_memory": "failed",
+    "memory": "ok",
+    "conversation_transcript": "ok",
+    "message_versions": "ok",
+    "docs": "ok",
+    "knowledge_graph": "ok",
+    "redis": "ok",
+    "semantic_facts": "ok",
+    "memory_continuum": "ok"
+  }
+}

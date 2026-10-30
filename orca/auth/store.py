@@ -59,6 +59,13 @@ def model_access_allowed(user: "User | None", model_variant: str) -> tuple[bool,
     Returns (allowed, reason) — reason is empty on success, else a message
     safe to show the user directly.
     """
+    # L02-04: when the operator requires verified email (and a delivery path exists) an unverified account cannot spend model capacity at all.
+    if user is not None and not getattr(user, "verified", True):
+        from orca.auth.account_security import verification_required
+
+        if verification_required():
+            return False, "Verify your email address to use ORNEUR. Check your inbox for the verification link."
+
     variant = (model_variant or "core").removeprefix("orca-")
 
     if variant == "nano":

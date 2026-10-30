@@ -33,6 +33,7 @@ from orca.auth.tokens import (
 )
 from orca.auth.totp import generate_totp_secret, verify_totp, provisioning_uri
 from orca.auth.email import send_verification, send_password_reset, is_configured as email_configured
+from orca.auth import account_security as acct
 from orca.serve import ratelimit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -67,6 +68,21 @@ def _make_response(user: User) -> dict:
     }
 
 
+def _dummy_password_work(password: str) -> None:
+    """Spend the same CPU a real account creation / password check spends, so response time does not reveal whether an address is registered."""
+    from orca.auth.crypto import hash_password
+
+    hash_password(password)
+
+
+def _send_verification_link(user) -> bool:
+    ok, _ = acct.may_send(user.id, "verify")
+    if not ok:
+        return False
+    jti = acct.issue(user.id, "verify", user.email, acct.VERIFY_TTL_S)
+    return send_verification(user.email, make_verification_token(user.id, user.email, jti))
+
+
 @router.post("/signup")
 async def signup(req: SignupRequest, request: Request):
     ratelimit.enforce(request, ratelimit.AUTH_SIGNUP)
@@ -78,12 +94,41 @@ async def signup(req: SignupRequest, request: Request):
         raise HTTPException(400, "Password must be at least 8 characters")
     if "@" not in req.email or "." not in req.email.split("@")[-1]:
         raise HTTPException(400, "Invalid email address")
-    if get_user_by_email(req.email):
+    existing = get_user_by_email(req.email)
+    if acct.verification_required():
+        # L02-04: enumeration-resistant signup. A new and an already-registered address get the SAME response (and similar work); the only difference is in the inbox
+        # of whoever owns the address. No session is issued before the address is proven.
+        from fastapi.responses import JSONResponse
+
+        generic = {"status": "verification_required", "message": "If this address can be registered, we have sent a verification link to it. Open it to finish creating your account."}
+        if existing:
+            await _asyncio_to_thread(_dummy_password_work, req.password)
+            ok, _ = acct.may_send(existing.id, "exists_notice")
+            if ok:
+                from orca.auth.email import send_email
+                send_email(existing.email, "Someone tried to create an ORNEUR account with your address",
+                           "<p>Someone used this address to sign up. If it was you, sign in instead (or reset your password). If not, ignore this message.</p>",
+                           "Someone used this address to sign up for ORNEUR. If it was you, sign in instead or reset your password. If not, ignore this message.")
+            return JSONResponse(generic, status_code=202)
+        try:
+            user = create_user(req.email, req.password, req.name)
+        except Exception:
+            raise HTTPException(500, detail={"error": "Could not create the account right now. Please try again.", "code": "internal_error"})
+        try:
+            from orca.auth.privacy import init_default_consents
+            init_default_consents(user.id)
+        except Exception:
+            pass
+        _send_verification_link(user)
+        return JSONResponse(generic, status_code=202)
+    # No verified delivery path is configured: the legacy behaviour (immediate session, duplicate reported) is kept and its limits are DISCLOSED by
+    # GET /api/auth/email-status (verification_required=false, delivery!=smtp). Enumeration resistance needs verified delivery.
+    if existing:
         raise HTTPException(409, "An account with this email already exists")
     try:
         user = create_user(req.email, req.password, req.name)
-    except Exception as e:
-        raise HTTPException(500, f"Could not create account: {e}")
+    except Exception:
+        raise HTTPException(500, detail={"error": "Could not create the account right now. Please try again.", "code": "internal_error"})
     # Seeds the one consent record that isn't really optional (strictly
     # necessary cookies) — best-effort, a failure here shouldn't block
     # account creation, same reasoning as the verification email below.
@@ -94,9 +139,14 @@ async def signup(req: SignupRequest, request: Request):
         pass
     # Send verification email (non-blocking best-effort)
     if email_configured():
-        token = make_verification_token(user.id, user.email)
-        send_verification(user.email, token)
+        _send_verification_link(user)
     return _make_response(user)
+
+
+async def _asyncio_to_thread(fn, *a):
+    import asyncio
+
+    return await asyncio.to_thread(fn, *a)
 
 
 class BootstrapOwnerRequest(BaseModel):
@@ -185,9 +235,21 @@ async def logout_all(user: User = Depends(get_current_user)):
 @router.post("/login")
 async def login(req: LoginRequest, request: Request):
     ratelimit.enforce(request, ratelimit.AUTH_LOGIN)
-    user = authenticate(req.email, req.password)
+    from fastapi.responses import JSONResponse
+
+    wait = acct.login_locked(req.email)
+    if wait > 0:
+        # L02-04: per-account lockout, identical for existing and non-existing addresses (so it reveals nothing about who is registered).
+        return JSONResponse({"detail": "Too many failed attempts. Try again later.", "error": "Too many failed attempts. Try again later.", "code": "too_many_attempts"},
+                            status_code=429, headers={"Retry-After": str(int(wait) + 1)})
+    user = await _asyncio_to_thread(_authenticate_constant_time, req.email, req.password)
     if not user:
+        acct.record_login_failure(req.email)
         raise HTTPException(401, "Invalid email or password")
+    acct.clear_login_failures(req.email)
+
+    if acct.verification_required() and not user.verified:
+        raise HTTPException(403, detail={"error": "Verify your email address to sign in. Check your inbox for the verification link.", "code": "email_verification_required"})
 
     totp_state = get_totp_state(user.id)
     if totp_state["enabled"]:
@@ -199,6 +261,14 @@ async def login(req: LoginRequest, request: Request):
         return {"requires_2fa": True, "pending_token": pending_token}
 
     return _make_response(user)
+
+
+def _authenticate_constant_time(email: str, password: str):
+    """``authenticate`` plus equal work for an unknown address (otherwise a missing account answers measurably faster than a wrong password)."""
+    user = authenticate(email, password)
+    if user is None and get_user_by_email(email) is None:
+        _dummy_password_work(password)
+    return user
 
 
 class TwoFAVerifyLoginRequest(BaseModel):
@@ -298,6 +368,7 @@ async def me(user: User = Depends(get_current_user)):
         "user":   {
             "id": user.id, "email": user.email, "name": user.name,
             "tier": user.tier, "role": user.role, "totp_enabled": totp_state["enabled"],
+            "email_verified": bool(user.verified), "email_verification_required": acct.verification_required(),
         },
         "limits": limits,
         "usage":  usage,
@@ -322,33 +393,88 @@ class ChangePasswordRequest(BaseModel):
 
 @router.get("/email-status")
 async def email_status():
-    return {"configured": email_configured()}
+    """What email delivery this deployment actually has. ``real_delivery`` is true only for a configured SMTP provider; ``local_sink`` writes messages to a local directory
+    and delivers to nobody (engineering / controlled staging)."""
+    from orca.auth.email import delivery_mode, real_delivery
+
+    return {"configured": email_configured(), "delivery": delivery_mode(), "real_delivery": real_delivery(), "verification_required": acct.verification_required()}
 
 
 @router.post("/signup/resend-verification")
 async def resend_verification(user: User = Depends(get_current_user)):
     if user.verified:
         raise HTTPException(400, "Account already verified")
-    token = make_verification_token(user.id, user.email)
-    sent  = send_verification(user.email, token)
+    ok, retry_after = acct.may_send(user.id, "verify")
+    if not ok:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "A verification email was sent recently. Please wait before requesting another.", "error": "A verification email was sent recently. Please wait before requesting another.",
+                             "code": "rate_limited", "retry_after": int(retry_after) + 1}, status_code=429, headers={"Retry-After": str(int(retry_after) + 1)})
+    jti = acct.issue(user.id, "verify", user.email, acct.VERIFY_TTL_S)
+    sent = send_verification(user.email, make_verification_token(user.id, user.email, jti))
     return {"sent": sent, "email_configured": email_configured()}
+
+
+class ResendByEmailRequest(BaseModel):
+    email: str
+
+
+@router.post("/verification/resend")
+async def resend_verification_by_email(req: ResendByEmailRequest, request: Request):
+    """Unauthenticated resend for someone who cannot sign in BECAUSE they are unverified (verification required). Always answers the same, whether or not the address is
+    registered, already verified, or throttled; the per-account send ledger bounds how many messages any address can receive."""
+    ratelimit.enforce(request, ratelimit.AUTH_FORGOT_PW, extra_key="verify_resend")
+    user = get_user_by_email(req.email)
+    if user is not None and not user.verified and acct.verification_required():
+        _send_verification_link(user)
+    else:
+        await _asyncio_to_thread(_dummy_password_work, "timing-equalisation")
+    return {"sent": True, "message": "If this address has an unverified account, a new verification link has been sent."}
+
+
+_VERIFY_STYLE = ("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                 "<style>body{background:#000;color:#e8e8e8;font-family:monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}"
+                 "div{text-align:center;padding:24px}button{background:#fff;color:#000;border:0;padding:12px 28px;font-weight:700;letter-spacing:.12em;font-family:monospace;cursor:pointer}</style></head><body><div>"
+                 "<p style=\"letter-spacing:.35em;font-size:20px;color:#fff\">ORNEUR</p>")
+
+
+def _verify_page(inner: str, status: int = 200):
+    from fastapi.responses import HTMLResponse
+
+    return HTMLResponse(_VERIFY_STYLE + inner + "</div></body></html>", status_code=status, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
 @router.get("/verify")
 async def verify_email(token: str):
+    """Landing page for the emailed link. It does NOT verify anything: mail scanners and link previews fetch URLs, and that must not spend a single-use link. The person confirms
+    with a button, which POSTs to /api/auth/verify."""
+    import html as _html
+
     payload = verify_auth_token(token, "verify")
-    if not payload:
-        from fastapi.responses import HTMLResponse
-        return HTMLResponse("<h2>Verification link is invalid or expired.</h2>", status_code=400)
-    from orca.auth.store import mark_verified, get_user_by_id
-    mark_verified(payload["sub"])
-    return HTMLResponse("""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>body{background:#000;color:#e8e8e8;font-family:monospace;display:flex;align-items:center;
-justify-content:center;height:100vh;margin:0}div{text-align:center}</style></head><body>
-<div><p style="letter-spacing:.35em;font-size:20px;color:#fff">ORNEUR</p>
-<p style="color:#888;letter-spacing:.15em;margin-top:8px">EMAIL VERIFIED</p>
-<p style="color:#555;margin-top:20px">Your account is now active. <a href="/app" style="color:#fff">Return to Orca →</a></p>
-</div></body></html>""")
+    user = get_user_by_id(payload["sub"]) if payload else None
+    if not payload or user is None or not acct.peek(payload.get("jti"), user.id, "verify", user.email):
+        return _verify_page("<h2>This verification link is invalid, expired or already used.</h2><p style=\"color:#888\">Request a new one from your account.</p>", 400)
+    return _verify_page(f"<p style=\"color:#888;letter-spacing:.15em\">CONFIRM YOUR EMAIL</p><form method=\"post\" action=\"/api/auth/verify\">"
+                        f"<input type=\"hidden\" name=\"token\" value=\"{_html.escape(token, quote=True)}\"><button type=\"submit\">CONFIRM EMAIL</button></form>")
+
+
+@router.post("/verify")
+async def verify_email_confirm(request: Request):
+    from orca.auth.store import mark_verified
+
+    ctype = request.headers.get("content-type", "")
+    if "json" in ctype:
+        token = str((await request.json()).get("token", ""))
+    else:
+        form = await request.form()
+        token = str(form.get("token", ""))
+    payload = verify_auth_token(token, "verify")
+    user = get_user_by_id(payload["sub"]) if payload else None
+    if not payload or user is None or not acct.consume(payload.get("jti"), user.id, "verify", user.email):
+        return _verify_page("<h2>This verification link is invalid, expired or already used.</h2>", 400)
+    mark_verified(user.id)
+    from orca import audit
+    audit.log("email_verified", user_id=user.id, detail={})
+    return _verify_page("<p style=\"color:#888;letter-spacing:.15em;margin-top:8px\">EMAIL VERIFIED</p><p style=\"color:#555;margin-top:20px\">Your account is now active. <a href=\"/app\" style=\"color:#fff\">Return to ORNEUR →</a></p>")
 
 
 @router.post("/forgot-password")
@@ -356,9 +482,13 @@ async def forgot_password(req: ForgotRequest, request: Request):
     ratelimit.enforce(request, ratelimit.AUTH_FORGOT_PW)
     user = get_user_by_email(req.email)
     if user:
-        token = make_reset_token(user.id, user.email)
-        send_password_reset(user.email, token)
-    # Always return 200 — never reveal if email exists
+        ok, _ = acct.may_send(user.id, "reset")        # per-account send ledger; a throttled request is indistinguishable to the caller
+        if ok:
+            jti = acct.issue(user.id, "reset", user.email, acct.RESET_TTL_S)
+            send_password_reset(user.email, make_reset_token(user.id, user.email, jti))
+    else:
+        await _asyncio_to_thread(_dummy_password_work, "timing-equalisation")
+    # Always return 200 — never reveal if email exists (or whether this request was throttled)
     return {"sent": True}
 
 
@@ -372,14 +502,25 @@ async def reset_password(req: ResetRequest):
     from orca.auth.store import update_password, get_user_by_id
     user = get_user_by_id(payload["sub"])
     if not user:
-        raise HTTPException(404, "User not found")
-    # G-006: single use. update_password() stamps tokens_valid_after, so a
-    # reset link issued before ANY later password change (including the reset
-    # it was issued for) no longer verifies.
-    if float(payload.get("iat", 0)) < user.tokens_valid_after:
+        raise HTTPException(400, "Reset link is invalid or expired")       # same answer as an invalid link (no account-existence signal)
+    # G-006 + L02-04: single use and bound to the account's CURRENT email. consume() is one atomic UPDATE; a replay, an expiry, a changed email or a
+    # newer link all fail identically.
+    if float(payload.get("iat", 0)) < user.tokens_valid_after or not acct.consume(payload.get("jti"), user.id, "reset", user.email):
         raise HTTPException(400, "Reset link is invalid or expired")
-    update_password(user.id, req.password)
+    update_password(user.id, req.password)                                # stamps tokens_valid_after: every session issued before now is dead
+    # Recovery means the old credentials may be compromised: API keys minted with them are revoked too.
+    try:
+        from orca.auth.apikeys import list_keys as _list_keys, revoke_key as _revoke_key
+        for k in _list_keys(user.id):
+            _revoke_key(k["id"] if isinstance(k, dict) else k.id, user.id)
+    except Exception:
+        pass
+    from orca import audit
+    audit.log("password_reset", user_id=user.id, detail={"api_keys_revoked": True})
     user = get_user_by_id(user.id)
+    # A reset proves control of the inbox, not possession of the second factor: an account with 2FA still has to pass it.
+    if get_totp_state(user.id)["enabled"]:
+        return {"requires_2fa": True, "pending_token": make_2fa_pending_token(user.id, user.email)}
     return _make_response(user)
 
 
