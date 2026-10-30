@@ -1,0 +1,58 @@
+{
+ "schema": "l02-b6-evidence-manifest/1",
+ "milestone_status": "VERIFIED_ENGINEERING (independently testable portion) / BLOCKED (founder decisions)",
+ "independently_qualified": false,
+ "baseline": "38e0d311991875366f2bc88a39690c7b2b6ea3ee",
+ "branch": "claude/l02-b6-backup-privacy",
+ "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/143",
+ "pr_state": "draft",
+ "final_code_bearing_sha": "ba36e747aee0cb690d1e2efdb938dd18020eb315",
+ "ci": {
+  "run": 41043199842,
+  "conclusion": "success (10/10, first attempt)",
+  "deterministic": "9378 passed, 0 failed, 399 skipped, 190 deselected, 6 xfailed",
+  "skipped_set": "identical to PR #139 head run 40998377463",
+  "journeys_fixture": "39 + 15 + 24 + 3 passed"
+ },
+ "baseline_reproduction": {
+  "file": "evidence/b6_baseline_repro.py",
+  "output": "evidence/b6_baseline_red_38e0d31.txt",
+  "result": "8 failed of 8 (all suspected risks confirmed; none disproved)"
+ },
+ "tests": {
+  "deterministic": {
+   "cmd": "pytest tests/test_l02_b6_backup.py tests/test_l02_operational.py",
+   "result": "46 + 13 passed",
+   "class": "DET"
+  },
+  "live": {
+   "cmd": "pytest tests/journey/test_l02_b6_backup_live.py",
+   "result": "1 passed",
+   "evidence": "evidence/b6_backup_live_restore_vs_deletion.json",
+   "class": "LIVE+FIX (real orca serve + real CLI, test-only key, synthetic data)"
+  },
+  "adjacent_local": "l02 groups, b_conversations, temporary chat, account delete, g006, serve_streaming: 393 passed, 1 pre-existing documented skip, 2 xfailed"
+ },
+ "changed_existing_tests": [
+  "tests/test_l02_operational.py (3 backup tests moved to the encrypted API; format is incompatible)"
+ ],
+ "changed_user_facing_text": [
+  "deletions.RETENTION_NOTICE['application_backups'] (previously claimed ORNEUR creates no backups)"
+ ],
+ "incompatible_changes": [
+  "plaintext directory backups can no longer be created or restored",
+  "data-backup create takes an archive path and a key"
+ ],
+ "blocked": [
+  "key custody model (founder)",
+  "retention of historical backups / immutable or off-host storage (founder)"
+ ],
+ "not_run": [
+  "very large data directories",
+  "real KMS/HSM",
+  "restore while the server runs",
+  "vector-store instant-consistency with the databases",
+  "independent qualification"
+ ],
+ "commits_after_final_code_sha": "documentation/evidence only"
+}
