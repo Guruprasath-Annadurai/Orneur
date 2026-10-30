@@ -62,7 +62,11 @@ Environment: Cursor Cloud Agent VM, Python 3.12.3, `pip install -e .[dev]` + `py
 
 ## 4. GitHub Actions
 
-Record exact run IDs / check conclusions on the pushed PR tip in `MASTER_02_GITHUB_CI.md` once terminal. Subscribe via branch `cursor/master-02-integration-candidate-316a`.
+**Terminal (post-repair tip `6d97770`):** all applicable GitHub Actions checks PASS.
+- PR Test Suite: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41057213544
+- Push Test Suite: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41057203275
+- Eval Static: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41057213519
+Pre-repair deterministic failure on `5d56e7e` disclosed and repaired — see `MASTER_02_GITHUB_CI.md` + `DETERMINISTIC_CI_REPAIR.md`.
 
 ## 5. Explicit non-claims
 

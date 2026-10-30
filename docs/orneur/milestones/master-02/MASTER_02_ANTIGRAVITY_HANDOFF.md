@@ -11,6 +11,7 @@
 | Merge-tip TREE | `7a980d4ae918bc4dbec374772a2ec20e36d3107f` |
 | Base | `main` @ `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a` |
 | Draft PR | https://github.com/Guruprasath-Annadurai/Orneur/pull/145 |
+| PR tip (CI green) | `6d977703ef0af77e7099fa9979bfb4a8cdf21864` |
 
 ## Included source identities (must remain ancestors)
 

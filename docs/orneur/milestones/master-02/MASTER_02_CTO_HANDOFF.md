@@ -4,14 +4,14 @@
 
 # **INTEGRATION_CANDIDATE_READY_FOR_INDEPENDENT_REVIEW**
 
-Assessment/candidate only. **Not** merge authorization. **Not** training-ready. **Not** launch-ready. Formal acceptance **0/95** unchanged.
+Assessment/candidate only. **Not** merge authorization. **Not** training-ready. **Not** launch-ready. Formal acceptance **0/95** unchanged. Draft PR only — **do not merge to main**.
 
 ## Candidate qualification classification
 
 | Class | Application |
 |---|---|
-| `INTEGRATION_CANDIDATE_READY_FOR_INDEPENDENT_REVIEW` | Five-PR ordered merge reproduced; source identities preserved; #143 excluded; tree matches MASTER-01 disposable; local applicable suites green; governance holds; draft PR opened for exact-SHA CI + independent review |
-| Still required before mainline | Independent Antigravity/OWN_EVIDENCE on this candidate; terminal green GitHub CI on PR tip; founder sequencing decisions; **no** training grant |
+| `INTEGRATION_CANDIDATE_READY_FOR_INDEPENDENT_REVIEW` | Ordered five-PR merge reproduced; source identities preserved; #143 excluded; tree matches MASTER-01 disposable; local + full GitHub Actions green on repaired tip; governance holds; draft PR published with exact-SHA evidence + Antigravity handoff |
+| Still required before mainline | Independent Antigravity/OWN_EVIDENCE on this candidate; founder sequencing decisions; **no** training grant |
 
 ## Exact identities
 
@@ -21,10 +21,11 @@ Assessment/candidate only. **Not** merge authorization. **Not** training-ready. 
 | Merge-tip TREE | `7a980d4ae918bc4dbec374772a2ec20e36d3107f` |
 | Canonical main (unchanged) | `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a` |
 | Branch | `cursor/master-02-integration-candidate-316a` |
-| PR tip (harness+docs) | `f36d854594aa0b022591a0059d2d90d6109ae1a7` |
-| Harness commit | `d63bd1f` |
-| Docs commit | `f36d854` |
 | Draft PR | https://github.com/Guruprasath-Annadurai/Orneur/pull/145 |
+| PR tip (post-repair) | `6d977703ef0af77e7099fa9979bfb4a8cdf21864` |
+| Harness commit | `d63bd1f` (updated by repair `6d97770`) |
+| Docs commits | `f36d854`, `5d56e7e` |
+| CI repair commit | `6d97770` |
 
 ### Preserved source PR identities
 
@@ -35,35 +36,70 @@ Assessment/candidate only. **Not** merge authorization. **Not** training-ready. 
 | #136 | L01 (+ Kernel `15befec…`) | `9cb864c99ad323d11626063498a7d1cef0d7d4b5` |
 | #139 | L02 | `38e0d311991875366f2bc88a39690c7b2b6ea3ee` |
 | #141 | L02-B3 | `66ce8aeace2077b89195735211d75ebd566716c8` |
-| #143 | **EXCLUDED** | `e5266c71…` (was `b1c56b98…` at MASTER-01) |
+| #143 | **EXCLUDED** | `e5266c71…` (MASTER-01 had `b1c56b98…`) |
 
-## Full applicable CI (summary)
+## Full applicable CI
 
-**Local green:** register 0/95; C06/C07 16; RSE 130; training fail-closed 40; landmark targeted 113p/1s; RAG/judge/tool 107; streaming 31p/1s; Genesis V2 security 560; SSE+frontend Node suites; RSE dep audit clean; portable F03 harness 15; API smoke 69 routes.
+### Post-repair tip `6d97770` — **all green**
 
-**Not run locally (disclosed):** Docker container smoke, Genesis sandbox, RSE Docker lab, Redis/Chromium journeys, real-Ollama live, full deterministic ~9k, torch-math job → **GitHub Actions on draft PR tip**.
+- Test Suite PR: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41057213544 — **success**
+- Test Suite push: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41057203275 — **success**
+- Eval Static: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41057213519 — **success**
+- Jobs: Deterministic, Torch, Container Smoke, SSE, Journeys, Genesis Security, Genesis Sandbox, RSE Docker Lab, RSE audit, Vuln scan — **all PASS**
 
-**Unexpected product failures on merge tip:** none observed after required plugins installed.
+### Pre-repair tip `5d56e7e` — disclosed failure then repaired
+
+- Deterministic FAIL (`41054030409`): 3 MASTER-02 harness/packaging defects + 1 intermittent B3 TOTP
+- Repair isolated in `6d97770` with failing-before / passing-after evidence (`evidence/DETERMINISTIC_CI_REPAIR.md`)
+- Product auth / source PR code **not** rewritten for the TOTP flake
+
+## Unexpected failures
+
+| Item | Disposition |
+|---|---|
+| Shallow-clone harness lineage + BOM `*.py` archive | Fixed in reviewable repair commit `6d97770` |
+| Intermittent `test_a_totp_code_cannot_be_replayed_for_a_second_key` | Observed once pre-repair; passed post-repair both runs; **not silenced**; product code untouched |
 
 ## Remaining security blockers
 
-See `MASTER_02_GOVERNANCE_RECHECK.md`. Headline: 0/95; G3 missing; C06/C07 formal OWN_EVIDENCE missing; L01/L02/B3 independent quals open; #143 plaintext excluded but baseline backup plaintext remains; physical/founder gates unchanged.
+1. Formal acceptance still **0/95**
+2. G3 independent review on merged/main SHA missing
+3. C06/C07 formal OWN_EVIDENCE on integrated SHA still required (portable harness ≠ Antigravity)
+4. L01 B-02 / L02-Q / #141 independent qualification still open
+5. #143 plaintext backup bypass excluded; baseline plaintext backup remains without B6
+6. Physical C08 / hardware trust / GPU / corpus / founder custody unchanged
+7. Training `NOT_AUTHORIZED` / freeze `NOT_FROZEN`
 
 ## Exact founder approvals needed before mainline
 
-1. Whether to open founder review / merge sequencing for #140 while holding training NO-GO.
-2. Sequencing: Foundation stack vs Landmark stack vs this combined candidate as the review unit.
-3. Disposition of #143 (remediate + qualify vs defer) — **not** part of this candidate.
-4. Authorization for independent Antigravity qualification engagement on merge-tip `7fb78a3…` / tree `7a980d4…`.
-5. Training grant / freeze / corpus / trust-anchor / Crown / operator naming — still required for any training path (unchanged; still NO-GO).
-6. Explicit mainline merge approval **after** independent review + terminal CI — not granted by MASTER-02.
+1. Whether to open founder review / merge sequencing for #140 while holding training NO-GO
+2. Sequencing: Foundation vs Landmark vs this combined candidate as the review unit
+3. Disposition of #143 (remediate + qualify vs defer)
+4. Authorization for independent Antigravity qualification on merge-tip `7fb78a3…` / tree `7a980d4…`
+5. Training grant / freeze / corpus / trust-anchor / Crown / operator naming — still NO-GO
+6. Explicit mainline merge approval **after** independent review — **not** granted by MASTER-02
+
+## Store / repo index
+
+| Doc | Store path |
+|---|---|
+| Identity | `/cursor/stores/self/docs/master-02/MASTER_02_INTEGRATION_IDENTITY.md` |
+| CI/retest | `/cursor/stores/self/docs/master-02/MASTER_02_CI_AND_RETEST_EVIDENCE.md` |
+| GitHub CI | `/cursor/stores/self/docs/master-02/MASTER_02_GITHUB_CI.md` |
+| Governance | `/cursor/stores/self/docs/master-02/MASTER_02_GOVERNANCE_RECHECK.md` |
+| Audit instructions | `/cursor/stores/self/docs/master-02/MASTER_02_INDEPENDENT_AUDIT_INSTRUCTIONS.md` |
+| Antigravity handoff | `/cursor/stores/self/docs/master-02/MASTER_02_ANTIGRAVITY_HANDOFF.md` |
+| Repair evidence | `/cursor/stores/self/docs/master-02/DETERMINISTIC_CI_REPAIR.md` |
+| This handoff | `/cursor/stores/self/docs/master-02/MASTER_02_CTO_HANDOFF.md` |
+
+Repo mirror: `docs/orneur/milestones/master-02/`
 
 ## Restrictions honored
 
-No protected merges; no prod deploy; no paid infra; no real customer data; no native-model training; no rewriting source PR history; #143 excluded; no unsupported readiness claims; harness/docs isolated to reviewable commits; failures/skips/unexecuted gates disclosed.
+No protected merges; no prod deploy; no paid infra; no real customer data; no native-model training; no rewriting source PR history; #143 excluded; failures disclosed; harness/docs/repair isolated to reviewable commits.
 
 ## Stop
 
 `INTEGRATION_CANDIDATE_READY_FOR_INDEPENDENT_REVIEW`
 
-Do not merge to main from this mission.
+**Do not merge to main from this mission.**
