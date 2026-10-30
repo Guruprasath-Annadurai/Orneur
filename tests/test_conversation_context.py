@@ -156,6 +156,10 @@ def test_kernel_inference_request_contains_history(isolated_home, monkeypatch):
     req = CognitiveRequest(objective="Say hi.", session_id=sid, tenant="u1")
     result = asyncio.run(kernel.execute(req))
     assert result.output == "ok"
-    roles = [m["role"] for m in captured["messages"]]
-    assert roles[0] == "user" and "token ALPHA-9" in captured["messages"][0]["content"]
+    # L02-08: the server prepends ONE constant system message of serving facts (what the model is / cannot do); the committed HISTORY follows it unchanged.
+    assert captured["messages"][0]["role"] == "system" and captured["messages"][0]["content"].startswith("[Serving facts")
+    assert sum(1 for m in captured["messages"] if m["role"] == "system") == 1
+    history = captured["messages"][1:]
+    roles = [m["role"] for m in history]
+    assert roles[0] == "user" and "token ALPHA-9" in history[0]["content"]
     assert captured["messages"][-1]["content"] == "Say hi."

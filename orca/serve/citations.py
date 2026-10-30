@@ -59,7 +59,7 @@ def build_sources(*, answer: str, session_id: str | None, rag_result=None, evide
             "ref": ref,
             "kind": "uploaded_document",
             "filename": filename,
-            "doc_id": _doc_id_for(session_id, filename),
+            "doc_id": info.get("doc_id") or _doc_id_for(session_id, filename),      # the chunk's own document id; filename matching is only a legacy fallback
             "locator": {"type": "chunk", "chunk_index": idx},
             "excerpt": text[:_EXCERPT_CHARS],
             "excerpt_sha256": hashlib.sha256(text.encode()).hexdigest(),
@@ -95,16 +95,21 @@ def build_sources(*, answer: str, session_id: str | None, rag_result=None, evide
     else:
         grounding, retrieval_performed = "none", rag_result is not None   # retrieval ran but returned nothing -> still "none"
 
+    # L02-02: a [D#] marker in the answer that matches no supplied source is a citation the model made up. Reported, never repaired or hidden.
+    known = {s["ref"] for s in sources}
+    unsupported = sorted({m for m in re.findall(r"\[(D\d+)\]", answer or "") if m not in known}, key=lambda r: int(r[1:]))
+
     summary = {
         "schema": SCHEMA,
         "retrieval_performed": retrieval_performed,
         "grounding": grounding,
         "source_count": len(sources),
         "retrieved_at": when if retrieval_performed else None,
+        "unsupported_citations": unsupported,
     }
     if rag_result is not None:
         summary["retrieval"] = {"method": "deep_rag", "rounds": rag_result.retrieval_rounds, "sufficiency_confidence": rag_result.sufficiency_confidence,
-                                "used_fallback": rag_result.used_fallback}
+                                "used_fallback": rag_result.used_fallback, "evidence": getattr(rag_result, "evidence", None)}
     if evidence_state is not None:
         summary["evidence_state"] = evidence_state
         if citation_coverage is not None:

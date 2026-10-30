@@ -181,7 +181,9 @@ def test_rate_limiting_returns_rate_limited(client):
     from orca.serve import ratelimit
 
     ratelimit._local_counters.clear()
-    codes = [client.post("/api/auth/login", json={"email": "a@b.co", "password": "x" * 9}) for _ in range(12)]
+    # a different subject each time: repeated failures for ONE account hit the per-account lockout (`too_many_attempts`, L02-04) first,
+    # and this test is about the per-IP limiter
+    codes = [client.post("/api/auth/login", json={"email": f"a{i}@b.co", "password": "x" * 9}) for i in range(12)]
     limited = [r for r in codes if r.status_code == 429]
     assert limited and limited[0].json()["code"] == "rate_limited"
 

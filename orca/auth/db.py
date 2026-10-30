@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 from orca.config import ORCA_HOME, orneur_env
@@ -166,6 +167,27 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     response     TEXT,
     created_at   REAL NOT NULL,
     PRIMARY KEY (user_id, idem_key)
+);
+
+-- L02-04: single-use expiring email-verification and password-reset tokens (the signed token carries the jti, consuming it is one atomic UPDATE),
+-- a per-account email send ledger (resend throttling) and a per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
+CREATE TABLE IF NOT EXISTS auth_one_time_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    purpose    TEXT NOT NULL,
+    email      TEXT NOT NULL,
+    expires_at REAL NOT NULL,
+    used_at    REAL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_email_sends (
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    sent_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_login_failures (
+    subject_hash TEXT NOT NULL,
+    failed_at    REAL NOT NULL
 );
 
 
@@ -384,6 +406,27 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     response     TEXT,
     created_at   DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (user_id, idem_key)
+);
+
+-- L02-04: single-use expiring email-verification and password-reset tokens (the signed token carries the jti, consuming it is one atomic UPDATE),
+-- a per-account email send ledger (resend throttling) and a per-account login-failure ledger (credential-stuffing lockout). No secrets are stored.
+CREATE TABLE IF NOT EXISTS auth_one_time_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    purpose    TEXT NOT NULL,
+    email      TEXT NOT NULL,
+    expires_at DOUBLE PRECISION NOT NULL,
+    used_at    DOUBLE PRECISION,
+    created_at DOUBLE PRECISION NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_email_sends (
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    sent_at DOUBLE PRECISION NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_login_failures (
+    subject_hash TEXT NOT NULL,
+    failed_at    DOUBLE PRECISION NOT NULL
 );
 
 
@@ -658,9 +701,18 @@ def _get_postgres_conn() -> _PGConnAdapter:
 
 def _get_sqlite_conn() -> sqlite3.Connection:
     AUTH_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(AUTH_DB), check_same_thread=False)
+    conn = sqlite3.connect(str(AUTH_DB), check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # Switching a database to WAL needs a lock that the busy handler does not always wait for: two workers cold-starting on the same empty data
+    # directory could crash one of them with "database is locked" (seen in CI). Retry briefly; once WAL is set the pragma is a no-op.
+    for attempt in range(40):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            break
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt == 39:
+                raise
+            time.sleep(0.25)
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

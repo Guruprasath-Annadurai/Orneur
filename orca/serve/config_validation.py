@@ -44,6 +44,17 @@ def collect_findings() -> list[Finding]:
     except AuthSecretError as e:
         out.append(Finding("AUTH_SECRET", "ERROR" if prod else "WARN", str(e)))
 
+    # L02-04: email verification and recovery depend on a delivery path. A request for verification with none is refused loudly (the gate stays OFF so nobody is locked
+    # out); a local sink is not delivery and must not back a public edge.
+    from orca.auth import email as _mail
+    from orca.auth.account_security import verification_requested
+
+    if verification_requested() and _mail.delivery_mode() == "none":
+        out.append(Finding("EMAIL_VERIFICATION_NO_DELIVERY", "ERROR" if prod else "WARN",
+                           "ORNEUR_REQUIRE_EMAIL_VERIFICATION is set but no email delivery is configured (SMTP_HOST/SMTP_USER/SMTP_PASS); verification is NOT enforced"))
+    if public and _mail.delivery_mode() == "local_sink":
+        out.append(Finding("EMAIL_LOCAL_SINK_ON_PUBLIC_EDGE", "ERROR", "ORNEUR_MAIL_SINK_DIR is a local file sink that delivers to nobody; it must not be used on a public edge"))
+
     if public:
         origins = orneur_env("ALLOWED_ORIGINS", "*").strip()
         if not origins or origins == "*":

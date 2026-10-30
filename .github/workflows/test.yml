@@ -228,6 +228,7 @@ jobs:
           node --test tests/frontend/test_view_ownership_epoch.mjs
           node --test tests/frontend/test_active_conversation.mjs
           node --test tests/frontend/test_b01_stop_upstream.mjs
+          node --test tests/frontend/test_l02_outcome_recovery.mjs
 
       - name: Set up Python (to actually serve the static file, not just read it off disk)
         uses: actions/setup-python@v5
@@ -285,7 +286,7 @@ jobs:
     # (tests/journey/test_journey_api_live.py, test_journey_browser.py) stay opt-in on a workstation; their evidence is recorded in the handoff.
     name: Journeys (real servers + real Redis + real Chromium, fixture provider)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     services:
       redis:
         image: redis:7-alpine
@@ -325,6 +326,11 @@ jobs:
             tests/journey/test_b01_streaming_live.py tests/journey/test_b01_cancel_race_live.py -p no:cacheprovider -v
           # B-01: the approved page, real Chromium, streamed default path (fixture provider only - the real-model half is workstation-only)
           python -m pytest tests/journey/test_b01_browser_streaming.py -k fixture -p no:cacheprovider -v
+          # LANDMARK-02: deletion under real failures (Redis frozen/restored in a throwaway container, locked/unusable stores, restart), outcome truth after
+          # worker death / dropped connections, and measured operations (startup, drain, concurrency, saturation, kill -9). Fixture provider only.
+          python -m pytest tests/journey/test_l02_deletion_live.py -k "not D6" tests/journey/test_l02_recovery_live.py tests/journey/test_l02_operations_live.py tests/journey/test_l02_account_live.py -p no:cacheprovider -v
+          # LANDMARK-02: the three customer journeys (student, developer, business owner) in real Chromium on the approved page - fixture provider
+          python -m pytest tests/journey/test_l02_customer_journeys.py -k fixture -p no:cacheprovider -v
 
       - name: Upload journey screenshots on failure
         if: failure()

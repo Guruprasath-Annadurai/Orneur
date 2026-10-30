@@ -70,6 +70,27 @@ _routing_stayed_self_hosted_count: int = 0
 
 MAX_ENDPOINTS_TRACKED = 500  # defensive cap — see record_request()
 
+# L02-06: operational events (turn outcomes, cancellations, deletions, capacity/disk refusals, reconciler actions). The event NAME is from a closed list and the label
+# is bounded, so a bug or a hostile input can never create unbounded series. No user content, identifiers or request keys are ever used as labels.
+_EVENT_NAMES = frozenset({"turn_outcome", "turn_cancel_requested", "deletion", "refusal", "reconcile_action", "document_deletion_sweep"})
+_MAX_EVENT_SERIES = 200
+_event_count: dict[str, int] = defaultdict(int)
+
+
+def record_event(name: str, label: str = "") -> None:
+    """Count one operational event. Never raises."""
+    try:
+        if name not in _EVENT_NAMES:
+            return
+        label = "".join(c for c in str(label)[:40] if c.isalnum() or c in "_-.:") or "none"
+        key = f"{name}|{label}"
+        with _lock:
+            if key not in _event_count and len(_event_count) >= _MAX_EVENT_SERIES:
+                key = f"{name}|_overflow_"
+            _event_count[key] += 1
+    except Exception:
+        pass
+
 
 def record_request(endpoint: str, status_code: int, duration_ms: float) -> None:
     """Called once per request by the metrics middleware. Never raises —
@@ -229,6 +250,12 @@ def get_prometheus_text() -> str:
                 f'orca_registry_fallbacks_total{{requested_tier="{requested}",resolved_model="{resolved}"}} {count}'
             )
 
+        lines += ["", "# HELP orca_events_total Operational events: turn outcomes (committed/not_committed/cancelled/superseded + reason), cancel requests, deletions, refusals, reconciler actions.",
+                  "# TYPE orca_events_total counter"]
+        for key, count in _event_count.items():
+            ev, label = key.split("|", 1)
+            lines.append(f'orca_events_total{{event="{ev}",label="{label}"}} {count}')
+
         lines += [
             "",
             "# HELP orca_routing_decisions_total Cost-aware routing decisions, by outcome "
@@ -251,5 +278,6 @@ def reset() -> None:
         _latency_samples.clear()
         _moderation_action_count.clear()
         _registry_fallback_count.clear()
+        _event_count.clear()
         _routing_escalated_count = 0
         _routing_stayed_self_hosted_count = 0

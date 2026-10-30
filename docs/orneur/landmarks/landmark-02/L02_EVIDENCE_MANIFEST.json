@@ -1,0 +1,129 @@
+{
+ "schema": "l02-evidence-manifest/2",
+ "milestone_status": "VERIFIED_ENGINEERING_READY_FOR_INDEPENDENT_RETEST",
+ "independently_qualified": false,
+ "baseline": "9cb864c99ad323d11626063498a7d1cef0d7d4b5",
+ "final_code_bearing_sha": "70b2960a410301b02afb2a098554d4a71467a04b",
+ "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/139",
+ "pr_state": "draft",
+ "waves": {
+  "L02-01": "VERIFIED_ENGINEERING",
+  "L02-02": "VERIFIED_ENGINEERING",
+  "L02-03": "VERIFIED_ENGINEERING",
+  "L02-04": "VERIFIED_ENGINEERING",
+  "L02-05": "VERIFIED_ENGINEERING",
+  "L02-06": "VERIFIED_ENGINEERING",
+  "L02-07": "VERIFIED_ENGINEERING",
+  "L02-08": "VERIFIED_ENGINEERING"
+ },
+ "ci": {
+  "final_run": 40998377463,
+  "head": "70b2960a410301b02afb2a098554d4a71467a04b",
+  "conclusion": "success (10/10, first attempt)",
+  "jobs": "10/10",
+  "deterministic": "9332 passed, 0 failed, 399 skipped, 189 deselected, 6 xfailed",
+  "journeys_fixture": "39 + 15 + 23 + 3 passed",
+  "failed_runs_recorded_in": "L02_EXACT_HEAD_CI.md",
+  "history": "see L02_EXACT_HEAD_CI.md (failures: Postgres schema comment, 3 stale tests, CLI test colour, CDP select() limit, WAL cold-start lock)"
+ },
+ "tests": {
+  "new_deterministic_files": {
+   "cmd": "pytest tests/test_l02_*.py",
+   "result": "246 passed, 0 skipped",
+   "class": "DET"
+  },
+  "live_fixture": {
+   "cmd": "pytest tests/journey/test_l02_{deletion,recovery,operations,account}_live.py",
+   "result": "6 + 8 + 8 + 2 passed",
+   "class": "LIVE+FIX"
+  },
+  "parsers_real": {
+   "cmd": "ORNEUR_L02_DOC_LIBS=/tmp/l02-doclibs PYTHONPATH=.:/tmp/l02-doclibs pytest tests/journey/test_l02_upload_parsers_live.py",
+   "result": "7 passed",
+   "class": "LIVE_PARSER (workstation)"
+  },
+  "real_ollama": {
+   "cmd": "ORNEUR_JOURNEY_MODEL=llama3.2:1b pytest tests/journey/test_l02_document_real_live.py tests/journey/test_b01_real_ollama_live.py",
+   "result": "3 + 2 passed",
+   "class": "LIVE+REAL (third-party weights, workstation)"
+  },
+  "browser_journeys": {
+   "cmd": "pytest tests/journey/test_l02_customer_journeys.py",
+   "result": "6 passed (student 11/11 fixture, 11/11 real; developer 9/9, 8/8; business 9/9, 9/9)",
+   "class": "BROWSER fixture + real"
+  },
+  "landmark01_regressions": {
+   "result": "streaming 17, real Ollama 2, cancel race 1, browser 26, concurrency 11 passed",
+   "class": "LIVE/BROWSER"
+  },
+  "frontend_node": {
+   "cmd": "node --test tests/frontend/*.mjs",
+   "result": "102 pass, 0 fail"
+  },
+  "postgres": {
+   "cmd": "pytest tests/test_a_postgres_integration.py",
+   "result": "13 passed"
+  }
+ },
+ "evidence_files": [
+  "evidence/l02_01_baseline_defect_9cb864c.txt",
+  "evidence/l02_01_doc_delete_baseline_defect_9cb864c.txt",
+  "evidence/l02_02_document_rag_baseline_red_9cb864c.txt",
+  "evidence/l02_02e_baseline_judge_injection_9cb864c.txt",
+  "evidence/l02_04_baseline_enumeration_9cb864c.txt",
+  "evidence/l02_04_login_timing.json",
+  "evidence/l02_05_baseline_deployment_listing_9cb864c.txt",
+  "evidence/l02_chroma_lock_freezes_process.txt",
+  "evidence/l02_deletion_live_D1_redis_outage.json",
+  "evidence/l02_deletion_live_D2_two_workers.json",
+  "evidence/l02_deletion_live_D3_in_flight.json",
+  "evidence/l02_deletion_live_D4_restart.json",
+  "evidence/l02_deletion_live_D5_vector_failure.json",
+  "evidence/l02_deletion_live_D5_vector_failure_probe.json",
+  "evidence/l02_deletion_live_D6_real_embeddings.json",
+  "evidence/l02_journey_business_fixture.json",
+  "evidence/l02_journey_business_real.json",
+  "evidence/l02_journey_developer_fixture.json",
+  "evidence/l02_journey_developer_real.json",
+  "evidence/l02_journey_student_fixture.json",
+  "evidence/l02_journey_student_real.json",
+  "evidence/l02_ops_live_O1_startup.json",
+  "evidence/l02_ops_live_O2_graceful_shutdown.json",
+  "evidence/l02_ops_live_O3_concurrent_streams.json",
+  "evidence/l02_ops_live_O4_saturation.json",
+  "evidence/l02_ops_live_O5_model_unavailable.json",
+  "evidence/l02_ops_live_O6_kill9_restart.json",
+  "evidence/l02_ops_live_O7_disk_headroom.json",
+  "evidence/l02_ops_live_O8_redis_interruption.json",
+  "evidence/l02_parsers_live_external_reference.json",
+  "evidence/l02_parsers_live_flate_bomb.json",
+  "evidence/l02_parsers_live_malformed_garbage.pdf.json",
+  "evidence/l02_parsers_live_malformed_loop.pdf.json",
+  "evidence/l02_parsers_live_malformed_nul.pdf.json",
+  "evidence/l02_parsers_live_malformed_truncated.pdf.json",
+  "evidence/l02_parsers_live_real_pdf_docx.json",
+  "evidence/l02_real_document_stop.json",
+  "evidence/l02_real_document_turn_dispatches.BASELINE_9cb864c.json",
+  "evidence/l02_real_document_turn_dispatches.json",
+  "evidence/l02_real_unrelated_question.json",
+  "evidence/l02_recovery_live_R1_cross_worker.json",
+  "evidence/l02_recovery_live_R2_drop_then_retry.json",
+  "evidence/l02_recovery_live_R3_stop_cross_worker.json",
+  "evidence/l02_recovery_live_R4_commit_race.json",
+  "evidence/l02_recovery_live_R5_worker_killed.json",
+  "evidence/l02_recovery_live_R6_restart.json",
+  "evidence/l02_recovery_live_R7_slow_commit.json",
+  "evidence/l02_recovery_live_R8_redis_outage.json",
+  "evidence/real_ollama_document_runs"
+ ],
+ "skipped": "399 pre-existing conditional skips in the CI deterministic job; no L02 test is skipped; 6 pre-existing xfail",
+ "not_run": [
+  "real-Ollama journeys and D6 in CI",
+  "real mail delivery",
+  "genuinely full disk",
+  "sustained load / capacity",
+  "non-Chromium browsers",
+  "independent qualification"
+ ],
+ "commits_after_final_code_sha": "documentation/evidence only"
+}

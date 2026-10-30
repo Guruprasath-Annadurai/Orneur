@@ -1,0 +1,25 @@
+{
+  "model_tag": "llama3.2:1b",
+  "ollama_host": "http://localhost:11434",
+  "weights": "third-party (not an ORNEUR-native model)",
+  "recorded_at": "2026-10-29T11:03:36+0000",
+  "baseline_measure": false,
+  "question": "Where in the cell does the Calvin cycle occur, according to my notes?",
+  "dispatch_counts": {
+    "truth_fabric_answer": 1,
+    "truth_fabric_verification": 1,
+    "streamed_answer": 0,
+    "kernel_discarded_answer": 0,
+    "rag_stage": 1,
+    "side_call": 1
+  },
+  "total_provider_requests": 4,
+  "first_chunk_s": 2.003,
+  "done_s": 2.012,
+  "wall_s": 2.012,
+  "chunk_events": 1,
+  "grounding": "retrieved_not_cited",
+  "sources": 1,
+  "delivery": "replayed",
+  "route": "truth_fabric"
+}

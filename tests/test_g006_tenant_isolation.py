@@ -321,9 +321,11 @@ def test_07b_password_reset_token_is_single_use(client):
     t, uid = _signup(client)
     email = client.get("/api/auth/me", headers=_hdr(t)).json()
     email = (email.get("user") or email)["email"]
+    from orca.auth import account_security as acct
     from orca.auth.tokens import make_reset_token
 
-    reset = make_reset_token(uid, email)
+    # L02-04: a reset link is a signed token tied to a single-use row (jti); a stateless, jti-less token is refused (covered in tests/test_l02_account_security.py).
+    reset = make_reset_token(uid, email, acct.issue(uid, "reset", email, acct.RESET_TTL_S))
     assert client.post("/api/auth/reset-password", json={"token": reset, "password": "firstnewpassword"}).status_code == 200
     replay = client.post("/api/auth/reset-password", json={"token": reset, "password": "attackerchosenpw"})
     assert replay.status_code == 400, "reset link replayed to take the account over again"

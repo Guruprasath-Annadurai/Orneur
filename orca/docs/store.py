@@ -119,8 +119,11 @@ class DocStore:
     Stores chunks in ChromaDB with Ollama embeddings (or keyword fallback).
     """
 
-    def __init__(self, session_id: str, ollama_host: str = "http://localhost:11434"):
+    def __init__(self, session_id: str, ollama_host: str = "http://localhost:11434", *, enforce_registry: bool = False):
         self.session_id = session_id
+        # L02-02: when True, ``retrieve`` returns only chunks of documents that are currently REGISTERED (and not being deleted) for this session.
+        # An orphaned chunk (registry entry removed, delete half-finished, stale embedding) can then never reach a prompt or a citation.
+        self.enforce_registry = enforce_registry
         self.ollama_host = ollama_host
         self._col_name = f"docs_{session_id[:12].replace('-', '')}"
         self._chroma = None
@@ -130,6 +133,7 @@ class DocStore:
         self._init_store()
 
     def _init_store(self):
+        self._lexical_only = False
         try:
             import chromadb
             db_path = DOCS_DIR / "vectors"
@@ -141,9 +145,25 @@ class DocStore:
             )
             # Check if Ollama embeddings are available
             test = _ollama_embed(["test"], self.ollama_host)
-            self._use_embeddings = test is not None
+            service_up = test is not None
+            # L02-02: the collection already lives in ONE embedding space (the service's, or chroma's default). Whatever the service is doing right now, this
+            # instance must keep talking to that space, or a query vector of the wrong dimension makes every search fail silently.
+            stored_dim = self._stored_dimension()
+            in_service_space = stored_dim is not None and stored_dim == EMBED_DIM
+            self._use_embeddings = service_up and (stored_dim is None or in_service_space)
+            self._lexical_only = in_service_space and not service_up
         except ImportError:
             pass  # ChromaDB not installed — use keyword fallback
+
+    def _stored_dimension(self) -> int | None:
+        try:
+            peek = self._collection.peek(1)
+            emb = peek.get("embeddings") if isinstance(peek, dict) else None
+            if emb is not None and len(emb) > 0:
+                return len(emb[0])
+        except Exception:
+            pass
+        return None
 
     def add_chunks(self, chunks, doc_id: str, filename: str) -> int:
         """Embed and store chunks. Returns number of chunks stored."""
@@ -152,7 +172,7 @@ class DocStore:
 
         texts = [c.text for c in chunks]
 
-        if self._collection is not None:
+        if self._collection is not None and not self._lexical_only:
             if self._use_embeddings:
                 embeddings = _ollama_embed(texts, self.ollama_host)
             else:
@@ -180,35 +200,74 @@ class DocStore:
                 }) + "\n")
         return len(chunks)
 
-    def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
-        """Retrieve most relevant chunks for a query."""
-        if self._collection is not None:
-            try:
-                if self._use_embeddings:
-                    q_emb = _ollama_embed([query], self.ollama_host)
-                    if q_emb:
-                        results = self._collection.query(
-                            query_embeddings=q_emb, n_results=min(top_k, self._collection.count() or 1),
-                        )
-                    else:
-                        results = self._collection.query(
-                            query_texts=[query], n_results=min(top_k, self._collection.count() or 1),
-                        )
-                else:
-                    count = self._collection.count()
-                    if count == 0:
-                        return []
-                    results = self._collection.query(
-                        query_texts=[query], n_results=min(top_k, count),
-                    )
-                docs  = results.get("documents", [[]])[0]
-                metas = results.get("metadatas", [[]])[0]
-                return [{"text": d, "filename": m.get("filename", ""), "chunk_idx": m.get("chunk_idx", 0)}
-                        for d, m in zip(docs, metas)]
-            except Exception:
-                pass
+    def _authorized_doc_ids(self) -> set[str] | None:
+        return {d["doc_id"] for d in list_docs(self.session_id)} if self.enforce_registry else None
 
-        # Keyword fallback
+    def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
+        """Retrieve most relevant chunks for a query. Each hit carries its ``doc_id`` (chunk identity = doc_id + chunk_idx)."""
+        allowed = self._authorized_doc_ids()
+        if allowed is not None and not allowed:
+            return []
+        want = top_k if allowed is None else top_k * 3          # over-fetch: unauthorized chunks are dropped below
+        hits = self._retrieve_raw(query, want)
+        if allowed is not None:
+            hits = [h for h in hits if h.get("doc_id") in allowed]
+        return hits[:top_k]
+
+    def _retrieve_raw(self, query: str, top_k: int) -> list[dict]:
+        """Ranked hits from every index that can hold this conversation's chunks: the vector collection (dense), or - when it cannot be queried in its own embedding
+        space right now - a lexical scan of the collection's stored text; plus the keyword file (chunks written while the collection was unusable). De-duplicated
+        by (doc_id, chunk_idx), dense hits first."""
+        hits: list[dict] = []
+        if self._collection is not None:
+            hits = self._dense_hits(query, top_k)
+            if hits is None:                                    # unusable in this mode / errored: do not lose the documents, rank their stored text instead
+                hits = self._collection_lexical_hits(query, top_k)
+        seen = {(h.get("doc_id", ""), h.get("chunk_idx", 0)) for h in hits}
+        for h in self._keyword_file_hits(query, top_k):
+            key = (h.get("doc_id", ""), h.get("chunk_idx", 0))
+            if key not in seen:
+                hits.append(h)
+                seen.add(key)
+        return hits[:top_k] if len(hits) > top_k and self._collection is None else hits
+
+    def _dense_hits(self, query: str, top_k: int):
+        if self._lexical_only:
+            return None
+        try:
+            count = self._collection.count()
+            if count == 0:
+                return []
+            if self._use_embeddings:
+                q_emb = _ollama_embed([query], self.ollama_host)
+                if q_emb:
+                    results = self._collection.query(query_embeddings=q_emb, n_results=min(top_k, count))
+                else:
+                    results = self._collection.query(query_texts=[query], n_results=min(top_k, count))
+            else:
+                results = self._collection.query(query_texts=[query], n_results=min(top_k, count))
+            docs = results.get("documents", [[]])[0]
+            metas = results.get("metadatas", [[]])[0]
+            return [{"text": d, "filename": m.get("filename", ""), "chunk_idx": m.get("chunk_idx", 0), "doc_id": m.get("doc_id", "")}
+                    for d, m in zip(docs, metas)]
+        except Exception:
+            return None
+
+    def _collection_lexical_hits(self, query: str, top_k: int) -> list[dict]:
+        try:
+            got = self._collection.get(limit=5000, include=["documents", "metadatas"])
+        except Exception:
+            return []
+        terms = re.findall(r"\w+", query.lower())
+        scored = []
+        for d, m in zip(got.get("documents") or [], got.get("metadatas") or []):
+            score = _bm25_score(terms, d or "")
+            if score > 0:
+                scored.append((score, {"text": d, "filename": (m or {}).get("filename", ""), "chunk_idx": (m or {}).get("chunk_idx", 0), "doc_id": (m or {}).get("doc_id", "")}))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [e for _, e in scored[:top_k]]
+
+    def _keyword_file_hits(self, query: str, top_k: int) -> list[dict]:
         if not self._fallback_file.exists():
             return []
         query_terms = re.findall(r"\w+", query.lower())
@@ -223,33 +282,55 @@ class DocStore:
                 except Exception:
                     continue
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"]}
+        return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"], "doc_id": e.get("doc_id", "")}
                 for _, e in scored[:top_k]]
 
-    def delete_doc(self, doc_id: str) -> bool:
-        """Remove all chunks for a document."""
+    def delete_doc_detailed(self, doc_id: str) -> dict:
+        """Remove a document from EVERY store that can serve it, and say exactly what happened.
+
+        L02-01: the vector collection and the keyword fallback are both retrieval paths (``retrieve`` falls back to the keyword file whenever the
+        collection errors), so a document is deleted only when BOTH confirm. Each store is attempted independently: a collection outage must not
+        leave the fallback copy behind. The fallback is rewritten through a temporary file + ``os.replace`` so a crash can never truncate other
+        documents' text. Per-store values: ``ok`` | ``failed`` | ``absent`` (no such store / nothing to remove). Internal error text is never returned.
+        """
+        out = {"collection": "absent", "fallback": "absent"}
         if self._collection is not None:
             try:
                 self._collection.delete(where={"doc_id": doc_id})
-                return True
+                out["collection"] = "ok"
             except Exception:
-                pass
-        # Keyword fallback: rewrite file excluding this doc
+                out["collection"] = "failed"
         if self._fallback_file.exists():
-            lines = []
-            with open(self._fallback_file) as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        if entry.get("doc_id") != doc_id:
-                            lines.append(line)
-                    except Exception:
-                        lines.append(line)
-            with open(self._fallback_file, "w") as f:
-                f.writelines(lines)
-        return True
+            try:
+                kept: list[str] = []
+                with open(self._fallback_file) as f:
+                    for line in f:
+                        try:
+                            if json.loads(line).get("doc_id") == doc_id:
+                                continue
+                        except Exception:
+                            pass                                    # an unparseable line is not ours to drop
+                        kept.append(line)
+                tmp = self._fallback_file.with_name(self._fallback_file.name + f".{os.getpid()}.tmp")
+                with open(tmp, "w") as f:
+                    f.writelines(kept)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, self._fallback_file)
+                out["fallback"] = "ok"
+            except Exception:
+                out["fallback"] = "failed"
+        out["ok"] = "failed" not in (out["collection"], out["fallback"])
+        return out
+
+    def delete_doc(self, doc_id: str) -> bool:
+        """True only when every store confirmed the removal (see ``delete_doc_detailed``)."""
+        return bool(self.delete_doc_detailed(doc_id)["ok"])
 
     def count(self) -> int:
+        if self.enforce_registry:
+            # L02-02: "does this conversation have documents" is decided by what is REGISTERED and not being deleted, not by stray chunks.
+            return sum(int(d.get("chunk_count", 0) or 0) for d in list_docs(self.session_id))
         if self._collection is not None:
             try:
                 return self._collection.count()
@@ -274,19 +355,101 @@ class DocStore:
 
 # ── Registry helpers ──────────────────────────────────────────────────────────
 
-def register_doc(session_id: str, doc_id: str, filename: str, chunk_count: int, size_bytes: int):
+class DocLimitExceeded(Exception):
+    pass
+
+
+def find_doc_by_sha(session_id: str, sha256: str) -> dict | None:
+    for d in list_docs(session_id, include_deleting=True):
+        if d.get("sha256") == sha256 and d.get("state") not in ("deleting", "deletion_failed"):
+            return d
+    return None
+
+
+def register_doc(session_id: str, doc_id: str, filename: str, chunk_count: int, size_bytes: int, *, sha256: str | None = None, max_docs: int | None = None):
+    """Add a registry entry. With ``max_docs`` the limit is checked INSIDE the registry transaction (two concurrent uploads cannot both squeeze under it); with
+    ``sha256`` an identical document already in the conversation is returned instead of being added twice (``DocLimitExceeded`` / the existing entry)."""
     with _registry_txn():
         reg = _load_registry()
         if session_id not in reg:
             reg[session_id] = []
-        reg[session_id].append({
+        if sha256:
+            for d in reg[session_id]:
+                if d.get("sha256") == sha256 and d.get("state") not in ("deleting", "deletion_failed"):
+                    return d
+        if max_docs is not None and len(reg[session_id]) >= max_docs:
+            raise DocLimitExceeded()
+        entry = {
             "doc_id":      doc_id,
             "filename":    filename,
             "chunk_count": chunk_count,
             "size_bytes":  size_bytes,
             "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        })
+        }
+        if sha256:
+            entry["sha256"] = sha256
+        reg[session_id].append(entry)
         _save_registry(reg)
+        return entry
+
+
+def mark_doc_deleting(session_id: str, doc_id: str) -> bool:
+    """L02-02: take a document out of every serving path BEFORE its chunks are physically removed. It stays in the registry (so a retry can find it)
+    but ``list_docs`` and retrieval no longer see it."""
+    with _registry_txn():
+        reg = _load_registry()
+        found = False
+        for d in reg.get(session_id, []):
+            if d["doc_id"] == doc_id:
+                d["state"] = "deleting"
+                found = True
+        if found:
+            _save_registry(reg)
+        return found
+
+
+DOC_DELETE_MAX_ATTEMPTS = 8
+
+
+def pending_document_deletions() -> list[dict]:
+    """Every registry entry whose deletion has not completed (``deleting``, or ``deletion_failed`` once retries were exhausted). Diagnostic + sweep input."""
+    out = []
+    for sid, docs in _load_registry().items():
+        for d in docs:
+            if d.get("state") in ("deleting", "deletion_failed"):
+                out.append({"session_id": sid, "doc_id": d["doc_id"], "state": d["state"], "attempts": int(d.get("delete_attempts", 0))})
+    return out
+
+
+def sweep_document_deletions(ollama_host: str = "http://localhost:11434", limit: int = 20) -> dict:
+    """L02-02g: bounded recovery for documents left ``deleting``. Each pass retries the dual-store removal (idempotent; the document is already out of every
+    serving path, so a retry can never resurrect anything), unregisters on success, counts attempts, and after ``DOC_DELETE_MAX_ATTEMPTS`` marks the
+    entry ``deletion_failed`` -- still hidden, no longer retried automatically, and visible through ``pending_document_deletions()`` / the health report."""
+    done, failed, escalated = [], [], []
+    for item in pending_document_deletions()[: int(limit)]:
+        if item["state"] != "deleting":
+            continue
+        sid, doc_id = item["session_id"], item["doc_id"]
+        try:
+            ok = DocStore(sid, ollama_host).delete_doc_detailed(doc_id)["ok"]
+        except Exception:
+            ok = False
+        if ok:
+            unregister_doc(sid, doc_id)
+            done.append(doc_id)
+            continue
+        with _registry_txn():
+            reg = _load_registry()
+            for d in reg.get(sid, []):
+                if d["doc_id"] == doc_id:
+                    d["delete_attempts"] = int(d.get("delete_attempts", 0)) + 1
+                    d["last_delete_attempt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    if d["delete_attempts"] >= DOC_DELETE_MAX_ATTEMPTS:
+                        d["state"] = "deletion_failed"
+                        escalated.append(doc_id)
+            _save_registry(reg)
+        failed.append(doc_id)
+    return {"deleted": done, "retry_later": failed, "escalated": escalated}
 
 
 def unregister_doc(session_id: str, doc_id: str):
@@ -297,6 +460,7 @@ def unregister_doc(session_id: str, doc_id: str):
         _save_registry(reg)
 
 
-def list_docs(session_id: str) -> list[dict]:
+def list_docs(session_id: str, *, include_deleting: bool = False) -> list[dict]:
     reg = _load_registry()
-    return reg.get(session_id, [])
+    docs = reg.get(session_id, [])
+    return docs if include_deleting else [d for d in docs if d.get("state") not in ("deleting", "deletion_failed")]

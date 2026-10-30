@@ -247,7 +247,7 @@ def delete_session(session_id: str) -> bool:
     if not enabled():
         return True  # nothing to delete, and nothing can read a stale value from a disabled store either
     try:
-        _client().delete(_key(session_id))
+        _client().delete(_key(session_id), _rev_key(session_id), _lease_key(session_id))      # L02-01f: history, revision and lease keys of the session
         return True
     except Exception:
         return False

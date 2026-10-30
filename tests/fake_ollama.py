@@ -17,6 +17,8 @@ class FakeOllama:
         self._chunks = None if chunks is None else list(chunks)
         self.fail_status: int | None = None          # when set, /api/chat answers with this HTTP status
         self.requests: list[dict] = []                # every /api/chat payload received
+        self.generate_requests: list[dict] = []       # every /api/generate payload received (retrieval judges: rerank, sufficiency, contradictions, query rewrite)
+        self.generate_reply = ""                      # what /api/generate answers (empty = same observable result as the endpoint being unavailable)
         self.chunks_sent = 0
         self.malformed = False                        # answer /api/chat with a 200 whose body is not Ollama JSON at all
         self.truncate_after: int | None = None        # streaming only: hang up after N chunks WITHOUT the final {"done": true} line
@@ -64,6 +66,9 @@ class FakeOllama:
                     if "reply" in payload:
                         fake.reply = payload["reply"]
                     return self._json(200, {"ok": True})
+                if self.path == "/api/generate":
+                    fake.generate_requests.append(payload)
+                    return self._json(200, {"model": payload.get("model", "orca-core"), "response": fake.generate_reply, "done": True})
                 if self.path != "/api/chat":
                     return self._json(404, {"error": "not found"})
                 fake.requests.append(payload)

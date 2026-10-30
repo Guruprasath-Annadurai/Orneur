@@ -1,0 +1,7 @@
+{
+  "recorded_at": "2026-10-29T17:08:51+0000",
+  "first_attempt": "not_committed",
+  "reason": "client_disconnected",
+  "units_spent": 2,
+  "note": "the first attempt produced output before the drop, so its unit stays spent (policy); the retry is a second generation the user chose"
+}

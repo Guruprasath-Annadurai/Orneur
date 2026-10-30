@@ -240,4 +240,6 @@ def get_persona_system(variant: str | None) -> str:
         )
         identity = identity + disclaimer
 
-    return f"{identity}\n{_CITATION_DISCIPLINE_BLOCK}\n{TOOL_INSTRUCTIONS}"
+    from orca.serve.capability_truth import system_facts_for_model
+
+    return f"{identity}\n{_CITATION_DISCIPLINE_BLOCK}\n{TOOL_INSTRUCTIONS}\n{system_facts_for_model(tools_available=True)}"

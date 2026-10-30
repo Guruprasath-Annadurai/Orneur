@@ -1,0 +1,6 @@
+{
+  "recorded_at": "2026-10-29T17:16:38+0000",
+  "pdf_chunks": 1,
+  "docx_chunks": 1,
+  "parsers": "pypdf/pdfminer.six/python-docx (third-party)"
+}

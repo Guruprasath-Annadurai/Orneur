@@ -212,7 +212,10 @@ def test_deleting_a_conversation_removes_its_content_everywhere_and_only_that(cl
     r = client.delete(f"/api/session/{gone}", headers=h)
     assert r.status_code == 200 and r.json()["deleted"] is True
     assert client.get("/api/sessions/search", params={"q": "UNIQUE-GONE"}, headers=h).json()["results"] == []
-    assert _msgs(client, h, gone)["total"] == 0
+    # L02-01: a deleted conversation is now access-REVOKED (404), a stronger guarantee than "readable but empty"; the transcript is verified empty at the store.
+    assert client.get(f"/api/session/{gone}/messages", headers=h).status_code == 404
+    from orca.serve import conversations as _conv
+    assert _conv.turns_for_session(gone) == []
     assert gone not in [s["id"] for s in client.get("/api/sessions", headers=h).json()["sessions"]]
     assert _msgs(client, h, keep)["total"] == 2
     assert client.delete(f"/api/session/{gone}", headers=h).status_code == 404         # second delete: nothing of yours by that id
@@ -294,7 +297,11 @@ def test_the_purge_deletes_only_idle_conversations_of_users_who_asked_for_it(cli
         _backdate_session_activity(sid, long_ago)
     r = purge_expired_conversations()
     assert r["deleted_session_ids"] == [old_a] and r["errors"] == 0
-    assert _msgs(client, ha, old_a)["total"] == 0 and _msgs(client, ha, new_a)["total"] == 2 and _msgs(client, hb, old_b)["total"] == 2
+    # L02-01: a purged conversation is access-revoked (404), stronger than "readable but empty"; the store itself is verified empty.
+    assert client.get(f"/api/session/{old_a}/messages", headers=ha).status_code == 404
+    from orca.serve import conversations as _conv
+    assert _conv.turns_for_session(old_a) == []
+    assert _msgs(client, ha, new_a)["total"] == 2 and _msgs(client, hb, old_b)["total"] == 2
     assert purge_expired_conversations()["deleted"] == 0                      # idempotent
 
 

@@ -226,6 +226,10 @@ class CognitiveRequest:
     # this call (tier / model version / deployment / runtime / whether the entitlement downgraded it). Lets the API announce the served model
     # from a fact instead of a guess. Ignored unless ``on_raw_delta`` is set.
     on_served: Callable[[dict[str, Any]], Awaitable[None]] | None = None
+    # LANDMARK-02 L02-02: the caller will answer this turn through its own document pipeline and DISCARD a plain direct answer. When set, a plan that
+    # would be answered directly (no Truth-Fabric evidence routing, no tools) is returned as "deferred" (output None) WITHOUT a model dispatch.
+    # Truth-Fabric-routed plans are unaffected: they are the case where the Kernel's answer is authoritative over the document pipeline.
+    defer_direct_answer: bool = False
 
 
 # ── Context ──────────────────────────────────────────────────────────────

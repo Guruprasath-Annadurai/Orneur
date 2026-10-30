@@ -272,19 +272,21 @@ def _transcript_gone(session_id: str) -> bool:
 
 
 def _delete_contents(session_id: str, user_id: str) -> None:
-    from orca.serve.account_delete import _delete_session_data, _remove_session_title
-    from orca.auth.store import release_session
+    """Delete every application-controlled copy of the conversation through the SAME authoritative workflow as an owner's DELETE (L02-01e).
+
+    Before this, the cascade's per-store errors (vector memory, documents, Redis, graph, semantic/continuum memory) were ignored and only a transcript
+    error counted, so a chat could be reported ``closed`` while derived memory remained; and nothing stopped a stale worker re-creating state after the
+    closure. Now a deletion identity (tombstone) is written first and ``closed``/``expired`` is stored only when EVERY mandatory store confirmed."""
+    from orca.serve import deletions
     import sys
 
-    result = _delete_session_data(session_id)
-    try:
-        from orca.serve import message_versions
-
-        message_versions.delete_session(session_id)
-    except Exception:
-        pass
-    if result.get("conversation_transcript_error"):
-        raise RuntimeError("temporary chat transcript was not deleted")
+    deletions.begin(session_id, user_id)
+    live = getattr(sys.modules.get("orca.serve.api"), "_sessions", None)
+    if isinstance(live, dict):
+        live.pop(session_id, None)
+    view = deletions.run(session_id, user_id)
+    if not view.get("deleted"):
+        raise RuntimeError("temporary chat deletion incomplete")
     # generations.py is optional on some trees; only call when present.
     try:
         from orca.serve import generations  # type: ignore
@@ -295,11 +297,6 @@ def _delete_contents(session_id: str, user_id: str) -> None:
         pass
     except Exception:
         pass
-    _remove_session_title(session_id)
-    live = getattr(sys.modules.get("orca.serve.api"), "_sessions", None)
-    if isinstance(live, dict):
-        live.pop(session_id, None)
-    release_session(session_id, user_id)
     _unlink_lock(session_id)
 
 
@@ -446,9 +443,16 @@ def expire_due(*, now: float | None = None) -> dict:
     expired, failed = [], []
     for path in list(_dir().glob("*.json")):
         record = _read(path)
-        if not isinstance(record, dict) or record.get("state") not in ("active", _CLOSING):
+        if not isinstance(record, dict) or record.get("state") not in ("active", _CLOSING, "failed"):
             continue
         if record.get("state") == "active" and moment < float(record.get("expires_at") or 0):
+            continue
+        if record.get("state") == "failed":
+            # L02-01e: a failed closure is retried by the sweep instead of waiting for someone to open the chat again.
+            sid, uid = record.get("session_id"), record.get("user_id")
+            if isinstance(sid, str) and isinstance(uid, str):
+                view = retry_failed_closure(sid, uid)
+                (expired if view.get("deleted") else failed).append(sid)
             continue
         session_id = record.get("session_id")
         user_id = record.get("user_id")

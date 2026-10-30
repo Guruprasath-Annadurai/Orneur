@@ -323,7 +323,8 @@ async def test_context_assembly_identical_for_stream_and_generate(isolated_home,
     r2 = await kernel.execute(CognitiveRequest(objective="next", session_id=sid, tenant="u1", on_raw_delta=_hook))
     assert r2.output == "ok"
     assert captured["gen"] == captured["stream"]
-    assert "prior user" in captured["gen"][0]["content"]
+    # the constant serving-facts system message comes first; the committed history follows it
+    assert any("prior user" in m["content"] for m in captured["gen"])
 
 
 @pytest.mark.asyncio

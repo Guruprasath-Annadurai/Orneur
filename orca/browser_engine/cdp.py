@@ -167,7 +167,10 @@ class CdpPipe:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise CdpError("cdp_closed")
-            ready, _, _ = select.select([self._read], [], [], remaining)
+            # poll() accepts descriptors above select()'s 1024 limit (a busy server process legitimately holds more than that)
+            poller = select.poll()
+            poller.register(self._read.fileno(), select.POLLIN | select.POLLERR | select.POLLHUP)
+            ready = poller.poll(int(remaining * 1000) + 1)
             if not ready:
                 raise CdpError("cdp_closed")
             chunk = self._read.read(65536)
