@@ -1,0 +1,15 @@
+{
+ "archive_bytes": 1034144,
+ "plaintext_found_in_archive": [],
+ "delete_status": 200,
+ "wrong_key_exit": 1,
+ "restore_output": "mper-proof and not authenticated); an export is \nauthenticated but only as new as the moment it was taken; there is no off-host \nanchor. Deletions made after the newest copy kept elsewhere cannot be known.\nprevious contents kept for rollback at \n/tmp/pytest-of-pc/pytest-88/test_older_backup_restore_does0/home/.pre-restore-47\n1685d765 (contains customer data in plaintext: remove it when satisfied)\n",
+ "deleted_conversation_http": 404,
+ "kept_conversation_http": 200,
+ "deleted_listed": false,
+ "restore_while_server_running_exit": 1,
+ "restore_while_server_running_message": "refused: a server is running on this data directory: stop it before restoring\n",
+ "legacy_cli_refused": true,
+ "alpha_text_left_in_live_files": false,
+ "alpha_text_found_in": []
+}

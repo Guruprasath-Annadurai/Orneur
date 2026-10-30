@@ -29,7 +29,7 @@ MAX_ATTEMPTS = 8
 
 # Honest, fixed statement returned with every deletion result.
 RETENTION_NOTICE = {
-    "application_backups": "ORNEUR does not create backups of conversation data; copies made by the host (disk snapshots, backups) are outside this deletion.",
+    "application_backups": "Deletion applies to live data. Backups taken earlier by the operator (encrypted archives) and host snapshots are separate copies with their own lifecycle: they are not changed by this deletion and stay recoverable until the operator destroys them. A restore re-applies recorded deletions.",
     "external_copies": "Text sent to a model provider while answering is governed by that provider; a local Ollama keeps no copy.",
     "physical_erasure": "Not claimed. The transcript database overwrites freed pages (secure_delete) and truncates its WAL; the vector store reports RECLAIMED or DEFERRED.",
 }
@@ -92,12 +92,19 @@ def begin(session_id: str, user_id: str) -> dict:
     conn = conversations._turns_conn()
     try:
         with conn:
-            conn.execute(          # conflict-resolved by the primary key: exactly one concurrent caller creates the identity, the rest read it back
+            cur = conn.execute(          # conflict-resolved by the primary key: exactly one concurrent caller creates the identity, the rest read it back
                 "INSERT INTO session_deletions (session_id, deletion_id, user_id, state, created_at, updated_at) VALUES (?,?,?,?,?,?) "
                 "ON CONFLICT(session_id) DO NOTHING",
                 (session_id, str(uuid.uuid4()), user_id, "revoked", now, now),
             )
+            created = cur.rowcount == 1
             row = _row(conn, session_id)
+        if created:
+            # L02-B6: the record a restore consults so an older backup cannot bring this conversation back. Identifiers only. Fails closed (the tombstone above already
+            # revokes access; the caller sees the error and can repeat the request).
+            from orca.serve import deletion_ledger
+
+            deletion_ledger.record("session", session_id, user_id, session_id)
         return _view(row)
     finally:
         conn.close()

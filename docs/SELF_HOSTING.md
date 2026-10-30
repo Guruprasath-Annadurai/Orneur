@@ -87,19 +87,19 @@ yourself before depending on it for a real launch.
 Zero backup automation exists unless you set it up. Run manually or via
 cron:
 
-```bash
-orca backup --keep 14        # creates a backup, prunes to the last 14
-orca backups                 # list existing backups
-orca restore <path> --yes    # restore from a backup (SQLite only)
+```
+orca data-backup keygen /secure/place/orneur-backup.key     # once; YOU keep this key, never next to the data or the backups
+orca data-backup create /backups/orneur-$(date +%F).orbk --key-file /secure/place/orneur-backup.key
+orca data-backup verify  /backups/orneur-2026-01-01.orbk --key-file /secure/place/orneur-backup.key
+orca data-backup export-deletions /offhost/deletions-$(date +%F).json --key-file ...   # keep off this host
+orca data-backup restore /backups/orneur-2026-01-01.orbk --key-file ... --overwrite    # server stopped; refuses without deletion history
 ```
 
-Recommended crontab entry (daily at 3am):
-```
-0 3 * * * cd /path/to/orca && uv run orca backup --keep 14
-```
-
-See `orca/ops/backup.py` for exactly what this does and doesn't cover
-(Postgres restore uses `pg_restore` directly, not automated here).
+The earlier plaintext `orca backup` / `orca restore` commands are **retired** (L02-B6): they wrote unencrypted copies of the accounts database and restored them without
+consulting deletion history. Existing plaintext backups: see
+`docs/orneur/landmarks/landmark-02/b6-backup-privacy/B6_LEGACY_MIGRATION.md`. Limits and the founder decisions still open (key custody, backup retention, off-host anchoring):
+`docs/orneur/landmarks/landmark-02/b6-backup-privacy/B6_BACKUP_PRIVACY_REPORT.md`. Postgres is not covered by `orca data-backup`; use your database's own
+tooling with the same encryption and deletion-history care.
 
 ## Monitoring
 

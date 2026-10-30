@@ -210,7 +210,9 @@ def delete_account(user_id: str) -> dict:
     """
     session_ids = get_user_session_ids(user_id)
     session_results = []
-    from orca.serve import deletions
+    from orca.serve import deletion_ledger, deletions
+
+    deletion_ledger.record("user", user_id, user_id)       # L02-B6: before anything is destroyed; a restore of an older backup must not bring the account back
 
     for sid in session_ids:
         # L02-01: every session gets a durable deletion identity first, so a stale worker cannot resurrect it and the sweep finishes it if a store fails.

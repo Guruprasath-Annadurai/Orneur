@@ -145,6 +145,19 @@ async def _deletion_sweep_loop():
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # L02-B6: hold the serving lock for the life of this process, so a restore cannot start under a running server and a server cannot start under a running restore. A refusal
+    # (restore in progress) stops the process; any OTHER problem taking the lock (read-only volume, unsupported filesystem) is logged and does not stop serving.
+    from orca.config import ORCA_HOME as _lock_home
+    from orca.serve import datadir_lock as _datadir_lock
+    from orca.serve.backup_errors import RestoreFailed as _RestoreFailed
+
+    _lock = contextlib.ExitStack()
+    try:
+        _lock.enter_context(_datadir_lock.serving_lock(_lock_home))
+    except _RestoreFailed:
+        raise
+    except OSError:
+        _logger.warning("could not take the data-directory serving lock; a restore will not be able to detect this server", exc_info=True)
     _retention_task = asyncio.create_task(_retention_loop())
     _sweep_task = asyncio.create_task(_deletion_sweep_loop())
     try:
@@ -152,6 +165,7 @@ async def _lifespan(_app: FastAPI):
     finally:
         _retention_task.cancel()
         _sweep_task.cancel()
+        _lock.close()
         from orca.serve import ops as _ops
 
         _ops.close_inflight_as_shutdown()          # turns still running here will never commit: say so durably before the process exits
@@ -1847,6 +1861,12 @@ async def readyz():
 
     dependencies["transcript_store"] = ops.transcript_store_report()
     if dependencies["transcript_store"]["status"] != "ok":
+        ready = False
+    from orca.config import ORCA_HOME as _home
+    from orca.serve import datadir_lock as _datadir_lock
+
+    if _datadir_lock.restore_pending(_home):        # L02-B6: a restore stopped mid-swap; the directory may be a mixture until `orca data-backup recover` has run
+        dependencies["restore"] = {"status": "interrupted", "action": "run: orca data-backup recover"}
         ready = False
     dependencies["disk"] = ops.disk_report()
     if dependencies["disk"]["state"] == "critical":

@@ -168,7 +168,19 @@ def _assemble_home(tmp_path):
     return home
 
 
+def _test_key(tmp_path):
+    from orca.serve import backup
+
+    p = tmp_path / "keys" / "k.key"
+    p.parent.mkdir(exist_ok=True)
+    if not p.exists():
+        backup.write_new_key(p)
+    return backup.load_key(p)
+
+
 def test_backup_is_consistent_verifiable_and_restores_into_a_fresh_directory(client, fake, tmp_path):
+    """L02-B6: the archive is now one encrypted file and a restore needs deletion history (a live ledger or an export); the privacy / deletion / atomicity matrix is in
+    tests/test_l02_b6_backup.py. This keeps the original end-to-end expectation."""
     from orca.serve import backup
 
     t, uid = _signup(client)
@@ -176,12 +188,13 @@ def test_backup_is_consistent_verifiable_and_restores_into_a_fresh_directory(cli
     sid = _events(client, h, {"message": "remember this exact sentence"})[0]["session_id"]
     client.post("/api/docs/upload", files={"file": ("n.txt", b"the stored document text", "text/plain")}, headers=h, params={"session_id": sid})
     home = _assemble_home(tmp_path)
-    dest = tmp_path / "bk"
-    made = backup.create(home, dest)
-    assert made["files"] >= 4 and backup.verify(dest)["ok"] is True
+    key = _test_key(tmp_path)
+    dest = tmp_path / "bk.orbk"
+    made = backup.create(home, dest, key=key)
+    assert made["files"] >= 4 and backup.verify(dest, key=key)["ok"] is True
     fresh = tmp_path / "restored-home"
-    r = backup.restore(dest, fresh)
-    assert r["verified"] and r["restored_files"] == made["files"]
+    r = backup.restore(dest, fresh, key=key, unsafe_without_deletion_history=True)     # a synthetic new machine with no deletion history: the explicit override
+    assert r["verified"] and r["restored_files"] == made["files"] and r["deleted_data_may_be_present"] is True
     conn = sqlite3.connect(str(fresh / "memory/conversations/turns.db"))
     try:
         assert conn.execute("SELECT COUNT(*) FROM conversation_turns WHERE session_id=?", (sid,)).fetchone()[0] == 1
@@ -191,19 +204,20 @@ def test_backup_is_consistent_verifiable_and_restores_into_a_fresh_directory(cli
         conn.close()
     assert (fresh / "docs" / "kw_abc.jsonl").read_text().strip().endswith('"keyword text"}')
     with pytest.raises(FileExistsError):
-        backup.restore(dest, fresh)                                 # never overwrites a populated directory by accident
+        backup.restore(dest, fresh, key=key, unsafe_without_deletion_history=True)     # never overwrites a populated directory by accident
     with pytest.raises(FileExistsError):
-        backup.create(home, dest)                                   # nor an existing backup
+        backup.create(home, dest, key=key)                                             # nor an existing backup
 
 
 def test_backup_taken_while_the_database_is_being_written_is_still_consistent(client, fake, tmp_path):
     """The online-backup API gives a transactionally consistent snapshot even with a writer active."""
-    from orca.serve import backup, conversations
+    from orca.serve import backup
 
     t, uid = _signup(client)
     h = _hdr(t)
     _events(client, h, {"message": "seed"})
     home = _assemble_home(tmp_path)
+    key = _test_key(tmp_path)
     stop = threading.Event()
     def writer():
         while not stop.is_set():
@@ -216,12 +230,12 @@ def test_backup_taken_while_the_database_is_being_written_is_still_consistent(cl
     th = threading.Thread(target=writer)
     th.start()
     try:
-        dest = tmp_path / "bk"
-        backup.create(home, dest)
+        dest = tmp_path / "bk.orbk"
+        backup.create(home, dest, key=key)
     finally:
         stop.set()
         th.join()
-    assert backup.verify(dest)["ok"] is True
+    assert backup.verify(dest, key=key)["ok"] is True
 
 
 def test_a_corrupted_backup_is_detected_and_nothing_is_restored(client, fake, tmp_path):
@@ -230,17 +244,17 @@ def test_a_corrupted_backup_is_detected_and_nothing_is_restored(client, fake, tm
     t, uid = _signup(client)
     _events(client, _hdr(t), {"message": "x"})
     home = _assemble_home(tmp_path)
-    dest = tmp_path / "bk"
-    backup.create(home, dest)
-    victim = next(dest.rglob("turns.db"))
-    with open(victim, "r+b") as f:
-        f.seek(100)
-        f.write(b"\x00corrupted\x00")
-    v = backup.verify(dest)
-    assert v["ok"] is False and any("turns.db" in p for p in v["problems"])
+    key = _test_key(tmp_path)
+    dest = tmp_path / "bk.orbk"
+    backup.create(home, dest, key=key)
+    data = bytearray(dest.read_bytes())
+    data[len(data) // 2] ^= 0xFF
+    dest.write_bytes(bytes(data))
+    v = backup.verify(dest, key=key)
+    assert v["ok"] is False and v["problems"]
     target = tmp_path / "never-written"
-    with pytest.raises(ValueError):
-        backup.restore(dest, target)
+    with pytest.raises(backup.BackupError):
+        backup.restore(dest, target, key=key, unsafe_without_deletion_history=True)
     assert not target.exists() or not any(target.iterdir())
 
 

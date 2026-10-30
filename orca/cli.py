@@ -1377,34 +1377,20 @@ def license_cmd(
     ))
 
 
+_LEGACY_REFUSAL = ("[red]retired[/red]: the plaintext backup/restore wrote an UNENCRYPTED copy of the accounts database and restored it without consulting deletion history.\n"
+                   "Use [bold]orca data-backup create <file> --key-file <key>[/bold] (encrypted) and [bold]orca data-backup restore[/bold].\n"
+                   "Existing plaintext backups: migrate them OFFLINE with [bold]orca data-backup import-legacy[/bold], then destroy the originals "
+                   "(docs/orneur/landmarks/landmark-02/b6-backup-privacy/B6_LEGACY_MIGRATION.md).")
+
+
 @app.command("backup")
 def backup_cmd(
-    keep: int = typer.Option(7, "--keep", help="Number of backups to retain after pruning"),
-    no_prune: bool = typer.Option(False, "--no-prune", help="Skip pruning old backups this run"),
+    keep: int = typer.Option(7, "--keep", help="(retired) kept only so existing cron lines fail with an explanation"),
+    no_prune: bool = typer.Option(False, "--no-prune", help="(retired)"),
 ):
-    """
-    Back up the auth database (users, audit log, everything). Meant to be
-    invoked by an external scheduler (cron, systemd timer) — this does not
-    schedule itself, since an in-process scheduler dies exactly when the
-    server crashes, which is when you most need backups to keep running.
-
-    Example crontab entry (daily at 3am):
-      0 3 * * * cd /path/to/orca && uv run orca backup --keep 14
-    """
-    from orca.ops.backup import run_backup, prune_old_backups
-
-    try:
-        report = run_backup()
-    except Exception as e:
-        console.print(f"[red]Backup failed: {e}[/red]")
-        raise typer.Exit(1)
-
-    console.print(f"[green]✓ Backup created:[/green] {report['path']} ({report['size_bytes']:,} bytes, {report['backend']})")
-
-    if not no_prune:
-        prune_report = prune_old_backups(keep_last_n=keep)
-        if prune_report["deleted_count"] > 0:
-            console.print(f"[dim]Pruned {prune_report['deleted_count']} old backup(s), kept {prune_report['kept']}[/dim]")
+    """RETIRED (L02-B6): refuses. Use `orca data-backup create`."""
+    console.print(_LEGACY_REFUSAL)
+    raise typer.Exit(1)
 
 
 @app.command("backups")
@@ -1415,8 +1401,9 @@ def backups_list_cmd():
 
     backups = list_backups()
     if not backups:
-        console.print("[dim]No backups found. Run: orca backup[/dim]")
+        console.print("[dim]No legacy plaintext backups found. New backups: orca data-backup create <file> --key-file <key>[/dim]")
         return
+    console.print("[yellow]These are UNENCRYPTED legacy backups of the accounts database. Migrate them offline (orca data-backup import-legacy) and destroy them.[/yellow]")
 
     table = Table(box=None, show_header=True, header_style="bold")
     table.add_column("Path")
@@ -1429,36 +1416,12 @@ def backups_list_cmd():
 
 @app.command("restore")
 def restore_cmd(
-    backup_path: str = typer.Argument(..., help="Path to a backup file (see: orca backups)"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
+    backup_path: str = typer.Argument(..., help="(retired)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="(retired)"),
 ):
-    """
-    Restore the auth database from a backup — OVERWRITES the live database.
-    Automatically backs up the current state first, so a wrong choice here
-    is itself recoverable. SQLite only — for Postgres, use pg_restore
-    directly (see orca/ops/backup.py module docstring for why).
-    """
-    from orca.auth.db import BACKEND
-    from orca.ops.backup import restore_sqlite
-
-    if BACKEND != "sqlite":
-        console.print(f"[red]Current backend is '{BACKEND}', not sqlite. Use pg_restore directly for Postgres.[/red]")
-        raise typer.Exit(1)
-
-    if not yes:
-        confirmed = typer.confirm(f"This will OVERWRITE the live database with {backup_path}. Continue?")
-        if not confirmed:
-            console.print("[dim]Cancelled.[/dim]")
-            raise typer.Exit(0)
-
-    try:
-        report = restore_sqlite(backup_path, confirm=True)
-    except Exception as e:
-        console.print(f"[red]Restore failed: {e}[/red]")
-        raise typer.Exit(1)
-
-    console.print(f"[green]✓ Restored from:[/green] {report['restored_from']}")
-    console.print(f"[dim]Pre-restore safety backup saved to: {report['pre_restore_backup']}[/dim]")
+    """RETIRED (L02-B6): refuses. Use `orca data-backup restore`."""
+    console.print(_LEGACY_REFUSAL)
+    raise typer.Exit(1)
 
 
 @app.command("doctor")
@@ -1604,38 +1567,156 @@ def serve(
     _GracefulServer(config).run()
 
 
-backup_app = typer.Typer(help="Consistent backup / verified restore of the ORNEUR data directory (L02-06).")
+backup_app = typer.Typer(help="Encrypted backup / verified, deletion-aware restore of the ORNEUR data directory (L02-06, L02-B6).")
 app.add_typer(backup_app, name="data-backup")
+
+_KEY_OPT = typer.Option(None, "--key-file", help="file holding the 32-byte backup key (base64, mode 600). Default: $ORNEUR_BACKUP_KEY_FILE. Never generated implicitly.")
+
+
+def _need_crypto():
+    try:
+        import cryptography  # noqa: F401
+    except ImportError:
+        console.print("[red]encrypted backup needs the optional 'cryptography' package, which is not installed here.[/red]\nInstall it: [bold]pip install 'orneur[backup]'[/bold] "
+                      "(the server itself does not need it; there is deliberately no plaintext fallback).")
+        raise typer.Exit(2)
+
+
+def _backup_key(key_file, *extra_forbidden):
+    from pathlib import Path
+
+    _need_crypto()
+    from orca.config import ORCA_HOME
+    from orca.serve.backup import BackupKeyError, load_key
+
+    try:
+        return load_key(key_file, forbid_inside=[Path(ORCA_HOME), *[Path(x) for x in extra_forbidden]])
+    except BackupKeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2)
+
+
+def _backup_run(fn, *a, **k):
+    from orca.serve.backup import BackupError
+
+    try:
+        return fn(*a, **k)
+    except (BackupError, FileExistsError) as exc:
+        console.print(f"[red]refused[/red]: {exc}")
+        raise typer.Exit(1)
+
+
+@backup_app.callback()
+def _backup_group(ctx: typer.Context):
+    """Everything here except `recover` needs the optional `cryptography` package (checked before any import of the backup modules)."""
+    if ctx.invoked_subcommand not in (None, "recover"):
+        _need_crypto()
+
+
+@backup_app.command("keygen")
+def backup_keygen(path: str = typer.Argument(..., help="where to write a NEW key (must not exist). Store it OUTSIDE the data directory and the backup location; losing it makes backups unreadable.")):
+    """Explicit, one-off key creation. The key is yours to custody (never written next to a backup)."""
+    from pathlib import Path
+
+    _need_crypto()
+    from orca.config import ORCA_HOME
+    from orca.serve.backup import write_new_key
+
+    if Path(path).resolve().is_relative_to(Path(ORCA_HOME).resolve()):
+        console.print("[red]refused[/red]: do not store the key inside the data directory")
+        raise typer.Exit(1)
+    write_new_key(path)
+    console.print(f"key written to {path} (mode 600). Back it up separately: without it every backup is unrecoverable.")
 
 
 @backup_app.command("create")
-def backup_create(dest: str = typer.Argument(..., help="empty directory to write the backup into")):
-    """Snapshot the data directory (SQLite online backup + file copies + SHA-256 manifest). The backup contains user data and is not encrypted."""
+def backup_create(out: str = typer.Argument(..., help="new archive file to write"), key_file: str = _KEY_OPT):
+    """Encrypt a consistent snapshot of the data directory into one authenticated archive."""
+    from pathlib import Path
+
     from orca.config import ORCA_HOME
     from orca.serve import backup
 
-    r = backup.create(ORCA_HOME, __import__("pathlib").Path(dest))
-    console.print(f"[green]backup written[/green]: {r['files']} files -> {r['path']}")
+    key = _backup_key(key_file, Path(out).parent)
+    r = _backup_run(backup.create, Path(ORCA_HOME), Path(out), key=key)
+    console.print(f"[green]backup written[/green]: {r['files']} files, {r['bytes']} bytes -> {r['path']}")
+    if not r["consistent"]:
+        console.print(f"[yellow]warning[/yellow]: these files changed while being copied: {r['unstable_files']} (stop the server for a fully consistent backup)")
 
 
 @backup_app.command("verify")
-def backup_verify(path: str = typer.Argument(...)):
-    """Re-hash every file and run PRAGMA integrity_check on every database."""
+def backup_verify(path: str = typer.Argument(...), key_file: str = _KEY_OPT):
+    """Authenticate and fully check an archive (decrypt, hash, database integrity, completeness)."""
+    from pathlib import Path
+
     from orca.serve import backup
 
-    r = backup.verify(__import__("pathlib").Path(path))
-    console.print("[green]backup OK[/green]" if r["ok"] else f"[red]backup FAILED[/red]: {r['problems']}")
+    r = backup.verify(Path(path), key=_backup_key(key_file))
+    console.print(f"[green]backup OK[/green] ({r['files']} files, consistent={r['consistent']})" if r["ok"] else f"[red]backup FAILED[/red]: {r['problems']}")
     raise typer.Exit(0 if r["ok"] else 1)
 
 
+@backup_app.command("export-deletions")
+def backup_export_deletions(out: str = typer.Argument(..., help="new file; keep it OUTSIDE the backups it protects"), key_file: str = _KEY_OPT):
+    """Write an authenticated list of everything customers have deleted (identifiers only), for restoring onto a different machine."""
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve import deletion_ledger
+
+    r = deletion_ledger.export(Path(ORCA_HOME), Path(out), _backup_key(key_file, Path(out).parent))
+    console.print(f"[green]deletion history exported[/green]: {r['entries']} entries -> {out}")
+
+
 @backup_app.command("restore")
-def backup_restore(path: str = typer.Argument(...), overwrite: bool = typer.Option(False, "--overwrite", help="allow a non-empty target (stop the server first)")):
-    """Verify, then restore into the data directory. Refuses a non-empty target unless --overwrite."""
+def backup_restore(
+    path: str = typer.Argument(...),
+    key_file: str = _KEY_OPT,
+    deletion_ledger_file: str = typer.Option(None, "--deletion-ledger", help="authenticated export from `export-deletions`, taken AFTER the backup"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="allow a non-empty target (stop the server first)"),
+    unsafe_without_deletion_history: bool = typer.Option(False, "--unsafe-without-deletion-history", help="restore even though deleted customer data may come back (founder decision)"),
+    allow_inconsistent: bool = typer.Option(False, "--allow-inconsistent", help="restore a backup flagged as taken while files were changing"),
+):
+    """Decrypt into a staging directory, verify, re-apply every later deletion, health-check, then swap in. Refuses without deletion history."""
+    from pathlib import Path
+
     from orca.config import ORCA_HOME
     from orca.serve import backup
 
-    r = backup.restore(__import__("pathlib").Path(path), ORCA_HOME, overwrite=overwrite)
-    console.print(f"[green]restored[/green] {r['restored_files']} files into {ORCA_HOME}")
+    r = _backup_run(backup.restore, Path(path), Path(ORCA_HOME), key=_backup_key(key_file), deletion_ledger=Path(deletion_ledger_file) if deletion_ledger_file else None,
+                    overwrite=overwrite, unsafe_without_deletion_history=unsafe_without_deletion_history, allow_inconsistent=allow_inconsistent)
+    console.print(f"[green]restored[/green] {r['restored_files']} files into {ORCA_HOME}; deletions re-applied: {r['deletions_applied']}")
+    console.print(f"[yellow]{r['deletion_history']['statement']}[/yellow]")
+    if r["previous_state_kept_at"]:
+        console.print(f"previous contents kept for rollback at {r['previous_state_kept_at']} (contains customer data in plaintext: remove it when satisfied)")
+
+
+@backup_app.command("import-legacy")
+def backup_import_legacy(
+    legacy: str = typer.Argument(..., help="a plaintext auth_backup_*.db written by the retired `orca backup` (copy it somewhere OUTSIDE the data directory first)"),
+    out: str = typer.Argument(..., help="new encrypted archive to write, OUTSIDE the data directory"),
+    key_file: str = _KEY_OPT,
+):
+    """OFFLINE migration: wrap one legacy plaintext accounts backup into an encrypted archive. Never touches the live data directory; refuses while a server runs on it."""
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve import backup
+
+    r = _backup_run(backup.import_legacy, Path(legacy), Path(out), key=_backup_key(key_file, Path(out).parent), live_home=Path(ORCA_HOME))
+    console.print(f"[green]migrated[/green] -> {r['path']} ({r['bytes']} bytes). The plaintext original is still on disk: verify the archive, then destroy the original yourself.")
+
+
+@backup_app.command("recover")
+def backup_recover():
+    """Roll back a restore that was interrupted mid-swap (the server reports not-ready until this has run)."""
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve import datadir_lock
+
+    r = datadir_lock.recover_interrupted(Path(ORCA_HOME))
+    console.print("[green]rolled back an interrupted restore[/green]" if r["recovered"] else "nothing to recover")
 
 
 if __name__ == "__main__":
