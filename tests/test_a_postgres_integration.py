@@ -134,3 +134,9 @@ def test_the_real_application_flow_runs_on_postgres_end_to_end(pg, tmp_path):
     assert r["usage"]["messages"] == 1 and r["stream_done"] and r["messages_total"] == 4 and r["search_hits"] == 1
     assert r["me_before"] == 200 and r["logout"] == 200 and r["me_after"] == 401
     assert r["bootstrap"] == 200 and r["bootstrap_role"] == "owner"
+
+
+def test_apikey_stepup_ledgers_work_on_real_postgres(pg, tmp_path):
+    """L02-B3: single-use authenticator steps and the step-up lockout ledger (INSERT .. ON CONFLICT DO NOTHING) on PostgreSQL."""
+    r = _run(pg, "apikey_stepup_ledgers", tmp_path)
+    assert r == {"first": True, "replay": False, "next_step": True, "locked": True, "cleared": True}

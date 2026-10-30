@@ -31,7 +31,7 @@ from orca.auth.tokens import (
     make_verification_token, make_reset_token, make_2fa_pending_token,
     verify_token as verify_auth_token,
 )
-from orca.auth.totp import generate_totp_secret, verify_totp, provisioning_uri
+from orca.auth.totp import generate_totp_secret, verify_totp, provisioning_uri, matching_step as verify_totp_step
 from orca.auth.email import send_verification, send_password_reset, is_configured as email_configured
 from orca.auth import account_security as acct
 from orca.serve import ratelimit
@@ -539,14 +539,59 @@ async def change_password(req: ChangePasswordRequest, user: User = Depends(get_c
 
 class ApiKeyRequest(BaseModel):
     name: str = ""
+    # L02-B3: fresh verification, checked inside this request (never stored, never reusable). `totp_code` is required when the account has 2FA enabled.
+    password: str | None = None
+    totp_code: str | None = None
+
+
+def _reauth_refusal(code: str, status: int, message: str, headers: dict | None = None):
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse({"detail": message, "error": message, "code": code}, status_code=status, headers=headers or {})
 
 
 @router.post("/apikeys")
 async def create_api_key(
     req: ApiKeyRequest,
+    request: Request,
     user: User = Depends(require_permission("api_keys")),
+    creds=Depends(_bearer),
 ):
+    """Mint a long-lived credential. A session token alone is not enough: the caller must prove, now, that they know the account password and (when 2FA is on)
+    hold the authenticator, so a stolen or hijacked session cannot create a key that outlives logout and password change."""
+    from orca import audit
+
+    if creds is not None and str(creds.credentials).startswith("athr_"):
+        # an API key can never mint another API key: it would let one leaked key become permanent
+        audit.log("api_key_reauth_failed", user_id=user.id, detail={"reason": "api_key_credential"})
+        return _reauth_refusal("reauth_requires_session", 403, "Creating an API key requires a signed-in session.")
+    ratelimit.enforce(request, ratelimit.AUTH_LOGIN, extra_key="apikey_create")
+    wait = acct.stepup_locked(user.id)
+    if wait > 0:
+        audit.log("api_key_reauth_failed", user_id=user.id, detail={"reason": "locked"})
+        return _reauth_refusal("too_many_attempts", 429, "Too many failed attempts. Try again later.", {"Retry-After": str(int(wait) + 1)})
+    if not req.password or not req.password.strip():
+        audit.log("api_key_reauth_failed", user_id=user.id, detail={"reason": "missing_password"})
+        return _reauth_refusal("reauth_required", 401, "Confirm your password to create an API key.")
+
+    def _fail(reason: str):
+        acct.record_stepup_failure(user.id)
+        audit.log("api_key_reauth_failed", user_id=user.id, detail={"reason": reason})
+        return _reauth_refusal("reauth_failed", 401, "Verification failed.")
+
+    verified = await _asyncio_to_thread(authenticate, user.email, req.password)
+    if verified is None or verified.id != user.id:
+        return _fail("password")
+    totp_state = get_totp_state(user.id)
+    if totp_state["enabled"]:
+        step = verify_totp_step(totp_state["secret"], req.totp_code or "")
+        if step is None:
+            return _fail("totp_invalid")
+        if not acct.claim_totp_step(user.id, step):
+            return _fail("totp_replayed")
+    acct.clear_stepup_failures(user.id)
     kid, raw = create_key(user.id, req.name)
+    audit.log("api_key_created", user_id=user.id, detail={"key_id": kid, "mfa": bool(totp_state["enabled"])})
     return {"key_id": kid, "key": raw, "name": req.name}
 
 

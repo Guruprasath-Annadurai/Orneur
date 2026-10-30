@@ -1,0 +1,21 @@
+# Baseline 38e0d31 (unmodified): new regression tests run against the vulnerable POST /api/auth/apikeys. 16 fail = the vulnerability is reproduced; the 5 that pass assert behaviour that was already correct (listing/revocation, revoked session, pending token, recovery).
+>       assert r.status_code == 401 and r.json()["code"] == "reauth_failed"
+>       assert r.status_code in (401, 403) and r.json()["code"] == "reauth_failed"
+>       assert again.status_code == 401 and again.json()["code"] == "reauth_failed"
+FAILED tests/test_l02_b3_apikey_reauth.py::test_a_session_token_alone_cannot_create_an_api_key
+FAILED tests/test_l02_b3_apikey_reauth.py::test_a_wrong_password_creates_nothing
+FAILED tests/test_l02_b3_apikey_reauth.py::test_incomplete_or_malformed_verification_fails_closed[body0]
+FAILED tests/test_l02_b3_apikey_reauth.py::test_incomplete_or_malformed_verification_fails_closed[body1]
+FAILED tests/test_l02_b3_apikey_reauth.py::test_incomplete_or_malformed_verification_fails_closed[body2]
+FAILED tests/test_l02_b3_apikey_reauth.py::test_incomplete_or_malformed_verification_fails_closed[body3]
+FAILED tests/test_l02_b3_apikey_reauth.py::test_incomplete_or_malformed_verification_fails_closed[body4]
+FAILED tests/test_l02_b3_apikey_reauth.py::test_with_2fa_enabled_the_password_alone_is_refused
+FAILED tests/test_l02_b3_apikey_reauth.py::test_with_2fa_enabled_password_and_a_valid_code_succeed_and_a_wrong_code_does_not
+FAILED tests/test_l02_b3_apikey_reauth.py::test_a_totp_code_cannot_be_replayed_for_a_second_key
+FAILED tests/test_l02_b3_apikey_reauth.py::test_another_accounts_password_cannot_authorise_creation
+FAILED tests/test_l02_b3_apikey_reauth.py::test_an_api_key_cannot_create_another_api_key_even_with_the_password
+FAILED tests/test_l02_b3_apikey_reauth.py::test_repeated_wrong_verification_locks_creation_even_for_the_right_password
+FAILED tests/test_l02_b3_apikey_reauth.py::test_a_per_ip_limit_also_applies
+FAILED tests/test_l02_b3_apikey_reauth.py::test_a_successful_verification_clears_the_failure_count
+FAILED tests/test_l02_b3_apikey_reauth.py::test_audit_records_outcomes_without_passwords_codes_or_keys
+16 failed, 5 passed, 144 warnings in 4.31s
