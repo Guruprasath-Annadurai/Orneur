@@ -189,6 +189,13 @@ CREATE TABLE IF NOT EXISTS auth_login_failures (
     subject_hash TEXT NOT NULL,
     failed_at    REAL NOT NULL
 );
+-- L02-B3: time steps of authenticator codes already accepted for a step-up (API-key creation), so one code cannot authorise two operations
+CREATE TABLE IF NOT EXISTS auth_stepup_totp_used (
+    user_id TEXT NOT NULL,
+    step    BIGINT NOT NULL,
+    used_at REAL NOT NULL,
+    PRIMARY KEY (user_id, step)
+);
 
 
 
@@ -427,6 +434,13 @@ CREATE TABLE IF NOT EXISTS auth_email_sends (
 CREATE TABLE IF NOT EXISTS auth_login_failures (
     subject_hash TEXT NOT NULL,
     failed_at    DOUBLE PRECISION NOT NULL
+);
+-- L02-B3: time steps of authenticator codes already accepted for a step-up (API-key creation), so one code cannot authorise two operations
+CREATE TABLE IF NOT EXISTS auth_stepup_totp_used (
+    user_id TEXT NOT NULL,
+    step    BIGINT NOT NULL,
+    used_at DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (user_id, step)
 );
 
 

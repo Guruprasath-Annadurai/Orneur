@@ -247,7 +247,7 @@ def test_reset_is_single_use_expiring_and_ends_every_old_session_and_api_key(app
     from orca.auth import apikeys
 
     apikeys._ensure_table()                                   # created at import time against the pre-isolation database
-    key = client.post("/api/auth/apikeys", json={"name": "ci"}, headers=_h(old_session)).json()
+    key = client.post("/api/auth/apikeys", json={"name": "ci", "password": PW}, headers=_h(old_session)).json()  # L02-B3: creation needs fresh verification
     key_value = key.get("key") or key.get("api_key") or key.get("raw_key")
     assert key_value, key
     client.post("/api/auth/forgot-password", json={"email": email})

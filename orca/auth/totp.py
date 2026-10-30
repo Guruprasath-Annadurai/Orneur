@@ -69,6 +69,19 @@ def verify_totp(secret_b32: str, code: str, window: int = 1, at_time: float | No
     return False
 
 
+def matching_step(secret_b32: str, code: str, window: int = 1, at_time: float | None = None) -> int | None:
+    """The time step a code matches (or None). Lets a caller record the step so the same code cannot be accepted twice."""
+    if not code or not code.isdigit() or len(code) != _DIGITS:
+        return None
+    t = at_time if at_time is not None else time.time()
+    current = int(t // _TIME_STEP)
+    found = None
+    for offset in range(-window, window + 1):  # no early exit: the work does not depend on which step matched
+        if hmac.compare_digest(_hotp(secret_b32, current + offset), code) and found is None:
+            found = current + offset
+    return found
+
+
 def provisioning_uri(secret_b32: str, account_name: str, issuer: str = "Orca") -> str:
     """
     otpauth:// URI — scan-compatible with every major authenticator app.

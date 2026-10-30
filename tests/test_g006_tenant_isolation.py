@@ -383,9 +383,10 @@ def test_07f_default_signing_secret_is_refused_on_a_public_edge(monkeypatch):
 def test_07d_revoked_api_key_stops_working_and_keys_are_user_scoped(client):
     ta, _ = _signup(client)
     tb, _ = _signup(client)
-    made = client.post("/api/auth/apikeys", json={"name": "k"}, headers=_hdr(ta))
-    if made.status_code != 200:
-        pytest.skip(f"api-key creation not available for default tier: {made.status_code}")
+    # L02-B3: creation needs the account password. The former `skip` on a non-200 would have hidden a broken creation path as a skipped security test, so it asserts.
+    assert client.post("/api/auth/apikeys", json={"name": "k"}, headers=_hdr(ta)).status_code in (401, 403), "a session token alone must not create a key"
+    made = client.post("/api/auth/apikeys", json={"name": "k", "password": PASSWORD}, headers=_hdr(ta))
+    assert made.status_code == 200, made.text
     body = made.json()
     key, key_id = body["key"], body["key_id"]
     sid_a = _own_session(client, ta)

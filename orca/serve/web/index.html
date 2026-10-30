@@ -2287,6 +2287,10 @@ body {
             <input class="settings-input" id="newkey-name" placeholder="Key name (e.g. Production)" style="flex:1"/>
             <button class="settings-btn primary" id="create-key-btn" onclick="createApiKey()">Create</button>
           </div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input class="settings-input" id="newkey-password" type="password" autocomplete="current-password" placeholder="Confirm your password" style="flex:1"/>
+            <input class="settings-input" id="newkey-totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="2FA code (if enabled)" style="flex:1"/>
+          </div>
           <div id="new-key-box" style="display:none" class="new-key-box">
             <input class="new-key-input" id="new-key-display" readonly/>
             <button class="settings-btn" id="copy-key-btn" onclick="copyApiKey()">COPY</button>
@@ -3644,10 +3648,19 @@ async function createApiKey() {
   try {
     const r = await fetch('/api/auth/apikeys', {
       method: 'POST', headers: _authHeaders(),
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, password: document.getElementById('newkey-password').value, totp_code: document.getElementById('newkey-totp').value.trim() || null }),
     });
-    if (!r.ok) { alert('Failed to create key'); return; }
+    if (!r.ok) {
+      let c = ''; try { c = (await r.json()).code || ''; } catch {}
+      alert(c === 'reauth_required' ? 'Enter your password to create a key.'
+          : c === 'reauth_failed' ? 'Password or 2FA code was not accepted.'
+          : c === 'too_many_attempts' ? 'Too many failed attempts. Try again later.'
+          : 'Failed to create key');
+      return;
+    }
     const d = await r.json();
+    document.getElementById('newkey-password').value = '';
+    document.getElementById('newkey-totp').value = '';
     document.getElementById('newkey-name').value = '';
     document.getElementById('new-key-display').value = d.key;
     document.getElementById('new-key-box').style.display = 'flex';
