@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-29T15:46:41+0000",
+  "recorded_at": "2026-10-29T17:09:41+0000",
   "environment": {
     "cpu_count": 16,
     "mem_total_mb": 15545,
@@ -9,19 +9,19 @@
   },
   "cold_start_samples": [
     {
-      "to_livez_s": 0.73,
-      "to_readyz_s": 0.87,
-      "rss_mb_idle": 92.0
+      "to_livez_s": 0.62,
+      "to_readyz_s": 0.73,
+      "rss_mb_idle": 90.9
     },
     {
-      "to_livez_s": 0.55,
-      "to_readyz_s": 0.58,
-      "rss_mb_idle": 75.3
+      "to_livez_s": 0.66,
+      "to_readyz_s": 0.8,
+      "rss_mb_idle": 87.2
     },
     {
-      "to_livez_s": 0.55,
+      "to_livez_s": 0.56,
       "to_readyz_s": 0.6,
-      "rss_mb_idle": 81.0
+      "rss_mb_idle": 75.3
     }
   ],
   "note": "fresh empty data directory each time; includes Python import and schema creation"

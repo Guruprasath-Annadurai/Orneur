@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-29T15:47:04+0000",
+  "recorded_at": "2026-10-29T17:10:02+0000",
   "environment": {
     "cpu_count": 16,
     "mem_total_mb": 15545,
@@ -13,18 +13,18 @@
   "refusal_codes": [
     "server_busy"
   ],
-  "wall_s": 12.74,
-  "latency_s_median": 5.99,
-  "latency_s_max": 12.7,
+  "wall_s": 11.82,
+  "latency_s_median": 6.11,
+  "latency_s_max": 11.79,
   "rss_mb": {
-    "idle": 125.7,
-    "peak": 350.4,
-    "after": 262.2
+    "idle": 125.5,
+    "peak": 359.3,
+    "after": 261.3
   },
   "fds": {
     "idle": 44,
-    "peak": 131,
-    "after": 127
+    "peak": 130,
+    "after": 133
   },
   "threads": {
     "idle": 41,
@@ -34,7 +34,7 @@
   "stream_slots_in_use_after": 0,
   "semantic_cache_fds_held": 3,
   "vector_index_fds_held": 80,
-  "fds_per_conversation": 3.46,
+  "fds_per_conversation": 3.71,
   "provider": "fixture (30 chunks x 50 ms)",
   "note": "one workstation; not a capacity figure"
 }

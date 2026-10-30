@@ -2,9 +2,9 @@
   "model_tag": "llama3.2:1b",
   "ollama_host": "http://localhost:11434",
   "weights": "third-party (not an ORNEUR-native model)",
-  "recorded_at": "2026-10-29T11:01:59+0000",
+  "recorded_at": "2026-10-29T17:11:18+0000",
   "baseline_measure": false,
   "grounding": "none",
-  "answer_chars": 304,
+  "answer_chars": 335,
   "note": "what the model then says is not asserted; only that it was told, and that no source card was invented"
 }

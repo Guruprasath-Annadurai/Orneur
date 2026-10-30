@@ -1,9 +1,9 @@
 {
-  "recorded_at": "2026-10-29T13:45:20+0000",
+  "recorded_at": "2026-10-29T17:08:24+0000",
   "redis_keys_before": [
-    "orca:session:4402c9af-15cc-474a-b23e-86a6a08a1586"
+    "orca:session:fbff8911-d6fd-4654-8e2d-39b81864d262"
   ],
-  "partial_response_s": 5.07,
+  "partial_response_s": 6.75,
   "partial_body_stores": {
     "redis": "failed",
     "memory": "ok",

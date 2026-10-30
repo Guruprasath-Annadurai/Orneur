@@ -44,3 +44,11 @@ Verified and left unchanged (tests added as guards): another user's documents ne
 3. The lexical floor is deliberately conservative toward abstention for zero-word-overlap questions; a pure paraphrase with no shared word is rescued only by a confident model judge.
 4. Truth-Fabric answers remain delivered whole (L-01); document pipeline answers stream upstream.
 5. Document-level deletion that fails midway stays `deleting` (hidden, retryable by repeating the `DELETE`); there is no background sweep for single documents (conversation-level deletions do have one).
+
+
+## 4. Update — residuals closed in the final LANDMARK-02 pass
+* **L02-02e (judge/rewriter/reranker trust boundary):** passages are nonce-quoted as untrusted, parsers are strict (an unparsed or injected verdict is "not judged", never "sufficient"), and a passage matching the injection screen is never shown to the scorer or judge. 70 tests (`test_l02_judge_trust_boundary.py`); baseline reproduction `evidence/l02_02e_baseline_judge_injection_9cb864c.txt`. This bounds *ranking and abstention* manipulation; it does **not** prove that the answering model will ignore instructions inside document text (structural mitigation only).
+* **L02-02f (document-driven tool authority):** `orca/tools/authorization.py` independently authorises every model-produced tool call (schema, range, provenance, call budget); document text cannot grant authority; audit records tool name + reason code only (`test_l02_tool_authority.py`, 12).
+* **Upload parsing security:** isolated bounded extraction (subprocess, rlimits, 20 s timeout), zip pre-checks, filename sanitising (bidi), quotas, sha256 dedupe, atomic limits. Real `pypdf`/`pdfminer.six`/`python-docx` against hostile files: `tests/journey/test_l02_upload_parsers_live.py` (7 passed on the final head; **workstation only** — the libraries are an optional extra CI does not install).
+* **Embedding-space consistency:** a store holding vectors of one dimension is not queried with another service's embeddings (`test_l02_embedding_consistency.py`).
+* **L02-02g:** see `L02_DATA_LIFECYCLE_AND_DELETION.md`.

@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-29T16:08:23+0000",
+  "recorded_at": "2026-10-29T17:11:57+0000",
   "persona": "student",
   "environment": {
     "mode": "real",
@@ -23,7 +23,7 @@
     },
     "S3_a_learning_question_streams_progressively_and_names_the_model_that_answered": {
       "ok": true,
-      "detail": "chunks=352 dom_states=342 served_model=llama3.2:1b lifecycle=EXPERIMENTAL disclosure='Experimental model -- not qualified.'"
+      "detail": "chunks=360 dom_states=346 served_model=llama3.2:1b lifecycle=EXPERIMENTAL disclosure='Experimental model -- not qualified.'"
     },
     "S4_a_follow_up_uses_the_earlier_context": {
       "ok": true,

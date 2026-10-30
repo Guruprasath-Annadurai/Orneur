@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-29T15:46:46+0000",
+  "recorded_at": "2026-10-29T17:09:47+0000",
   "environment": {
     "cpu_count": 16,
     "mem_total_mb": 15545,
@@ -8,7 +8,7 @@
     "wsl2": true
   },
   "grace_s": 3,
-  "seconds_from_sigterm_to_exit": 3.19,
+  "seconds_from_sigterm_to_exit": 3.24,
   "exit_code": -15,
   "new_work_during_drain": [
     503,

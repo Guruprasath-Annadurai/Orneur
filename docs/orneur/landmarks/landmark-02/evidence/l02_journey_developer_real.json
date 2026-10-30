@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-29T16:08:43+0000",
+  "recorded_at": "2026-10-29T17:12:43+0000",
   "persona": "developer",
   "environment": {
     "mode": "real",
@@ -19,11 +19,11 @@
     },
     "D2_a_coding_answer_renders_as_readable_multiline_code": {
       "ok": true,
-      "detail": "2 code block(s); 19 lines; white-space=pre; first lines: 'def is_palindrome(s: str) -> bool:\\n    \"\"\"\\n    Returns True if the input string is a palindrome, Fal'"
+      "detail": "2 code block(s); 19 lines; white-space=pre; first lines: 'def is_palindrome(s: str) -> bool:\\n    \"\"\"\\n    Returns True if the given string is a palindrome, Fal'"
     },
     "D3_streaming_never_leaves_broken_markup_and_final_text_equals_saved_text": {
       "ok": true,
-      "detail": "dom_states=198; no raw fences; saved 920 chars"
+      "detail": "dom_states=258; no raw fences; saved 1250 chars"
     },
     "D4_a_follow_up_about_the_previous_code_carries_it_as_context": {
       "ok": true,
@@ -31,7 +31,7 @@
     },
     "D5_a_long_answer_completes_scrolls_and_is_saved_once": {
       "ok": true,
-      "detail": "3349 chars saved; shown == saved"
+      "detail": "3798 chars saved; shown == saved"
     },
     "D6_stop_then_retry_is_safe_one_completed_turn_and_no_phantom": {
       "ok": true,
@@ -39,7 +39,7 @@
     },
     "D8_the_assistant_does_not_present_suggested_code_as_executed": {
       "ok": true,
-      "detail": "no tool ran (done.tools=[]); the model's reply (NOT verified by ORNEUR, shown for the record): \"I can't provide a response that contains a list of lighthouses.\""
+      "detail": "no tool ran (done.tools=[]); the model's reply (NOT verified by ORNEUR, shown for the record): 'Here is the code with the requested changes:\\n\\ndef is_palindrome(s: str) -> bool:\\n    \"\"\"\\n    Returns True if the given string is a palindrome, False otherwise.\\n\\n    A palindrome is a string that reads'"
     },
     "PAGE_ERRORS": {
       "ok": true,

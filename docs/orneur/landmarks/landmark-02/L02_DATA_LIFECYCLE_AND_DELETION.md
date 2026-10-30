@@ -1,4 +1,4 @@
-# L02-01 — User-data lifecycle and deletion (in progress)
+# L02-01 — User-data lifecycle and deletion (VERIFIED_ENGINEERING; not independently qualified)
 
 Evidence state: **IMPLEMENTED, engineering tests passing locally; exact-head CI pending; not independently qualified.**
 Baseline: `9cb864c99ad323d11626063498a7d1cef0d7d4b5` (PR #136). Code: `orca/serve/deletions.py`, `orca/serve/conversations.py`, `orca/serve/api.py`, `orca/docs/store.py`, `orca/serve/retention.py`, `orca/serve/account_delete.py`.
@@ -45,15 +45,20 @@ Baseline: `9cb864c99ad323d11626063498a7d1cef0d7d4b5` (PR #136). Code: `orca/serv
 | Delete during generation / stale worker resurrection | `test_stale_worker_cannot_commit_or_regain_authority_after_deletion`, `test_deleted_conversation_cannot_be_streamed_into_or_recreated` | pass |
 | Vector store failure; partial honesty; retry | `test_partial_failure_is_not_reported_as_deleted_and_stays_retryable` | pass |
 | Interrupted deletion / worker crash / restart | `test_crash_between_tombstone_and_cascade_is_recovered`, `test_a_crashed_lease_holder_does_not_block_the_sweep`, `test_sweep_finishes_…` | pass |
-| Redis unavailable | Redis failure is classified `failed` by the same path as any store (`redis_error`); a dedicated live Redis-down journey is **not yet run** — see register | partial |
+| Redis unavailable | live (D1, real Redis container paused): first response `202` with `redis: failed` and every other store `ok` (6.75 s, request budget bounded), sweep completes after Redis returns (2 attempts, keys gone) — `evidence/l02_deletion_live_D1_redis_outage.json` | pass (LIVE+FIX) |
 | Invisible while in progress (list/search) | `test_deletion_in_progress_is_invisible_in_lists_and_search` | pass |
 | Audit without content | `test_audit_record_names_the_deletion_not_the_content` | pass |
-| Next-turn model context after deletion | `test_next_turn_model_context_excludes_deleted_material` (transcript level) | pass (live-model version pending, L02-07) |
+| Next-turn model context after deletion | `test_next_turn_model_context_excludes_deleted_material` (transcript level) | pass (live-model version: D6 below and journey S9) |
 | Retention purge honest | `test_retention_purge_does_not_count_or_release_a_deletion_a_store_failed` | pass |
 | Account deletion tombstones sessions | `test_account_deletion_tombstones_every_session_and_reports_partial_honestly` | pass |
 | Documents: all retrieval paths, atomic rewrite, honest failure, registry | `tests/test_l02_doc_store_deletion.py` (4) | pass |
-| Stale embeddings after document delete | collection delete verified via `retrieve()` returning nothing (above); a **live Ollama-embedding** variant is pending | partial |
-| Temporary-chat cleanup | existing `test_temporary_chat_privacy.py`, `test_temporary_chat_multiprocess.py` re-run green; not yet routed through tombstones | pass (unchanged) |
+| Stale embeddings after document delete | D6 with **real Ollama embeddings** (`nomic-embed-text`, third-party): canary sent before delete, absent from context and sources after (`l02_deletion_live_D6_real_embeddings.json`) | pass (LIVE+REAL) |
+| Two workers deleting the same conversation | D2: 5×`200`, one `deletion_id`, then `404` | pass (LIVE+FIX) |
+| In-flight generation during deletion | D3: stream ends with `error`, no `done`, 0 turn rows after | pass (LIVE+FIX) |
+| Restart during partial cleanup | D4: tombstone written, stores untouched, new process sweep completes | pass (LIVE+FIX) |
+| Vector store failure | D5: `202` with `long_term_vector_memory: failed`, others `ok`; retry completes | pass (LIVE+FIX) |
+| Temporary-chat closure (L02-01e) | closure and TTL sweep now use the same authoritative workflow; a closed temporary chat keeps its established `409` (`_deleted_for_access` exempts temporary chats); `test_temporary_chat_*` | pass |
+| Document `deleting` recovery (L02-02g) | single-document sweep resumes `deleting`/`deletion_failed` documents with bounded retries | pass |
 
 Existing assertions changed (stronger, reason recorded): `tests/test_b_conversations.py` (two tests) previously accepted "deleted conversation readable as empty" (`200`, `total 0`); now require `404` **and** an empty store.
 

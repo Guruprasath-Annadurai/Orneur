@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-29T15:47:37+0000",
+  "recorded_at": "2026-10-29T17:10:37+0000",
   "environment": {
     "cpu_count": 16,
     "mem_total_mb": 15545,
@@ -10,7 +10,7 @@
   "readyz": 503,
   "disk": {
     "state": "critical",
-    "free_mb": 957429,
+    "free_mb": 957394,
     "total_mb": 1031018,
     "warn_below_mb": 1024,
     "critical_below_mb": 10000000
