@@ -1,0 +1,17 @@
+{
+  "model_tag": "llama3.2:1b",
+  "ollama_host": "http://localhost:11434",
+  "recorded_at": "2026-10-29T07:14:25+0000",
+  "chunks_seen_before_stop": 6,
+  "provider_connection_closed_after_s": 0.05,
+  "lines_relayed_at_abort": 926,
+  "lines_relayed_2s_later": 929,
+  "committed_messages_after_stop": 0,
+  "next_turn_persisted": true,
+  "abort_log": [
+    {
+      "at": 1793258062.384417,
+      "lines_relayed": 926
+    }
+  ]
+}

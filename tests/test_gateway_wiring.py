@@ -46,7 +46,9 @@ def test_deployment_is_registered_as_experimental_not_production():
     promotion gate. The bridge must never claim PRODUCTION."""
     resolution = TierResolution(tier="core", backend="ollama", model="orca-core-combined-v2", data_left_infrastructure=False)
     brain = wiring.brain_for_tier_resolution(resolution)
-    deployment = brain._gateway._deployments["ollama-orca-core-combined-v2"]
+    from orca.gateway.wiring import stable_deployment_id
+
+    deployment = brain._gateway._deployments[stable_deployment_id("ollama", "orca-core-combined-v2", "orneur-novus")]
     assert deployment.lifecycle == LifecycleState.EXPERIMENTAL.value
     assert brain.allow_experimental is True
 
@@ -65,7 +67,9 @@ def test_frontier_resolution_registers_a_frontier_runtime_and_deployment():
     resolution = TierResolution(tier="core", backend="openai", model="gpt-4o", data_left_infrastructure=True)
     brain = wiring.brain_for_tier_resolution(resolution)
     assert "openai" in brain._gateway._runtimes
-    deployment = brain._gateway._deployments["openai-gpt-4o"]
+    from orca.gateway.wiring import stable_deployment_id
+
+    deployment = brain._gateway._deployments[stable_deployment_id("openai", "gpt-4o", "orneur-novus")]
     assert deployment.runtime == "openai"
     assert deployment.hardware_profile == "cloud-api"
 

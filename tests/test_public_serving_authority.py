@@ -273,9 +273,12 @@ def test_a_stale_persisted_legacy_record_is_overwritten_with_the_truthful_lifecy
 
     odd = TierResolution(tier="nano", backend="ollama", model="orca-core-combined-v2", data_left_infrastructure=False)
     brain = _brain(monkeypatch, world, odd, digests={}, viewer=None)
-    dep = brain._gateway._deployments["ollama-orca-core-combined-v2"]
+    from orca.gateway.wiring import stable_deployment_id
+
+    dep_id = stable_deployment_id("ollama", "orca-core-combined-v2", "orneur-genesis")
+    dep = brain._gateway._deployments[dep_id]
     assert dep.lifecycle == "EXPERIMENTAL" and not _routable(brain)
-    assert ModelDeployment.load("ollama-orca-core-combined-v2").lifecycle == "EXPERIMENTAL"
+    assert ModelDeployment.load(dep_id).lifecycle == "EXPERIMENTAL"
     wiring.reset_for_tests()
 
 

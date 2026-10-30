@@ -20,6 +20,7 @@ evidence.py, policy.py, planner.py, budget.py, state_machine.py, trace.py)
 """
 from __future__ import annotations
 
+import dataclasses
 import time
 
 from orca.cognitive import metrics
@@ -274,7 +275,10 @@ class CognitiveKernel:
             # about to happen, so MODEL_CALLS is enforced pre-flight.
             consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
             tier = resolved_tier
-            output_text, resolved_model, usage = await self._answer_directly(objective_for_model, tier, request.trace_id)
+            output_text, resolved_model, usage = await self._answer_directly(
+                objective_for_model, tier, request.trace_id, request=request,
+                route_info={"degraded": degraded, "degradation_reason": degradation_reason},
+            )
             # TOKENS can only be known AFTER the call completes -- record
             # actual consumption for observability, but don't retroactively
             # fail an already-completed, already-useful response over it;
@@ -359,7 +363,9 @@ class CognitiveKernel:
             return
         try:
             from orca.memory.turn_ingest import maybe_ingest_turn
-            episode = maybe_ingest_turn(request.session_id, request.objective, output_text)
+            from orca.serve import dlp
+            # The model's raw text may carry a credential; what is remembered is the same redacted text the client is shown (LANDMARK-01 B-01).
+            episode = maybe_ingest_turn(request.session_id, request.objective, dlp.scan_output(output_text or "")["safe_text"])
         except Exception:
             episode = None
 
@@ -423,31 +429,85 @@ class CognitiveKernel:
             return request.objective
         return f"{request.objective}\n\n[Relevant remembered context -- may be stale, verify if load-bearing]\n" + "\n".join(lines)
 
-    async def _answer_directly(self, objective: str, tier: str, trace_id: str) -> tuple[str, str, dict]:
+    async def _answer_directly(self, objective: str, tier: str, trace_id: str, request: CognitiveRequest | None = None, route_info: dict | None = None) -> tuple[str, str, dict]:
         """The one place the Kernel actually reaches ModelGateway --
         exactly the canonical path Phase 3 spec §27 requires (Kernel ->
         model policy -> ModelGateway -> deployment/runtime), reusing the
         EXISTING tier router (orca/serve/registry.py) and wiring bridge
-        (orca/gateway/wiring.py) unchanged, per Phase 2.1's own cutover."""
+        (orca/gateway/wiring.py) unchanged, per Phase 2.1's own cutover.
+
+        LANDMARK-01 B-01: when ``request.on_raw_delta`` is set, this method
+        consumes ``ModelGateway.stream()`` and awaits the hook for each
+        real ``InferenceChunk.delta``. Those deltas are **raw** (see
+        ``orca.cognitive.streaming``) — never browser-safe. Without the
+        hook, behavior is unchanged (``generate()``).
+        """
+        import contextlib
         import uuid
 
         from orca.gateway.contracts import InferenceRequest
         from orca.gateway.wiring import brain_for_tier_resolution
+        from orca.serve.conversation_context import assemble_messages
         from orca.serve.registry import resolve_tier_backend
 
         resolution = resolve_tier_backend(tier)
         gateway_brain = brain_for_tier_resolution(resolution, gateway=self._gateway())
+        messages = assemble_messages(
+            session_id=request.session_id if request is not None else None,
+            current_user_text=objective,
+            user_id=request.tenant if request is not None else None,
+        )
+        want_stream = request is not None and request.on_raw_delta is not None
         inference_request = InferenceRequest(
             request_id=str(uuid.uuid4()), trace_id=trace_id,
             model_id=gateway_brain.model_id, model_version=gateway_brain.model_version,
-            messages=[{"role": "user", "content": objective}], max_tokens=1024,
+            messages=messages, max_tokens=1024, stream=want_stream,
         )
-        response = await self._gateway().generate(inference_request, allow_experimental=gateway_brain.allow_experimental)
+        if not want_stream:
+            response = await self._gateway().generate(inference_request, allow_experimental=gateway_brain.allow_experimental)
+            usage = {
+                "prompt_tokens": response.prompt_tokens, "completion_tokens": response.completion_tokens,
+                "total_tokens": (response.prompt_tokens or 0) + (response.completion_tokens or 0),
+            }
+            return response.output, response.resolved_version, usage
+
+        # Genuine upstream incremental generation — not a post-hoc split of
+        # a completed generate() payload.
+        parts: list[str] = []
+        resolved_version = gateway_brain.model_version or ""
+        prompt_tokens = 0
+        completion_tokens = 0
+        served_announced = False
+        upstream = self._gateway().stream(inference_request, allow_experimental=gateway_brain.allow_experimental)
+        try:
+            async with contextlib.aclosing(upstream) as chunks:
+                async for chunk in chunks:
+                    if chunk.resolved_version:
+                        resolved_version = chunk.resolved_version
+                    if not served_announced and request.on_served is not None:
+                        served_announced = True
+                        await request.on_served({
+                            "tier": tier, "model": resolved_version, "deployment_id": getattr(chunk, "deployment_id", None),
+                            "runtime": getattr(chunk, "runtime", None), **(route_info or {}),
+                        })
+                    if chunk.prompt_tokens is not None:
+                        prompt_tokens = chunk.prompt_tokens
+                    if chunk.completion_tokens is not None:
+                        completion_tokens = chunk.completion_tokens
+                    if chunk.delta:
+                        parts.append(chunk.delta)
+                        # Raw boundary: hook receives unredacted provider text.
+                        await request.on_raw_delta(chunk.delta)
+        except BaseException:
+            # aclosing already closed the async generator on CancelledError /
+            # provider failure; re-raise so execute() maps or propagates.
+            raise
         usage = {
-            "prompt_tokens": response.prompt_tokens, "completion_tokens": response.completion_tokens,
-            "total_tokens": (response.prompt_tokens or 0) + (response.completion_tokens or 0),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
         }
-        return response.output, response.resolved_version, usage
+        return "".join(parts), resolved_version, usage
 
     async def _answer_with_truth_fabric(
         self, request: CognitiveRequest, plan, resolved_tier: str, doc_store, sm, trace_builder, start: float,
@@ -581,7 +641,12 @@ class CognitiveKernel:
             objective_with_context = (
                 f"{request.objective}\n\n[Retrieved context]\n{assessed.context_block}" if assessed.context_block else request.objective
             )
-            output_text, resolved_model, usage = await self._answer_directly(objective_with_context, resolved_tier, request.trace_id)
+            # The Truth Fabric answer is only a DRAFT until verify_answer() below accepts it (it may still abstain), so its tokens must never be
+            # forwarded to a client as they are generated: the raw-delta hooks are withheld for this call (LANDMARK-01 B-01).
+            output_text, resolved_model, usage = await self._answer_directly(
+                objective_with_context, resolved_tier, request.trace_id,
+                request=dataclasses.replace(request, on_raw_delta=None, on_served=None),
+            )
 
             is_audit_grade = plan.evidence_requirement.level.value == "AUDIT_GRADE"
             final = await truth_fabric.verify_answer(output_text, assessed, budget=plan.budget, run_counter_evidence=is_audit_grade)

@@ -57,9 +57,14 @@ async def get_current_user(
 async def get_current_user_optional(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> Optional[User]:
+    """Anonymous only when NO credential was presented.
+
+    A presented-but-invalid credential (malformed, expired, revoked, wrong
+    token type, revoked API key, deleted user, pre-password-change iat) must
+    be refused with 401. Treating it as anonymous would let a logged-out or
+    revoked bearer keep reaching anonymous-permitted routes -- including
+    inference -- while the client believes it is signed out.
+    """
     if not creds:
         return None
-    try:
-        return await get_current_user(creds)
-    except HTTPException:
-        return None
+    return await get_current_user(creds)

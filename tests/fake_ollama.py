@@ -12,12 +12,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class FakeOllama:
-    def __init__(self, models=("orca-nano", "orca-core", "orca-ultra"), reply="FAKE-REPLY", chunks=("FAKE-", "REPLY"), chunk_delay=0.0):
-        self.models, self.reply, self.chunks, self.chunk_delay = list(models), reply, list(chunks), chunk_delay
+    def __init__(self, models=("orca-nano", "orca-core", "orca-ultra"), reply="FAKE-REPLY", chunks=None, chunk_delay=0.0):
+        self.models, self.reply, self.chunk_delay = list(models), reply, chunk_delay
+        self._chunks = None if chunks is None else list(chunks)
         self.fail_status: int | None = None          # when set, /api/chat answers with this HTTP status
         self.requests: list[dict] = []                # every /api/chat payload received
         self.chunks_sent = 0
+        self.malformed = False                        # answer /api/chat with a 200 whose body is not Ollama JSON at all
+        self.truncate_after: int | None = None        # streaming only: hang up after N chunks WITHOUT the final {"done": true} line
+        self.pre_response_delay = 0.0                 # seconds to hold EVERY /api/chat request before answering (slow-generation scenarios)
         self.stream_aborted = threading.Event()       # set when a client hangs up mid-stream
+        self.chunk_times: list[float] = []            # time.monotonic() at which each streamed piece was written (real arrival spacing)
+        self.stream_started = threading.Event()       # set when the first streamed piece has been written
+        self.streams_open = 0                         # /api/chat streams currently being served (0 once the client hung up or it finished)
+        self.streams_finished = 0                     # streams that were written to the final {"done": true} line
+        self.stream_aborts = 0                        # streams whose client hung up before the final line (a count, unlike the one-shot Event above)
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -37,15 +46,39 @@ class FakeOllama:
             def do_GET(self):
                 if self.path == "/api/tags":
                     return self._json(200, {"models": [{"name": m, "digest": "sha256:" + "ab" * 32} for m in fake.models]})
+                if self.path == "/__stats":                       # control plane for out-of-process drivers (browser journeys); not an Ollama endpoint
+                    return self._json(200, {"chunks_sent": fake.chunks_sent, "streams_open": fake.streams_open, "streams_finished": fake.streams_finished,
+                                            "stream_aborts": fake.stream_aborts, "requests": len(fake.requests)})
+                if self.path == "/__requests":
+                    return self._json(200, {"requests": fake.requests})
                 self._json(404, {"error": "not found"})
 
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if self.path == "/__config":
+                    for key in ("chunk_delay", "fail_status", "pre_response_delay", "truncate_after"):
+                        if key in payload:
+                            setattr(fake, key, payload[key])
+                    if "chunks" in payload:
+                        fake.chunks = payload["chunks"]
+                    if "reply" in payload:
+                        fake.reply = payload["reply"]
+                    return self._json(200, {"ok": True})
                 if self.path != "/api/chat":
                     return self._json(404, {"error": "not found"})
                 fake.requests.append(payload)
+                if fake.pre_response_delay:
+                    time.sleep(fake.pre_response_delay)
                 if fake.fail_status:
                     return self._json(fake.fail_status, {"error": "fake backend failure"})
+                if fake.malformed:
+                    junk = b"<html>this is not ollama</html>"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.send_header("Content-Length", str(len(junk)))
+                    self.end_headers()
+                    self.wfile.write(junk)
+                    return
                 model = payload.get("model", "orca-core")
                 if not payload.get("stream", True):
                     return self._json(200, {"model": model, "message": {"role": "assistant", "content": fake.reply}, "done": True,
@@ -54,23 +87,45 @@ class FakeOllama:
                 self.send_header("Content-Type", "application/x-ndjson")
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
+                fake.streams_open += 1
                 try:
-                    for piece in fake.chunks:
+                    for n, piece in enumerate(fake.chunks):
+                        if fake.truncate_after is not None and n >= fake.truncate_after:
+                            self.close_connection = True
+                            return
                         line = json.dumps({"model": model, "message": {"role": "assistant", "content": piece}, "done": False}).encode() + b"\n"
                         self.wfile.write(f"{len(line):x}\r\n".encode() + line + b"\r\n")
                         self.wfile.flush()
                         fake.chunks_sent += 1
+                        fake.chunk_times.append(time.monotonic())
+                        fake.stream_started.set()
                         time.sleep(fake.chunk_delay)
                     last = json.dumps({"model": model, "message": {"role": "assistant", "content": ""}, "done": True, "prompt_eval_count": 7, "eval_count": 3}).encode() + b"\n"
                     self.wfile.write(f"{len(last):x}\r\n".encode() + last + b"\r\n0\r\n\r\n")
                     self.wfile.flush()
+                    fake.streams_finished += 1
                 except (BrokenPipeError, ConnectionResetError):
                     fake.stream_aborted.set()
+                    fake.stream_aborts += 1
+                finally:
+                    fake.streams_open -= 1
 
         self._srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
         self._srv.daemon_threads = True
         self.host = f"http://127.0.0.1:{self._srv.server_address[1]}"
         self._t = threading.Thread(target=self._srv.serve_forever, daemon=True)
+
+    @property
+    def chunks(self) -> list[str]:
+        """What /api/chat streams. Streaming and non-streaming answers must say the same thing, so unless chunks were set explicitly the
+        CURRENT ``reply`` is streamed (the historical two-piece default only for the default reply)."""
+        if self._chunks is not None:
+            return self._chunks
+        return ["FAKE-", "REPLY"] if self.reply == "FAKE-REPLY" else [self.reply]
+
+    @chunks.setter
+    def chunks(self, value) -> None:
+        self._chunks = list(value)
 
     def __enter__(self):
         self._t.start()

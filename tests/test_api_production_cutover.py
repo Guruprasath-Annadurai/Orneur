@@ -273,7 +273,7 @@ def test_rag_forces_deferral_to_existing_stack_when_docs_are_loaded(app_and_clie
     # within the full security suite afterward with zero failures,
     # matching the OLLAMA_TEST_RELIABILITY.md flakiness class rather than
     # a code defect). Fixed regardless, since it's a real, separate risk.
-    session_id = f"rag-cutover-test-session-{uuid.uuid4().hex[:8]}"
+    session_id = f"{uuid.uuid4().hex[:8]}-rag-cutover-test-session"   # the 8-char prefix is the storage key: a fixed prefix collides with earlier runs
     sess = _get_session(session_id, "nano")
     chunks = chunk_text("Orneur is a fictional cognitive architecture used for internal testing.", doc_id="doc-1", filename="test.txt")
     sess.doc_store.add_chunks(chunks, doc_id="doc-1", filename="test.txt")

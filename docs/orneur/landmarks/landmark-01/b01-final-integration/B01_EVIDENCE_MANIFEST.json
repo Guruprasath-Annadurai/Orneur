@@ -1,0 +1,104 @@
+{
+  "schema": "b01-evidence-manifest/1",
+  "evidence_state": "VERIFIED_ENGINEERING",
+  "independently_qualified": false,
+  "shas": {
+    "original_claude": "8d72baab4ebe4ce3a6aa4a76385e18e1c1fba788",
+    "cursor_base": "15befec7191a1992286d7fa027236002f7d385db",
+    "last_product_code": "01444cb084e530cd2aca1f5ed24a5e767c8b143d",
+    "ci_wiring_fix": "d4621521b9f497667933794c5dc99caff787accb"
+  },
+  "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/136",
+  "ci_runs": [
+    {
+      "id": 40834538816,
+      "head": "01444cb",
+      "conclusion": "failure",
+      "cause": "governance guard flagged a comment in workflow run block"
+    },
+    {
+      "id": 40834711869,
+      "head": "fb1eea5",
+      "conclusion": "failure",
+      "cause": "same"
+    },
+    {
+      "id": 40837020404,
+      "head": "d462152",
+      "conclusion": "success",
+      "deterministic": "9085 passed, 398 skipped, 149 deselected, 6 xfailed",
+      "journeys": "39 passed",
+      "node": "89 pass / 0 fail"
+    }
+  ],
+  "runs": [
+    {
+      "class": "DET",
+      "cmd": "pytest tests/test_b01_raw_delta_lifecycle.py tests/test_b01_stream_dlp_equivalence.py tests/test_b01_stream_cleanup.py tests/test_b01_refusal_protocol.py",
+      "output": "evidence/deterministic_targeted_final.txt (302 passed total in targeted rerun, 1 skip)"
+    },
+    {
+      "class": "DET",
+      "cmd": "full deterministic gate (evidence/run_gate.sh)",
+      "output": "evidence/deterministic_gate_4e68b90.summary.txt",
+      "skipped": "340 skipped locally; 398 in CI"
+    },
+    {
+      "class": "LIVE+FIX",
+      "provider": "FakeOllama fixture",
+      "cmd": "pytest tests/journey/test_b01_streaming_live.py tests/journey/test_b01_cancel_race_live.py",
+      "output": [
+        "evidence/fixture_progressive_delivery.json",
+        "evidence/cancel_race.json"
+      ]
+    },
+    {
+      "class": "LIVE+REAL",
+      "provider": "real Ollama llama3.2:1b (third-party weights, not a native ORNEUR model)",
+      "cmd": "ORNEUR_JOURNEY_MODEL=llama3.2:1b pytest tests/journey/test_b01_real_ollama_live.py",
+      "output": [
+        "evidence/real_ollama_llama3.2_1b_progressive_streaming.json",
+        "evidence/real_ollama_llama3.2_1b_stop_cancellation.json"
+      ]
+    },
+    {
+      "class": "LIVE+REAL",
+      "cmd": "ORNEUR_JOURNEY_MODEL=llama3.2:1b pytest tests/journey (all)",
+      "result": "106 passed: 52 real-model, 54 fixture-provider",
+      "output": "evidence/journeys_all_literal_llama3.2-1b_final.txt"
+    },
+    {
+      "class": "BROWSER",
+      "cmd": "pytest tests/journey/test_b01_browser_streaming.py (Playwright 1.49.1 Chromium)",
+      "note": "fixture 16 steps; real-Ollama 10 steps + Stop hang-up"
+    },
+    {
+      "class": "FRONTEND",
+      "cmd": "node --test tests/frontend/*.mjs",
+      "output": "evidence/node_tests.txt",
+      "result": "89 passed"
+    },
+    {
+      "class": "DET",
+      "cmd": "PYTHONPATH=. python evidence/lifecycle_defect_repro.py / redactor_differential.py",
+      "output": [
+        "evidence/lifecycle_defect_repro.output.txt",
+        "evidence/redactor_differential.output.txt"
+      ],
+      "result": "original 655 leaks / 8675 truncations over 36000 chunkings; candidate 0 / 0"
+    },
+    {
+      "class": "MUTATION",
+      "output": [
+        "evidence/mutation_no_producer_cleanup.txt",
+        "evidence/mutation_no_response_level_release.txt"
+      ]
+    }
+  ],
+  "limitations": [
+    "real-Ollama journeys not in CI (B-04)",
+    "document sessions not Kernel-streamed (B-06)",
+    "Truth-Fabric turns delivered whole (L-01)",
+    "billing policy unchanged (L-06)"
+  ]
+}

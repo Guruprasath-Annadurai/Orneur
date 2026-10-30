@@ -17,7 +17,9 @@ of duplicating that config here.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 import threading
 
 from orca.config import CONFIG, orneur_env
@@ -30,6 +32,26 @@ from orca.registry.model_spec import LifecycleState
 from orca.society.lifecycle import LEGACY_PRODUCTION_SERVING
 
 log = logging.getLogger(__name__)
+
+_SAFE_DEPLOYMENT_TOKEN = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def stable_deployment_id(backend: str, model: str, family: str | None = None) -> str:
+    """Registry-safe deployment id that still uniquely maps a raw Ollama tag.
+
+    Tags such as ``llama3.2:1b`` cannot be used as ``deployment_id`` (colon is
+    rejected by ``validate_id``). The real tag stays on ``model_version`` /
+    ``artifact_id`` and is what OllamaRuntime sends to Ollama.
+
+    ``family`` (the served model family, e.g. ``orneur-genesis``) is part of the identity: when ONE Ollama tag backs several tiers -- the normal
+    single-model install -- the deployments are distinct (family, artifact) pairs. Keyed on the tag alone, registering the second tier replaced the
+    first tier's deployment (same id, new ``model_id``), so the first tier then failed with "no deployment is registered for this model" on its
+    next request. The family only enters the hash; no family name appears in the id.
+    """
+    raw = f"{backend}\0{model}" + (f"\0{family}" if family else "")
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    token = _SAFE_DEPLOYMENT_TOKEN.sub("-", model).strip("-._")[:80] or "model"
+    return f"{backend}-{token}-{digest}"
 
 _TRUTHY = ("1", "true", "yes")
 
@@ -196,7 +218,7 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
     model_id = TIER_TO_MODEL_ID.get(resolution.tier, "orneur-novus")
 
     if resolution.backend == "ollama":
-        deployment_id = f"ollama-{resolution.model}"
+        deployment_id = stable_deployment_id("ollama", resolution.model, model_id)
         # The lifecycle is decided from verified identity, not from the tier name (see orca/gateway/serving_authority.py): only the pinned
         # legacy Genesis artifact keeps the disclosed LEGACY_PRODUCTION_SERVING classification (PR #25 founder decision); every other
         # self-hosted model is EXPERIMENTAL and, on a public edge, is served only under a verified public-serving grant.
@@ -230,7 +252,7 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
         return GatewayBrain(gw, model_id, resolution.model, allow_experimental=allow_experimental)
 
     _ensure_frontier_runtime(gw, resolution.backend)
-    deployment_id = f"{resolution.backend}-{resolution.model}"
+    deployment_id = stable_deployment_id(resolution.backend, resolution.model, model_id)
     gw.register_deployment(ModelDeployment(
         deployment_id=deployment_id,
         model_id=model_id,
