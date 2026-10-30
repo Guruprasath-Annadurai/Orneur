@@ -404,6 +404,9 @@ def mark_doc_deleting(session_id: str, doc_id: str) -> bool:
                 d["state"] = "deleting"
                 found = True
         if found:
+            from orca.serve import deletion_ledger
+
+            deletion_ledger.record("doc", doc_id, session_id=session_id)     # L02-B6: durable BEFORE the document leaves any serving path; fails closed
             _save_registry(reg)
         return found
 

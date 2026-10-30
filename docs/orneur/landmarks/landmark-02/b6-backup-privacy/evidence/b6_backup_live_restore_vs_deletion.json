@@ -1,0 +1,12 @@
+{
+ "archive_bytes": 1034023,
+ "plaintext_found_in_archive": [],
+ "delete_status": 200,
+ "wrong_key_exit": 1,
+ "restore_output": "restored 24 files into \n/tmp/pytest-of-pc/pytest-49/test_older_backup_restore_does0/home; deletions \nre-applied: {'session': 1, 'doc': 0, 'user': 0}\nprevious contents kept for rollback at \n/tmp/pytest-of-pc/pytest-49/test_older_backup_restore_does0/home/.pre-restore-41\n1024b7e7 (contains customer data in plaintext: remove it when satisfied)\n",
+ "deleted_conversation_http": 404,
+ "kept_conversation_http": 200,
+ "deleted_listed": false,
+ "alpha_text_left_in_live_files": false,
+ "alpha_text_found_in": []
+}

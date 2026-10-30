@@ -1604,38 +1604,123 @@ def serve(
     _GracefulServer(config).run()
 
 
-backup_app = typer.Typer(help="Consistent backup / verified restore of the ORNEUR data directory (L02-06).")
+backup_app = typer.Typer(help="Encrypted backup / verified, deletion-aware restore of the ORNEUR data directory (L02-06, L02-B6).")
 app.add_typer(backup_app, name="data-backup")
+
+_KEY_OPT = typer.Option(None, "--key-file", help="file holding the 32-byte backup key (base64, mode 600). Default: $ORNEUR_BACKUP_KEY_FILE. Never generated implicitly.")
+
+
+def _backup_key(key_file, *extra_forbidden):
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve.backup import BackupKeyError, load_key
+
+    try:
+        return load_key(key_file, forbid_inside=[Path(ORCA_HOME), *[Path(x) for x in extra_forbidden]])
+    except BackupKeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2)
+
+
+def _backup_run(fn, *a, **k):
+    from orca.serve.backup import BackupError
+
+    try:
+        return fn(*a, **k)
+    except (BackupError, FileExistsError) as exc:
+        console.print(f"[red]refused[/red]: {exc}")
+        raise typer.Exit(1)
+
+
+@backup_app.command("keygen")
+def backup_keygen(path: str = typer.Argument(..., help="where to write a NEW key (must not exist). Store it OUTSIDE the data directory and the backup location; losing it makes backups unreadable.")):
+    """Explicit, one-off key creation. The key is yours to custody (never written next to a backup)."""
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve.backup import write_new_key
+
+    if Path(path).resolve().is_relative_to(Path(ORCA_HOME).resolve()):
+        console.print("[red]refused[/red]: do not store the key inside the data directory")
+        raise typer.Exit(1)
+    write_new_key(path)
+    console.print(f"key written to {path} (mode 600). Back it up separately: without it every backup is unrecoverable.")
 
 
 @backup_app.command("create")
-def backup_create(dest: str = typer.Argument(..., help="empty directory to write the backup into")):
-    """Snapshot the data directory (SQLite online backup + file copies + SHA-256 manifest). The backup contains user data and is not encrypted."""
+def backup_create(out: str = typer.Argument(..., help="new archive file to write"), key_file: str = _KEY_OPT):
+    """Encrypt a consistent snapshot of the data directory into one authenticated archive."""
+    from pathlib import Path
+
     from orca.config import ORCA_HOME
     from orca.serve import backup
 
-    r = backup.create(ORCA_HOME, __import__("pathlib").Path(dest))
-    console.print(f"[green]backup written[/green]: {r['files']} files -> {r['path']}")
+    key = _backup_key(key_file, Path(out).parent)
+    r = _backup_run(backup.create, Path(ORCA_HOME), Path(out), key=key)
+    console.print(f"[green]backup written[/green]: {r['files']} files, {r['bytes']} bytes -> {r['path']}")
+    if not r["consistent"]:
+        console.print(f"[yellow]warning[/yellow]: these files changed while being copied: {r['unstable_files']} (stop the server for a fully consistent backup)")
 
 
 @backup_app.command("verify")
-def backup_verify(path: str = typer.Argument(...)):
-    """Re-hash every file and run PRAGMA integrity_check on every database."""
+def backup_verify(path: str = typer.Argument(...), key_file: str = _KEY_OPT):
+    """Authenticate and fully check an archive (decrypt, hash, database integrity, completeness)."""
+    from pathlib import Path
+
     from orca.serve import backup
 
-    r = backup.verify(__import__("pathlib").Path(path))
-    console.print("[green]backup OK[/green]" if r["ok"] else f"[red]backup FAILED[/red]: {r['problems']}")
+    r = backup.verify(Path(path), key=_backup_key(key_file))
+    console.print(f"[green]backup OK[/green] ({r['files']} files, consistent={r['consistent']})" if r["ok"] else f"[red]backup FAILED[/red]: {r['problems']}")
     raise typer.Exit(0 if r["ok"] else 1)
 
 
+@backup_app.command("export-deletions")
+def backup_export_deletions(out: str = typer.Argument(..., help="new file; keep it OUTSIDE the backups it protects"), key_file: str = _KEY_OPT):
+    """Write an authenticated list of everything customers have deleted (identifiers only), for restoring onto a different machine."""
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve import deletion_ledger
+
+    r = deletion_ledger.export(Path(ORCA_HOME), Path(out), _backup_key(key_file, Path(out).parent))
+    console.print(f"[green]deletion history exported[/green]: {r['entries']} entries -> {out}")
+
+
 @backup_app.command("restore")
-def backup_restore(path: str = typer.Argument(...), overwrite: bool = typer.Option(False, "--overwrite", help="allow a non-empty target (stop the server first)")):
-    """Verify, then restore into the data directory. Refuses a non-empty target unless --overwrite."""
+def backup_restore(
+    path: str = typer.Argument(...),
+    key_file: str = _KEY_OPT,
+    deletion_ledger_file: str = typer.Option(None, "--deletion-ledger", help="authenticated export from `export-deletions`, taken AFTER the backup"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="allow a non-empty target (stop the server first)"),
+    unsafe_without_deletion_history: bool = typer.Option(False, "--unsafe-without-deletion-history", help="restore even though deleted customer data may come back (founder decision)"),
+    allow_inconsistent: bool = typer.Option(False, "--allow-inconsistent", help="restore a backup flagged as taken while files were changing"),
+):
+    """Decrypt into a staging directory, verify, re-apply every later deletion, health-check, then swap in. Refuses without deletion history."""
+    from pathlib import Path
+
     from orca.config import ORCA_HOME
     from orca.serve import backup
 
-    r = backup.restore(__import__("pathlib").Path(path), ORCA_HOME, overwrite=overwrite)
-    console.print(f"[green]restored[/green] {r['restored_files']} files into {ORCA_HOME}")
+    r = _backup_run(backup.restore, Path(path), Path(ORCA_HOME), key=_backup_key(key_file), deletion_ledger=Path(deletion_ledger_file) if deletion_ledger_file else None,
+                    overwrite=overwrite, unsafe_without_deletion_history=unsafe_without_deletion_history, allow_inconsistent=allow_inconsistent)
+    console.print(f"[green]restored[/green] {r['restored_files']} files into {ORCA_HOME}; deletions re-applied: {r['deletions_applied']}")
+    if r["deleted_data_may_be_present"]:
+        console.print("[yellow]WARNING[/yellow]: no deletion history was available; data customers deleted since this backup may be present again.")
+    if r["previous_state_kept_at"]:
+        console.print(f"previous contents kept for rollback at {r['previous_state_kept_at']} (contains customer data in plaintext: remove it when satisfied)")
+
+
+@backup_app.command("recover")
+def backup_recover():
+    """Roll back a restore that was interrupted mid-swap (the server reports not-ready until this has run)."""
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve import backup
+
+    r = backup.recover_interrupted(Path(ORCA_HOME))
+    console.print("[green]rolled back an interrupted restore[/green]" if r["recovered"] else "nothing to recover")
 
 
 if __name__ == "__main__":

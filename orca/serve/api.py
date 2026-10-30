@@ -1848,6 +1848,12 @@ async def readyz():
     dependencies["transcript_store"] = ops.transcript_store_report()
     if dependencies["transcript_store"]["status"] != "ok":
         ready = False
+    from orca.config import ORCA_HOME as _home
+    from orca.serve import backup as _backup
+
+    if _backup.restore_pending(_home):        # L02-B6: a restore stopped mid-swap; the directory may be a mixture until `orca data-backup recover` has run
+        dependencies["restore"] = {"status": "interrupted", "action": "run: orca data-backup recover"}
+        ready = False
     dependencies["disk"] = ops.disk_report()
     if dependencies["disk"]["state"] == "critical":
         ready = False                         # new turns would be refused anyway; do not advertise readiness
