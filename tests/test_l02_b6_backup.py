@@ -88,7 +88,7 @@ def _commit(sid, uid, text):
 def _snapshot(root: Path) -> dict:
     import hashlib
 
-    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*")) if p.is_file()}
+    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*")) if p.is_file() and p.name != ".server.lock"}   # the empty lock file is not data
 
 
 def _rows(home, sid):
@@ -403,7 +403,7 @@ def test_a_stale_modified_or_wrongly_keyed_export_is_refused(world, tmp_path, ke
     fresh_export = tmp_path / "new.json"
     ledger.export(world.home, fresh_export, key)
     doc = json.loads(fresh_export.read_text())
-    doc["entries"] = []                                               # an attacker erasing the history
+    doc["lines"] = doc["lines"][:-1]                                  # an attacker erasing the newest history
     tampered = tmp_path / "tampered.json"
     tampered.write_text(json.dumps(doc))
     with pytest.raises(BackupAuthError):
@@ -445,12 +445,14 @@ def test_ledger_survives_concurrent_appends_and_a_torn_last_line(tmp_path):
     [t.join() for t in threads]
     assert len(ledger.read(home)) == 200
     with open(ledger.path(home), "a") as f:
-        f.write('{"at": 1, "kind": "sess')                            # crash mid-append
+        f.write('{"at": 1, "kind": "sess')                            # crash mid-append: never returned success, so it is ignored
     assert len(ledger.read(home)) == 200
+    ledger.record("session", "after-crash", "u", home=home)           # and the next append repairs the tail instead of corrupting the chain
+    assert len(ledger.read(home)) == 201 and ledger.chain_info(home)["count"] == 202
     with open(ledger.path(home), "a") as f:
-        f.write('\n{"at": 1, "kind": "session", "id": "ok"}\nTRAILING GARBAGE\n')
-    with pytest.raises(ValueError):
-        ledger.read(home)                                             # a corrupt middle is not trusted
+        f.write("TRAILING GARBAGE\n")
+    with pytest.raises(ledger.LedgerIntegrityError):
+        ledger.read(home)                                             # a corrupt line in the body is not trusted
 
 
 # ── 6. all-or-nothing restore ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -462,6 +464,9 @@ def _populated_target(world, tmp_path):
     (t / "extra-live.txt").write_text("live only")
     (t / "vault").mkdir()
     (t / "vault" / "secret").write_text("never backed up, never replaced")
+    import shutil
+
+    shutil.copy2(ledger.path(world.home), ledger.path(t))      # the same machine's own ledger lineage; an unrelated lineage is (correctly) refused
     ledger.record("session", "s-live", "u", home=t)
     return t
 

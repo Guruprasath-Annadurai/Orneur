@@ -1,14 +1,15 @@
-"""L02-B6: an append-only record of what customers have deleted, kept OUTSIDE the backed-up data.
+"""L02-B6: an append-only record of what customers have deleted, kept OUTSIDE the backed-up data, so a restore of an older backup can re-apply later deletions.
 
-Why it exists: an older backup contains data that a customer deleted later. A deletion record stored only inside that same backup cannot say so, and the tombstones in the
-live databases are overwritten by a restore. The ledger is the authority a restore consults. It holds identifiers only (kind, id, owner, time) - never content.
+WHAT THIS IS AND IS NOT (read before relying on it)
+* It is an ordinary file in the data directory. Anyone who can write that directory can edit it. It is NOT tamper-proof and NOT independently authoritative.
+* It is hash-chained (each line commits to the previous one, behind a random per-ledger genesis id). That detects accidental damage and naive edits - a removed, reordered or
+  edited middle line, an unchained forged line, a file truncated to nothing - and lets a restore compare it with copies recorded elsewhere (the backup manifest records the
+  ledger id, length and head hash at backup time; an authenticated export records the same). A consistent rewrite of the whole chain by someone with write access, or entries
+  removed after the last copy made elsewhere, are NOT detectable locally. Completeness therefore can never be verified from the file alone; closing that needs an off-host
+  append-only anchor (founder-controlled custody decision - see docs/orneur/landmarks/landmark-02/b6-backup-privacy, status BLOCKED).
+* It holds identifiers only (kind, id, owner, time), never content or email addresses.
 
-* Written by the live deletion paths (conversation tombstone, document removal, account deletion) BEFORE the destructive work, and it fails closed: if the entry cannot be
-  made durable the deletion is refused and can be retried.
-* Excluded from backups (``backup`` skips it) and preserved by a restore.
-* Exported, authenticated with the operator's backup key, so a disaster-recovery restore onto a new machine can bring the history with it.
-
-It records that data WAS deleted. It does not erase copies the application does not control (older backups, snapshots); see docs/orneur/landmarks/landmark-02/b6-backup-privacy.
+Written by the live deletion paths (conversation tombstone, document removal, account deletion) BEFORE the destructive work. Excluded from backups; preserved by a restore.
 """
 from __future__ import annotations
 
@@ -16,14 +17,23 @@ import fcntl
 import hashlib
 import hmac
 import json
+import logging
 import os
 import time
+import uuid
 from pathlib import Path
 
-from orca.serve.backup_crypto import BackupAuthError, derive
+from orca.serve.backup_crypto import BackupAuthError, BackupError, derive
+
+_logger = logging.getLogger("orneur.deletion_ledger")
 
 LEDGER_NAME = "deletion_ledger.jsonl"
 KINDS = ("session", "doc", "user")
+ZERO = "0" * 64
+
+
+class LedgerIntegrityError(BackupError):
+    """The ledger file does not form a valid chain (removed/edited/reordered/forged/empty): it cannot be trusted as deletion history."""
 
 
 def _default_home() -> Path:
@@ -36,12 +46,112 @@ def path(home: Path | None = None) -> Path:
     return Path(home or _default_home()) / LEDGER_NAME
 
 
+def _canon(d: dict) -> bytes:
+    return json.dumps(d, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _link(prev: str, body: dict) -> dict:
+    line = {**body, "prev": prev}
+    line["h"] = hashlib.sha256(prev.encode() + _canon({k: v for k, v in body.items()})).hexdigest()
+    return line
+
+
+def parse(text: str) -> list[dict]:
+    """Parse and verify a ledger. Returns every line (genesis first). A torn final line (no newline: a crash mid-append that never returned success) is ignored; anything else
+    that does not chain raises ``LedgerIntegrityError``."""
+    raw = text.split("\n")
+    torn_ok = not text.endswith("\n")
+    lines: list[dict] = []
+    prev = ZERO
+    for i, s in enumerate(raw):
+        if not s.strip():
+            continue
+        try:
+            d = json.loads(s)
+            if not isinstance(d, dict):
+                raise ValueError
+        except ValueError:
+            if torn_ok and i == len(raw) - 1:
+                continue
+            raise LedgerIntegrityError("deletion ledger is corrupt (unparseable line)") from None
+        body = {k: v for k, v in d.items() if k not in ("prev", "h")}
+        if d.get("prev") != prev or d.get("h") != _link(prev, body)["h"]:
+            raise LedgerIntegrityError("deletion ledger chain is broken (a line was edited, removed, reordered or forged)")
+        if not lines:
+            if body.get("kind") != "genesis" or not body.get("ledger_id"):
+                raise LedgerIntegrityError("deletion ledger has no genesis record")
+        elif body.get("kind") not in KINDS or not body.get("id"):
+            raise LedgerIntegrityError("deletion ledger contains an invalid entry")
+        lines.append(d)
+        prev = d["h"]
+    if not lines:
+        raise LedgerIntegrityError("deletion ledger is empty (no genesis record): it was truncated or never initialised")
+    return lines
+
+
+def read_lines(home: Path | None = None) -> list[dict]:
+    p = path(home)
+    if not p.exists():
+        return []
+    return parse(p.read_text())
+
+
+def read(home: Path | None = None) -> list[dict]:
+    """Deletion entries (genesis excluded). Missing file -> []. Invalid file -> ``LedgerIntegrityError``."""
+    return [d for d in read_lines(home) if d.get("kind") in KINDS]
+
+
+def chain_info(home: Path | None = None) -> dict | None:
+    """{ledger_id, count (lines incl. genesis), head} or None when there is no ledger. Raises LedgerIntegrityError for an invalid one."""
+    lines = read_lines(home)
+    if not lines:
+        return None
+    return {"ledger_id": lines[0]["ledger_id"], "count": len(lines), "head": lines[-1]["h"]}
+
+
+def _append_locked(fd: int, p: Path, body: dict) -> None:
+    size = os.fstat(fd).st_size
+    if size == 0:
+        g = _link(ZERO, {"kind": "genesis", "ledger_id": uuid.uuid4().hex, "at": time.time()})
+        os.write(fd, (json.dumps(g, sort_keys=True, separators=(",", ":")) + "\n").encode())
+    text = p.read_text()
+    if text and not text.endswith("\n"):                             # drop a torn tail from a crashed append
+        keep = text[: text.rfind("\n") + 1]
+        os.ftruncate(fd, len(keep.encode()))
+        os.lseek(fd, 0, os.SEEK_END)
+    try:
+        lines = parse(p.read_text())
+    except LedgerIntegrityError:
+        # The ledger is damaged. Deletions must stay possible (a customer cannot be refused), so set the damaged file aside for the operator and start a NEW lineage. A restore will
+        # then refuse to treat the new file as a continuation of anything an older backup recorded.
+        aside = p.with_name(p.name + f".damaged-{int(time.time())}")
+        os.replace(p, aside)
+        _logger.error("deletion ledger failed its integrity check; moved to %s and a new ledger started", aside.name)
+        os.close(fd)
+        raise _Restart()
+    prev = lines[-1]["h"]
+    line = _link(prev, body)
+    os.write(fd, (json.dumps(line, sort_keys=True, separators=(",", ":")) + "\n").encode())
+    os.fsync(fd)
+
+
+class _Restart(Exception):
+    pass
+
+
 def ensure(home: Path | None = None) -> Path:
-    """Create the (empty) ledger if absent. An existing ledger file is what marks a data directory as having authoritative deletion history."""
+    """Create the ledger (with its genesis record) if it does not exist. An existing file is left alone, valid or not."""
     p = path(home)
     p.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT, 0o600)
-    os.close(fd)
+    fd = os.open(str(p), os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        if os.fstat(fd).st_size == 0:
+            g = _link(ZERO, {"kind": "genesis", "ledger_id": uuid.uuid4().hex, "at": time.time()})
+            os.write(fd, (json.dumps(g, sort_keys=True, separators=(",", ":")) + "\n").encode())
+            os.fsync(fd)
+    finally:
+        os.close(fd)
     return p
 
 
@@ -49,40 +159,27 @@ def record(kind: str, subject_id: str, user_id: str = "", session_id: str = "", 
     """Durably append one deletion. Raises OSError if it cannot be made durable (the caller must then refuse the deletion)."""
     if kind not in KINDS or not subject_id:
         raise ValueError("invalid ledger entry")
-    p = ensure(home)
-    line = json.dumps({"at": time.time(), "kind": kind, "id": subject_id, "user_id": user_id, "session_id": session_id}, separators=(",", ":"), sort_keys=True) + "\n"
-    fd = os.open(str(p), os.O_WRONLY | os.O_APPEND)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        os.write(fd, line.encode())
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
-def read(home: Path | None = None) -> list[dict]:
-    """All entries. A torn final line (crash mid-append) is ignored; any other unparseable line makes the ledger untrustworthy and raises."""
     p = path(home)
-    if not p.exists():
-        return []
-    raw = p.read_text().split("\n")
-    out = []
-    for i, line in enumerate(raw):
-        if not line.strip():
-            continue
+    p.parent.mkdir(parents=True, exist_ok=True)
+    body = {"at": time.time(), "kind": kind, "id": subject_id, "user_id": user_id, "session_id": session_id}
+    for _ in range(2):
+        fd = os.open(str(p), os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600)
         try:
-            e = json.loads(line)
-        except ValueError:
-            if i >= len(raw) - 2 and not p.read_text().endswith("\n"):
-                continue
-            raise ValueError("deletion ledger is corrupt")
-        if e.get("kind") in KINDS and e.get("id"):
-            out.append(e)
-    return out
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            _append_locked(fd, p, body)
+            return
+        except _Restart:
+            continue
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+    raise OSError("deletion ledger could not be written")
 
 
 def session_tombstones(home: Path) -> list[dict]:
-    """Conversation deletions recorded in a data directory's transcript database (covers deletions made before the ledger existed)."""
+    """Conversation deletions recorded in a data directory's transcript database (covers deletions made before the ledger existed or missing from it)."""
     import sqlite3
 
     db = Path(home) / "memory" / "conversations" / "turns.db"
@@ -98,10 +195,9 @@ def session_tombstones(home: Path) -> list[dict]:
         conn.close()
 
 
-def merged(home: Path) -> list[dict]:
-    """The ledger plus the live conversation tombstones, de-duplicated by (kind, id)."""
+def _dedupe(entries: list[dict]) -> list[dict]:
     seen, out = set(), []
-    for e in read(home) + session_tombstones(home):
+    for e in entries:
         k = (e["kind"], e["id"], e.get("session_id", "") if e["kind"] == "doc" else "")
         if k not in seen:
             seen.add(k)
@@ -109,33 +205,47 @@ def merged(home: Path) -> list[dict]:
     return out
 
 
-def _canonical(body: dict) -> bytes:
-    return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+def merged(home: Path) -> list[dict]:
+    """The ledger's entries plus the live conversation tombstones, de-duplicated."""
+    return _dedupe(read(home) + session_tombstones(home))
+
+
+def _mac(key: bytes, body: dict) -> str:
+    return hmac.new(derive(key, b"", b"orneur-ledger-v2"), _canon(body), hashlib.sha256).hexdigest()
 
 
 def export(home: Path, out_file: Path, key: bytes) -> dict:
-    """Write an authenticated export of the deletion history to ``out_file`` (identifiers only). Keep it OUTSIDE the backup it protects."""
-    entries = merged(Path(home))
-    body = {"v": 1, "generated_at": time.time(), "entries": entries}
-    mac = hmac.new(derive(key, b"", b"orneur-ledger-v1"), _canonical(body), hashlib.sha256).hexdigest()
+    """Write an HMAC-authenticated copy of the ledger chain (identifiers only) to ``out_file``. Keep it OUTSIDE the backups it protects and, ideally, off this host: it is the
+    only record that can reveal a truncated or rewritten live ledger."""
+    lines = read_lines(home)
+    if not lines:
+        ensure(home)
+        lines = read_lines(home)
+    body = {"v": 2, "generated_at": time.time(), "ledger_id": lines[0]["ledger_id"], "lines": lines, "tombstones": session_tombstones(Path(home))}
     fd = os.open(str(out_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
-        json.dump({**body, "mac": mac}, f)
+        json.dump({**body, "mac": _mac(key, body)}, f)
         f.flush()
         os.fsync(f.fileno())
-    return {"entries": len(entries), "generated_at": body["generated_at"]}
+    return {"entries": len(lines) - 1 + len(body["tombstones"]), "generated_at": body["generated_at"], "ledger_id": body["ledger_id"], "count": len(lines), "head": lines[-1]["h"]}
 
 
 def load_export(file: Path, key: bytes) -> dict:
-    """Parse and authenticate a deletion-history export. Raises ``BackupAuthError`` for a wrong key, a modified file or anything malformed."""
+    """Parse and authenticate an export. Raises ``BackupAuthError`` for a wrong key / modified / malformed file."""
     try:
         doc = json.loads(Path(file).read_text())
         mac = doc.pop("mac")
-        body = {"v": doc["v"], "generated_at": float(doc["generated_at"]), "entries": list(doc["entries"])}
+        body = {"v": doc["v"], "generated_at": float(doc["generated_at"]), "ledger_id": doc["ledger_id"], "lines": list(doc["lines"]), "tombstones": list(doc["tombstones"])}
     except Exception:
         raise BackupAuthError("deletion-history export is unreadable") from None
-    expect = hmac.new(derive(key, b"", b"orneur-ledger-v1"), _canonical(body), hashlib.sha256).hexdigest()
-    if body["v"] != 1 or not hmac.compare_digest(expect, str(mac)):
+    if body["v"] != 2 or not hmac.compare_digest(_mac(key, body), str(mac)):
         raise BackupAuthError("deletion-history export failed authentication (wrong key or modified)")
-    body["entries"] = [e for e in body["entries"] if isinstance(e, dict) and e.get("kind") in KINDS and e.get("id")]
+    text = "".join(json.dumps(l, sort_keys=True, separators=(",", ":")) + "\n" for l in body["lines"])
+    lines = parse(text)
+    if lines[0]["ledger_id"] != body["ledger_id"]:
+        raise BackupAuthError("deletion-history export is inconsistent")
+    tomb = [e for e in body["tombstones"] if isinstance(e, dict) and e.get("kind") == "session" and e.get("id")]
+    body["lines"] = lines
+    body["entries"] = _dedupe([d for d in lines if d.get("kind") in KINDS] + tomb)
+    body["count"], body["head"] = len(lines), lines[-1]["h"]
     return body

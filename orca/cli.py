@@ -1377,34 +1377,20 @@ def license_cmd(
     ))
 
 
+_LEGACY_REFUSAL = ("[red]retired[/red]: the plaintext backup/restore wrote an UNENCRYPTED copy of the accounts database and restored it without consulting deletion history.\n"
+                   "Use [bold]orca data-backup create <file> --key-file <key>[/bold] (encrypted) and [bold]orca data-backup restore[/bold].\n"
+                   "Existing plaintext backups: migrate them OFFLINE with [bold]orca data-backup import-legacy[/bold], then destroy the originals "
+                   "(docs/orneur/landmarks/landmark-02/b6-backup-privacy/B6_LEGACY_MIGRATION.md).")
+
+
 @app.command("backup")
 def backup_cmd(
-    keep: int = typer.Option(7, "--keep", help="Number of backups to retain after pruning"),
-    no_prune: bool = typer.Option(False, "--no-prune", help="Skip pruning old backups this run"),
+    keep: int = typer.Option(7, "--keep", help="(retired) kept only so existing cron lines fail with an explanation"),
+    no_prune: bool = typer.Option(False, "--no-prune", help="(retired)"),
 ):
-    """
-    Back up the auth database (users, audit log, everything). Meant to be
-    invoked by an external scheduler (cron, systemd timer) — this does not
-    schedule itself, since an in-process scheduler dies exactly when the
-    server crashes, which is when you most need backups to keep running.
-
-    Example crontab entry (daily at 3am):
-      0 3 * * * cd /path/to/orca && uv run orca backup --keep 14
-    """
-    from orca.ops.backup import run_backup, prune_old_backups
-
-    try:
-        report = run_backup()
-    except Exception as e:
-        console.print(f"[red]Backup failed: {e}[/red]")
-        raise typer.Exit(1)
-
-    console.print(f"[green]✓ Backup created:[/green] {report['path']} ({report['size_bytes']:,} bytes, {report['backend']})")
-
-    if not no_prune:
-        prune_report = prune_old_backups(keep_last_n=keep)
-        if prune_report["deleted_count"] > 0:
-            console.print(f"[dim]Pruned {prune_report['deleted_count']} old backup(s), kept {prune_report['kept']}[/dim]")
+    """RETIRED (L02-B6): refuses. Use `orca data-backup create`."""
+    console.print(_LEGACY_REFUSAL)
+    raise typer.Exit(1)
 
 
 @app.command("backups")
@@ -1415,8 +1401,9 @@ def backups_list_cmd():
 
     backups = list_backups()
     if not backups:
-        console.print("[dim]No backups found. Run: orca backup[/dim]")
+        console.print("[dim]No legacy plaintext backups found. New backups: orca data-backup create <file> --key-file <key>[/dim]")
         return
+    console.print("[yellow]These are UNENCRYPTED legacy backups of the accounts database. Migrate them offline (orca data-backup import-legacy) and destroy them.[/yellow]")
 
     table = Table(box=None, show_header=True, header_style="bold")
     table.add_column("Path")
@@ -1429,36 +1416,12 @@ def backups_list_cmd():
 
 @app.command("restore")
 def restore_cmd(
-    backup_path: str = typer.Argument(..., help="Path to a backup file (see: orca backups)"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
+    backup_path: str = typer.Argument(..., help="(retired)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="(retired)"),
 ):
-    """
-    Restore the auth database from a backup — OVERWRITES the live database.
-    Automatically backs up the current state first, so a wrong choice here
-    is itself recoverable. SQLite only — for Postgres, use pg_restore
-    directly (see orca/ops/backup.py module docstring for why).
-    """
-    from orca.auth.db import BACKEND
-    from orca.ops.backup import restore_sqlite
-
-    if BACKEND != "sqlite":
-        console.print(f"[red]Current backend is '{BACKEND}', not sqlite. Use pg_restore directly for Postgres.[/red]")
-        raise typer.Exit(1)
-
-    if not yes:
-        confirmed = typer.confirm(f"This will OVERWRITE the live database with {backup_path}. Continue?")
-        if not confirmed:
-            console.print("[dim]Cancelled.[/dim]")
-            raise typer.Exit(0)
-
-    try:
-        report = restore_sqlite(backup_path, confirm=True)
-    except Exception as e:
-        console.print(f"[red]Restore failed: {e}[/red]")
-        raise typer.Exit(1)
-
-    console.print(f"[green]✓ Restored from:[/green] {report['restored_from']}")
-    console.print(f"[dim]Pre-restore safety backup saved to: {report['pre_restore_backup']}[/dim]")
+    """RETIRED (L02-B6): refuses. Use `orca data-backup restore`."""
+    console.print(_LEGACY_REFUSAL)
+    raise typer.Exit(1)
 
 
 @app.command("doctor")
@@ -1705,10 +1668,25 @@ def backup_restore(
     r = _backup_run(backup.restore, Path(path), Path(ORCA_HOME), key=_backup_key(key_file), deletion_ledger=Path(deletion_ledger_file) if deletion_ledger_file else None,
                     overwrite=overwrite, unsafe_without_deletion_history=unsafe_without_deletion_history, allow_inconsistent=allow_inconsistent)
     console.print(f"[green]restored[/green] {r['restored_files']} files into {ORCA_HOME}; deletions re-applied: {r['deletions_applied']}")
-    if r["deleted_data_may_be_present"]:
-        console.print("[yellow]WARNING[/yellow]: no deletion history was available; data customers deleted since this backup may be present again.")
+    console.print(f"[yellow]{r['deletion_history']['statement']}[/yellow]")
     if r["previous_state_kept_at"]:
         console.print(f"previous contents kept for rollback at {r['previous_state_kept_at']} (contains customer data in plaintext: remove it when satisfied)")
+
+
+@backup_app.command("import-legacy")
+def backup_import_legacy(
+    legacy: str = typer.Argument(..., help="a plaintext auth_backup_*.db written by the retired `orca backup` (copy it somewhere OUTSIDE the data directory first)"),
+    out: str = typer.Argument(..., help="new encrypted archive to write, OUTSIDE the data directory"),
+    key_file: str = _KEY_OPT,
+):
+    """OFFLINE migration: wrap one legacy plaintext accounts backup into an encrypted archive. Never touches the live data directory; refuses while a server runs on it."""
+    from pathlib import Path
+
+    from orca.config import ORCA_HOME
+    from orca.serve import backup
+
+    r = _backup_run(backup.import_legacy, Path(legacy), Path(out), key=_backup_key(key_file, Path(out).parent), live_home=Path(ORCA_HOME))
+    console.print(f"[green]migrated[/green] -> {r['path']} ({r['bytes']} bytes). The plaintext original is still on disk: verify the archive, then destroy the original yourself.")
 
 
 @backup_app.command("recover")

@@ -99,6 +99,18 @@ def test_older_backup_restore_does_not_resurrect_a_deleted_conversation(tmp_path
             out["deleted_listed"] = sid_a in listed.text
             assert sid_a not in listed.text
             assert httpx.get(f"{s3.base}/readyz", timeout=30).status_code == 200
+            # a restore while a server is running on the directory is refused and changes nothing
+            pre_dirs = sorted(p.name for p in home.glob('.pre-restore-*'))
+            busy = _cli(home, "data-backup", "restore", str(archive), "--key-file", str(kf), "--overwrite")
+            out["restore_while_server_running_exit"] = busy.returncode
+            out["restore_while_server_running_message"] = (busy.stdout + busy.stderr)[-200:]
+            assert busy.returncode == 1 and "server is running" in (busy.stdout + busy.stderr).replace("\n", " ")
+            assert sorted(p.name for p in home.glob('.pre-restore-*')) == pre_dirs and not (home / '.restore-journal.json').exists(), 'the refused restore moved nothing'
+            # the retired plaintext commands refuse
+            for legacy_args in (["backup"], ["restore", str(archive), "--yes"]):
+                lg = _cli(home, *legacy_args)
+                assert lg.returncode == 1 and "data-backup" in lg.stdout + lg.stderr
+            out["legacy_cli_refused"] = True
         finally:
             s3.stop()
         raw = b"".join(p.read_bytes() for p in home.rglob("*") if p.is_file() and p.suffix in (".db", ".sqlite", ".jsonl", ".json") and ".pre-restore" not in str(p))

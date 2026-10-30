@@ -20,9 +20,12 @@ Incompatible change: the earlier plaintext directory format (``MANIFEST.json`` +
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import stat
@@ -38,7 +41,7 @@ from orca.serve.backup_crypto import (BackupAuthError, BackupError, BackupKeyErr
 FORMAT = "orneur-backup/2"
 _DBS_SUFFIX = (".db", ".sqlite", ".sqlite3")
 _SKIP_DIRS = {"backups", "cache", "models", "training", "workspace", "vault"}
-_SKIP_NAMES = {ledger.LEDGER_NAME, ".restore-journal.json"}
+_SKIP_NAMES = {ledger.LEDGER_NAME, ".restore-journal.json", ".server.lock"}
 _CORE = ("auth.db", "memory/conversations/turns.db")
 JOURNAL = ".restore-journal.json"
 
@@ -66,7 +69,7 @@ def _sha(path: Path) -> str:
 def _excluded(home: Path, p: Path) -> bool:
     parts = p.relative_to(home).parts
     return (any(part in _SKIP_DIRS or part == ".quarantine" or part.startswith(".pre-restore-") or part.startswith(".restore-") for part in parts)
-            or p.name in _SKIP_NAMES or p.name.endswith(("-wal", "-shm", ".lock", ".tmp", ".restoring")))
+            or p.name in _SKIP_NAMES or p.name.startswith(ledger.LEDGER_NAME + ".damaged-") or p.name.endswith(("-wal", "-shm", ".lock", ".tmp", ".restoring")))
 
 
 # ── create ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -95,8 +98,11 @@ def create(home: Path, out_file: Path, *, key: bytes) -> dict:
     if len(key) != 32:
         raise BackupKeyError("backup key must be exactly 32 bytes")
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    ledger_head = ledger.ensure(home)
-    ledger_count = len(ledger.read(home))
+    ledger.ensure(home)
+    try:
+        ledger_info = ledger.chain_info(home)                       # recorded INSIDE the authenticated archive: a later restore compares the live ledger against it
+    except ledger.LedgerIntegrityError:
+        ledger_info = {"status": "unreadable"}
     partial = out_file.with_name(out_file.name + ".partial")
     files: dict = {}
     unstable: list[str] = []
@@ -137,7 +143,7 @@ def create(home: Path, out_file: Path, *, key: bytes) -> dict:
                 raise BackupIncompleteError("nothing to back up: the data directory has neither an accounts nor a transcript database")
             manifest = {"format": FORMAT, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "created_epoch": started, "files": files,
                         "core": [c for c in _CORE if c in files], "unstable_files": unstable, "consistent": not unstable,
-                        "ledger_entries_at_backup": ledger_count, "excluded_dirs": sorted(_SKIP_DIRS)}
+                        "ledger": ledger_info, "excluded_dirs": sorted(_SKIP_DIRS)}
             body = json.dumps(manifest, sort_keys=True).encode()
             w.write(b"M" + len(body).to_bytes(4, "big") + body)
             w.close()
@@ -156,7 +162,7 @@ def create(home: Path, out_file: Path, *, key: bytes) -> dict:
 
 def _safe_rel(rel: str) -> Path:
     p = Path(rel)
-    if p.is_absolute() or ".." in p.parts or not p.parts or p.parts[0] == JOURNAL or p.parts[0].startswith(".pre-restore-") or p.name == ledger.LEDGER_NAME:
+    if p.is_absolute() or ".." in p.parts or not p.parts or p.parts[0] in (JOURNAL, ".server.lock") or p.parts[0].startswith(".pre-restore-") or p.name == ledger.LEDGER_NAME:
         raise BackupIncompleteError("archive contains an unsafe path")
     return p
 
@@ -388,111 +394,342 @@ def restore_pending(home: Path) -> bool:
     return (Path(home) / JOURNAL).exists()
 
 
-def recover_interrupted(home: Path) -> dict:
-    """Roll back a restore that was interrupted mid-swap: put every moved-aside original back and remove anything the restore had placed. Idempotent."""
+# ── locks: a restore and a running server must never overlap ───────────────────────────────────────────────────────────────────
+
+def _restore_lock_path(home: Path) -> Path:
     home = Path(home)
+    return home.parent / f".{home.name}.restore.lock"
+
+
+@contextlib.contextmanager
+def _flock(path: Path, mode: int, busy: str, *, create: bool = True):
+    if create:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
+    else:
+        try:
+            fd = os.open(str(path), os.O_RDONLY)                    # read-only probe: a lock file that does not exist means no server ever held this directory
+        except FileNotFoundError:
+            yield
+            return
+    try:
+        try:
+            fcntl.flock(fd, mode | fcntl.LOCK_NB)
+        except OSError:
+            raise RestoreFailed(busy) from None
+        yield
+    finally:
+        os.close(fd)                                              # closing releases the lock
+
+
+@contextlib.contextmanager
+def exclusive_data_dir(home: Path):
+    """Held by a restore (or an offline import) for its whole run: refuses when another restore is running or when ANY server process has the directory open."""
+    home = Path(home)
+    with _flock(_restore_lock_path(home), fcntl.LOCK_EX, "another restore is in progress for this data directory"):
+        if home.exists():
+            with _flock(home / ".server.lock", fcntl.LOCK_EX, "a server is running on this data directory: stop it before restoring"):
+                yield
+        else:
+            yield
+
+
+@contextlib.contextmanager
+def serving_lock(home: Path):
+    """Held by every server process for its lifetime. Refuses to start while a restore holds the directory, and makes a restore refuse while any server is up. Advisory
+    ``flock`` on a local filesystem: not reliable across NFS."""
+    home = Path(home)
+    with _flock(_restore_lock_path(home), fcntl.LOCK_SH, "a restore is in progress for this data directory: the server will not start"):
+        pass                                                      # a momentary check only: holding it for life would make every restore report "another restore" instead of "a server is running"
+    with _flock(home / ".server.lock", fcntl.LOCK_SH, "a restore is in progress for this data directory: the server will not start"):
+        yield
+
+
+# ── recovery journal ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+_NAME = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]{0,200}$")
+_ASIDE = re.compile(r"^\.pre-restore-[0-9a-f]{10}$")
+
+
+def _load_journal(home: Path) -> dict:
+    """Read and VALIDATE the journal. It is trusted input for deletions and moves, so anything unexpected stops recovery and leaves the directory flagged."""
     jp = home / JOURNAL
+    try:
+        st = jp.lstat()
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+            raise ValueError("not a private regular file owned by this user")
+        j = json.loads(jp.read_text())
+        if not isinstance(j, dict) or not isinstance(j.get("aside"), str) or not _ASIDE.match(j["aside"]):
+            raise ValueError("bad holding directory")
+        for k in ("moved", "placed"):
+            if not isinstance(j.get(k), list) or not all(isinstance(n, str) and _NAME.match(n) and n not in (".", "..") for n in j[k]):
+                raise ValueError(f"bad {k} list")
+        aside = home / j["aside"]
+        if aside.is_symlink() or (aside.exists() and not aside.is_dir()):
+            raise ValueError("holding directory is not a directory")
+        return j
+    except (OSError, ValueError, TypeError) as exc:
+        raise RestoreFailed(f"restore journal is invalid ({exc}); nothing was changed - inspect {jp} and the .pre-restore-* directory by hand") from None
+
+
+def _write_journal(home: Path, state: dict) -> None:
+    tmp = home / (JOURNAL + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(state, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, home / JOURNAL)
+
+
+def recover_interrupted(home: Path) -> dict:
+    """Roll back a restore that was interrupted mid-swap: put every moved-aside original back and remove anything the restore had placed. Idempotent. Refuses (and keeps the
+    directory flagged) when the journal is not exactly what a restore writes."""
+    home = Path(home)
     (home / (JOURNAL + ".tmp")).unlink(missing_ok=True)           # a crash while writing the journal itself leaves only this temporary file
-    if not jp.exists():
+    if not (home / JOURNAL).exists():
         return {"recovered": False}
-    j = json.loads(jp.read_text())
+    j = _load_journal(home)
     aside = home / j["aside"]
-    for name in j.get("placed", []):
+    for name in j["placed"]:
         tgt = home / name
-        if tgt.is_dir() and not tgt.is_symlink():
+        if tgt.is_symlink():
+            tgt.unlink()
+        elif tgt.is_dir():
             shutil.rmtree(tgt, ignore_errors=True)
         else:
             tgt.unlink(missing_ok=True)
-    for name in j.get("moved", []):
+    for name in j["moved"]:
         src = aside / name
-        if src.exists():
+        if src.exists() or src.is_symlink():
             os.replace(src, home / name)
     shutil.rmtree(aside, ignore_errors=True)
-    jp.unlink(missing_ok=True)
-    return {"recovered": True, "rolled_back": len(j.get("moved", []))}
+    (home / JOURNAL).unlink(missing_ok=True)
+    return {"recovered": True, "rolled_back": len(j["moved"])}
+
+
+# ── deletion history for a restore ───────────────────────────────────────────────────────────────────────────────────────────
+
+_HISTORY_STATEMENT = ("Deletion history is NOT verified complete. The live ledger is an editable file (hash-chained, so naive edits and truncation relative to copies made elsewhere are "
+                      "detected, but it is not tamper-proof and not authenticated); an export is authenticated but only as new as the moment it was taken; there is no off-host anchor. "
+                      "Deletions made after the newest copy kept elsewhere cannot be known.")
+
+
+def _same_prefix(a: list[dict], b: list[dict]) -> bool:
+    n = min(len(a), len(b))
+    return n > 0 and a[n - 1]["h"] == b[n - 1]["h"]
+
+
+def _continues(lines: list[dict], info: dict | None) -> bool:
+    """Does this chain extend the (id, count, head) the backup recorded when it was taken?"""
+    if not info or "ledger_id" not in info:
+        return True                                               # nothing recorded to compare with (older archive, legacy import)
+    return lines[0]["ledger_id"] == info["ledger_id"] and len(lines) >= int(info["count"]) and lines[int(info["count"]) - 1]["h"] == info["head"]
+
+
+def _gather_history(home: Path, manifest: dict, deletion_ledger: Path | None, key: bytes) -> tuple[list[dict], list[dict], list[str], dict]:
+    """Returns (entries to apply, chain lines to carry into the restored directory, sources, details). Raises DeletionHistoryUnavailable / BackupAuthError."""
+    recorded = manifest.get("ledger")
+    recorded = recorded if isinstance(recorded, dict) and "ledger_id" in recorded else None
+    sources: list[str] = []
+    chains: list[tuple[str, list[dict]]] = []
+    entries: list[dict] = []
+    details: dict = {"export_generated_at": 0.0}
+    if (home / ledger.LEDGER_NAME).exists():
+        try:
+            live = ledger.read_lines(home)
+        except ledger.LedgerIntegrityError as exc:
+            raise DeletionHistoryUnavailable(f"the live deletion ledger failed its integrity check ({exc}); repair or move it aside and supply an authenticated export") from None
+        if not _continues(live, recorded):
+            raise DeletionHistoryUnavailable("the live deletion ledger is not a continuation of the ledger this backup recorded (removed, replaced or truncated since): it cannot be trusted as deletion history")
+        chains.append(("live_ledger", live))
+        entries += ledger.merged(home)
+        sources.append("live_ledger")
+    if deletion_ledger is not None:
+        exp = ledger.load_export(Path(deletion_ledger), key)
+        if exp["generated_at"] < float(manifest.get("created_epoch", 0)):
+            raise DeletionHistoryUnavailable("the deletion-history export is older than the backup, so it cannot cover later deletions")
+        if recorded is not None and exp["ledger_id"] != recorded["ledger_id"]:
+            raise DeletionHistoryUnavailable("the deletion-history export belongs to a different ledger lineage than this backup")
+        if not _continues(exp["lines"], recorded):
+            raise DeletionHistoryUnavailable("the deletion-history export does not continue the ledger this backup recorded")
+        chains.append(("export", exp["lines"]))
+        entries += exp["entries"]
+        sources.append("export")
+        details["export_generated_at"] = exp["generated_at"]
+    if len(chains) == 2:
+        live, exp = chains[0][1], chains[1][1]
+        if not _same_prefix(live, exp) or live[0]["ledger_id"] != exp[0]["ledger_id"]:
+            raise DeletionHistoryUnavailable("the live ledger and the export have forked (they disagree about earlier entries)")
+        if len(live) < len(exp):
+            raise DeletionHistoryUnavailable("the live ledger is behind the export (truncated?): it is missing entries the export has")
+    longest = max((c for _, c in chains), key=len, default=[])
+    details["ledger_id"] = longest[0]["ledger_id"] if longest else None
+    return ledger._dedupe(entries), longest, sources, details
+
+
+def _tighten(root: Path) -> None:
+    for dp, dns, fns in os.walk(root):
+        os.chmod(dp, 0o700)
+        for f in fns:
+            fp = os.path.join(dp, f)
+            if not os.path.islink(fp):
+                os.chmod(fp, 0o600)
 
 
 def restore(archive: Path, home: Path, *, key: bytes, deletion_ledger: Path | None = None, overwrite: bool = False,
             unsafe_without_deletion_history: bool = False, allow_inconsistent: bool = False) -> dict:
     archive, home = Path(archive), Path(home)
-    if restore_pending(home):
-        raise RestoreFailed("an earlier restore did not finish: run recover first")
-    populated = home.exists() and any(p.name not in (JOURNAL,) for p in home.iterdir())
-    if populated and not overwrite:
-        raise FileExistsError("target data directory is not empty (stop the server and pass overwrite=True)")
     home.parent.mkdir(parents=True, exist_ok=True)
-    stage = home.parent / f".{home.name}.restore-{uuid.uuid4().hex[:10]}"
+    with exclusive_data_dir(home):
+        if restore_pending(home):
+            raise RestoreFailed("an earlier restore did not finish: run recover first")
+        populated = home.exists() and any(p.name not in (JOURNAL, ".server.lock") for p in home.iterdir())
+        if populated and not overwrite:
+            raise FileExistsError("target data directory is not empty (stop the server and pass overwrite=True)")
+        stage = home.parent / f".{home.name}.restore-{uuid.uuid4().hex[:10]}"
+        try:
+            manifest = _extract(archive, key, stage)
+            if not manifest.get("consistent", False) and not allow_inconsistent:
+                raise BackupIncompleteError("the backup was taken while files were changing (flagged inconsistent: " + ", ".join(manifest.get("unstable_files", [])[:3]) + ")")
+            uniq, chain, sources, details = _gather_history(home, manifest, deletion_ledger, key)
+            if not sources and not unsafe_without_deletion_history:
+                raise DeletionHistoryUnavailable("no authoritative deletion history (a live ledger in the target or an authenticated export): restoring could bring back data customers deleted")
+            applied = _apply_deletions(stage, uniq)
+            if sources:                                    # only a restore that HAD history writes a ledger: an empty one would later pass for authoritative
+                with open(stage / ledger.LEDGER_NAME, "w") as f:
+                    for line in chain:
+                        f.write(json.dumps(line, sort_keys=True, separators=(",", ":")) + "\n")
+                for e in uniq:                             # deletions known only from tombstones are appended as properly chained records
+                    if not any(l.get("kind") == e["kind"] and l.get("id") == e["id"] for l in chain):
+                        ledger.record(e["kind"], e["id"], e.get("user_id", ""), e.get("session_id", ""), home=stage)
+            for stale in list(stage.rglob("*-wal")) + list(stage.rglob("*-shm")):
+                stale.unlink(missing_ok=True)
+            _tighten(stage)                                # customer data is private on disk: directories 0700, files 0600
+            problems = _health_check(stage, uniq)
+            if problems:
+                raise RestoreFailed("restored copy failed its health check: " + "; ".join(problems[:3]))
+            moved_aside = _swap(stage, home, uniq)
+            history = {"sources": sources, "ledger_id": details["ledger_id"], "entries_applied": len(uniq), "completeness_verified": False, "live_ledger_authenticated": False,
+                       "off_host_anchor": False, "export_generated_at": details["export_generated_at"], "statement": _HISTORY_STATEMENT if sources else
+                       "NO deletion history was available: data customers deleted since this backup may be present again."}
+            return {"restored_files": len(manifest["files"]), "verified": True, "deletion_history_sources": sources, "deletions_applied": applied, "deletion_history": history,
+                    "deleted_data_may_be_present": not sources, "previous_state_kept_at": moved_aside,
+                    "note": "conversation tombstones are active now; the application's deletion sweep removes any remaining conversation data on start. Older backups are NOT changed."}
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+def _swap(stage: Path, home: Path, entries: list[dict]) -> str | None:
+    top = sorted(p.name for p in stage.iterdir())
+    if not home.exists() or not any(p.name not in (".server.lock",) for p in home.iterdir()):
+        if home.exists():
+            for p in home.iterdir():
+                p.unlink()
+            home.rmdir()
+        os.replace(stage, home)
+        return None
+    aside_name = f".pre-restore-{uuid.uuid4().hex[:10]}"
+    aside = home / aside_name
+    aside.mkdir(mode=0o700)
+    names = top + [n + sfx for n in top if n.endswith(_DBS_SUFFIX) for sfx in ("-wal", "-shm")]
+    journal = {"aside": aside_name, "moved": [], "placed": [], "state": "swapping"}
     try:
-        manifest = _extract(archive, key, stage)
-        if not manifest.get("consistent", False) and not allow_inconsistent:
-            raise BackupIncompleteError("the backup was taken while files were changing (flagged inconsistent: " + ", ".join(manifest.get("unstable_files", [])[:3]) + ")")
-        # authoritative deletion history: the live ledger in the target and/or an authenticated export; never anything stored only in this archive
-        entries: list[dict] = []
-        sources = []
-        if (home / ledger.LEDGER_NAME).exists():
-            entries += ledger.merged(home)
-            sources.append("live_ledger")
-        if deletion_ledger is not None:
-            exp = ledger.load_export(Path(deletion_ledger), key)
-            if exp["generated_at"] < float(manifest.get("created_epoch", 0)):
-                raise DeletionHistoryUnavailable("the deletion-history export is older than the backup, so it cannot cover later deletions")
-            entries += exp["entries"]
-            sources.append("export")
-        if not sources and not unsafe_without_deletion_history:
-            raise DeletionHistoryUnavailable("no authoritative deletion history (a live ledger in the target or an authenticated export): restoring could bring back data customers deleted")
-        uniq, seen = [], set()
-        for e in entries:
-            k = (e["kind"], e["id"], e.get("session_id", "") if e["kind"] == "doc" else "")
-            if k not in seen:
-                seen.add(k)
-                uniq.append(e)
-        applied = _apply_deletions(stage, uniq)
-        if sources:                                    # only a restore that HAD history writes a ledger: an empty one would later pass for authoritative
-            with open(stage / ledger.LEDGER_NAME, "w") as f:
-                for e in uniq:
-                    f.write(json.dumps(e, separators=(",", ":"), sort_keys=True) + "\n")
-            os.chmod(stage / ledger.LEDGER_NAME, 0o600)
-        for stale in list(stage.rglob("*-wal")) + list(stage.rglob("*-shm")):
-            stale.unlink(missing_ok=True)
-        problems = _health_check(stage, uniq)
-        if problems:
-            raise RestoreFailed("restored copy failed its health check: " + "; ".join(problems[:3]))
-        # swap
-        top = sorted(p.name for p in stage.iterdir())
-        if not home.exists() or not any(home.iterdir()):
-            if home.exists():
-                home.rmdir()
-            os.replace(stage, home)
-            moved_aside = None
-        else:
-            aside_name = f".pre-restore-{uuid.uuid4().hex[:10]}"
-            aside = home / aside_name
-            aside.mkdir(mode=0o700)
-            names = top + [n + sfx for n in top if n.endswith(_DBS_SUFFIX) for sfx in ("-wal", "-shm")]
-            journal = {"aside": aside_name, "moved": [], "placed": [], "state": "swapping"}
-            try:
+        _write_journal(home, journal)
+        for name in names:                                       # write-ahead: the intent is durable BEFORE the file moves, so recovery always knows what to undo
+            if (home / name).exists():
+                journal["moved"].append(name)
                 _write_journal(home, journal)
-                for name in names:                                       # write-ahead: the intent is durable BEFORE the file moves, so recovery always knows what to undo
-                    if (home / name).exists():
-                        journal["moved"].append(name)
-                        _write_journal(home, journal)
-                        os.replace(home / name, aside / name)
-                for name in top:
-                    journal["placed"].append(name)
-                    _write_journal(home, journal)
-                    os.replace(stage / name, home / name)
-                post = _health_check(home, uniq)
-                if post:
-                    raise RestoreFailed("restored directory failed its post-swap health check: " + "; ".join(post[:3]))
-            except BaseException:
-                recover_interrupted(home)
-                if not (home / JOURNAL).exists():
-                    shutil.rmtree(aside, ignore_errors=True)          # nothing was moved (or it was all put back): the empty holding directory goes too
-                raise
-            (home / JOURNAL).unlink(missing_ok=True)
-            moved_aside = str(aside)
-        return {"restored_files": len(manifest["files"]), "verified": True, "deletion_history_sources": sources, "deletions_applied": applied,
-                "deleted_data_may_be_present": not sources, "previous_state_kept_at": moved_aside,
-                "note": "conversation tombstones are active now; the application's deletion sweep removes any remaining conversation data on start. Older backups are NOT changed."}
+                os.replace(home / name, aside / name)
+        for name in top:
+            journal["placed"].append(name)
+            _write_journal(home, journal)
+            os.replace(stage / name, home / name)
+        post = _health_check(home, entries)
+        if post:
+            raise RestoreFailed("restored directory failed its post-swap health check: " + "; ".join(post[:3]))
+    except BaseException:
+        try:
+            recover_interrupted(home)
+        except RestoreFailed:
+            raise
+        if not (home / JOURNAL).exists():
+            shutil.rmtree(aside, ignore_errors=True)              # nothing was moved (or it was all put back): the empty holding directory goes too
+        raise
+    (home / JOURNAL).unlink(missing_ok=True)
+    return str(aside)
+
+
+# ── offline migration of pre-existing plaintext backups ─────────────────────────────────────────────────────────────────────────
+
+def _inside(child: Path, parent: Path) -> bool:
+    try:
+        Path(child).resolve().relative_to(Path(parent).resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def import_legacy(legacy_db: Path, out_file: Path, *, key: bytes, live_home: Path | None) -> dict:
+    """OFFLINE migration of one pre-existing plaintext accounts-database backup (``auth_backup_*.db`` written by the retired ``orca backup``) into an encrypted archive.
+
+    It reads the legacy file and writes a new archive; it never reads or writes the live data directory, refuses if either path is inside it, and refuses while a server is
+    running on it. The archive is marked ``legacy_plaintext_import``, its creation time is the IMPORT time (so an older deletion-history export cannot be used with it), and it
+    carries no ledger lineage (nothing proves how it relates to today's ledger). It restores only through the normal ``restore`` (deletion history required, deletions re-applied).
+    The plaintext original is NOT deleted: destroying it is the operator's deliberate step."""
+    legacy_db, out_file = Path(legacy_db), Path(out_file)
+    if live_home is not None:
+        live_home = Path(live_home)
+        if _inside(legacy_db, live_home) or _inside(out_file, live_home) or _inside(out_file.parent, live_home):
+            raise BackupError("both the legacy file and the new archive must be outside the live data directory (this migration is offline-only)")
+        if live_home.exists():
+            with _flock(live_home / ".server.lock", fcntl.LOCK_EX, "a server is running on the live data directory: stop it first (this migration is offline-only)", create=False):
+                pass
+    if len(key) != 32:
+        raise BackupKeyError("backup key must be exactly 32 bytes")
+    if out_file.exists():
+        raise FileExistsError("backup destination already exists")
+    if not legacy_db.is_file():
+        raise BackupIncompleteError("legacy backup file is missing")
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    scratch = Path(tempfile.mkdtemp(prefix=".orbk-import-", dir=str(out_file.parent)))
+    os.chmod(scratch, 0o700)
+    partial = out_file.with_name(out_file.name + ".partial")
+    try:
+        snap = scratch / "auth.db"
+        s = None
+        try:
+            s = sqlite3.connect(f"file:{legacy_db}?mode=ro", uri=True, timeout=10)
+            if s.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise BackupIncompleteError("legacy backup failed its integrity check")
+            if not s.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").fetchone():
+                raise BackupIncompleteError("legacy backup does not look like an accounts database (no users table)")
+            d = sqlite3.connect(str(snap))
+            try:
+                s.backup(d)
+            finally:
+                d.close()
+        except sqlite3.Error:
+            raise BackupIncompleteError("legacy backup is not a readable SQLite database") from None
+        finally:
+            if s is not None:
+                s.close()
+        files: dict = {}
+        fd = os.open(str(partial), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as raw:
+            w = EncryptedWriter(raw, key)
+            _put(w, "auth.db", snap, "sqlite_online_backup", files, time.time())
+            manifest = {"format": FORMAT, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "created_epoch": time.time(), "files": files, "core": ["auth.db"],
+                        "unstable_files": [], "consistent": True, "origin": "legacy_plaintext_import", "ledger": None, "excluded_dirs": sorted(_SKIP_DIRS)}
+            body = json.dumps(manifest, sort_keys=True).encode()
+            w.write(b"M" + len(body).to_bytes(4, "big") + body)
+            w.close()
+            raw.flush()
+            os.fsync(raw.fileno())
+        os.replace(partial, out_file)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
     finally:
-        shutil.rmtree(stage, ignore_errors=True)
+        shutil.rmtree(scratch, ignore_errors=True)
+    return {"origin": "legacy_plaintext_import", "path": str(out_file), "files": 1, "bytes": out_file.stat().st_size}

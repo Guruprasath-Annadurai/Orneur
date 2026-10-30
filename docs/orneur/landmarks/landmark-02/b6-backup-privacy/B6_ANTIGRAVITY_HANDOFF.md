@@ -23,3 +23,17 @@ pytest tests/test_l02_b6_backup.py tests/test_l02_operational.py -p no:cacheprov
 pytest tests/journey/test_l02_b6_backup_live.py -p no:cacheprovider                                                                         # real server + CLI
 ```
 Review first: `orca/serve/backup.py` (`restore`, `_extract`, `_apply_deletions`, journal), `backup_crypto.py`, `deletion_ledger.py`, the three hook sites (`deletions.begin`, `account_delete.delete_account`, `docs/store.mark_doc_deleting`), the `/readyz` restore check in `orca/serve/api.py`, `orca/cli.py` (`data-backup`). Please record your verdict against the exact SHA in your own PR.
+
+## Corrective pass — additional things to attack
+| Attack | Expected |
+|---|---|
+| `orca backup`, `orca backup --keep 3`, `orca restore <file> --yes`, `orca.ops.backup.{backup_sqlite,backup_postgres,run_backup,restore_sqlite}` | refuse (exit 1 / `BackupError` naming `data-backup`); no file written, live database unchanged |
+| find any other code path that writes a plaintext copy of accounts/conversations or restores one | none intended; known plaintext artefacts are listed in `B6_LEGACY_MIGRATION.md` (pre-migration `.bak`, `.pre-restore-*`) |
+| `import-legacy` with source/output inside the live directory, while a server runs, with a non-SQLite or non-accounts file | refused; live directory untouched; original never deleted |
+| restore a migrated legacy archive without a live ledger / export, or with an export older than the import | refused |
+| remove the ledger, truncate it (empty, garbage, valid prefix), edit/reorder/forge lines, replace it with another system's | refused (chain / lineage / "behind the export") |
+| a consistent rewrite of the whole ledger by someone who knows the format | accepted — **by design undetectable**; result reports `completeness_verified: false` (please confirm the claim is honest, and tell us if any message overstates) |
+| tamper with `.restore-journal.json` (`../`, absolute, nested, wrong types, symlinked holding dir, loose mode) | `RestoreFailed`, directory stays flagged, nothing outside the data directory touched |
+| restored modes; two simultaneous restores; restore while a server runs; start a server during a restore | 0700/0600; "another restore is in progress"; "a server is running"; "a restore is in progress" |
+Not tried by us: NFS or other filesystems where `flock` is unreliable; processes started by an older version (no lock); racing the lock acquisition from many processes at the millisecond level; huge data directories.
+Reproduce: `pytest tests/test_l02_b6_corrective.py tests/test_l02_b6_backup.py tests/test_ops_backup.py tests/test_l02_operational.py`; live: `pytest tests/journey/test_l02_b6_backup_live.py`; red evidence: `evidence/b6c_*`. Legacy repro: copy `evidence/b6c_legacy_bypass_repro.py` into `tests/` and run it against `b1c56b9` (4 fail) and against the new head (it is expected to pass the same assertions).

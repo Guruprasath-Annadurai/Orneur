@@ -1,6 +1,6 @@
 {
  "schema": "l02-b6-evidence-manifest/1",
- "milestone_status": "VERIFIED_ENGINEERING (independently testable portion) / BLOCKED (founder decisions)",
+ "milestone_status": "VERIFIED_ENGINEERING (independently testable portion; corrective pass applied) / BLOCKED (founder decisions B6-B1..B4)",
  "independently_qualified": false,
  "baseline": "38e0d311991875366f2bc88a39690c7b2b6ea3ee",
  "branch": "claude/l02-b6-backup-privacy",
@@ -41,11 +41,15 @@
  ],
  "incompatible_changes": [
   "plaintext directory backups can no longer be created or restored",
-  "data-backup create takes an archive path and a key"
+  "orca backup / orca restore / orca.ops.backup.* creation and restore are retired (fail closed)",
+  "restored directories are 0700 / files 0600",
+  "restore requires the server to be stopped (flock) and a deletion history from the same ledger lineage"
  ],
  "blocked": [
-  "key custody model (founder)",
-  "retention of historical backups / immutable or off-host storage (founder)"
+  "B6-B1 key custody",
+  "B6-B2 historical-backup retention / immutable or off-host storage",
+  "B6-B3 off-host anchoring of the deletion ledger (completeness cannot be verified without it)",
+  "B6-B4 Postgres plaintext dumps"
  ],
  "not_run": [
   "very large data directories",
@@ -54,5 +58,18 @@
   "vector-store instant-consistency with the databases",
   "independent qualification"
  ],
- "commits_after_final_code_sha": "documentation/evidence only"
+ "commits_after_final_code_sha": "documentation/evidence only",
+ "corrective": {
+  "finding": "P1 legacy backup/restore bypass (orca/ops/backup.py, orca backup, orca restore) on PR #143 candidate b1c56b9/ba36e74",
+  "repro": "evidence/b6c_legacy_bypass_repro.py -> evidence/b6c_legacy_bypass_red_b1c56b9.txt (4 of 4 failed before the fix)",
+  "red_before_fix": "evidence/b6c_corrective_tests_red_b1c56b9.txt (20 failed, 3 passed)",
+  "history_of_claims": "the first B6 delivery (code ba36e74, CI green) claimed the boundary was closed; that was incorrect and is corrected in B6_BACKUP_PRIVACY_REPORT.md section 7. The earlier green CI record is preserved in B6_EXACT_HEAD_CI.md."
+ },
+ "not_claimed": [
+  "ledger is tamper-proof",
+  "ledger is independently authoritative",
+  "deletion history is complete",
+  "offline copies are erased",
+  "NFS / multi-host locking"
+ ]
 }
