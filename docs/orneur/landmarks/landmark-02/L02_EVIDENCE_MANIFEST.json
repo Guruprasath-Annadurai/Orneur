@@ -3,7 +3,7 @@
  "milestone_status": "VERIFIED_ENGINEERING_READY_FOR_INDEPENDENT_RETEST",
  "independently_qualified": false,
  "baseline": "9cb864c99ad323d11626063498a7d1cef0d7d4b5",
- "final_code_bearing_sha": "e27a4b2091b6d93eb83ce082bf73d02d1931a2fd",
+ "final_code_bearing_sha": "faee97576bebee41b0cf307ccb1fa2089d4d2dbe",
  "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/139",
  "pr_state": "draft",
  "waves": {
@@ -17,13 +17,14 @@
   "L02-08": "VERIFIED_ENGINEERING"
  },
  "ci": {
-  "final_run": 40922563503,
-  "head": "e27a4b2091b6d93eb83ce082bf73d02d1931a2fd",
-  "conclusion": "success",
+  "final_run": 40993535386,
+  "head": "faee97576bebee41b0cf307ccb1fa2089d4d2dbe",
+  "conclusion": "success (10/10; Journeys job passed on re-run of the failed job)",
   "jobs": "10/10",
-  "deterministic": "9330 passed, 0 failed, 399 skipped, 189 deselected, 6 xfailed",
+  "deterministic": "9331 passed, 0 failed, 399 skipped, 189 deselected, 6 xfailed",
   "journeys_fixture": "39 + 15 + 23 + 3 passed",
-  "failed_runs_recorded_in": "L02_EXACT_HEAD_CI.md"
+  "failed_runs_recorded_in": "L02_EXACT_HEAD_CI.md",
+  "unexplained": "attempt 1 of run 40993535386: Journeys job, test_l02_deletion_live D1-D5 'server exited early (code 1)'; cause not captured; re-run passed"
  },
  "tests": {
   "new_deterministic_files": {
@@ -124,5 +125,5 @@
   "non-Chromium browsers",
   "independent qualification"
  ],
- "commits_after_final_code_sha": "documentation and evidence only"
+ "commits_after_final_code_sha": "documentation/evidence and a test-harness diagnostic only"
 }

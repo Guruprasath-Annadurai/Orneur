@@ -19,6 +19,8 @@ Baseline `9cb864c99ad323d11626063498a7d1cef0d7d4b5` (PR #136, unmodified). State
 | L02-06 | P1/P2 | 4/24 concurrent streams failed as `backend_error`; Kernel stream path had no admission cap; readiness hung 5 s with Redis frozen; fd leak from duplicate diskcache copies; no drain; no backup/restore | FIXED |
 | L02-06b | P2 | the new data-directory CLI group shadowed the documented `orca backup --keep N` | FIXED (`orca data-backup …`; test pins both) |
 | L02-08 | P2 | model could claim native identity/abilities; tool reporting not limited to executed tools | FIXED |
+| L02-CI1 | P2 | CDP pipe used `select()` (fails for descriptors ≥ 1024 — a busy server process) | FIXED (`poll()`, red-then-green test) |
+| L02-CI2 | P3 | One Journeys-job attempt failed at server startup (L02 deletion live D1–D5, `code 1`), log not retained; passed on re-run of the same SHA | OPEN — unexplained flake; harness now prints the log tail |
 | CI | – | three CI failures on `7059629`: stale test assumptions (serving-facts message position, per-account lockout vs per-IP test, backend-dependent wiring test) | FIXED (test-side; reasons in the security matrix) |
 
 ## B. Open items
@@ -42,4 +44,4 @@ Baseline `9cb864c99ad323d11626063498a7d1cef0d7d4b5` (PR #136, unmodified). State
 | Carry-over | P2/P3 | B-05, B-07 … B-11 from LANDMARK-01 unchanged unless named above | unchanged |
 
 ## C. Counts
-Unresolved **P0: 0**. Unresolved **P1: 1** (L02-Q, independent qualification, a process gate). P2 open: L02-B1, B2, B3, 06a, B4. P3 open: B5–B13. No finding is hidden by a skipped test; CI's 399 skips and 6 xfails are the pre-existing conditional skips (same set as the PR #136 head plus one), none belong to L02 tests.
+Unresolved **P0: 0**. Unresolved **P1: 1** (L02-Q, independent qualification, a process gate). P2 open: L02-B1, B2, B3, 06a, B4. P3 open: B5–B13, CI2. No finding is hidden by a skipped test; CI's 399 skips and 6 xfails are the pre-existing conditional skips (same set as the PR #136 head plus one), none belong to L02 tests.

@@ -94,7 +94,7 @@ class LiveServer:
         end = time.time() + timeout
         while time.time() < end:
             if self.proc.poll() is not None:
-                raise CapabilityMissing(f"server exited early (code {self.proc.returncode}); see {self.log_path}")
+                raise CapabilityMissing(f"server exited early (code {self.proc.returncode}); see {self.log_path}\n--- server.log tail ---\n{self.log_tail(25)}")
             try:
                 if httpx.get(f"{self.base}/livez", timeout=2).status_code == 200:
                     return

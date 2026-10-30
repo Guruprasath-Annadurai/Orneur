@@ -2,7 +2,7 @@
 
 **Engineering state: `VERIFIED_ENGINEERING — READY_FOR_INDEPENDENT_RETEST`** (not independently qualified; nothing merged, deployed or provisioned; PR #139 stays draft).
 
-Lineage: PR #134 → #135 → #136 `9cb864c9…` (unmodified, under Antigravity qualification) → this branch. Final code-bearing SHA `e27a4b2091b6d93eb83ce082bf73d02d1931a2fd`, CI run 40922563503 green (10/10). See `L02_EXACT_HEAD_CI.md`.
+Lineage: PR #134 → #135 → #136 `9cb864c9…` (unmodified, under Antigravity qualification) → this branch. Final code-bearing SHA `faee97576bebee41b0cf307ccb1fa2089d4d2dbe`, CI run 40993535386 green (10/10 after one re-run of a failed job; see `L02_EXACT_HEAD_CI.md`). See `L02_EXACT_HEAD_CI.md`.
 
 | Wave | Result | Report |
 |---|---|---|
@@ -16,13 +16,16 @@ Lineage: PR #134 → #135 → #136 `9cb864c9…` (unmodified, under Antigravity 
 | L02-08 model identity & capability truth | VERIFIED_ENGINEERING | `L02_MODEL_IDENTITY_AND_CAPABILITY_TRUTH.md` |
 
 ## Tests (this branch)
-New deterministic L02 files: 246 passed, 0 skipped (13 files). Live/browser (workstation, final code): deletion 6, recovery 8, operations 8, account 2, upload parsers (real libs) 7, document real-Ollama 3, customer journeys 6 runs; LANDMARK-01 regressions: streaming 17, real Ollama 2, cancel race 1, browser 26, concurrency 11; frontend Node 102. CI (final head): 9330 passed, 0 failed, 399 skipped, 6 xfailed. Failed runs along the way and their causes: `L02_EXACT_HEAD_CI.md`.
+New deterministic L02 files: 246 passed, 0 skipped (13 files). Live/browser (workstation, final code): deletion 6, recovery 8, operations 8, account 2, upload parsers (real libs) 7, document real-Ollama 3, customer journeys 6 runs; LANDMARK-01 regressions: streaming 17, real Ollama 2, cancel race 1, browser 26, concurrency 11; frontend Node 102. CI (final code head): 9331 passed, 0 failed, 399 skipped, 6 xfailed. Failed runs along the way and their causes: `L02_EXACT_HEAD_CI.md`.
 
 ## Material findings fixed in this pass (beyond the reports)
-Postgres init broken by a `;` in a SQL comment (caught by CI); the new data-backup CLI group shadowed the documented `orca backup` command (found while writing the runbook, now pinned by a test); 4/24 concurrent streams failed as `backend_error`; Kernel stream path had no admission cap; readiness hung 5 s with Redis frozen; fd leak; stale idempotency row blocked retry after a killed worker.
+Postgres init broken by a `;` in a SQL comment (caught by CI); CDP pipe read used `select()` and failed for descriptors ≥ 1024 (caught by CI, fixed with `poll()`); the new data-backup CLI group shadowed the documented `orca backup` command (found while writing the runbook, now pinned by a test); 4/24 concurrent streams failed as `backend_error`; Kernel stream path had no admission cap; readiness hung 5 s with Redis frozen; fd leak; stale idempotency row blocked retry after a killed worker.
 
 ## Honest limits
 Prompt injection into the answering model is mitigated structurally only. Real-Ollama and real-parser evidence is workstation-only. All performance numbers are single-workstation measurements, not capacity claims. No real mail was sent. The model is third-party `llama3.2:1b`; no native weights exist; GENESIS is INTERFACE_ONLY, NOVUS/AETERNUM NOT_AVAILABLE. See `L02_BLOCKER_REGISTER.md` (P0 0, P1 1 = independent qualification) and `L02_ANTIGRAVITY_HANDOFF.md`.
 
 ## Pretraining programme
 No pretraining artefact, branch, corpus or authorisation was touched. Broad feature work stops here; the branch is ready for independent retest, after which a separately CTO-approved pretraining assignment can proceed.
+
+## Unexplained CI event
+One attempt of the Journeys job failed at server startup in the deletion live suite (log not retained) and passed on re-run of the same SHA. This is disclosed as an unexplained flake, not as resolved.
