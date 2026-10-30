@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 from orca.config import ORCA_HOME, orneur_env
@@ -700,9 +701,18 @@ def _get_postgres_conn() -> _PGConnAdapter:
 
 def _get_sqlite_conn() -> sqlite3.Connection:
     AUTH_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(AUTH_DB), check_same_thread=False)
+    conn = sqlite3.connect(str(AUTH_DB), check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # Switching a database to WAL needs a lock that the busy handler does not always wait for: two workers cold-starting on the same empty data
+    # directory could crash one of them with "database is locked" (seen in CI). Retry briefly; once WAL is set the pragma is a no-op.
+    for attempt in range(40):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            break
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt == 39:
+                raise
+            time.sleep(0.25)
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

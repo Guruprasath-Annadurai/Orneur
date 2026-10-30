@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 import threading
@@ -311,3 +312,25 @@ def test_the_data_directory_backup_group_does_not_shadow_the_existing_orca_backu
     assert legacy.exit_code == 0 and "--keep" in plain(legacy.output)
     new = runner.invoke(app, ["data-backup", "--help"])
     assert new.exit_code == 0 and all(w in plain(new.output) for w in ("create", "verify", "restore"))
+
+
+def test_workers_cold_starting_together_on_an_empty_data_directory_all_open_the_auth_database(tmp_path):
+    """Switching to WAL needs a lock the busy handler does not always wait for; two workers starting at once used to crash one with 'database is locked' (CI)."""
+    import subprocess
+    import sys
+    import time
+
+    code = (
+        "import os,sys,time\n"
+        "go=float(sys.argv[1])\n"
+        "from orca.auth import db\n"
+        "while time.time()<go: pass\n"
+        "db.init_db(); c=db.get_conn(); c.execute('select 1'); print('ok')\n"
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("ORNEUR_", "ORCA_"))}
+    env.update({"ORNEUR_HOME": str(tmp_path / "home"), "PYTHONPATH": os.getcwd()})
+    go = time.time() + 6
+    procs = [subprocess.Popen([sys.executable, "-c", code, str(go)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(16)]
+    results = [p.communicate(timeout=120) + (p.returncode,) for p in procs]
+    bad = [(rc, err[-300:]) for out, err, rc in results if rc != 0 or "ok" not in out]
+    assert not bad, bad
