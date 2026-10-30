@@ -606,3 +606,38 @@ def test_live_cancel_and_crash(tmp_path: Path):
     finally:
         _assert_profile_stopped(engine)
         server.shutdown()
+
+
+def test_cdp_pipe_reads_when_the_descriptor_is_above_the_select_limit():
+    """A server process legitimately holds more than 1024 descriptors; select() raises ValueError for them (seen in CI: 'filedescriptor out of range')."""
+    import json as _json
+    import os
+    import resource
+
+    from orca.browser_engine.cdp import CdpPipe
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft < 1200 and (hard == resource.RLIM_INFINITY or hard >= 1200):
+        resource.setrlimit(resource.RLIMIT_NOFILE, (1200, hard))
+    r, w = os.pipe()
+    high_r = fcntl_dup_above(r, 1100)
+    os.close(r)
+    junk = []
+    try:
+        pipe = CdpPipe(high_r, os.dup(w))
+        assert pipe._read.fileno() > 1023
+        os.write(w, _json.dumps({"id": 1}).encode() + b"\0")
+        assert pipe._read_message(__import__("time").monotonic() + 2) == {"id": 1}
+        pipe.close()
+    finally:
+        for fd in junk + [w]:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def fcntl_dup_above(fd: int, minimum: int) -> int:
+    import fcntl
+
+    return fcntl.fcntl(fd, fcntl.F_DUPFD, minimum)
