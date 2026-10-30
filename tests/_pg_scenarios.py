@@ -354,6 +354,19 @@ def s_api_flow_on_postgres():
     return out
 
 
+def s_apikey_stepup_ledgers():
+    """L02-B3: the step-up failure ledger and the authenticator-step replay guard on real PostgreSQL (ON CONFLICT DO NOTHING + rowcount)."""
+    from orca.auth import account_security as acct, db
+    db.init_db()
+    uid = "u-" + uuid.uuid4().hex[:8]
+    first, second, other_step = acct.claim_totp_step(uid, 123456), acct.claim_totp_step(uid, 123456), acct.claim_totp_step(uid, 123457)
+    for _ in range(acct.LOGIN_MAX_FAILURES):
+        acct.record_stepup_failure(uid)
+    locked = acct.stepup_locked(uid)
+    acct.clear_stepup_failures(uid)
+    return {"first": first, "replay": second, "next_step": other_step, "locked": locked > 0, "cleared": acct.stepup_locked(uid) == 0}
+
+
 SCENARIOS = {k[2:]: v for k, v in globals().items() if k.startswith("s_")}
 
 if __name__ == "__main__":

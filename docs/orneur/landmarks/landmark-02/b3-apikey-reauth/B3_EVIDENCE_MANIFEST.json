@@ -1,0 +1,53 @@
+{
+ "schema": "l02-b3-evidence-manifest/1",
+ "milestone_status": "VERIFIED_ENGINEERING_READY_FOR_INDEPENDENT_RETEST",
+ "independently_qualified": false,
+ "baseline": "38e0d311991875366f2bc88a39690c7b2b6ea3ee",
+ "branch": "claude/l02-b3-apikey-reauth",
+ "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/141",
+ "pr_state": "draft",
+ "final_code_bearing_sha": "283e3a464a3de1d0a420709a3f6602730023300d",
+ "ci": {
+  "run": 41014535017,
+  "conclusion": "success (10/10)",
+  "deterministic": "9354 passed, 0 failed, 399 skipped, 190 deselected, 6 xfailed",
+  "journeys_fixture": "39 + 15 + 24 + 3 passed",
+  "earlier_runs": [
+   {
+    "run": 41012363816,
+    "head": "1a17fb0",
+    "note": "green but skip count 400: test_07d silently skipped; fixed"
+   }
+  ]
+ },
+ "tests": {
+  "regression": {
+   "cmd": "pytest tests/test_l02_b3_apikey_reauth.py",
+   "result": "21 passed; 16 fail on baseline 38e0d31",
+   "evidence": "evidence/b3_baseline_red_38e0d31.txt",
+   "class": "DET"
+  },
+  "live_two_workers": {
+   "cmd": "pytest tests/journey/test_l02_b3_apikey_reauth_live.py",
+   "result": "1 passed",
+   "evidence": "evidence/b3_apikey_reauth_live_two_workers.json",
+   "class": "LIVE+FIX"
+  },
+  "postgres": {
+   "cmd": "pytest tests/test_a_postgres_integration.py",
+   "result": "14 passed",
+   "class": "real PostgreSQL via pgserver"
+  },
+  "adjacent": "auth/account/g006/l02 groups: 921 passed, 6 skipped (pre-existing), 3 xfailed locally before the g006 fix"
+ },
+ "changed_existing_assertions": [
+  "tests/test_l02_account_security.py (creation supplies password)",
+  "tests/test_g006_tenant_isolation.py::test_07d (asserts instead of skipping)"
+ ],
+ "not_run": [
+  "browser journey for the new UI inputs",
+  "independent qualification",
+  "TOTP-step race on two workers at the same millisecond"
+ ],
+ "commits_after_final_code_sha": "documentation/evidence only"
+}

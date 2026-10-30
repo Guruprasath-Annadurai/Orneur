@@ -108,6 +108,43 @@ def clear_login_failures(email: str) -> None:
         conn.execute("DELETE FROM auth_login_failures WHERE subject_hash=?", (_subject(email),))
 
 
+# ── step-up (L02-B3: fresh verification before a long-lived credential is minted) ───────────────────────────────────────────
+
+def _stepup_subject(user_id: str) -> str:
+    # prefixed so it can never equal a login subject (a bare 64-hex digest of an email address): a login attempt cannot lock a step-up
+    return "stepup:" + hashlib.sha256((user_id or "").encode()).hexdigest()
+
+
+def stepup_locked(user_id: str) -> float:
+    now = _now()
+    with get_conn() as conn:
+        rows = conn.execute("SELECT failed_at FROM auth_login_failures WHERE subject_hash=? AND failed_at > ? ORDER BY failed_at ASC", (_stepup_subject(user_id), now - LOGIN_WINDOW_S)).fetchall()
+    if len(rows) < LOGIN_MAX_FAILURES:
+        return 0.0
+    return max(1.0, LOGIN_WINDOW_S - (now - float(rows[-LOGIN_MAX_FAILURES]["failed_at"])))
+
+
+def record_stepup_failure(user_id: str) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM auth_login_failures WHERE failed_at < ?", (now - LOGIN_WINDOW_S,))
+        conn.execute("INSERT INTO auth_login_failures (subject_hash, failed_at) VALUES (?,?)", (_stepup_subject(user_id), now))
+
+
+def clear_stepup_failures(user_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM auth_login_failures WHERE subject_hash=?", (_stepup_subject(user_id),))
+
+
+def claim_totp_step(user_id: str, step: int) -> bool:
+    """Atomically record that this authenticator time step was used for a step-up. False if it was already used (replay)."""
+    now = _now()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM auth_stepup_totp_used WHERE used_at < ?", (now - 600,))
+        cur = conn.execute("INSERT INTO auth_stepup_totp_used (user_id, step, used_at) VALUES (?,?,?) ON CONFLICT (user_id, step) DO NOTHING", (user_id, int(step), now))
+    return cur.rowcount == 1
+
+
 # ── policy ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def verification_requested() -> bool:
