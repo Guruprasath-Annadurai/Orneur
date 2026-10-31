@@ -1,0 +1,100 @@
+{
+  "package": "FOUNDATION_CONSOLIDATION",
+  "schema_version": "orneur-foundation-consolidation-execution-manifest/1",
+  "status_line": "FOUNDATION CONSOLIDATION PREFLIGHT COMPLETE — FOUNDER MERGE AUTHORIZATION REQUIRED",
+  "refreshed_at_utc": "2026-10-31T13:30:00Z",
+  "sha_drift": false,
+  "baseline_match": true,
+  "phases": {
+    "A_inventory_ancestry": "COMPLETE",
+    "B_security_functional_preservation": "COMPLETE",
+    "C_branch_protection_ci_reconcile": "COMPLETE",
+    "D_isolated_dry_run_tree_equivalence": "COMPLETE",
+    "E_attribution_inventory": "COMPLETE",
+    "F_rollback_plan": "COMPLETE",
+    "G_founder_decision_package": "COMPLETE",
+    "H_protected_merge": "INACTIVE"
+  },
+  "items": {
+    "1_ANCESTRY": "FOUNDATION_CONSOLIDATION_ANCESTRY.json",
+    "2_SECURITY_MATRIX": "FOUNDATION_CONSOLIDATION_SECURITY_MATRIX.md",
+    "3_CI_REGISTER": "FOUNDATION_CONSOLIDATION_CI_REGISTER.md",
+    "4_BRANCH_PROTECTION": "FOUNDATION_CONSOLIDATION_BRANCH_PROTECTION.md",
+    "5_DRY_RUN": "FOUNDATION_CONSOLIDATION_DRY_RUN.md",
+    "6_TREE_EQUIVALENCE": "FOUNDATION_CONSOLIDATION_TREE_EQUIVALENCE.md",
+    "7_ATTRIBUTION_REVIEW": "FOUNDATION_CONSOLIDATION_ATTRIBUTION_REVIEW.md",
+    "8_ROLLBACK_PLAN": "FOUNDATION_CONSOLIDATION_ROLLBACK_PLAN.md",
+    "9_FOUNDER_DECISION": "ORNEUR_FOUNDATION_CONSOLIDATION_FINAL_FOUNDER_DECISION.md",
+    "10_EXECUTION_MANIFEST": "FOUNDATION_CONSOLIDATION_EXECUTION_MANIFEST.json",
+    "11_MERGE_RECEIPT": "NOT_PRODUCED_PHASE_H_INACTIVE",
+    "12_POST_MERGE_VERIFICATION": "NOT_PRODUCED_PHASE_H_INACTIVE"
+  },
+  "identities": {
+    "main_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+    "main_tree": "4707492d800aea61a4c6f159a1adf3d59d8a23d6",
+    "pr_145_sha": "d8827409248dcdb5da55a010d8224d9e0e3bddbe",
+    "pr_146_sha": "b96cc3260078b6f677a22381b05fe1f72026256f",
+    "pr_148_eng_sha": "cadad0e525c5f84698af9945d048b9ba36aa4f0e",
+    "pr_148_eng_tree": "d1742759c1ecf25629f7bca1376719a75bd52d71",
+    "pr_148_head_sha": "da699a01bdb811ac54ef00cf0c9585f70eb74a57",
+    "pr_148_head_tree": "106487db24a66672c7ca3e660a1d1e0792281238",
+    "antigravity_final_sha": "83978d48f071fac575f360605baadf35c3fac1e0",
+    "pr_149_sha": "44e130e7ef6421370f48c4144f2c30a74c6f521b"
+  },
+  "ci": {
+    "eng_run": 41196122676,
+    "pr_head_run": 41197716243,
+    "master03_run": 41178651529,
+    "eng_jobs": "10/10 success",
+    "pr_head_jobs": "10/10 success"
+  },
+  "dry_run": {
+    "conflicts": 0,
+    "ff_capable": true,
+    "sequential_no_ff_tree": "106487db24a66672c7ca3e660a1d1e0792281238",
+    "tree_equivalence_to_pr_148_head": true,
+    "sim_discarded": true,
+    "main_mutated": false
+  },
+  "governance": {
+    "formal_acceptance": "0/95",
+    "training_authorization": "NOT_AUTHORIZED",
+    "genesis": "INTERFACE_ONLY",
+    "novus": "NOT_AVAILABLE",
+    "aeternum": "NOT_AVAILABLE"
+  },
+  "branch_protection": {
+    "api_get_protection": "403",
+    "rulesets_visible": [],
+    "stance": "403_neq_absent_protection_main_founder_gated",
+    "bypass_attempted": false
+  },
+  "attribution": {
+    "commits_in_range": 265,
+    "authors": {
+      "Cursor Agent <cursoragent@cursor.com>": 108,
+      "Guruprasath-Annadurai <192743778+Guruprasath-Annadurai@users.noreply.github.com>": 83,
+      "Techezz Infos <Techezzinfos@gmail.com>": 74
+    },
+    "coauthored_by_techezzinfos_commits": 25,
+    "history_rewrite": false
+  },
+  "prohibited_actions_honored": [
+    "no_production_deploy",
+    "no_spend",
+    "no_training",
+    "no_tags",
+    "no_formal_acceptance_promotion",
+    "no_history_rewrite",
+    "no_branch_protection_bypass",
+    "no_mutation_of_145_146_148_for_docs",
+    "phase_h_inactive"
+  ],
+  "recommendation": {
+    "engineering_preflight": "GO_FOR_FOUNDER_DECISION",
+    "phase_h_protected_merge": "NO_GO",
+    "overall": "NO-GO — FOUNDER MERGE AUTHORIZATION REQUIRED"
+  },
+  "store_path": "/cursor/stores/self/docs/foundation-consolidation/",
+  "repo_docs_path": "docs/orneur/milestones/foundation-consolidation/"
+}
