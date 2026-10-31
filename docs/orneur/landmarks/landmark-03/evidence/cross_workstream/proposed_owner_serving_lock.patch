@@ -1,0 +1,17 @@
+diff --git a/orca/vectorstore/server.py b/orca/vectorstore/server.py
+index 84b973c..73f80f8 100644
+--- a/orca/vectorstore/server.py
++++ b/orca/vectorstore/server.py
+@@ -245,6 +245,12 @@ def main(argv=None) -> int:
+ 
+     faulthandler.register(signal.SIGUSR1, all_threads=True)               # `kill -USR1 <owner pid>` writes every thread's stack to owner.log (diagnosing a stall)
+     signal.signal(signal.SIGTERM, lambda *_: owner.stop.set())
++    try:                                                                   # COMPARISON-ONLY PATCH (not in the L03 PR): hold B6's serving lock for the owner's life
++        from orca.serve import datadir_lock
++        lock = datadir_lock.serving_lock(home)
++        lock.__enter__()
++    except Exception:
++        lock = None
+     owner.serve()
+     return 0
+ 

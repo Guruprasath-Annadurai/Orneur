@@ -170,7 +170,40 @@ def backlog_report() -> dict:
         out["reconciler_blocked"] = len(reconcile.diagnostics()["blocked"])
     except Exception:
         out["reconciler_blocked"] = "unknown"
+    # L03: vector cleanup that is logically requested but not yet confirmed, or confirmed but not yet physically reclaimed. Visible to operators, never silently dropped.
+    try:
+        from orca.brain import memory as _m
+
+        from orca.docs.store import DOCS_DIR
+        from orca.vectorstore import pending as _pending
+
+        out["vector_deletions_unconfirmed"] = len(_m._load_pending_logical_deletions())
+        out["vector_reclamation_pending"] = len(_m._load_pending_reclamations()) + len(_pending.load(DOCS_DIR / "vectors"))
+    except Exception:
+        out["vector_deletions_unconfirmed"] = out["vector_reclamation_pending"] = "unknown"
     return out
+
+
+def vector_report() -> dict:
+    """Vector-store status for /readyz and diagnostics: mode, whether deadlines are enforced, the owner's queue/stall/resource figures and the client's counters. No content."""
+    try:
+        from orca import vectorstore
+
+        mode = vectorstore.mode()
+        if mode != "service":
+            return {"mode": "embedded", "deadlines_enforced": False, "isolation": "none", "available": vectorstore.available()}
+        t = vectorstore.transport()
+        owner = t.owner_stats_quick()
+        out = {"mode": "service", "deadlines_enforced": True, "isolation": "process", "available": vectorstore.available(), "client": dict(t.counters), "latency_ms": t.stats()["latency_ms"]}
+        if owner is None:
+            out["owner"] = {"status": "not_running_or_unresponsive"}
+        else:
+            out["owner"] = {"status": "up", **{k: owner.get(k) for k in ("pid", "queue_depth", "running", "oldest_running_s", "fds", "rss_mb", "connections", "refused", "workers", "max_open")},
+                            "open_collections": sum(v.get("open_collections", 0) for v in owner.get("stores", {}).values()),
+                            "client_recycles": sum(v.get("recycles", 0) for v in owner.get("stores", {}).values()), "host_counters": owner.get("counters")}
+        return out
+    except Exception as exc:
+        return {"mode": "unknown", "error": type(exc).__name__}
 
 
 def stream_report() -> dict:

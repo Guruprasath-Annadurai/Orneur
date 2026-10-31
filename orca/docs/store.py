@@ -126,38 +126,98 @@ class DocStore:
         self.enforce_registry = enforce_registry
         self.ollama_host = ollama_host
         self._col_name = f"docs_{session_id[:12].replace('-', '')}"
-        self._chroma = None
-        self._collection = None
+        self.degraded = None                                    # why the vector index is not in use for this instance (None = in use or not installed)
+        self._inited = False                                    # L03: the vector index (and the embedding-service probe) are opened on first use, not while a request builds a session
+        self._init_lock = threading.Lock()
+        self._chroma_v = None                                   # a vectorstore.Store when the index is usable
+        self._collection_v = None
         self._fallback_file = DOCS_DIR / f"kw_{session_id[:8]}.jsonl"
-        self._use_embeddings = False
-        self._init_store()
+        self._use_embeddings_v = False
+        self._lexical_only_v = False
+
+    def _lazy(self):
+        if not self._inited:
+            with self._init_lock:
+                if not self._inited:
+                    try:
+                        self._init_store()
+                    finally:
+                        self._inited = True
+
+    @property
+    def _chroma(self):
+        self._lazy()
+        return self._chroma_v
+
+    @_chroma.setter
+    def _chroma(self, v):
+        self._chroma_v = v
+
+    @property
+    def _collection(self):
+        self._lazy()
+        return self._collection_v
+
+    @_collection.setter
+    def _collection(self, v):
+        self._inited = True                                     # a caller (a test) that installs its own collection owns the index
+        self._collection_v = v
+
+    @property
+    def _use_embeddings(self):
+        self._lazy()
+        return self._use_embeddings_v
+
+    @_use_embeddings.setter
+    def _use_embeddings(self, v):
+        self._use_embeddings_v = v
+
+    @property
+    def _lexical_only(self):
+        self._lazy()
+        return self._lexical_only_v
+
+    @_lexical_only.setter
+    def _lexical_only(self, v):
+        self._lexical_only_v = v
 
     def _init_store(self):
-        self._lexical_only = False
-        try:
-            import chromadb
-            db_path = DOCS_DIR / "vectors"
-            db_path.mkdir(parents=True, exist_ok=True)
-            self._chroma = chromadb.PersistentClient(path=str(db_path))
-            self._collection = self._chroma.get_or_create_collection(
-                name=self._col_name,
-                metadata={"hnsw:space": "cosine"},
-            )
-            # Check if Ollama embeddings are available
-            test = _ollama_embed(["test"], self.ollama_host)
-            service_up = test is not None
-            # L02-02: the collection already lives in ONE embedding space (the service's, or chroma's default). Whatever the service is doing right now, this
-            # instance must keep talking to that space, or a query vector of the wrong dimension makes every search fail silently.
-            stored_dim = self._stored_dimension()
-            in_service_space = stored_dim is not None and stored_dim == EMBED_DIM
-            self._use_embeddings = service_up and (stored_dim is None or in_service_space)
-            self._lexical_only = in_service_space and not service_up
-        except ImportError:
-            pass  # ChromaDB not installed — use keyword fallback
+        self._lexical_only_v = False
+        from orca import vectorstore as vs
 
-    def _stored_dimension(self) -> int | None:
+        if not vs.available():
+            return                                              # ChromaDB not installed -- use keyword fallback
+        db_path = DOCS_DIR / "vectors"
+        db_path.mkdir(parents=True, exist_ok=True)
         try:
-            peek = self._collection.peek(1)
+            from orca.serve import deletions
+
+            if deletions.is_tombstoned(self.session_id):        # a deleted conversation has no index to open (fails closed)
+                self.degraded = "tombstoned"
+                return
+            store = vs.Store(db_path)
+            col, info = store.open_collection(self._col_name, {"hnsw:space": "cosine"}, binding=vs.session_binding(self.session_id))
+        except vs.VectorError as exc:
+            # The index is unreachable (timeout / busy / restarting). Documents stay answerable from the keyword index of THIS conversation; nothing is borrowed from anywhere else.
+            self.degraded = type(exc).__name__
+            return
+        if info.get("status") == "mismatch":
+            self.degraded = "ownership"                         # the collection belongs to another conversation: not read, not written
+            return
+        self._chroma_v, self._collection_v = store, col
+        # Check if Ollama embeddings are available
+        test = _ollama_embed(["test"], self.ollama_host)
+        service_up = test is not None
+        # L02-02: the collection already lives in ONE embedding space (the service's, or chroma's default). Whatever the service is doing right now, this
+        # instance must keep talking to that space, or a query vector of the wrong dimension makes every search fail silently.
+        stored_dim = self._stored_dimension(col)
+        in_service_space = stored_dim is not None and stored_dim == EMBED_DIM
+        self._use_embeddings_v = service_up and (stored_dim is None or in_service_space)
+        self._lexical_only_v = in_service_space and not service_up
+
+    def _stored_dimension(self, col=None) -> int | None:
+        try:
+            peek = (col or self._collection).peek(1)
             emb = peek.get("embeddings") if isinstance(peek, dict) else None
             if emb is not None and len(emb) > 0:
                 return len(emb[0])
@@ -205,6 +265,10 @@ class DocStore:
 
     def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
         """Retrieve most relevant chunks for a query. Each hit carries its ``doc_id`` (chunk identity = doc_id + chunk_idx)."""
+        from orca.serve import deletions
+
+        if self.degraded == "tombstoned" or deletions.is_tombstoned(self.session_id):       # a deleted conversation retrieves nothing, through any path (fails closed)
+            return []
         allowed = self._authorized_doc_ids()
         if allowed is not None and not allowed:
             return []
@@ -285,7 +349,7 @@ class DocStore:
         return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"], "doc_id": e.get("doc_id", "")}
                 for _, e in scored[:top_k]]
 
-    def delete_doc_detailed(self, doc_id: str) -> dict:
+    def delete_doc_detailed(self, doc_id: str, *, reclaim: bool = True) -> dict:
         """Remove a document from EVERY store that can serve it, and say exactly what happened.
 
         L02-01: the vector collection and the keyword fallback are both retrieval paths (``retrieve`` falls back to the keyword file whenever the
@@ -321,6 +385,8 @@ class DocStore:
             except Exception:
                 out["fallback"] = "failed"
         out["ok"] = "failed" not in (out["collection"], out["fallback"])
+        # L03: logical removal is not physical erasure. The deleted chunks' text stays in freed pages of the shared vector database until it is rewritten; say what happened.
+        out["bytes"] = reclaim_doc_vectors(self._col_name, doc_id) if (reclaim and out["collection"] == "ok") else ("not_attempted" if out["collection"] == "ok" else "n/a")
         return out
 
     def delete_doc(self, doc_id: str) -> bool:
@@ -343,14 +409,73 @@ class DocStore:
     def clear(self) -> None:
         if self._collection is not None:
             try:
+                from orca import vectorstore as vs
+
                 self._chroma.delete_collection(self._col_name)
-                self._collection = self._chroma.get_or_create_collection(
-                    name=self._col_name, metadata={"hnsw:space": "cosine"},
-                )
+                self._collection = self._chroma.open_collection(self._col_name, {"hnsw:space": "cosine"}, binding=vs.session_binding(self.session_id))[0]
             except Exception:
                 pass
         if self._fallback_file.exists():
             self._fallback_file.unlink()
+
+
+def reclaim_doc_vectors(collection: str | None = None, doc_id: str | None = None, timeout_s: float = 2.0) -> str:
+    """Make a deletion PHYSICAL for the document vector store. With ``collection``: rebuild it without ``doc_id`` (drops the write-ahead log rows that still hold the deleted text),
+    then rewrite the shared database and remove orphaned segment directories. RECLAIMED only when every step completed; otherwise DEFERRED, recorded durably (counted in the
+    operator backlog) and retried by the maintenance sweep. Never raises."""
+    from orca import vectorstore as vs
+    from orca.vectorstore import pending
+
+    if not vs.available():
+        return "NOT_APPLICABLE"
+    root = DOCS_DIR / "vectors"
+    try:
+        store = vs.Store(root)
+        if collection:
+            try:
+                store.rebuild_without(collection, "doc_id" if doc_id else None, doc_id, deadline_s=60.0)
+            except vs.VectorNotFound:
+                pass                                                   # the collection is already gone: nothing left to purge
+        status = store.vacuum(timeout_s=timeout_s, deadline_s=timeout_s + 3.0)
+    except vs.VectorError:
+        status = vs.DEFERRED
+    if status == vs.DEFERRED:
+        pending.record(root, collection or "docs", "physical reclamation did not complete")
+    elif status == vs.RECLAIMED and not collection:
+        pending.clear_all(root)
+    elif status == vs.RECLAIMED:
+        pending.clear_key(root, collection)
+    return status
+
+
+def drop_session_collection(session_id: str) -> str:
+    """Session deletion: remove the conversation's whole document collection (its log goes with it), then reclaim the bytes. Returns the reclamation status."""
+    from orca import vectorstore as vs
+
+    if not vs.available():
+        return "NOT_APPLICABLE"                                        # no chromadb: only the keyword index exists
+    root = DOCS_DIR / "vectors"
+    name = f"docs_{session_id[:12].replace('-', '')}"
+    try:
+        res = vs.Store(root).delete_collection(name, deadline_s=10.0, binding=vs.session_binding(session_id))
+        if res.get("refused") == "not_owner":
+            return "NOT_APPLICABLE"
+        if not res.get("removed"):
+            raise vs.VectorUnavailable("collection still present")
+    except vs.VectorNotFound:
+        pass
+    return reclaim_doc_vectors()
+
+
+def retry_pending_doc_reclamation() -> dict:
+    from orca.vectorstore import pending
+
+    entries = pending.load(DOCS_DIR / "vectors")
+    results = {}
+    for e in entries:
+        key = e.get("key", "docs")
+        results[key] = reclaim_doc_vectors(None if key == "docs" else key, None)
+    return {"pending_before": len(entries), "results": results}
 
 
 # ── Registry helpers ──────────────────────────────────────────────────────────
