@@ -1,0 +1,5 @@
+# L03 baseline 38e0d31: API-level reproduction of the vector-collection naming defect (captured runner output). FAILED = defect confirmed.
+E       AssertionError: assert 404 in (200, 202)
+FAILED tests/l03_api_prefix_collision_repro.py::test_another_customers_remembered_text_is_not_recallable_through_a_session_id_with_the_same_first_8_characters
+FAILED tests/l03_api_prefix_collision_repro.py::test_a_customer_deleting_their_own_session_does_not_destroy_another_customers_memory
+2 failed, 16 warnings in 1.94s

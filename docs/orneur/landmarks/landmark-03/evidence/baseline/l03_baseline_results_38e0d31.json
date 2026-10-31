@@ -1,0 +1,242 @@
+{
+ "environment": {
+  "python": "3.11.18",
+  "chromadb": "1.5.9",
+  "sqlite": "3.53.1",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "cpus": 16,
+  "recorded_at": "2026-10-31T06:53:33Z"
+ },
+ "experiments": {
+  "E1": {
+   "result": {
+    "a_construct_then_write": [
+     {
+      "exit": 0,
+      "wall_s": 15.98,
+      "op_finished_within_10s": false,
+      "op": null,
+      "op_s": null,
+      "heartbeat_max_gap_s": 13.55
+     },
+     {
+      "exit": 0,
+      "wall_s": 14.15,
+      "op_finished_within_10s": false,
+      "op": null,
+      "op_s": null,
+      "heartbeat_max_gap_s": 13.55
+     },
+     {
+      "exit": 0,
+      "wall_s": 15.66,
+      "op_finished_within_10s": false,
+      "op": null,
+      "op_s": null,
+      "heartbeat_max_gap_s": 0.01
+     }
+    ],
+    "b_write_on_existing_collection": [
+     {
+      "exit": 0,
+      "wall_s": 14.68,
+      "op_finished_within_10s": true,
+      "op": "ok",
+      "op_s": 0.13,
+      "heartbeat_max_gap_s": 0.01
+     },
+     {
+      "exit": 0,
+      "wall_s": 16.49,
+      "op_finished_within_10s": true,
+      "op": "ok",
+      "op_s": 0.13,
+      "heartbeat_max_gap_s": 0.01
+     },
+     {
+      "exit": 0,
+      "wall_s": 14.75,
+      "op_finished_within_10s": true,
+      "op": "ok",
+      "op_s": 0.13,
+      "heartbeat_max_gap_s": 0.01
+     }
+    ],
+    "finding": "heartbeat_max_gap_s close to the lock duration = the whole interpreter (GIL) was frozen by a native call; ~0 = only the calling thread blocked"
+   },
+   "lab_seconds": 97.1
+  },
+  "E2": {
+   "result": {
+    "exit": 0,
+    "wall_s": 17.14,
+    "ops": 64,
+    "completed_ok": 64,
+    "errors": {}
+   },
+   "lab_seconds": 18.9
+  },
+  "E3_E8": {
+   "result": {
+    "10": {
+     "exit": 0,
+     "wall_s": 2.93,
+     "sessions": 10,
+     "fd_base": 4,
+     "fd_after": 56,
+     "fd_per_session": 5.2,
+     "rss_mb_base": 40,
+     "rss_mb_after": 179,
+     "latency_p50_s": 0.241,
+     "latency_p95_s": 0.256,
+     "soft_fd_limit": 1048576
+    },
+    "50": {
+     "exit": 0,
+     "wall_s": 12.77,
+     "sessions": 50,
+     "fd_base": 4,
+     "fd_after": 218,
+     "fd_per_session": 4.28,
+     "rss_mb_base": 40,
+     "rss_mb_after": 282,
+     "latency_p50_s": 0.237,
+     "latency_p95_s": 0.288,
+     "soft_fd_limit": 1048576
+    },
+    "100": {
+     "exit": 0,
+     "wall_s": 26.59,
+     "sessions": 100,
+     "fd_base": 4,
+     "fd_after": 416,
+     "fd_per_session": 4.12,
+     "rss_mb_base": 40,
+     "rss_mb_after": 410,
+     "latency_p50_s": 0.238,
+     "latency_p95_s": 0.285,
+     "soft_fd_limit": 1048576
+    },
+    "200": {
+     "exit": 0,
+     "wall_s": 52.65,
+     "sessions": 200,
+     "fd_base": 4,
+     "fd_after": 816,
+     "fd_per_session": 4.06,
+     "rss_mb_base": 40,
+     "rss_mb_after": 665,
+     "latency_p50_s": 0.238,
+     "latency_p95_s": 0.284,
+     "soft_fd_limit": 1048576
+    }
+   },
+   "lab_seconds": 94.9
+  },
+  "E4": {
+   "result": {
+    "exit": 0,
+    "wall_s": 20.18,
+    "budget_s": 5.0,
+    "delete_session_returned_after_s": 19.82,
+    "logical_deleted": false,
+    "physical": "PENDING",
+    "heartbeat_max_gap_s": 19.56
+   },
+   "lab_seconds": 21.1
+  },
+  "E5": {
+   "result": {
+    "exit": 0,
+    "wall_s": 13.97,
+    "unrelated_read_waited_s": 0.23,
+    "unrelated_read_result": true,
+    "asked_to_give_up_after_s": 1.0,
+    "actually_gave_up_after_s": 11.92
+   },
+   "lab_seconds": 15.2
+  },
+  "E6": {
+   "result": {
+    "sqlite_integrity": "ok",
+    "after_restart": {
+     "exit": 0,
+     "wall_s": 0.71,
+     "count": 11,
+     "count_error": null,
+     "recall": 3,
+     "store_after": "ok"
+    }
+   },
+   "lab_seconds": 2.6
+  },
+  "E7": {
+   "result": {
+    "killed_mid_deletion": true,
+    "after_restart": {
+     "exit": 0,
+     "wall_s": 0.69,
+     "deleted_session_still_retrievable_texts": 3,
+     "pending_logical_ledger": 0,
+     "pending_reclaim_ledger": 0,
+     "other_session_intact": 3
+    },
+    "finding": "a worker killed mid-deletion leaves the data retrievable by the memory layer and records NOTHING durable at this layer; only the conversation-level tombstone (session_deletions) revokes access and its sweep re-runs the cascade"
+   },
+   "lab_seconds": 4.5
+  },
+  "E9": {
+   "result": {
+    "a_fresh_process_after_creator_exit": {
+     "exit": 0,
+     "wall_s": 0.6,
+     "hits": 1
+    },
+    "b_existing_client_reads_collection_created_later_by_other_process": {
+     "p1_sees_p2_collection": 1,
+     "p1_recall_p2_session": 1
+    },
+    "c_two_writers_same_collection": {
+     "counts_seen_by_each_writer_at_exit": [
+      80,
+      77
+     ],
+     "exit": 0,
+     "wall_s": 0.41,
+     "final_count": 80,
+     "expected_total": 80
+    }
+   },
+   "lab_seconds": 10.6
+  },
+  "E10": {
+   "result": {
+    "exit": 0,
+    "wall_s": 1.86,
+    "logical": true,
+    "physical": "RECLAIMED",
+    "deleted_text_found_in": {},
+    "segment_dirs_after_delete": 2,
+    "kept_still_readable": 5
+   },
+   "lab_seconds": 1.9
+  },
+  "E11": {
+   "result": {
+    "exit": 0,
+    "wall_s": 0.88,
+    "attacker_recalls_victims_text": true,
+    "attacker_deletion_logical": true,
+    "victim_hits_after_attackers_delete": 0,
+    "also_docs": {
+     "exit": 0,
+     "wall_s": 1.72,
+     "doc_collection_a": "docs_deadbeef111",
+     "doc_collection_b": "docs_deadbeef222",
+     "same_collection": false
+    }
+   },
+   "lab_seconds": 2.6
+  }
+ }
+}
