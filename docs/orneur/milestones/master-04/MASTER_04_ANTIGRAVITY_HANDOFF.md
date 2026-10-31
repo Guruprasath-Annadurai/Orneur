@@ -1,6 +1,8 @@
 # MASTER-04 — Antigravity independent retest handoff
 
-Retest exact HEAD `a646421856c86bd589b75000de30cee8156d5bdc` (tree `32a9cd27bf16f311745b729bc8f533f58dd4dec7`). Do not certify from Cursor engineering claims alone.
+Retest the **exact PR branch HEAD** of `cursor/master-04-vector-backup-security-integration` (record SHA+tree from that tip). Code identity for the lock/consistency fixes: `d3afeccb281887c25b629067cd43582a9384ea77` / tree `13da074378c7bfc413d57673e6a1e6c2ba91fb90`. Merge ancestry commit `4295550b7991972e7a6b5cd1d25123b58355cbf1`.
+
+Do not certify from Cursor engineering claims alone.
 
 ## Must verify with OWN_EVIDENCE
 1. Ancestry: M03 tip + L03 code/doc are ancestors; missing objects fail closed; no shallow bypass.

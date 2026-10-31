@@ -1,6 +1,6 @@
 {
-  "head": "a646421856c86bd589b75000de30cee8156d5bdc",
-  "tree": "32a9cd27bf16f311745b729bc8f533f58dd4dec7",
+  "code_fix_head": "d3afeccb281887c25b629067cd43582a9384ea77",
+  "code_fix_tree": "13da074378c7bfc413d57673e6a1e6c2ba91fb90",
   "merge_commit": "4295550b7991972e7a6b5cd1d25123b58355cbf1",
   "merge_parents": [
     "b96cc3260078b6f677a22381b05fe1f72026256f",
@@ -8,6 +8,7 @@
   ],
   "branch": "cursor/master-04-vector-backup-security-integration",
   "base_for_pr": "cursor/master-03-security-corrected-b882",
+  "head_note": "exact tip SHA is branch HEAD at push/CI time; code identity for lock/consistency fixes is code_fix_head",
   "required_refs": {
     "master03_pr146_head": {
       "sha": "b96cc3260078b6f677a22381b05fe1f72026256f",
@@ -45,16 +46,10 @@
   "missing_objects": [],
   "fail_closed": true,
   "shallow_bypass_prohibited": true,
-  "l03_doc_head_delta_code_only": false,
+  "l03_doc_head_introduces_code": false,
   "l03_doc_head_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41190351398",
   "l03_code_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41189270383",
   "master03_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41178651529",
-  "l03_doc_head_files_changed_vs_code": [
-    "docs/orneur/landmarks/landmark-03/L03_DATA_LIFECYCLE_AND_ERASURE_EVIDENCE.md",
-    "docs/orneur/landmarks/landmark-03/L03_EXACT_HEAD_CI.md",
-    "docs/orneur/landmarks/landmark-03/L03_MASTER_ENGINEERING_REPORT.md",
-    "docs/orneur/landmarks/landmark-03/L03_SECURITY_REGRESSION_RESULTS.md"
-  ],
-  "l03_doc_head_introduces_code": false,
-  "evidence_commit_note": "docs package committed on tip; code fix at d3afecc parent if different"
+  "head": "036c3e35a9fd36ae4589326293f1a8a5aa992ed9",
+  "tree": "8edfd2042f47b02f7b6da984a1d7903029f6995d"
 }
