@@ -1,0 +1,13 @@
+{
+  "note": "Genuine failing-before on merged tip BEFORE owner serving_lock (instrumented reproduction). Comparison JSON's restore_error=RestoreFailed was NOT reproduced; observed behavior matches L03-B1 narrative.",
+  "restore_error": null,
+  "restore_succeeded": true,
+  "owner_alive_after_restore": true,
+  "owner_view_keep": 1,
+  "owner_view_deleted_collection_count": 1,
+  "server_lock_held_by_owner_before_fix": false,
+  "comparison_json_claim": "RestoreFailed",
+  "comparison_json_reproduced": false,
+  "blocker_register_claim": "restore proceeded while owner running",
+  "blocker_register_reproduced": true
+}

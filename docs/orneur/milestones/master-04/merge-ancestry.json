@@ -1,0 +1,59 @@
+{
+  "head": "d3afeccb281887c25b629067cd43582a9384ea77",
+  "tree": "13da074378c7bfc413d57673e6a1e6c2ba91fb90",
+  "merge_commit": "4295550b7991972e7a6b5cd1d25123b58355cbf1",
+  "merge_parents": [
+    "b96cc3260078b6f677a22381b05fe1f72026256f",
+    "bfeaae2bc7470251262b3526e32fede7412996d8"
+  ],
+  "branch": "cursor/master-04-vector-backup-security-integration",
+  "base_for_pr": "cursor/master-03-security-corrected-b882",
+  "required_refs": {
+    "master03_pr146_head": {
+      "sha": "b96cc3260078b6f677a22381b05fe1f72026256f",
+      "present": true,
+      "is_ancestor_of_head": true
+    },
+    "master03_pr146_tree": {
+      "sha": "168a6a2c75bd11e0cbac113e06ff4d50e88f9cae",
+      "present": true,
+      "matches_master03_tip_tree": true
+    },
+    "l03_code": {
+      "sha": "c8b0f54bafe364c18e507425570d34be1e7b8dd7",
+      "present": true,
+      "is_ancestor_of_head": true
+    },
+    "l03_doc_head": {
+      "sha": "bfeaae2bc7470251262b3526e32fede7412996d8",
+      "present": true,
+      "is_ancestor_of_head": true
+    },
+    "main": {
+      "sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+      "present": true,
+      "is_ancestor_of_head": true
+    },
+    "antigravity_audit_test": {
+      "sha": "167e0ca0b53a1f3bda5a7813155dd009ee1e9a00",
+      "present": true,
+      "is_ancestor_of_head": false,
+      "role": "reference_only_not_merged",
+      "required_ancestor": false
+    }
+  },
+  "missing_objects": [],
+  "fail_closed": true,
+  "shallow_bypass_prohibited": true,
+  "l03_doc_head_delta_code_only": false,
+  "l03_doc_head_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41190351398",
+  "l03_code_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41189270383",
+  "master03_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41178651529",
+  "l03_doc_head_files_changed_vs_code": [
+    "docs/orneur/landmarks/landmark-03/L03_DATA_LIFECYCLE_AND_ERASURE_EVIDENCE.md",
+    "docs/orneur/landmarks/landmark-03/L03_EXACT_HEAD_CI.md",
+    "docs/orneur/landmarks/landmark-03/L03_MASTER_ENGINEERING_REPORT.md",
+    "docs/orneur/landmarks/landmark-03/L03_SECURITY_REGRESSION_RESULTS.md"
+  ],
+  "l03_doc_head_introduces_code": false
+}
