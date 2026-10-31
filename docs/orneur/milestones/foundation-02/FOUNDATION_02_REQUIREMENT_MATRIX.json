@@ -1,0 +1,2538 @@
+{
+  "schema": "orneur-foundation-02-requirement-matrix/3",
+  "validator_check": "pretraining=95 numerator=0",
+  "formal_accepted_count": 0,
+  "formal_denominator": 95,
+  "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+  "main_base_sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+  "prior_qualified_code_sha": "4d9fcda896e9ac12581f67fd65aaf3bc23aad7e4",
+  "register_graph_sha256": "b8f745182ddb6d4ff25d79a542e5242986901790ee4195186143bfb78039aaf7",
+  "ledger_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+  "lockfile_sha256": {
+    "uv.lock": "3af0d6934c1a4d0cc9f6a5b9e8fbffa9daa43bc8e8aec85069b0bd9552f5b86d",
+    "pyproject.toml": "56de80a4ee6a157b38b7d9aa51281541ec3409fab243346d5c10fbe0ad8b6757"
+  },
+  "disposition_histogram": {
+    "BLOCKED": 19,
+    "IMPLEMENTED_UNVERIFIED": 17,
+    "NOT_IMPLEMENTED": 48,
+    "VERIFIED_ENGINEERING": 11
+  },
+  "verified_engineering_count": 11,
+  "verified_engineering_ids": [
+    "C01",
+    "C02",
+    "C04",
+    "C05",
+    "C17",
+    "C18",
+    "C19",
+    "C20",
+    "C21",
+    "TRAIN-1",
+    "TRAIN-2"
+  ],
+  "antigravity_remediation_downgrades": [
+    "C09",
+    "C10",
+    "C11",
+    "C12",
+    "C13",
+    "C14",
+    "C15",
+    "C45",
+    "QUAL-2"
+  ],
+  "independently_qualified_engineering_ids": [
+    "C04",
+    "C05",
+    "C17",
+    "C18",
+    "C19",
+    "C20",
+    "C21"
+  ],
+  "qualified_uncounted_software": {
+    "capability_id": "DATA_ADMISSION_CONTROLS",
+    "canonical_requirement_id": null,
+    "reason": "Remote-origin refusal and training-bound license/jail admission are independently exercised software controls; they do not satisfy DATA-1 (provenance manifest bound to DATA-3 creation digest) or DATA-2 (contamination/holdout separation on a protected corpus).",
+    "implementation": [
+      "orca/pretrain_foundation/corpus_controls.py",
+      "orca/genesis/data/pipeline.py"
+    ],
+    "tests": [
+      "tests/test_pretraining_phase_closure.py",
+      "tests/test_pretraining_call_chain_integration.py",
+      "tests/test_cursor_pipeline_admission.py"
+    ]
+  },
+  "probes_path": "docs/orneur/milestones/foundation-02/FOUNDATION_02_VERIFICATION_PROBES.json",
+  "training_authorization": "NO-GO",
+  "note": "engineering_disposition is not formal acceptance. Mappings are derived from register_graph.json evidence_required only. VERIFIED_ENGINEERING requires implementation paths + honest pytest evidence (>=1 passed; reject zero-collected / skip-only / mixed skips / xfail-only) on a complete matching candidate_sha. Independently qualified engineering (Antigravity LIMITED TO TESTED SCOPE): C04, C05, C17\u2013C21. Data admission controls are qualified uncounted software (no eighth fabricated requirement ID). G4/G5/AUTH-1 remain BLOCKED (founder artifacts). DATA-1/DATA-2 remain IMPLEMENTED_UNVERIFIED (no protected corpus). FORMALLY_ACCEPTED is never assigned by this script. Training remains NO-GO.",
+  "requirements": [
+    {
+      "requirement_id": "G1",
+      "exact_acceptance_condition": "An architecture review, stored where a later reader can open it, by a person who did not author RSE-ARCH-1.2.",
+      "actual_implementation": "Independent architecture review file not found",
+      "evidence_path": "No such review file was found in this pass.",
+      "evidence_paths": [
+        "docs/orneur/acceptance/register_graph.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/acceptance/register_graph.json",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_VERIFIABLE",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "Name a reviewer who did not author RSE-ARCH-1.2, and record where the review is stored.",
+      "depends_on": [],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G2",
+      "exact_acceptance_condition": "Freeze commit on canonical main, re-checked against Manifest V3 at integration time.",
+      "actual_implementation": "Artefacts/PRs exist but executed tip evidence / independent qualification incomplete",
+      "evidence_path": "Main is 464b602f3f259b56f139c3304828baa660e6b860. Manifest V3 was not edited.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Main is 464b602f3f259b56f139c3304828baa660e6b860. Manifest V3 was not edited.",
+      "executed_test_result": "NOT_PROBED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "PRESENT_ON_MAIN",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "The integration check still matches the manifest.",
+      "depends_on": [
+        "G1"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G3",
+      "exact_acceptance_condition": "Independent code review of the merged software SHA, plus that SHA's own main push CI.",
+      "actual_implementation": "Artefacts/PRs exist but executed tip evidence / independent qualification incomplete",
+      "evidence_path": "IMP-2/3/4 code is unmerged on PR #8. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance. RSE_MASTER_BLOCK_1_EVIDENCE.md on that SHA still says independent acceptance is pending.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "IMP-2/3/4 code is unmerged on PR #8. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance. RSE_MASTER_BLOCK_1_EVIDENCE.md on that SHA still says independent acceptance is pending.",
+      "executed_test_result": "NOT_PROBED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "The merged SHA has its own main push CI and a review that is not a copied slogan.",
+      "depends_on": [
+        "G2"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G4",
+      "exact_acceptance_condition": "A founder purchase authorization and a named hardware selection.",
+      "actual_implementation": "Founder purchase authorization and named hardware selection absent (register NOT_AUTHORIZED)",
+      "evidence_path": "The freeze states nothing is bought. NO_HARDWARE_PURCHASE_AUTHORIZED stands.",
+      "evidence_paths": [
+        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The authorization names the machines. This register does not purchase them.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G5",
+      "exact_acceptance_condition": "Provisioning and key-creation authorization, then a ceremony record that contains no secret.",
+      "actual_implementation": "Provisioning / key-creation ceremony record absent (register NOT_AUTHORIZED)",
+      "evidence_path": "Locks return false. No ceremony record.",
+      "evidence_paths": [
+        "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "A founder act changes the authorization. This register does not create a secret.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G6",
+      "exact_acceptance_condition": "One acceptance-run record that cites each real-hardware artifact by its own id. The record is not a copy of those artifacts.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Synthetic tests only. No hardware log.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "One acceptance-run record that cites each real-hardware artifact by its own id. The record is not a copy of those artifacts.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator who runs the acceptance. The reviewer is not that operator. Purchase stays on G4.",
+      "depends_on": [
+        "G5",
+        "C08",
+        "C22",
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "C27",
+        "C28",
+        "C29",
+        "C30",
+        "C31",
+        "C32",
+        "C33",
+        "C34",
+        "C35",
+        "C36",
+        "C37",
+        "C38",
+        "C44",
+        "HW-01",
+        "HW-02",
+        "HW-03",
+        "HW-06",
+        "HW-08",
+        "HW-11",
+        "HW-16",
+        "HW-18",
+        "HW-19",
+        "HW-20",
+        "HW-21",
+        "HW-24",
+        "HW-FORGE"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G7",
+      "exact_acceptance_condition": "Custody record for a Crown machine that is not the daily driver, with its own serial.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No Crown inventory.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Custody record for a Crown machine that is not the daily driver, with its own serial.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the Crown custodian. No purchase is authorized here. Purchase stays on G4.",
+      "depends_on": [
+        "G6"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G8",
+      "exact_acceptance_condition": "A founder corpus-generation grant, and nothing else. The grant does not create a corpus and does not carry a corpus digest.",
+      "actual_implementation": "Founder corpus-generation grant absent",
+      "evidence_path": "CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED. No protected corpus exists.",
+      "evidence_paths": [
+        "orca/pretrain_foundation/readiness_gate.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The founder changes that file. This register does not.",
+      "depends_on": [
+        "G7"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G9",
+      "exact_acceptance_condition": "A second Crown milestone: an independent dedicated Crown device, with its own serial, before qualification or training.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Not started.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "A second Crown milestone: an independent dedicated Crown device, with its own serial, before qualification or training.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the device. This row does not purchase it. Purchase stays on G4.",
+      "depends_on": [
+        "G8"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G10",
+      "exact_acceptance_condition": "A chamber-design review that names the design SHA and the tests the reviewer ran.",
+      "actual_implementation": "Founder training permission absent",
+      "evidence_path": "QUALIFICATION_RUNNER_REGISTRY.json state is REGISTERED_NOT_AUTHORIZED.",
+      "evidence_paths": [
+        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The reviewer accepts the design record. Runner authorization is QUAL-1, a separate artifact.",
+      "depends_on": [
+        "G9"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G11",
+      "exact_acceptance_condition": "A P2 gate record that names the environment. Attestation, egress, and counter logs stay on their own rows.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "R-EXF in RSE12_06 \u00a75 says egress control blocks training authorization. No environment is named.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "A P2 gate record that names the environment. Attestation, egress, and counter logs stay on their own rows.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the P2 operator. No provider is selected here.",
+      "depends_on": [
+        "G10",
+        "P2-1",
+        "P2-2",
+        "C46",
+        "C47"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "G12",
+      "exact_acceptance_condition": "A training-infrastructure record: pinned software identity, dry-run log pointer, and the P2 environment id.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "training_authorized() returns false. No infrastructure record.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "A training-infrastructure record: pinned software identity, dry-run log pointer, and the P2 environment id.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The infrastructure record exists. GPU permission is FINAL-2, after readiness.",
+      "depends_on": [
+        "G11",
+        "TRAIN-1",
+        "TRAIN-2"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C01",
+      "exact_acceptance_condition": "Refusal log from the signed registry path showing an unregistered id refused.",
+      "actual_implementation": "orca/rse/imp1/authority.py; orca/rse/imp1/codec.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp1/authority.py",
+        "orca/rse/imp1/codec.py",
+        "tests/rse/test_c01_c02_registry_refusal.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_c01_c02_registry_refusal.py",
+      "executed_test_result": "PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "4 passed in 0.25s",
+        "counts": {
+          "passed": 4,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "4 passed in 0.25s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
+          "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=4"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C02",
+      "exact_acceptance_condition": "Consumer refusal record for a stale or unknown registry.",
+      "actual_implementation": "orca/rse/imp1/authority.py; orca/rse/imp1/codec.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp1/authority.py",
+        "orca/rse/imp1/codec.py",
+        "tests/rse/test_c01_c02_registry_refusal.py",
+        "tests/rse/test_imp1r_final.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_c01_c02_registry_refusal.py; tests/rse/test_imp1r_final.py",
+      "executed_test_result": "PASS (8 passed in 0.30s) passed=8 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "8 passed in 0.30s",
+        "counts": {
+          "passed": 8,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "8 passed in 0.30s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
+          "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=8"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C04",
+      "exact_acceptance_condition": "Refusal record for a ceiling above the policy cap.",
+      "actual_implementation": "orca/rse/imp1/authority.py; orca/rse/imp1/codec.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp1/authority.py",
+        "orca/rse/imp1/codec.py",
+        "tests/rse/test_imp1_registry_crown.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_imp1_registry_crown.py",
+      "executed_test_result": "PASS (16 passed in 0.30s) passed=16 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "16 passed in 0.30s",
+        "counts": {
+          "passed": 16,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "16 passed in 0.30s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp1/authority.py": "eb1b431e5867be99b68aff128ae76d22d21839c7bec9605863117d5033f27246",
+          "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=16"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C05",
+      "exact_acceptance_condition": "Validator output refusing a confusable name.",
+      "actual_implementation": "orca/rse/imp1/codec.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp1/codec.py",
+        "tests/rse/test_imp1_registry_crown.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_imp1_registry_crown.py",
+      "executed_test_result": "PASS (16 passed in 0.29s) passed=16 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "16 passed in 0.29s",
+        "counts": {
+          "passed": 16,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "16 passed in 0.29s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp1/codec.py": "53bd354eac6bf918c5f40f9004fe82440c60f32d8ce87903d629a9f92aa1c25e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=16"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C09",
+      "exact_acceptance_condition": "Journal record of challenge reuse refused.",
+      "actual_implementation": "IMP-3 challenge-reuse software exists; original acceptance requires journal/freshness evidence, not software-test substitution",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp3/freshness.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp3/freshness.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C10",
+      "exact_acceptance_condition": "Refusal record showing a set-back clock does not extend a consumed challenge.",
+      "actual_implementation": "IMP-3 freshness helpers exist; original acceptance requires freshness/journal artifact, not unit-probe substitution",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp3/freshness.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp3/freshness.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C11",
+      "exact_acceptance_condition": "State log showing no ACTIVE state before a witnessed checkpoint.",
+      "actual_implementation": "IMP-2 machine semantics exist; original acceptance requires witnessed checkpoint evidence on the operational path",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp2/machine.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp2/machine.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C12",
+      "exact_acceptance_condition": "Verify log of a witness cosignature, including a forged ack refused.",
+      "actual_implementation": "Witness cosignature software exists; original acceptance requires witness cosignature / forged-ack refusal artifacts",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp3/ledger.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp3/ledger.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C13",
+      "exact_acceptance_condition": "Witness log refusing a fork or a smaller tree. A synthetic fence is not this artifact.",
+      "actual_implementation": "Synthetic fence is not the required witness-log fork/smaller-tree refusal artifact",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp3/ledger.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp3/ledger.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C14",
+      "exact_acceptance_condition": "Refusal record for a bundle that lacks a witnessed result.",
+      "actual_implementation": "Unwitnessed-bundle refusal helpers exist; original acceptance requires witnessed-result usability evidence",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp3/ledger.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp3/ledger.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C17",
+      "exact_acceptance_condition": "Vector test for enc validity and the zero-shared-secret abort.",
+      "actual_implementation": "orca/rse/imp4/ocr1.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp4/ocr1.py",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_imp4_ocr1.py",
+      "executed_test_result": "PASS (22 passed in 0.41s) passed=22 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "22 passed in 0.41s",
+        "counts": {
+          "passed": 22,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "22 passed in 0.41s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=22"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C18",
+      "exact_acceptance_condition": "Test log reproducing the RFC 9180 vectors used by this profile.",
+      "actual_implementation": "orca/rse/imp4/ocr1.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp4/ocr1.py",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_imp4_ocr1.py",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "22 passed in 0.42s",
+        "counts": {
+          "passed": 22,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "22 passed in 0.42s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=22"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C19",
+      "exact_acceptance_condition": "Per-case verdicts for missing, duplicate, reordered, extra, truncated, and foreign frames.",
+      "actual_implementation": "orca/rse/imp4/ocr1.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp4/ocr1.py",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_imp4_ocr1.py",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "22 passed in 0.42s",
+        "counts": {
+          "passed": 22,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "22 passed in 0.42s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=22"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C20",
+      "exact_acceptance_condition": "Resolver log refusing an unknown or revoked sender.",
+      "actual_implementation": "orca/rse/imp4/ocr1.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp4/ocr1.py",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_imp4_ocr1.py",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "22 passed in 0.42s",
+        "counts": {
+          "passed": 22,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "22 passed in 0.42s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=22"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C21",
+      "exact_acceptance_condition": "Verify log showing a bad origin signature is rejected before key use.",
+      "actual_implementation": "orca/rse/imp4/ocr1.py",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp4/ocr1.py",
+        "tests/rse/test_imp4_ocr1.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "b384348",
+      "relevant_test": "tests/rse/test_imp4_ocr1.py",
+      "executed_test_result": "PASS (22 passed in 0.42s) passed=22 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "22 passed in 0.42s",
+        "counts": {
+          "passed": 22,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "22 passed in 0.42s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/rse/imp4/ocr1.py": "479d9ef69e1d0a086a584a36cb9236290253fdd5ba26add111bd071228cb014e"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=22"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C45",
+      "exact_acceptance_condition": "Transition log refusing an impossible lifecycle edge. Class K remains a separate decision.",
+      "actual_implementation": "Lifecycle-edge software refusals exist; class-K / impossible-edge acceptance remains a separate decision record",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp2/machine.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp2/machine.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C15",
+      "exact_acceptance_condition": "Journal replay report for a crash at each specified step, including the C26 power-cut report.",
+      "actual_implementation": "Software crash/journal recovery is not C26 power-cut / journal-replay acceptance evidence",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp3/ledger.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp3/ledger.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3",
+        "C26"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C03",
+      "exact_acceptance_condition": "Verify log of a canonical registry update with two distinct owner tokens.",
+      "actual_implementation": "Canonical registry update dual-owner evidence software exists in RSE; dual distinct owner-token acceptance record not independently qualified",
+      "evidence_path": "IMP-1 registry code is on main. Distinct hardware tokens are not issued. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/rse/imp1/codec.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/rse/imp1/codec.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "DESIGNED_ONLY",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "The verify log shows two distinct tokens. C08 remains its own row.",
+      "depends_on": [
+        "G3",
+        "C08"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C06",
+      "exact_acceptance_condition": "Rendered-card digest showing the consumer rendered the received signed bytes.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Rendered-card digest showing the consumer rendered the received signed bytes.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "DESIGNED_ONLY",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C07",
+      "exact_acceptance_condition": "Typed-entry record for the SAS and the Intent Sheet fields.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Typed-entry record for the SAS and the Intent Sheet fields.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "DESIGNED_ONLY",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C08",
+      "exact_acceptance_condition": "Verify log from two distinct physical tokens. One token used twice is refused.",
+      "actual_implementation": "Founder-controlled compute authorization",
+      "evidence_path": "No tokens issued. REAL_HW cell is tokens.",
+      "evidence_paths": [
+        "orca/pretrain_foundation/compute_scenarios.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/pretrain_foundation/compute_scenarios.py",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "Two physical tokens produce the log. This row does not create a secret by itself.",
+      "depends_on": [
+        "G5"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C16",
+      "exact_acceptance_condition": "A second codec implementation, not Cursor's, agrees on the OCR1 verdict vector.",
+      "actual_implementation": "Primary OCR1 codec present; independent second implementation agreement not supplied (Cursor cannot self-certify)",
+      "evidence_path": "Freeze maturity is structural codec evidence only. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [
+        "orca/pretrain_foundation/independent_codec.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/pretrain_foundation/independent_codec.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "DESIGNED_ONLY",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "Name a second codec implementer who is not Cursor.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C44",
+      "exact_acceptance_condition": "Verify log that one token cannot satisfy a two-token class.",
+      "actual_implementation": "Founder-controlled spend/GPU permission",
+      "evidence_path": "No tokens issued.",
+      "evidence_paths": [
+        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The single-token refusal is logged on hardware tokens.",
+      "depends_on": [
+        "C08"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C22",
+      "exact_acceptance_condition": "Mount and key-state record showing the vault stayed locked through key-absent phase 1.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Mount and key-state record showing the vault stayed locked through key-absent phase 1.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G5",
+        "HW-02"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C23",
+      "exact_acceptance_condition": "Sandbox policy dump from a real checker showing no key, no network, and bounded I/O.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Sandbox policy dump from a real checker showing no key, no network, and bounded I/O.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G5",
+        "HW-01"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C24",
+      "exact_acceptance_condition": "TPM policy test: image PCR and PCR 7 named, wrong PCR denied, wrong PIN denied, altered UKI denied.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "TPM policy test: image PCR and PCR 7 named, wrong PCR denied, wrong PIN denied, altered UKI denied.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C25",
+      "exact_acceptance_condition": "TPM NV denial record for an older image, including the counter value.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "TPM NV denial record for an older image, including the counter value.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4",
+        "HW-03"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C26",
+      "exact_acceptance_condition": "Per-step power-cut report for the NV update. A simulator report is only the partial credit the freeze allows.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Per-step power-cut report for the NV update. A simulator report is only the partial credit the freeze allows.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4",
+        "HW-03"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C28",
+      "exact_acceptance_condition": "Firmware key list showing only owner Secure Boot keys.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Firmware key list showing only owner Secure Boot keys.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C29",
+      "exact_acceptance_condition": "Offline quote record against the pinned attestation key, including measured PCR values.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Offline quote record against the pinned attestation key, including measured PCR values.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C30",
+      "exact_acceptance_condition": "Kernel report that IOMMU groups are enforced, or that the named DMA buses are absent.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Kernel report that IOMMU groups are enforced, or that the named DMA buses are absent.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C31",
+      "exact_acceptance_condition": "Kernel log of USB default-deny with the single allow-listed medium class.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Kernel log of USB default-deny with the single allow-listed medium class.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C32",
+      "exact_acceptance_condition": "Enumeration digest showing radios absent or hardware-off.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Enumeration digest showing radios absent or hardware-off.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C33",
+      "exact_acceptance_condition": "Measured netdev digest showing no usable network device per link class.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Measured netdev digest showing no usable network device per link class.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4",
+        "HW-16"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C34",
+      "exact_acceptance_condition": "Platform report for management engine or out-of-band management. A network-capable controller that cannot be disabled disqualifies the machine.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Platform report for management engine or out-of-band management. A network-capable controller that cannot be disabled disqualifies the machine.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C35",
+      "exact_acceptance_condition": "Firmware settings record: setup password, locked boot order, internal drive only, network boot disabled.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Firmware settings record: setup password, locked boot order, internal drive only, network boot disabled.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C36",
+      "exact_acceptance_condition": "LUKS2 header check.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "LUKS2 header check.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C37",
+      "exact_acceptance_condition": "Storage scan report, before and after, with a planted marker found by the negative test.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Storage scan report, before and after, with a planted marker found by the negative test.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G5",
+        "HW-01"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C38",
+      "exact_acceptance_condition": "Crown isolation inventory digest with its own serial.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No hardware report for this control.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Crown isolation inventory digest with its own serial.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "DEC-K",
+      "exact_acceptance_condition": "A founder decision that class K recovery stays deferred, and that C27 therefore stays unmet, until a later architecture-change authorization exists.",
+      "actual_implementation": "Foundation selection decision not accepted",
+      "evidence_path": "Approval 3 defers ACR-B1-2. Class K returns UNSUPPORTED_CURRENT_MILESTONE. No implementation is authorized by this row.",
+      "evidence_paths": [
+        "docs/orneur/status/PRETRAINING_FOUNDATION_QUALIFICATION_BLUEPRINT.md"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/status/PRETRAINING_FOUNDATION_QUALIFICATION_BLUEPRINT.md",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The decision is recorded. C27 is still a separate mandatory row.",
+      "depends_on": [],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C27",
+      "exact_acceptance_condition": "Re-enrolment records for a TPM or board replacement that refuse a lower-generation restore, produced by an authorized class-K path.",
+      "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
+      "evidence_path": "Class K is unsupported. No re-enrolment record.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Re-enrolment records for a TPM or board replacement that refuse a lower-generation restore, produced by an authorized class-K path.",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "Do not implement class K under this row. Wait for a founder architecture-change authorization that is not this register.",
+      "depends_on": [
+        "DEC-K",
+        "G5",
+        "HW-02"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C39",
+      "exact_acceptance_condition": "Two independent build reports whose digests match, compared on Crown.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No pair of build reports was produced in this pass.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Two independent build reports whose digests match, compared on Crown.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The comparison record is accepted. SUP-1's harness log is not this comparison.",
+      "depends_on": [
+        "SUP-1"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C40",
+      "exact_acceptance_condition": "Floor-check log refusing a lower card and a lower sealed floor.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Software floors are not a sealed Crown card.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Floor-check log refusing a lower card and a lower sealed floor.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "DESIGNED_ONLY",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The floor-check log is accepted together with a sealed floor. C41 remains separate.",
+      "depends_on": [
+        "C41"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C41",
+      "exact_acceptance_condition": "Signed comparison receipt containing both floor-card serials.",
+      "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
+      "evidence_path": "No floor card.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Signed comparison receipt containing both floor-card serials.",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The receipt names both serials.",
+      "depends_on": [
+        "G7"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C42",
+      "exact_acceptance_condition": "Refusal log for a recovery kit below the effective floor.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No recovery kit.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Refusal log for a recovery kit below the effective floor.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "DESIGNED_ONLY",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The below-floor kit is refused in the log.",
+      "depends_on": [
+        "C40"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C43",
+      "exact_acceptance_condition": "Epoch checkpoint and LUKS slot rotation record after recovery-media theft response.",
+      "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
+      "evidence_path": "No ceremony record.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Epoch checkpoint and LUKS slot rotation record after recovery-media theft response.",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The epoch record exists and contains no secret.",
+      "depends_on": [
+        "G5"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C46",
+      "exact_acceptance_condition": "Qualification bit-budget counter log from the chamber.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Not implemented. Table marks P2 and future.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Qualification bit-budget counter log from the chamber.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The budget log is accepted. C47 is a separate monotonicity artifact.",
+      "depends_on": [
+        "G10"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C47",
+      "exact_acceptance_condition": "Evidence that restoring qualification state does not refund the budget. The freeze types this UNP.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Not implemented.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Evidence that restoring qualification state does not refund the budget. The freeze types this UNP.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Name the chamber operator. A synthetic counter is not this artifact.",
+      "depends_on": [
+        "G10"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C48",
+      "exact_acceptance_condition": "Refusal records showing a T-complete record cannot authorize W, and W-complete cannot authorize D.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Refusal records showing a T-complete record cannot authorize W, and W-complete cannot authorize D.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "DESIGNED_ONLY",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C49",
+      "exact_acceptance_condition": "Registry entry containing the foundation provenance digests before any use.",
+      "actual_implementation": "Founder-controlled or not authorized; engineering cannot accept",
+      "evidence_path": "No approved foundation entry. model_selection_authorized() returns false.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Registry entry containing the foundation provenance digests before any use.",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The registry entry is accepted. The selection record remains MODEL-1.",
+      "depends_on": [
+        "MODEL-1"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "C50",
+      "exact_acceptance_condition": "A drill measurement of boots, media moves, witness trips, token touches, and typed SAS counts.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Budget numbers exist in the freeze. No drill record.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "A drill measurement of boots, media moves, witness trips, token touches, and typed SAS counts.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the operator who runs the drill. Purchase stays on G4.",
+      "depends_on": [
+        "G7"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-01",
+      "exact_acceptance_condition": "Witness serial recorded on a machine used for nothing else, different from the Crown serial and the Forge serial.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Witness serial recorded on a machine used for nothing else, different from the Crown serial and the Forge serial.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-02",
+      "exact_acceptance_condition": "TPM 2.0 capability record for the Witness. Absence disqualifies the machine.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "TPM 2.0 capability record for the Witness. Absence disqualifies the machine.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-03",
+      "exact_acceptance_condition": "TPM NV capability record showing a counter index and policy comparison on NV.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "TPM NV capability record showing a counter index and policy comparison on NV.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-06",
+      "exact_acceptance_condition": "Measurement record showing the role code and its version inside the measured image.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Measurement record showing the role code and its version inside the measured image.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-08",
+      "exact_acceptance_condition": "Build record of the owner-signed unified kernel image and the boot measurement that matches it.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Build record of the owner-signed unified kernel image and the boot measurement that matches it.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-11",
+      "exact_acceptance_condition": "Custody record that a paper recovery passphrase exists, with no secret and no passphrase value in git.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Custody record that a paper recovery passphrase exists, with no secret and no passphrase value in git.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G5"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-16",
+      "exact_acceptance_condition": "Firmware or physical record that the wired port is unused, blocked, or firmware-disabled.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Firmware or physical record that the wired port is unused, blocked, or firmware-disabled.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-18",
+      "exact_acceptance_condition": "Update log showing firmware and OS updates came only from the owner-approved offline registry.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Update log showing firmware and OS updates came only from the owner-approved offline registry.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-19",
+      "exact_acceptance_condition": "Registry record of the approved artifacts and the offline distribution used to install them.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Registry record of the approved artifacts and the offline distribution used to install them.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G2"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-20",
+      "exact_acceptance_condition": "Custody record for the Witness location. Seals are HW-20P and do not satisfy this row.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Custody record for the Witness location. Seals are HW-20P and do not satisfy this row.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-21",
+      "exact_acceptance_condition": "Capacity record for RAM, storage, and CPU against the largest planned bundle and the sandboxed checker.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Capacity record for RAM, storage, and CPU against the largest planned bundle and the sandboxed checker.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-24",
+      "exact_acceptance_condition": "Inventory showing the Witness has no GPU.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Inventory showing the Witness has no GPU.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "HW-FORGE",
+      "exact_acceptance_condition": "Forge serial different from the Witness serial and the Crown serial.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "No Forge inventory.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Forge serial different from the Witness serial and the Crown serial.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the Forge custodian. No purchase is authorized here. Purchase stays on G4.",
+      "depends_on": [
+        "G4"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "SUP-1",
+      "exact_acceptance_condition": "Two independent build digests of the training image, plus the lock used to build them.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "PR #13 live head 0328123361756b9732fc57886754d6d09c4b9c46. Push run 37973767347 succeeded for that head. Pull-request run 37973770477 also succeeded and is not the exact-SHA proof. Ancestor cd95befd196c57d1885be208532a1c9a32991a39 push run 37972786151 succeeded. GitHub reviews length 0. A green harness run is not two independent training-image digests.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Two independent build digests of the training image, plus the lock used to build them.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "C39's comparison exists. A harness repair log does not pass C39.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "SUP-3",
+      "exact_acceptance_condition": "Hash-locked install of the RSE extra and a fail-closed audit log of that lock, on the SHA that is merged to main.",
+      "actual_implementation": "RSE hash-lock / audit software exists; acceptance requires the lock on the SHA merged to main",
+      "evidence_path": "On f424dbf51eb8ed03f5fbe57cbd0ef3c2fa72fcdb, push run 37893124711 job RSE dependency lock and vulnerability scan reported no known vulnerabilities for that lock. Not on main. The base job does not include pyhpke.",
+      "evidence_paths": [
+        "requirements/rse.txt"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "requirements/rse.txt",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "UNMERGED_NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "The same job is green on the merge commit on main.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "P2-1",
+      "exact_acceptance_condition": "Attestation evidence for a named training environment. No provider is selected by this row.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "The freeze marks provider root of trust UNPROVEN.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Attestation evidence for a named training environment. No provider is selected by this row.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "Founder names the environment operator. No provider contract is authorized here.",
+      "depends_on": [
+        "G10"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "P2-2",
+      "exact_acceptance_condition": "An egress test showing the training identity cannot open a forbidden path.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Residual text only.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "An egress test showing the training identity cannot open a forbidden path.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The egress test log is accepted.",
+      "depends_on": [
+        "G10"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "P2-4",
+      "exact_acceptance_condition": "A training-environment test that a spend above the configured cap is refused. The cap value may remain 0.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "max_spend_usd is 0. network_provider_inference_allowed is false. gpu_allowed is false.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "A training-environment test that a spend above the configured cap is refused. The cap value may remain 0.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The refusal test is accepted. Raising the cap is FINAL-2.",
+      "depends_on": [
+        "G10"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "DATA-1",
+      "exact_acceptance_condition": "A provenance manifest listing source, license, and per-record digest, bound to the creation digest from DATA-3. The founder grant is not this manifest.",
+      "actual_implementation": "Synthetic manifest/admission helpers exist; acceptance requires a provenance manifest bound to the DATA-3 creation digest (no protected corpus)",
+      "evidence_path": "The qualification note describes a small v1+v2+v3 set and a token proxy. That note is not a protected-corpus manifest and does not authorize training.",
+      "evidence_paths": [
+        "orca/genesis/data/manifest.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/genesis/data/manifest.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_ACCEPTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "Founder names who assembles the manifest. This row generates no corpus.",
+      "depends_on": [
+        "DATA-3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "DATA-2",
+      "exact_acceptance_condition": "A contamination and holdout-separation result bound to the creation digest and the holdout fingerprint set, with no item-level leak. The founder grant is not this result.",
+      "actual_implementation": "Contamination helpers exist; acceptance requires holdout-separation bound to creation digest and holdout fingerprints (no protected corpus)",
+      "evidence_path": "GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven. No protected corpus exists to test.",
+      "evidence_paths": [
+        "orca/genesis/data/contamination.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/genesis/data/contamination.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "The oracle output is accepted. G8 does not pass this row.",
+      "depends_on": [
+        "DATA-1",
+        "DATA-3",
+        "DATA-5",
+        "QUAL-2"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "DATA-3",
+      "exact_acceptance_condition": "A protected-corpus creation record that names the corpus digest and the creating operator. The founder grant is not this record.",
+      "actual_implementation": "Protected corpus creation requires founder grant",
+      "evidence_path": "No creation record. CORPUS_GENERATION_AUTHORIZATION.json remains NOT_AUTHORIZED and contains no corpus.",
+      "evidence_paths": [
+        "orca/pretrain_foundation/readiness_gate.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "Founder names the corpus operator after G8. This row does not generate a corpus and does not implement class K.",
+      "depends_on": [
+        "G8"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "DATA-5",
+      "exact_acceptance_condition": "An independent custody and integrity receipt that re-hashes the protected corpus and names a custodian who is not the creator. The founder grant is not this receipt.",
+      "actual_implementation": "Independent custody evidence absent",
+      "evidence_path": "No protected corpus and no custody receipt.",
+      "evidence_paths": [
+        "orca/pretrain_foundation/readiness_gate.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "Founder names a custodian who did not create the corpus. This row does not generate a corpus.",
+      "depends_on": [
+        "DATA-3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "MODEL-2R",
+      "exact_acceptance_condition": "A founder scope record that the first run, when later authorized, is research or evaluation only under the qwen-research terms.",
+      "actual_implementation": "No authorized model revision for training",
+      "evidence_path": "The qualification note quotes a non-commercial research license and says commercial release is blocked. It also says the term does not by itself block research or internal evaluation. No founder scope record exists. This row does not grant either scope.",
+      "evidence_paths": [
+        "orca/genesis/model/family_registry.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/genesis/model/family_registry.py",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The research-only scope record exists. Commercial rights remain MODEL-2C.",
+      "depends_on": [
+        "MODEL-0"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "MODEL-1",
+      "exact_acceptance_condition": "A founder selection record naming the repository and the exact revision. The code pin is not that record.",
+      "actual_implementation": "No authorized native training identity",
+      "evidence_path": "The pin in MODEL-0 is present. model_selection_authorized() returns false.",
+      "evidence_paths": [
+        "orca/genesis/model/family_registry.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/genesis/model/family_registry.py",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The selection record exists and stays inside the research-only scope. It does not set training_authorized().",
+      "depends_on": [
+        "MODEL-2R"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "QUAL-1",
+      "exact_acceptance_condition": "Founder authorization of the qualification runner. The binding note is not that authorization.",
+      "actual_implementation": "No authorized qualification run",
+      "evidence_path": "State REGISTERED_NOT_AUTHORIZED. runner_class SELF_HOSTED_CPU. os_runtime says the local Mac is the canonical CPU runner. Network policy in the record is none.",
+      "evidence_paths": [
+        "orca/pretrain_foundation/readiness_gate.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/pretrain_foundation/readiness_gate.py",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_AUTHORIZED",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The founder changes the runner state. This register does not.",
+      "depends_on": [
+        "G10"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "QUAL-2",
+      "exact_acceptance_condition": "A failed read of the holdout by the training identity.",
+      "actual_implementation": "Eval-boundary helpers deny training-identity holdout reads in unit tests; original QUAL-2 requires accepted failed-read isolation evidence (depends on QUAL-1/P2-2)",
+      "evidence_path": "The paths exist. No isolation proof was run in this pass.",
+      "evidence_paths": [
+        "orca/pretrain_foundation/eval_boundary.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "orca/pretrain_foundation/eval_boundary.py",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "The failed-read log is accepted.",
+      "depends_on": [
+        "QUAL-1",
+        "P2-2"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "QUAL-3",
+      "exact_acceptance_condition": "Numeric thresholds frozen before any candidate result, for every category the policy says is critical and for the categories it leaves unset.",
+      "actual_implementation": "No verified engineering closure for this counted row yet",
+      "evidence_path": "Critical categories are named. Numeric thresholds for the other categories are not set.",
+      "evidence_paths": [],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "Numeric thresholds frozen before any candidate result, for every category the policy says is critical and for the categories it leaves unset.",
+      "executed_test_result": "NOT_RUN",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "NOT_IMPLEMENTED",
+      "remaining_engineering_work": "The threshold freeze is recorded before a candidate run.",
+      "depends_on": [
+        "G10"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "TRAIN-1",
+      "exact_acceptance_condition": "A hash lock of the train extra and one dry-run command pinned to a SHA.",
+      "actual_implementation": "orca/train/dryrun/lockcheck.py; requirements/train.txt; orca/train/dryrun/cli.py",
+      "evidence_path": "The extra lists version ranges. No hash lock for the train extra was found. uv.lock is not what CI installs.",
+      "evidence_paths": [
+        "orca/train/dryrun/lockcheck.py",
+        "requirements/train.txt",
+        "orca/train/dryrun/cli.py",
+        "tests/test_trainprep_lock_env.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "fc1eb1d",
+      "relevant_test": "tests/test_trainprep_lock_env.py",
+      "executed_test_result": "PASS (31 passed in 1.14s) passed=31 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "31 passed in 1.14s",
+        "counts": {
+          "passed": 31,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "31 passed in 1.14s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/train/dryrun/lockcheck.py": "1b0b5aa265783dd9c0a4f0a7725cf7a2c9c0d15c880a1d8dcd7239e81221fd8d",
+          "requirements/train.txt": "5330ae5c5bd3ca4bf35a1a3e9e8dc871dbc344a03bd3dce88a854536551f3733",
+          "orca/train/dryrun/cli.py": "332178dc7d18934cbd06bccd026998959b95b7165af8e1031f34de16ef800eb5"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=31"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "The lock and the command log name the same SHA.",
+      "depends_on": [
+        "G3"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "TRAIN-2",
+      "exact_acceptance_condition": "A synthetic dry-run log showing corpus, qualification, model-selection, GPU, and training locks still false afterward.",
+      "actual_implementation": "orca/train/dryrun/cli.py; orca/rse/imp1/locks.py; docs/orneur/status/trainprep/dryrun_result.json",
+      "evidence_path": "No full-trainer dry-run log is in this pass.",
+      "evidence_paths": [
+        "orca/train/dryrun/cli.py",
+        "orca/rse/imp1/locks.py",
+        "docs/orneur/status/trainprep/dryrun_result.json",
+        "tests/test_train2_dryrun_locks_evidence.py"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": "fc1eb1d",
+      "relevant_test": "tests/test_train2_dryrun_locks_evidence.py",
+      "executed_test_result": "PASS (4 passed in 0.25s) passed=4 xfailed=0 skipped=0",
+      "probe": {
+        "exit_code": 0,
+        "summary_line": "4 passed in 0.25s",
+        "counts": {
+          "passed": 4,
+          "failed": null,
+          "skipped": null,
+          "xfailed": null,
+          "xpassed": null,
+          "errors": null,
+          "collected": null,
+          "summary_line": "4 passed in 0.25s",
+          "parseable": true
+        },
+        "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+        "implementation_sha256": {
+          "orca/train/dryrun/cli.py": "332178dc7d18934cbd06bccd026998959b95b7165af8e1031f34de16ef800eb5",
+          "orca/rse/imp1/locks.py": "fadf9c4309b060492677c4b0f182c01fe5a857b52e8549fa9904a08fba136862",
+          "docs/orneur/status/trainprep/dryrun_result.json": "665e1eea95b3c79baa308c4ad4ec7b7d7430eb05a9f6182622a1e116bb5b00d5"
+        },
+        "refusal_codes": [],
+        "verdict_reason": "PASS passed=4"
+      },
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "VERIFIED_ENGINEERING",
+      "remaining_engineering_work": "The log shows the locks still false. The run does not flip them.",
+      "depends_on": [
+        "TRAIN-1"
+      ],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "AUTH-1",
+      "exact_acceptance_condition": "A budget record with a number, a currency, and the founder's signature or equivalent.",
+      "actual_implementation": "Signed founder budget record (number, currency, signature) absent (register NOT_VERIFIABLE)",
+      "evidence_path": "No budget record found.",
+      "evidence_paths": [
+        "docs/orneur/authorization/TRAINING_AUTHORIZATION.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_VERIFIABLE",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "The record exists. Until then this row blocks a readiness percentage.",
+      "depends_on": [],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "R65",
+      "exact_acceptance_condition": "The exact source text, founder-approved, then one child row per rule.",
+      "actual_implementation": "Unmapped placeholder; cannot be signed",
+      "evidence_path": "No source. No child rule is listed.",
+      "evidence_paths": [
+        "docs/orneur/acceptance/register_graph.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/acceptance/register_graph.json",
+      "executed_test_result": "N/A_BLOCKED",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": true,
+      "register_status": "NOT_VERIFIABLE",
+      "engineering_disposition": "BLOCKED",
+      "remaining_engineering_work": "Founder supplies the complete exact text. Do not paraphrase it.",
+      "depends_on": [],
+      "formal_acceptance": false
+    },
+    {
+      "requirement_id": "FINAL-1",
+      "exact_acceptance_condition": "An independent recomputation worksheet that lists every counted pre-training id and its own status.",
+      "actual_implementation": "Engineering worksheet artifact exists; FINAL-1 requires independent recomputation and formal process",
+      "evidence_path": "Numerator is 0. G1, AUTH-1, and R65 are NOT_VERIFIABLE.",
+      "evidence_paths": [
+        "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json"
+      ],
+      "candidate_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+      "historical_source_sha": null,
+      "relevant_test": "docs/orneur/milestones/foundation-02/FOUNDATION_02_REQUIREMENT_MATRIX.json",
+      "executed_test_result": "ARTIFACT_ONLY",
+      "probe": null,
+      "independent_evidence": "NOT_CLAIMED",
+      "founder_controlled_dependency": false,
+      "register_status": "NOT_STARTED",
+      "engineering_disposition": "IMPLEMENTED_UNVERIFIED",
+      "remaining_engineering_work": "The worksheet matches a fresh run of the validator. Founder authorization is still FINAL-2.",
+      "depends_on": [
+        "AUTH-1",
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C18",
+        "C19",
+        "C20",
+        "C21",
+        "C22",
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "C27",
+        "C28",
+        "C29",
+        "C30",
+        "C31",
+        "C32",
+        "C33",
+        "C34",
+        "C35",
+        "C36",
+        "C37",
+        "C38",
+        "C39",
+        "C40",
+        "C41",
+        "C42",
+        "C43",
+        "C44",
+        "C45",
+        "C46",
+        "C47",
+        "C48",
+        "C49",
+        "C50",
+        "DATA-1",
+        "DATA-2",
+        "DATA-3",
+        "DATA-5",
+        "DEC-K",
+        "G1",
+        "G10",
+        "G11",
+        "G12",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "G7",
+        "G8",
+        "G9",
+        "HW-01",
+        "HW-02",
+        "HW-03",
+        "HW-06",
+        "HW-08",
+        "HW-11",
+        "HW-16",
+        "HW-18",
+        "HW-19",
+        "HW-20",
+        "HW-21",
+        "HW-24",
+        "HW-FORGE",
+        "MODEL-1",
+        "MODEL-2R",
+        "P2-1",
+        "P2-2",
+        "P2-4",
+        "QUAL-1",
+        "QUAL-2",
+        "QUAL-3",
+        "R65",
+        "SUP-1",
+        "SUP-3",
+        "TRAIN-1",
+        "TRAIN-2"
+      ],
+      "formal_acceptance": false
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+BASELINE 9cb864c: wrong-password(known)=0.0351s unknown-account=0.0044s ratio=0.126 | duplicate signup -> HTTP 409 {'detail': 'An account with this email already exists', 'error': 'An account with this email already exists', 'code': 'conflict', 'error_id': '1666c78f8bcf'}

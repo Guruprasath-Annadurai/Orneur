@@ -321,9 +321,11 @@ def test_07b_password_reset_token_is_single_use(client):
     t, uid = _signup(client)
     email = client.get("/api/auth/me", headers=_hdr(t)).json()
     email = (email.get("user") or email)["email"]
+    from orca.auth import account_security as acct
     from orca.auth.tokens import make_reset_token
 
-    reset = make_reset_token(uid, email)
+    # L02-04: a reset link is a signed token tied to a single-use row (jti); a stateless, jti-less token is refused (covered in tests/test_l02_account_security.py).
+    reset = make_reset_token(uid, email, acct.issue(uid, "reset", email, acct.RESET_TTL_S))
     assert client.post("/api/auth/reset-password", json={"token": reset, "password": "firstnewpassword"}).status_code == 200
     replay = client.post("/api/auth/reset-password", json={"token": reset, "password": "attackerchosenpw"})
     assert replay.status_code == 400, "reset link replayed to take the account over again"
@@ -381,9 +383,10 @@ def test_07f_default_signing_secret_is_refused_on_a_public_edge(monkeypatch):
 def test_07d_revoked_api_key_stops_working_and_keys_are_user_scoped(client):
     ta, _ = _signup(client)
     tb, _ = _signup(client)
-    made = client.post("/api/auth/apikeys", json={"name": "k"}, headers=_hdr(ta))
-    if made.status_code != 200:
-        pytest.skip(f"api-key creation not available for default tier: {made.status_code}")
+    # L02-B3: creation needs the account password. The former `skip` on a non-200 would have hidden a broken creation path as a skipped security test, so it asserts.
+    assert client.post("/api/auth/apikeys", json={"name": "k"}, headers=_hdr(ta)).status_code in (401, 403), "a session token alone must not create a key"
+    made = client.post("/api/auth/apikeys", json={"name": "k", "password": PASSWORD}, headers=_hdr(ta))
+    assert made.status_code == 200, made.text
     body = made.json()
     key, key_id = body["key"], body["key_id"]
     sid_a = _own_session(client, ta)
@@ -391,7 +394,7 @@ def test_07d_revoked_api_key_stops_working_and_keys_are_user_scoped(client):
     assert client.get(f"/api/session/{sid_a}/export", headers=_hdr(tb)).status_code == 404
     assert client.delete(f"/api/auth/apikeys/{key_id}", headers=_hdr(tb)).status_code in (403, 404), "B revoked A's key"
     assert client.delete(f"/api/auth/apikeys/{key_id}", headers=_hdr(ta)).status_code == 200
-    assert client.get(f"/api/session/{sid_a}/export", headers=_hdr(key)).status_code == 404
+    assert client.get(f"/api/session/{sid_a}/export", headers=_hdr(key)).status_code == 401, "a revoked API key is refused outright, never downgraded to anonymous"
 
 
 # --------------------------------------------------------------------------

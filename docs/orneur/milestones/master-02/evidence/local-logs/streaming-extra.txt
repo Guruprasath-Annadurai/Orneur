@@ -1,0 +1,26 @@
+# local log excerpt: streaming-extra
+# captured on merge-tip tree 7a980d4ae918bc4dbec374772a2ec20e36d3107f
+=== Streaming adjacent extra ===
+/home/ubuntu/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.............................s..                                         [100%]
+=============================== warnings summary ===============================
+../home/ubuntu/.local/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/ubuntu/.local/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_kernel_streaming.py::test_context_assembly_identical_for_stream_and_generate
+tests/test_b01_stream_cleanup.py::test_abandoned_streams_leave_no_task_stream_reservation_or_authority
+tests/test_b01_stream_cleanup.py::test_hanging_up_before_the_first_body_byte_never_strands_quota_or_authority
+  /workspace/orca/config.py:401: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.
+    ORCA_HOME = Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
+
+tests/test_b01_stream_cleanup.py: 30 warnings
+  /workspace/orca/auth/secret.py:45: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.
+    return Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+31 passed, 1 skipped, 34 warnings in 15.64s
+EXIT:0

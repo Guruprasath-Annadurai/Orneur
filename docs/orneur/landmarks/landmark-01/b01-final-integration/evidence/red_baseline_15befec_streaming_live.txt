@@ -1,0 +1,25 @@
+        fake.chunks, fake.chunk_delay = [reply[i:i + 2] for i in range(0, len(reply), 2)], 0.0
+        sid = str(uuid.uuid4())
+        status, events = run_stream(user, "say hello in many scripts", sid)
+        assert events[-1]["type"] == "done"
+>       assert "".join(e["text"] for e in events if e["type"] == "chunk") == reply
+E       AssertionError: assert 'FAKE-REPLY' == 'Привет, мир!... — naïve café'
+E         
+E         - Привет, мир! 你好，世界 🌍🚀 — naïve café
+E         + FAKE-REPLY
+
+tests/journey/test_b01_streaming_live.py:324: AssertionError
+=========================== short test summary info ============================
+FAILED tests/journey/test_b01_streaming_live.py::test_S1_default_chat_delivers_real_upstream_deltas_before_generation_ends
+FAILED tests/journey/test_b01_streaming_live.py::test_S4_S5_S6_S7_stop_cancels_the_provider_frees_the_conversation_and_leaves_no_phantom_turn
+FAILED tests/journey/test_b01_streaming_live.py::test_S7_stop_before_any_output_refunds_the_unit
+FAILED tests/journey/test_b01_streaming_live.py::test_S6_provider_dying_mid_stream_is_an_error_not_a_completed_turn
+FAILED tests/journey/test_b01_streaming_live.py::test_S6_stop_then_new_turn_never_resurrects_the_abandoned_reply_after_a_reload
+FAILED tests/journey/test_b01_streaming_live.py::test_S3_secrets_split_across_chunk_sizes_never_reach_wire_store_or_next_prompt[1]
+FAILED tests/journey/test_b01_streaming_live.py::test_S3_secrets_split_across_chunk_sizes_never_reach_wire_store_or_next_prompt[2]
+FAILED tests/journey/test_b01_streaming_live.py::test_S3_secrets_split_across_chunk_sizes_never_reach_wire_store_or_next_prompt[3]
+FAILED tests/journey/test_b01_streaming_live.py::test_S3_secrets_split_across_chunk_sizes_never_reach_wire_store_or_next_prompt[5]
+FAILED tests/journey/test_b01_streaming_live.py::test_S3_secrets_split_across_chunk_sizes_never_reach_wire_store_or_next_prompt[8]
+FAILED tests/journey/test_b01_streaming_live.py::test_S3_secrets_split_across_chunk_sizes_never_reach_wire_store_or_next_prompt[13]
+FAILED tests/journey/test_b01_streaming_live.py::test_unicode_split_across_chunks_is_delivered_intact
+12 failed, 5 passed in 20.23s

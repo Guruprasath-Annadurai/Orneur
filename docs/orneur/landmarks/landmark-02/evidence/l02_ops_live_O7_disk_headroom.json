@@ -1,0 +1,21 @@
+{
+  "recorded_at": "2026-10-29T17:10:37+0000",
+  "environment": {
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18",
+    "wsl2": true
+  },
+  "readyz": 503,
+  "disk": {
+    "state": "critical",
+    "free_mb": 957394,
+    "total_mb": 1031018,
+    "warn_below_mb": 1024,
+    "critical_below_mb": 10000000
+  },
+  "turn_refused_code": "history_unavailable",
+  "quota_units": 0,
+  "limitation": "threshold simulation; a genuinely full filesystem was not created"
+}

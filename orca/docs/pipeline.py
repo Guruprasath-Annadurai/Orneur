@@ -17,12 +17,32 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 from orca.docs.query_engine import build_query_plan, QueryPlan
 from orca.docs.reranker import reciprocal_rank_fusion, cross_encoder_rerank, fast_lexical_prefilter, ScoredChunk
 from orca.docs.sufficiency import check_sufficiency, detect_contradictions, make_citation_dna, format_context_with_citations
+
+
+_STOP = frozenset("""a an the and or but if then else for of to in on at by with from as is are was were be been being do does did have has had it its this that these
+those i you he she we they me my your our their what which who whom whose when where why how can could should would will may might must not no yes about into
+over under than so such any all some each per via please tell show give explain describe summarise summarize document documents file files uploaded""".split())
+
+
+def _content_terms(text: str) -> set[str]:
+    return {w[:5] for w in re.findall(r"[^\W_]{3,}", (text or "").lower()) if w not in _STOP}
+
+
+def lexical_support(query: str, chunks: list[dict]) -> bool:
+    """L02-02: a model-independent floor under 'the documents answer this'. Dense retrieval always returns its nearest chunk, however unrelated, so a
+    question sharing NO content word with ANY retrieved passage is not treated as evidence on retrieval alone. A question with no content words
+    ("summarise this") cannot be judged lexically and is let through."""
+    q = _content_terms(query)
+    if not q:
+        return True
+    return any(q & _content_terms(c.get("text", "")) for c in chunks)
 
 
 @dataclass
@@ -36,6 +56,15 @@ class RAGResult:
     retrieval_rounds: int = 1
     stage_timings_ms: dict = field(default_factory=dict)
     used_fallback: bool = False
+    sufficient: Optional[bool] = None  # L02-02: the sufficiency checker's verdict (None = not evaluated)
+    suspect_passages: int = 0          # L02-02e: retrieved passages that address the judge/scorer (kept as evidence, never shown to a model judge)
+
+    @property
+    def evidence(self) -> str:
+        """``none`` (nothing retrieved) | ``partial`` (retrieved, judged insufficient) | ``found``. Never inferred from the answer."""
+        if not self.context_block:
+            return "none"
+        return "partial" if self.sufficient is False else "found"
 
 
 def run_deep_rag(
@@ -126,12 +155,14 @@ def run_deep_rag(
             top_k=top_k_final,
         )
         final_chunks = [
-            {"text": r.text, "filename": r.filename, "chunk_idx": r.chunk_idx}
+            {"text": r.text, "filename": r.filename, "chunk_idx": r.chunk_idx, "doc_id": r.doc_id}
             for r in reranked
         ]
     else:
         final_chunks = prefiltered[:top_k_final]
     timings["cross_encoder_rerank"] = int((time.monotonic() - t0) * 1000)
+    from orca.docs.judge import looks_like_judge_injection
+    result.suspect_passages = sum(1 for c in final_chunks if looks_like_judge_injection(c.get("text", "")))
 
     # ── Stage 6: Sufficiency Check (+ one corrective round) ──────────────────
     t0 = time.monotonic()
@@ -148,6 +179,7 @@ def run_deep_rag(
             contradictions = f_contra.result()
 
         result.sufficiency_confidence = verdict.confidence
+        result.sufficient = bool(verdict.sufficient) if verdict.judged else None     # an unparsed/unavailable judge is 'not evaluated', never 'sufficient'
 
         if not verdict.sufficient and verdict.reformed_query and max_corrective_rounds > 0:
             rounds += 1
@@ -158,6 +190,11 @@ def run_deep_rag(
                 contradictions = detect_contradictions(final_chunks, ollama_host=ollama_host, llm_model=llm_model)
 
         result.contradictions = contradictions
+    # Abstention floor: no shared content word AND the (model-based) sufficiency judge did not affirm with high confidence -> the passages are not evidence.
+    judged_ok = result.sufficient is True and result.sufficiency_confidence >= 0.7
+    if final_chunks and not lexical_support(query, final_chunks) and not judged_ok:
+        final_chunks = []
+        result.sufficient = False
     timings["sufficiency_check"] = int((time.monotonic() - t0) * 1000)
     result.retrieval_rounds = rounds
 

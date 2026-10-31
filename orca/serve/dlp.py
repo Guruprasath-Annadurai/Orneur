@@ -36,7 +36,9 @@ _SECRET_PATTERNS = {
     "anthropic_api_key": re.compile(r"\bsk-ant-[A-Za-z0-9\-]{20,}\b"),
     "aws_access_key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     "generic_bearer_token": re.compile(r"\bBearer\s+[A-Za-z0-9._\-]{20,}\b"),
-    "private_key_block": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    "private_key_block": re.compile(
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
+    ),
     "github_token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
 }
 

@@ -67,9 +67,16 @@ class ModelDeployment:
         return DEPLOYMENT_DIR / f"{self.deployment_id}.json"
 
     def save(self) -> Path:
+        """Atomic: written to a temporary file, fsynced and renamed, so a crash can never leave a half-written record that breaks every later listing."""
+        import os
+
         path = self.manifest_path()
-        with open(path, "w") as f:
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        with open(tmp, "w") as f:
             json.dump(asdict(self), f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
         return path
 
     @classmethod
@@ -111,11 +118,20 @@ class ModelDeployment:
         self.save()
 
 
-def list_deployments(model_id: str | None = None) -> list[ModelDeployment]:
-    deployments = []
+def scan_deployment_dir() -> tuple[list[ModelDeployment], list[Path]]:
+    """(valid deployments, unreadable record files). A damaged or unknown-shape record is reported, never allowed to break the listing for every other deployment."""
+    import logging
+
+    valid, bad = [], []
     for p in sorted(DEPLOYMENT_DIR.glob("*.json")):
-        with open(p) as f:
-            d = ModelDeployment(**json.load(f))
-        if model_id is None or d.model_id == model_id:
-            deployments.append(d)
-    return deployments
+        try:
+            with open(p) as f:
+                valid.append(ModelDeployment(**json.load(f)))
+        except Exception:
+            bad.append(p)
+            logging.getLogger("orca.gateway.deployment").warning("unreadable deployment record %s ignored", p.name)
+    return valid, bad
+
+
+def list_deployments(model_id: str | None = None) -> list[ModelDeployment]:
+    return [d for d in scan_deployment_dir()[0] if model_id is None or d.model_id == model_id]

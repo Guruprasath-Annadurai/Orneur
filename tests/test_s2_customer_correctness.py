@@ -181,7 +181,9 @@ def test_rate_limiting_returns_rate_limited(client):
     from orca.serve import ratelimit
 
     ratelimit._local_counters.clear()
-    codes = [client.post("/api/auth/login", json={"email": "a@b.co", "password": "x" * 9}) for _ in range(12)]
+    # a different subject each time: repeated failures for ONE account hit the per-account lockout (`too_many_attempts`, L02-04) first,
+    # and this test is about the per-IP limiter
+    codes = [client.post("/api/auth/login", json={"email": f"a{i}@b.co", "password": "x" * 9}) for i in range(12)]
     limited = [r for r in codes if r.status_code == 429]
     assert limited and limited[0].json()["code"] == "rate_limited"
 
@@ -285,15 +287,18 @@ def test_a_retrieval_failure_is_an_error_not_a_silent_answer_without_the_documen
 
 # ══ G-026 stream delivery semantics ══════════════════════════════════════════════════════════════════════════════════════════════
 
-def test_a_completed_answer_is_delivered_once_and_labelled_replayed_not_as_token_streaming(client, monkeypatch):
+def test_a_completed_answer_is_delivered_once_and_streamed_from_the_providers_own_pieces(client, monkeypatch):
+    """Was "...labelled_replayed_not_as_token_streaming" (G-026): a finished answer was cut into one labelled replay. Since B-01 the default path forwards the
+    provider's own pieces; what must still hold is that the answer arrives exactly once and nothing pretends otherwise."""
     with FakeOllama(reply="one two three four five six", chunks=("one two ", "three four five six")) as f:
         point_orneur_at(f, monkeypatch)
         t, _ = _signup(client)
         evs = _events(client, _hdr(t), {"message": SIMPLE, "model_variant": "core"})
     chunks = [e for e in evs if e["type"] == "chunk"]
-    assert len(chunks) == 1 and chunks[0]["replayed"] is True and chunks[0]["text"] == "one two three four five six"
+    assert [c["text"] for c in chunks] == ["one two ", "three four five six"] and not any(c.get("replayed") for c in chunks)
+    assert "".join(c["text"] for c in chunks) == "one two three four five six"          # once: no second copy of the whole answer
     s = next(e for e in evs if e["type"] == "stream")
-    assert s == {"type": "stream", "delivery": "replayed", "cancellable": False} and _done(evs)["delivery"] == "replayed"
+    assert s == {"type": "stream", "delivery": "upstream", "cancellable": True} and _done(evs)["delivery"] == "upstream"
 
 
 def test_genuine_upstream_streaming_is_labelled_upstream_and_cancellable(client, monkeypatch):

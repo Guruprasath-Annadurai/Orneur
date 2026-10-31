@@ -81,6 +81,12 @@ def _delete_session_data(session_id: str) -> dict:
         result["conversation_transcript_error"] = str(e)
 
     try:
+        from orca.serve import message_versions
+        result["message_versions_deleted"] = message_versions.delete_session(session_id)
+    except Exception as e:
+        result["message_versions_error"] = str(e)
+
+    try:
         # Phase 5.1: a real, confirmed gap this cascade never covered --
         # every raw Q:/A: turn committed via MemoryEngine.commit_to_long_term()
         # (unconditional, every chat/stream/ultra turn) lived in this
@@ -100,13 +106,17 @@ def _delete_session_data(session_id: str) -> dict:
         result["long_term_vector_memory_error"] = str(e)
 
     try:
-        docs = list_docs(session_id)
+        docs = list_docs(session_id, include_deleting=True)
         if docs:
             store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
+            removed = 0
             for d in docs:
-                store.delete_doc(d["doc_id"])
-                unregister_doc(session_id, d["doc_id"])
-            result["docs_deleted"] = len(docs)
+                if store.delete_doc(d["doc_id"]):                 # L02-01: unregister only what every store confirmed
+                    unregister_doc(session_id, d["doc_id"])
+                    removed += 1
+            result["docs_deleted"] = removed
+            if removed != len(docs):
+                result["docs_error"] = f"{len(docs) - removed} document(s) not fully removed"
     except Exception as e:
         result["docs_error"] = str(e)
 
@@ -119,8 +129,12 @@ def _delete_session_data(session_id: str) -> dict:
         result["knowledge_graph_error"] = str(e)
 
     try:
-        session_store.delete_session(session_id)
-        result["redis_deleted"] = session_store.enabled()
+        # L02-01f: delete_session() returns False when Redis is unreachable. That used to be ignored and reported as deleted, leaving the cached
+        # conversation in Redis until its TTL. An unreachable Redis is now a FAILED store (the deletion stays partial and is retried).
+        if not session_store.delete_session(session_id):
+            result["redis_error"] = "redis unreachable"
+        else:
+            result["redis_deleted"] = session_store.enabled()
     except Exception as e:
         result["redis_error"] = str(e)
 
@@ -196,8 +210,15 @@ def delete_account(user_id: str) -> dict:
     """
     session_ids = get_user_session_ids(user_id)
     session_results = []
+    from orca.serve import deletions
+
     for sid in session_ids:
-        session_results.append(_delete_session_data(sid))
+        # L02-01: every session gets a durable deletion identity first, so a stale worker cannot resurrect it and the sweep finishes it if a store fails.
+        deletions.begin(sid, user_id)
+        view, raw = deletions.run_with_report(sid, user_id)
+        report = dict(raw) if raw is not None else {"session_id": sid}
+        report["deletion"] = {"deletion_id": view["deletion_id"], "state": view["state"], "access_revoked": True}
+        session_results.append(report)
         _remove_session_title(sid)
 
     stripe_result = None

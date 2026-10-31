@@ -17,7 +17,10 @@ of duplicating that config here.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import logging
+import re
 import threading
 
 from orca.config import CONFIG, orneur_env
@@ -30,6 +33,26 @@ from orca.registry.model_spec import LifecycleState
 from orca.society.lifecycle import LEGACY_PRODUCTION_SERVING
 
 log = logging.getLogger(__name__)
+
+_SAFE_DEPLOYMENT_TOKEN = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def stable_deployment_id(backend: str, model: str, family: str | None = None) -> str:
+    """Registry-safe deployment id that still uniquely maps a raw Ollama tag.
+
+    Tags such as ``llama3.2:1b`` cannot be used as ``deployment_id`` (colon is
+    rejected by ``validate_id``). The real tag stays on ``model_version`` /
+    ``artifact_id`` and is what OllamaRuntime sends to Ollama.
+
+    ``family`` (the served model family, e.g. ``orneur-genesis``) is part of the identity: when ONE Ollama tag backs several tiers -- the normal
+    single-model install -- the deployments are distinct (family, artifact) pairs. Keyed on the tag alone, registering the second tier replaced the
+    first tier's deployment (same id, new ``model_id``), so the first tier then failed with "no deployment is registered for this model" on its
+    next request. The family only enters the hash; no family name appears in the id.
+    """
+    raw = f"{backend}\0{model}" + (f"\0{family}" if family else "")
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    token = _SAFE_DEPLOYMENT_TOKEN.sub("-", model).strip("-._")[:80] or "model"
+    return f"{backend}-{token}-{digest}"
 
 _TRUTHY = ("1", "true", "yes")
 
@@ -145,6 +168,30 @@ _frontier_runtimes_registered: set[str] = set()
 # unconditional disk write per call would be real, needless I/O cost for
 # a record that doesn't change between calls).
 _deployments_persisted: set[str] = set()
+_announced_ids: set[str] = set()      # L02-05: deployment ids THIS worker serves; announced so the reconciler never treats them as orphans
+
+
+def refresh_live_announcement() -> None:
+    try:
+        from orca.gateway import reconcile
+
+        reconcile.announce_live(_announced_ids)
+    except Exception:
+        log.debug("live announcement failed", exc_info=True)
+
+
+def _model_max_concurrency() -> int:
+    """Simultaneous requests ORNEUR sends to the local model server (default 4, as before). The gateway queues up to 4x this many more and refuses beyond that with a
+    retryable ``server_busy``. Operators size it to the model server's real parallelism (e.g. OLLAMA_NUM_PARALLEL)."""
+    try:
+        return max(1, min(256, int(os.environ.get("ORNEUR_MODEL_MAX_CONCURRENCY", "4"))))
+    except ValueError:
+        return 4
+
+
+def _announce(deployment_id: str) -> None:
+    _announced_ids.add(deployment_id)
+    refresh_live_announcement()
 
 
 def get_shared_gateway() -> ModelGateway:
@@ -196,7 +243,7 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
     model_id = TIER_TO_MODEL_ID.get(resolution.tier, "orneur-novus")
 
     if resolution.backend == "ollama":
-        deployment_id = f"ollama-{resolution.model}"
+        deployment_id = stable_deployment_id("ollama", resolution.model, model_id)
         # The lifecycle is decided from verified identity, not from the tier name (see orca/gateway/serving_authority.py): only the pinned
         # legacy Genesis artifact keeps the disclosed LEGACY_PRODUCTION_SERVING classification (PR #25 founder decision); every other
         # self-hosted model is EXPERIMENTAL and, on a public edge, is served only under a verified public-serving grant.
@@ -215,13 +262,14 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
             lifecycle=deployment_lifecycle,
             health=DeploymentHealth.READY.value,
             warmup_completed=True,
-            max_concurrency=4,
+            max_concurrency=_model_max_concurrency(),
             context_limit=CONFIG.brain.context_length,
         )
         gw.register_deployment(deployment)
         if deployment_id not in _deployments_persisted:
             deployment.save()
             _deployments_persisted.add(deployment_id)
+        _announce(deployment_id)
         allow_experimental = decision.allowed
         if not decision.allowed:
             log.warning("not serving %r (tier %s) on a public edge: %s", resolution.model, resolution.tier, decision.reason)
@@ -230,7 +278,7 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
         return GatewayBrain(gw, model_id, resolution.model, allow_experimental=allow_experimental)
 
     _ensure_frontier_runtime(gw, resolution.backend)
-    deployment_id = f"{resolution.backend}-{resolution.model}"
+    deployment_id = stable_deployment_id(resolution.backend, resolution.model, model_id)
     gw.register_deployment(ModelDeployment(
         deployment_id=deployment_id,
         model_id=model_id,
@@ -251,9 +299,10 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None, v
 def reset_for_tests() -> None:
     """Test-only: clears the module-level singleton so tests don't leak
     registered runtimes/deployments across test files."""
-    global _gateway, _ollama_runtime_registered, _frontier_runtimes_registered, _deployments_persisted
+    global _gateway, _ollama_runtime_registered, _frontier_runtimes_registered, _deployments_persisted, _announced_ids
     with _lock:
         _gateway = None
         _ollama_runtime_registered = False
         _frontier_runtimes_registered = set()
         _deployments_persisted = set()
+        _announced_ids = set()

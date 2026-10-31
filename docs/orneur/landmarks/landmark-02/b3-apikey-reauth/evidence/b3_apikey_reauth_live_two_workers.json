@@ -1,0 +1,24 @@
+{
+ "session_only": [
+  401,
+  "reauth_required"
+ ],
+ "password_creates": 200,
+ "api_key_only": [
+  403,
+  "reauth_requires_session"
+ ],
+ "mfa_password_only": [
+  401,
+  "reauth_failed"
+ ],
+ "mfa_code_first_worker_a": 200,
+ "mfa_code_replay_worker_b": [
+  401,
+  "reauth_failed"
+ ],
+ "lockout_seen_on_other_worker": [
+  429,
+  "too_many_attempts"
+ ]
+}

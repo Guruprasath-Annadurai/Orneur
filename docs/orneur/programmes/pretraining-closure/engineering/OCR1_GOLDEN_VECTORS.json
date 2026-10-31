@@ -1,0 +1,26 @@
+{
+  "schema": "orneur-ocr1-golden-vectors/1",
+  "primary_implementation_id": "orca.rse.imp4.ocr1",
+  "c16_status": "IMPLEMENTED_UNVERIFIED_PRIMARY_ONLY \u2014 awaiting independent second codec",
+  "note": "Published for an independent second codec. Cursor implementations ['cursor', 'orca.rse.imp1.codec', 'orca.rse.imp4.ocr1', 'orneur-cursor'] cannot self-certify as the secondary party.",
+  "vectors": [
+    {
+      "vector_id": "ocr1-rfc9180-base-admitted",
+      "description": "RFC 9180 base vector admission succeeds in primary OCR1",
+      "verdict_digest": "08cca8296d7c65b56988ae00c8215ea47b8cd83a9380ac224afb98d09315c9d2",
+      "notes": "Primary implementation calls admit_rfc9180_base(); second codec must agree"
+    },
+    {
+      "vector_id": "ocr1-zero-shared-secret-refuse",
+      "description": "Zero shared secret is refused before open",
+      "verdict_digest": "c6b32efffe2141433dd22ec08724c3cea9bb5fb7908811a4332a2156537ae941",
+      "notes": ""
+    },
+    {
+      "vector_id": "ocr1-frame-count-bound",
+      "description": "Frame count at max bound is 65536; +1 fails closed",
+      "verdict_digest": "cd1e0e17a39e6f57230fe262587e6a65e580b825509fd6946abc0c2e9c77e986",
+      "notes": ""
+    }
+  ]
+}

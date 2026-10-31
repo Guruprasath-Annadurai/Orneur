@@ -1,7 +1,7 @@
 """Per-user conversation retention (Workstream B).
 
 A user chooses `retention_days` (0 = keep until I delete, else 1..3650). `purge_expired_conversations()` deletes every session of every user whose last activity
-(transcript mtime; session creation time if there is no transcript) is older than that user's cutoff, through the SAME cascade account deletion uses (episodic memory,
+(authoritative SQLite turn ``created_at``; session creation time if there is no transcript) is older than that user's cutoff, through the SAME cascade account deletion uses (episodic memory,
 vector memory, documents, knowledge graph, Redis state, semantic facts, memory-continuum records, transcript), then releases the ownership claim and the title.
 It is conservative: a user with retention 0 is never touched; an error on one session never aborts the rest.
 
@@ -38,15 +38,19 @@ def purge_expired_conversations(now: float | None = None) -> dict:
             if last >= cutoff:
                 continue
             try:
-                _delete_session_data(sid)
-                _remove_session_title(sid)
+                # L02-01: same authoritative workflow as an owner's DELETE -- tombstone first, ownership kept until every store confirmed, resumable.
+                from orca.serve import deletions
+
+                deletions.begin(sid, user_id)
                 import sys
 
                 live = getattr(sys.modules.get("orca.serve.api"), "_sessions", None)
                 if isinstance(live, dict):
                     live.pop(sid, None)
-                release_session(sid, user_id)
-                deleted.append(sid)
+                if deletions.run(sid, user_id)["deleted"]:
+                    deleted.append(sid)
+                else:
+                    errors += 1
             except Exception:
                 errors += 1
     return {"scanned": scanned, "deleted": len(deleted), "errors": errors, "deleted_session_ids": deleted}

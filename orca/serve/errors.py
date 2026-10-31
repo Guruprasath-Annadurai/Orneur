@@ -98,12 +98,17 @@ ERROR_CATALOG: dict[str, tuple[int, str]] = {
     "invalid_request": (422, "The request was not valid."),
     "not_found": (404, "Not found."),
     "conflict": (409, "The request conflicts with the current state."),
+    "session_busy": (409, "This conversation is busy with another request. Wait for it to finish and try again."),
+    "history_unavailable": (503, "Conversation history is temporarily unavailable, so this request was not started. Nothing was lost; please retry shortly."),
+    "turn_superseded": (409, "This conversation moved on while the reply was being generated, so it was not saved."),
     "capability_disabled": (403, "This capability is not available in this environment."),
     "model_unavailable": (503, "This model is not available right now. Please choose another model or try again later."),
     "upstream_timeout": (504, "The model backend timed out. Please try again."),
     "backend_unreachable": (503, "The model backend could not be reached. Please try again shortly."),
     "backend_error": (502, "The model backend could not complete this request. Please try again."),
     "server_busy": (503, "The server is at capacity. Please retry shortly."),
+    "server_draining": (503, "The server is restarting and is not accepting new requests. Nothing was started or charged. Please retry in a moment."),
+    "request_timeout": (504, "This request took longer than the allowed time and was stopped. Nothing from it was saved. You can send it again."),
     "cancelled": (499, "The request was cancelled."),
     "internal_error": (500, "Something went wrong on our side. Please try again."),
 }
@@ -146,8 +151,13 @@ def _classify_one(exc: BaseException) -> tuple[str, str] | None:
     names = {cls.__name__ for cls in type(exc).__mro__}
     if isinstance(exc, asyncio.CancelledError):
         return "cancelled", ERROR_CATALOG["cancelled"][1]
-    if "ModelNotRoutableError" in names:
+    if "ModelNotRoutableError" in names or "CircuitOpenError" in names or "DeploymentUnavailableError" in names or "WorkerUnhealthyError" in names:
         return "model_unavailable", ERROR_CATALOG["model_unavailable"][1]
+    # L02-06: the model gateway's admission limit (queue full / queue timeout) is CAPACITY, not a model failure: tell the user to retry, truthfully.
+    if "QueueFullError" in names or "QueueTimeoutError" in names:
+        return "server_busy", ERROR_CATALOG["server_busy"][1]
+    if "GenerationTimeoutError" in names:
+        return "upstream_timeout", ERROR_CATALOG["upstream_timeout"][1]
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or names & _TIMEOUT_NAMES:
         return "upstream_timeout", ERROR_CATALOG["upstream_timeout"][1]
     if isinstance(exc, (ConnectionError, OSError)) or "ConnectError" in names:

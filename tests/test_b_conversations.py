@@ -212,7 +212,10 @@ def test_deleting_a_conversation_removes_its_content_everywhere_and_only_that(cl
     r = client.delete(f"/api/session/{gone}", headers=h)
     assert r.status_code == 200 and r.json()["deleted"] is True
     assert client.get("/api/sessions/search", params={"q": "UNIQUE-GONE"}, headers=h).json()["results"] == []
-    assert _msgs(client, h, gone)["total"] == 0
+    # L02-01: a deleted conversation is now access-REVOKED (404), a stronger guarantee than "readable but empty"; the transcript is verified empty at the store.
+    assert client.get(f"/api/session/{gone}/messages", headers=h).status_code == 404
+    from orca.serve import conversations as _conv
+    assert _conv.turns_for_session(gone) == []
     assert gone not in [s["id"] for s in client.get("/api/sessions", headers=h).json()["sessions"]]
     assert _msgs(client, h, keep)["total"] == 2
     assert client.delete(f"/api/session/{gone}", headers=h).status_code == 404         # second delete: nothing of yours by that id
@@ -254,6 +257,32 @@ def test_retention_setting_round_trips_and_validates(client, fake):
     assert client.get("/api/auth/settings/retention").status_code == 401
 
 
+def _backdate_session_activity(session_id: str, when: float) -> None:
+    """Age authoritative SQLite turn timestamps (JSONL mtime is no longer SoT)."""
+    import sqlite3
+
+    from orca.serve import conversations
+
+    db = conversations._turns_db()
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute(
+            "UPDATE conversation_turns SET created_at=? WHERE session_id=?",
+            (when, session_id),
+        )
+        conn.execute(
+            "UPDATE session_authority SET updated_at=? WHERE session_id=?",
+            (when, session_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    # Keep derived export mtime in sync for any residual file-based scanners.
+    p = Path(__import__("orca.brain.memory", fromlist=["x"]).MEMORY_DIR) / "conversations" / f"{session_id}.jsonl"
+    if p.exists():
+        os.utime(p, (when, when))
+
+
 def test_the_purge_deletes_only_idle_conversations_of_users_who_asked_for_it(client, fake):
     from orca.serve.retention import purge_expired_conversations
     ta, _ = _signup(client)
@@ -263,13 +292,16 @@ def test_the_purge_deletes_only_idle_conversations_of_users_who_asked_for_it(cli
     new_a = _chat(client, ha, "new A")["session_id"]
     old_b = _chat(client, hb, "old B (retention 0)")["session_id"]
     client.put("/api/auth/settings/retention", json={"retention_days": 30}, headers=ha)
-    d = Path(__import__("orca.brain.memory", fromlist=["x"]).MEMORY_DIR) / "conversations"
     long_ago = time.time() - 40 * 86400
     for sid in (old_a, old_b):
-        os.utime(d / f"{sid}.jsonl", (long_ago, long_ago))
+        _backdate_session_activity(sid, long_ago)
     r = purge_expired_conversations()
     assert r["deleted_session_ids"] == [old_a] and r["errors"] == 0
-    assert _msgs(client, ha, old_a)["total"] == 0 and _msgs(client, ha, new_a)["total"] == 2 and _msgs(client, hb, old_b)["total"] == 2
+    # L02-01: a purged conversation is access-revoked (404), stronger than "readable but empty"; the store itself is verified empty.
+    assert client.get(f"/api/session/{old_a}/messages", headers=ha).status_code == 404
+    from orca.serve import conversations as _conv
+    assert _conv.turns_for_session(old_a) == []
+    assert _msgs(client, ha, new_a)["total"] == 2 and _msgs(client, hb, old_b)["total"] == 2
     assert purge_expired_conversations()["deleted"] == 0                      # idempotent
 
 
@@ -280,9 +312,9 @@ def test_one_failing_session_does_not_stop_the_purge(client, fake, monkeypatch):
     h = _hdr(t)
     a, b = _chat(client, h, "a")["session_id"], _chat(client, h, "b")["session_id"]
     client.put("/api/auth/settings/retention", json={"retention_days": 1}, headers=h)
-    d = Path(__import__("orca.brain.memory", fromlist=["x"]).MEMORY_DIR) / "conversations"
+    aged = time.time() - 5 * 86400
     for sid in (a, b):
-        os.utime(d / f"{sid}.jsonl", (time.time() - 5 * 86400,) * 2)
+        _backdate_session_activity(sid, aged)
     real = ad._delete_session_data
 
     def flaky(sid):

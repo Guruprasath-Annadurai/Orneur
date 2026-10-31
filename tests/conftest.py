@@ -232,11 +232,16 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     # mechanism) live under ~/.orca/training/, not ~/.orca/registry/ --
     # same unisolated-module-constant risk, isolated here too.
     run_snapshot_dir_tmp = tmp_path / "training" / "run_snapshots"
+    # GENESIS Foundation Sprint 2, Workstream A: orca.genesis.data.manifest's
+    # own dataset-provenance manifest store lives under
+    # ORCA_HOME/genesis/dataset_manifests -- same unisolated-module-constant
+    # risk as every directory above; isolated here too.
+    genesis_dataset_manifest_dir_tmp = tmp_path / "genesis" / "dataset_manifests"
     for d in (
         checkpoint_dir_tmp, dataset_dir_tmp, dataset_bundle_dir_tmp, evaluation_dir_tmp,
         evaluation_suite_dir_tmp, evaluation_result_dir_tmp, evaluation_raw_response_dir_tmp,
         evaluation_lock_dir_tmp, training_run_dir_tmp, run_snapshot_dir_tmp, registry_tmp,
-        generation_artifact_dir_tmp, generation_artifact_manifest_dir_tmp,
+        generation_artifact_dir_tmp, generation_artifact_manifest_dir_tmp, genesis_dataset_manifest_dir_tmp,
     ):
         d.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(checkpoint_mod, "CHECKPOINT_DIR", checkpoint_dir_tmp)
@@ -252,6 +257,8 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(model_registry_mod, "REGISTRY_STATE_PATH", registry_tmp / "registry_state.json")
     monkeypatch.setattr(training_run_mod, "TRAINING_RUN_DIR", training_run_dir_tmp)
     monkeypatch.setattr(provenance_mod, "RUN_SNAPSHOT_DIR", run_snapshot_dir_tmp)
+    import orca.genesis.data.manifest as genesis_dataset_manifest_mod
+    monkeypatch.setattr(genesis_dataset_manifest_mod, "GENESIS_DATASET_MANIFEST_DIR", genesis_dataset_manifest_dir_tmp)
 
     # Same risk for the default formatted-training-data directory --
     # orca.train.config.FORMATTED_DIR is a module-level ORCA_HOME-derived
@@ -333,3 +340,27 @@ def isolated_home():
     importlib.reload(privacy)
 
     shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.fixture()
+def ollama_fixture(isolated_home):
+    """Shared synthetic Ollama for inference isolation tests in other modules."""
+    from http.server import ThreadingHTTPServer
+    from threading import Thread
+
+    from orca.auth.db import init_db
+    from orca.serve.inference import reset_for_tests
+    from orca.serve.usage import reset_for_tests as reset_usage
+    from tests.test_inference_gateway import _Ollama
+
+    init_db()
+    reset_for_tests()
+    reset_usage()
+    _Ollama.delay_s = 0.0
+    _Ollama.calls = 0
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Ollama)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host = f"http://127.0.0.1:{server.server_address[1]}"
+    yield host
+    server.shutdown()

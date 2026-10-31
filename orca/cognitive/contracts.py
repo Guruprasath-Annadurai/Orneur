@@ -15,11 +15,18 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+# Optional async hook for unredacted InferenceChunk.delta values during
+# CognitiveKernel._answer_directly streaming. INTERNAL RAW BOUNDARY —
+# see orca.cognitive.streaming. Never wire this directly to SSE/browser.
+RawDeltaHook = Callable[[str], Awaitable[None]]
 
 
 # ── Intent ────────────────────────────────────────────────────────────────
@@ -210,6 +217,19 @@ class CognitiveRequest:
     privacy_scope: PrivacyClass = PrivacyClass.STANDARD
     capability_context: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # LANDMARK-01 B-01: when set, _answer_directly uses ModelGateway.stream
+    # and awaits this hook for each non-empty delta BEFORE returning the
+    # accumulated CognitiveResult.output. None → existing generate() path.
+    # Raw / unredacted — callers MUST StreamRedactor before external use.
+    on_raw_delta: RawDeltaHook | None = None
+    # LANDMARK-01 B-01 final integration: awaited ONCE, immediately before the first raw delta, with what the gateway actually resolved for
+    # this call (tier / model version / deployment / runtime / whether the entitlement downgraded it). Lets the API announce the served model
+    # from a fact instead of a guess. Ignored unless ``on_raw_delta`` is set.
+    on_served: Callable[[dict[str, Any]], Awaitable[None]] | None = None
+    # LANDMARK-02 L02-02: the caller will answer this turn through its own document pipeline and DISCARD a plain direct answer. When set, a plan that
+    # would be answered directly (no Truth-Fabric evidence routing, no tools) is returned as "deferred" (output None) WITHOUT a model dispatch.
+    # Truth-Fabric-routed plans are unaffected: they are the case where the Kernel's answer is authoritative over the document pipeline.
+    defer_direct_answer: bool = False
 
 
 # ── Context ──────────────────────────────────────────────────────────────

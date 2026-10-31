@@ -44,6 +44,8 @@ Other auth endpoints: `GET /api/auth/me`, `POST /api/auth/forgot-password`,
 `POST /api/auth/apikeys` (create), `GET /api/auth/apikeys` (list),
 `DELETE /api/auth/apikeys/{key_id}`.
 
+**Creating an API key requires fresh verification** (L02-B3). Body: `{"name": str, "password": str, "totp_code": str?}` — the current password, plus the current authenticator code when 2FA is enabled. A session token alone is refused (`401 reauth_required`); a wrong password/code is `401 reauth_failed`; an API key cannot create a key (`403 reauth_requires_session`); 8 failures in 15 minutes lock creation for the account (`429 too_many_attempts`). Each authenticator code works once.
+
 ## Chat
 
 ### `POST /api/chat` *(optional auth)*

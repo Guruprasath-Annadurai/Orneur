@@ -1,0 +1,17 @@
+{
+  "recorded_at": "2026-10-29T17:10:35+0000",
+  "environment": {
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18",
+    "wsl2": true
+  },
+  "restart_to_ready_s": 0.55,
+  "db_integrity": "ok",
+  "turn_committed_before_crash_survived": true,
+  "mid_turn_rows": 0,
+  "mid_turn_outcome": "not_committed",
+  "mid_turn_reason": "worker_lost",
+  "retry_after_restart": "committed"
+}

@@ -1,0 +1,218 @@
+{
+  "sse-frontend.txt": {
+    "tail": [
+      "# tests 20",
+      "# suites 0",
+      "# pass 20",
+      "# fail 0",
+      "# cancelled 0",
+      "# skipped 0",
+      "# todo 0",
+      "# duration_ms 69.593118"
+    ],
+    "passed": null,
+    "skipped": null,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "c06c07.txt": {
+    "tail": [
+      "=== C06/C07 engineering ===",
+      "/home/ubuntu/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.",
+      "The event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"",
+      "",
+      "  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))",
+      "................                                                         [100%]",
+      "16 passed in 0.45s",
+      "EXIT:0"
+    ],
+    "passed": 16,
+    "skipped": 0,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "genesis-v2-sandbox.txt": {
+    "tail": [
+      "=== Genesis V2 Sandbox ===",
+      "scripts/ci/run_genesis_v2_sandbox_tests.sh: line 6: docker: command not found"
+    ],
+    "passed": null,
+    "skipped": null,
+    "exit": null,
+    "failed_marker": false
+  },
+  "rse.txt": {
+    "tail": [
+      "/home/ubuntu/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.",
+      "The event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"",
+      "",
+      "  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))",
+      "........................................................................ [ 55%]",
+      "..........................................................               [100%]",
+      "130 passed in 1.78s",
+      "EXIT:0"
+    ],
+    "passed": 130,
+    "skipped": 0,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "streaming-extra.txt": {
+    "tail": [
+      "",
+      "tests/test_b01_stream_cleanup.py: 30 warnings",
+      "  /workspace/orca/auth/secret.py:45: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.",
+      "    return Path(orneur_env(\"HOME\", str(Path.home() / \".orca\"))).expanduser()",
+      "",
+      "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+      "31 passed, 1 skipped, 34 warnings in 15.64s",
+      "EXIT:0"
+    ],
+    "passed": 31,
+    "skipped": 1,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "genesis-v2-security.txt": {
+    "tail": [
+      "........................................................................ [ 38%]",
+      "........................................................................ [ 51%]",
+      "........................................................................ [ 64%]",
+      "........................................................................ [ 77%]",
+      "........................................................................ [ 90%]",
+      "........................................................                 [100%]",
+      "560 passed in 111.43s (0:01:51)",
+      "EXIT:0"
+    ],
+    "passed": 560,
+    "skipped": 0,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "training-failclosed.txt": {
+    "tail": [
+      "=== Training fail-closed ===",
+      "/home/ubuntu/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.",
+      "The event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"",
+      "",
+      "  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))",
+      "........................................                                 [100%]",
+      "40 passed in 0.41s",
+      "EXIT:0"
+    ],
+    "passed": 40,
+    "skipped": 0,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "governance-probe.txt": {
+    "tail": [
+      "looking... ['docs/orneur/authorization/TRAINING_AUTHORIZATION.json']",
+      "./docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+      "./docs/orneur/authorization/TRAINING_AUTHORIZATION.json",
+      "./docs/orneur/authorization/TRAINING_AUTHORIZATION_DESIGN.md",
+      "./docs/orneur/authorization/TRAINING_AUTHORIZATION_ASSURANCE.md",
+      "./docs/orneur/authorization/TRAINING_AUTHORITY_REGISTRY.json",
+      "./docs/orneur/authorization/TRAINING_AUTHORIZATION_REVOCATIONS.json",
+      "./orca/serve/capability_truth.py"
+    ],
+    "passed": null,
+    "skipped": null,
+    "exit": null,
+    "failed_marker": false
+  },
+  "rse-dep-audit.txt": {
+    "tail": [
+      "Prepared 4 packages in 51ms",
+      "Installed 4 packages in 2ms",
+      " + cffi==2.1.1",
+      " + cryptography==50.0.2",
+      " + pycparser==3.1",
+      " + pyhpke==0.6.5",
+      "No known vulnerabilities found",
+      "EXIT:0"
+    ],
+    "passed": null,
+    "skipped": null,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "f03-portable-harness.txt": {
+    "tail": [
+      "/home/ubuntu/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.",
+      "The event loop scope for asynchronous fixtures will default to the \"fixture\" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"",
+      "",
+      "  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))",
+      "...............                                                          [100%]",
+      "15 passed in 0.41s"
+    ],
+    "passed": 15,
+    "skipped": 0,
+    "exit": null,
+    "failed_marker": false
+  },
+  "sse-probe.txt": {
+    "tail": [
+      "258-",
+      "259-      - name: Verify the non-root container contract",
+      "260-        shell: bash",
+      "--",
+      "263:  sse-diagnostics:",
+      "264-    # Phase A CP2 post-audit hardening item 1: these Node tests existed",
+      "265:    # (tests/frontend/test_sse_diagnostics.mjs) but were explicitly disclosed",
+      "266-    # as NOT wired into CI. Required now, not optional/best-effort."
+    ],
+    "passed": 5,
+    "skipped": 0,
+    "exit": null,
+    "failed_marker": false
+  },
+  "rag-judge.txt": {
+    "tail": [
+      "tests/test_l02_judge_trust_boundary.py: 41 warnings",
+      "tests/test_l02_tool_authority.py: 5 warnings",
+      "  /workspace/orca/auth/secret.py:45: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.",
+      "    return Path(orneur_env(\"HOME\", str(Path.home() / \".orca\"))).expanduser()",
+      "",
+      "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+      "107 passed, 198 warnings in 22.39s",
+      "EXIT:0"
+    ],
+    "passed": 107,
+    "skipped": 0,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "landmark-targeted.txt": {
+    "tail": [
+      "tests/test_l02_model_truth.py: 19 warnings",
+      "tests/test_canonical_turn_authority.py: 85 warnings",
+      "  /workspace/orca/auth/secret.py:45: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.",
+      "    return Path(orneur_env(\"HOME\", str(Path.home() / \".orca\"))).expanduser()",
+      "",
+      "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+      "113 passed, 1 skipped, 530 warnings in 70.56s (0:01:10)",
+      "EXIT:0"
+    ],
+    "passed": 113,
+    "skipped": 1,
+    "exit": 0,
+    "failed_marker": false
+  },
+  "governance-deep.txt": {
+    "tail": [
+      "      \"scope\": \"conversations are saved per account and deletion is authoritative across the application's stores; copies outside the application (host backups",
+      "=== GENESIS/NOVUS/AETERNUM probes ===",
+      "exports ['NATIVE_FAMILY_STATUS', 'STATUSES', 'annotations', 'capabilities', 'native_weights_available', 'serving_facts', 'system_facts_for_model']",
+      "serving_facts => {\"runtime\": \"ollama\", \"location\": \"local\", \"weights_origin\": \"third_party\", \"native_orneur_weights\": false, \"native_family_status\": null}",
+      "capabilities => {\"schema\": \"orneur.capabilities/1\", \"model\": {\"served_by\": \"third-party open-weights model through a local Ollama runtime (see /api/models for the exact tag per tier)\", \"native_orneur_models\": {\"genesis\": \"INTERFACE_ONLY\", \"novus\": \"NOT_AVAILABLE\", \"aeternum\": \"NOT_AVAILABLE\", \"note\": \"No ORNEUR-trained weights are available; tier names are product labels, not native models. No benchmark claim is made.\"}}, \"capabilities\": {\"streaming_chat\": {\"status\": \"implemented\", \"scope\": \"plain-chat answers on the local Ollama runtime are streamed from the model as it generates; evidence-routed (Truth Fabric) answers are delivered whole, labelled 'replayed'\", \"evidence\": [\"tests/test_b01_raw_delta_lifecycle.py\", \"tests/journey/test_b01_streaming_live.py\"]}, \"stop_cancellation\": {\"status\": \"implemented\", \"scope\": \"Stop closes the upstream model connection; nothing is committed for a stopped turn\", \"evidence\": [\"tests/test_l02_turn_recovery.py\"]}, \"document_grounding\": {\"status\": \"implemented\", \"scope\": \"uploaded documents are retrieved, quoted as untrusted evidence, cited by source; the model is told when the documents do not contain the answer\", \"evidence\": [\"tests/test_l02_document_rag.py\", \"tests/test_l02_judge_trust_boundary.py\"]}, \"verified_answers\": {\"status\": \"partial\", \"scope\": \"an answer is described as verified only when the Truth Fabric checked its claims against retrieved evidence; ordinary answers are model text, not verified\", \"evidence\": [\"tests/test_cognitive_kernel_truth_f",
+      "=== FastAPI smoke ===",
+      "title ORNEUR API",
+      "routes 69"
+    ],
+    "passed": null,
+    "skipped": null,
+    "exit": null,
+    "failed_marker": false
+  }
+}

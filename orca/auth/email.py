@@ -26,13 +26,53 @@ _BTN   = "display:inline-block;padding:12px 28px;background:#fff;color:#000;font
 _MUTED = "color:#666;font-size:11px;margin-top:12px"
 
 
+def _sink_dir() -> str:
+    from orca.config import orneur_env
+
+    return orneur_env("MAIL_SINK_DIR", "").strip()
+
+
+def delivery_mode() -> str:
+    """``smtp`` (a real provider is configured) | ``local_sink`` (messages are written to a local directory for engineering / controlled staging; NOTHING is delivered
+    to anyone) | ``none``."""
+    if SMTP_HOST and SMTP_USER and SMTP_PASS:
+        return "smtp"
+    return "local_sink" if _sink_dir() else "none"
+
+
+def real_delivery() -> bool:
+    return delivery_mode() == "smtp"
+
+
 def is_configured() -> bool:
-    return bool(SMTP_HOST and SMTP_USER and SMTP_PASS)
+    return delivery_mode() != "none"
+
+
+def _write_sink(to: str, subject: str, html: str, plain: str) -> bool:
+    import json
+    import os
+    import time
+    import uuid
+    from pathlib import Path
+
+    try:
+        d = Path(_sink_dir())
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}.json"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"synthetic": True, "delivered_to_recipient": False, "to": to, "subject": subject, "plain": plain, "html": html, "at": time.time()}, f)
+        return True
+    except Exception:
+        return False
 
 
 def send_email(to: str, subject: str, html: str, plain: str = "") -> bool:
-    if not is_configured():
+    mode = delivery_mode()
+    if mode == "none":
         return False
+    if mode == "local_sink":
+        return _write_sink(to, subject, html, plain)
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"]    = SMTP_FROM

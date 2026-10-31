@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-10-29T17:09:47+0000",
+  "environment": {
+    "cpu_count": 16,
+    "mem_total_mb": 15545,
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "python": "3.11.18",
+    "wsl2": true
+  },
+  "grace_s": 3,
+  "seconds_from_sigterm_to_exit": 3.24,
+  "exit_code": -15,
+  "new_work_during_drain": [
+    503,
+    "server_draining"
+  ],
+  "readyz_during_drain": 503,
+  "cut_stream_final_state": "not_committed",
+  "cut_stream_reason": "server_shutdown",
+  "seconds_until_outcome_terminal_after_exit": 0.02,
+  "turn_rows": 0,
+  "db_integrity": "ok"
+}

@@ -49,9 +49,16 @@ def test_chat_reaches_the_model_and_returns_the_reply_with_a_session(client, fak
 def test_stream_emits_session_chunk_done_with_a_message_id(client, fake):
     t, _ = _signup(client)
     evs = _events(client, _hdr(t), {"message": "hello again", "model_variant": "core"})
-    assert [e["type"] for e in evs] == ["session", "model", "stream", "chunk", "done"]
-    chunk, done = evs[3], evs[4]
-    assert chunk["text"] == "FAKE-REPLY" and chunk["replayed"] is True and done["message_id"] and "citation_compliance" in done
+    types = [e["type"] for e in evs]
+    assert types[0] == "session"
+    assert "generation" in types
+    assert types[-1] == "done"
+    chunks = [e for e in evs if e["type"] == "chunk"]
+    done = next(e for e in evs if e["type"] == "done")
+    # LANDMARK-01 B-01: the default path streams the provider's own pieces ("FAKE-", "REPLY"); it is no longer one labelled replay of a finished answer.
+    assert "".join(c["text"] for c in chunks) == "FAKE-REPLY" and len(chunks) >= 2 and not any(c.get("replayed") for c in chunks)
+    assert next(e for e in evs if e["type"] == "stream") == {"type": "stream", "delivery": "upstream", "cancellable": True}
+    assert done["delivery"] == "upstream" and done["message_id"] and "citation_compliance" in done
 
 
 def test_response_discloses_which_model_served(client, fake):
@@ -60,12 +67,13 @@ def test_response_discloses_which_model_served(client, fake):
     assert fake.requests[0]["model"] in json.dumps(r)
 
 
-@pytest.mark.xfail(strict=True, reason="G-026: a simple question is generated NON-streaming (stream=false upstream) and delivered as one chunk after the whole "
-                                       "answer exists, so there is nothing incremental to show and nothing to cancel mid-generation.")
 def test_simple_answers_are_generated_with_streaming_upstream(client, fake):
+    """Was a strict xfail (G-026 / B-01): a simple question was generated NON-streaming and delivered as one replayed chunk. The answering call is now
+    made with stream=true; (knowledge-graph side calls are not the answer and are not asserted here)."""
     t, _ = _signup(client)
     _events(client, _hdr(t), {"message": "long answer please", "model_variant": "core"})
-    assert fake.requests and all(q.get("stream") for q in fake.requests)
+    answering = [q for q in fake.requests if (q.get("messages") or [{}])[-1].get("content") == "long answer please"]
+    assert len(answering) == 1 and answering[0].get("stream") is True
 
 
 # ── streaming and cancellation ─────────────────────────────────────────────────────────────────────────────────────────────────────

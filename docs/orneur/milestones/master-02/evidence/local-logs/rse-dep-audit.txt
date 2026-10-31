@@ -1,0 +1,82 @@
+# local log excerpt: rse-dep-audit
+# captured on merge-tip tree 7a980d4ae918bc4dbec374772a2ec20e36d3107f
+  Downloading packageurl_python-0.17.6-py3-none-any.whl.metadata (5.1 kB)
+Collecting py-serializable<3.0.0,>=2.1.0 (from cyclonedx-python-lib<12,>=5->pip-audit)
+  Downloading py_serializable-2.1.0-py3-none-any.whl.metadata (4.3 kB)
+Collecting sortedcontainers<3.0.0,>=2.4.0 (from cyclonedx-python-lib<12,>=5->pip-audit)
+  Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl.metadata (10 kB)
+Requirement already satisfied: typing_extensions<5.0,>=4.6 in /home/ubuntu/.local/lib/python3.12/site-packages (from cyclonedx-python-lib<12,>=5->pip-audit) (4.16.0)
+Requirement already satisfied: pip in /usr/lib/python3/dist-packages (from pip-api>=0.0.28->pip-audit) (24.0)
+Requirement already satisfied: pyparsing in /usr/lib/python3/dist-packages (from pip-requirements-parser>=32.0.0->pip-audit) (3.1.1)
+Collecting charset_normalizer<4,>=2 (from requests>=2.31.0->pip-audit)
+  Downloading charset_normalizer-3.5.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (46 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 46.4/46.4 kB 5.4 MB/s eta 0:00:00
+
+Requirement already satisfied: idna<4,>=2.5 in /home/ubuntu/.local/lib/python3.12/site-packages (from requests>=2.31.0->pip-audit) (3.20)
+Requirement already satisfied: urllib3<3,>=1.26 in /usr/lib/python3/dist-packages (from requests>=2.31.0->pip-audit) (2.0.7)
+Requirement already satisfied: certifi>=2023.5.7 in /home/ubuntu/.local/lib/python3.12/site-packages (from requests>=2.31.0->pip-audit) (2026.10.23)
+Requirement already satisfied: markdown-it-py>=2.2.0 in /home/ubuntu/.local/lib/python3.12/site-packages (from rich>=12.4->pip-audit) (4.2.0)
+Requirement already satisfied: pygments<3.0.0,>=2.13.0 in /home/ubuntu/.local/lib/python3.12/site-packages (from rich>=12.4->pip-audit) (2.21.0)
+Collecting boolean.py>=4.0 (from license-expression<31,>=30->cyclonedx-python-lib<12,>=5->pip-audit)
+  Downloading boolean_py-5.0-py3-none-any.whl.metadata (2.3 kB)
+Requirement already satisfied: mdurl~=0.1 in /home/ubuntu/.local/lib/python3.12/site-packages (from markdown-it-py>=2.2.0->rich>=12.4->pip-audit) (0.1.2)
+Collecting defusedxml<0.8.0,>=0.7.1 (from py-serializable<3.0.0,>=2.1.0->cyclonedx-python-lib<12,>=5->pip-audit)
+  Downloading defusedxml-0.7.1-py2.py3-none-any.whl.metadata (32 kB)
+Downloading uv-0.13.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (17.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 17.3/17.3 MB 196.3 MB/s eta 0:00:00
+
+Downloading pip_audit-2.10.1-py3-none-any.whl (62 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 62.0/62.0 kB 31.7 MB/s eta 0:00:00
+
+Downloading cachecontrol-0.14.4-py3-none-any.whl (22 kB)
+Downloading cyclonedx_python_lib-11.12.0-py3-none-any.whl (529 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 529.5/529.5 kB 144.7 MB/s eta 0:00:00
+
+Downloading pip_api-0.0.35-py3-none-any.whl (123 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 123.9/123.9 kB 73.2 MB/s eta 0:00:00
+
+Downloading pip_requirements_parser-32.0.1-py3-none-any.whl (35 kB)
+Downloading platformdirs-4.14.0-py3-none-any.whl (35 kB)
+Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 73.1/73.1 kB 44.2 MB/s eta 0:00:00
+
+Downloading tomli-2.5.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (286 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 286.4/286.4 kB 129.0 MB/s eta 0:00:00
+
+Downloading tomli_w-1.2.0-py3-none-any.whl (6.7 kB)
+Downloading charset_normalizer-3.5.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (257 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 257.6/257.6 kB 98.6 MB/s eta 0:00:00
+
+Downloading filelock-4.2.4-py3-none-any.whl (162 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 162.5/162.5 kB 87.1 MB/s eta 0:00:00
+
+Downloading license_expression-30.4.4-py3-none-any.whl (120 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 120.6/120.6 kB 50.5 MB/s eta 0:00:00
+
+Downloading msgpack-1.2.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (475 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 475.7/475.7 kB 109.4 MB/s eta 0:00:00
+
+Downloading packageurl_python-0.17.6-py3-none-any.whl (36 kB)
+Downloading py_serializable-2.1.0-py3-none-any.whl (23 kB)
+Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl (29 kB)
+Downloading boolean_py-5.0-py3-none-any.whl (26 kB)
+Downloading defusedxml-0.7.1-py2.py3-none-any.whl (25 kB)
+Installing collected packages: sortedcontainers, boolean.py, uv, tomli-w, tomli, platformdirs, pip-requirements-parser, pip-api, packageurl-python, msgpack, license-expression, filelock, defusedxml, charset_normalizer, requests, py-serializable, cyclonedx-python-lib, CacheControl, pip-audit
+Successfully installed CacheControl-0.14.4 boolean.py-5.0 charset_normalizer-3.5.2 cyclonedx-python-lib-11.12.0 defusedxml-0.7.1 filelock-4.2.4 license-expression-30.4.4 msgpack-1.2.4 packageurl-python-0.17.6 pip-api-0.0.35 pip-audit-2.10.1 pip-requirements-parser-32.0.1 platformdirs-4.14.0 py-serializable-2.1.0 requests-2.34.2 sortedcontainers-2.4.0 tomli-2.5.0 tomli-w-1.2.0 uv-0.13.6
+Downloading cpython-3.11.18-linux-x86_64-gnu (download) (29.2MiB)
+ Downloaded cpython-3.11.18-linux-x86_64-gnu (download)
+Using CPython 3.11.18
+Creating virtual environment at: /tmp/rse-audit
+Activate with: source /tmp/rse-audit/bin/activate
+Using Python 3.11.18 environment at: /tmp/rse-audit
+Resolved 4 packages in 82ms
+Downloading cryptography (4.5MiB)
+ Downloaded cryptography
+Prepared 4 packages in 51ms
+Installed 4 packages in 2ms
+ + cffi==2.1.1
+ + cryptography==50.0.2
+ + pycparser==3.1
+ + pyhpke==0.6.5
+No known vulnerabilities found
+EXIT:0

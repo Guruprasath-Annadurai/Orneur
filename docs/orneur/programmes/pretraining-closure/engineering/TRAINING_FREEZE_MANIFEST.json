@@ -1,0 +1,39 @@
+{
+  "schema": "orneur-pretraining-closure-training-freeze-manifest/2",
+  "phase": 9,
+  "package": {
+    "status": "NOT_FROZEN",
+    "training_authorization": "NO-GO",
+    "code_sha": "d6794245b77bc417d9a0d66e52804f5177bbfc17",
+    "model_configuration_digest": "5710f93023f8a387faccdb322c103d3fc436491a0d62f76ba31e492a378fdd7e",
+    "tokenizer_digest": null,
+    "dataset_digest": null,
+    "evaluation_identity": null,
+    "runtime_container_digest": null,
+    "environment_identity": null,
+    "resource_allocation": "synthetic_cpu_only",
+    "maximum_permitted_spend": 0.0,
+    "checkpoint_schedule": null,
+    "resume_policy": null,
+    "incident_stop_conditions": [
+      "security_or_integrity_violation",
+      "authorization_revoked",
+      "budget_exhausted",
+      "unauthorized_scope_expansion"
+    ],
+    "grant_identity": null,
+    "readiness_blockers": [
+      "r65_unmapped",
+      "c27_unmet",
+      "trust_anchors_absent",
+      "protected_corpus_evidence_absent",
+      "private_evaluation_unfrozen",
+      "foundation_not_selected",
+      "compute_unqualified",
+      "independent_reviews_missing",
+      "real_data_licensing_unresolved",
+      "training_authorization_absent"
+    ],
+    "notes": "Phase 9 freeze package prepared for founder FINAL-2. No training execution is authorized by building this artifact. Repository root observed: /workspace"
+  }
+}

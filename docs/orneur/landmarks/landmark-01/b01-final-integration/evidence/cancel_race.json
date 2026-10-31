@@ -1,0 +1,11 @@
+{
+  "rounds": 36,
+  "commit_won": 10,
+  "cancel_won": 26,
+  "done_delivered_before_hangup": 0,
+  "invariants": [
+    "transcript is [] or exactly user+complete answer",
+    "quota delta == 1 per round",
+    "conversation never left busy"
+  ]
+}

@@ -336,7 +336,13 @@ class ToyEngine:
             for i in range(len(acc)):
                 acc[i] += g[i] / plan.grad_accum
             loss_sum += loss / plan.grad_accum
-        norm = math.sqrt(sum(v * v for v in acc))
+        # Left fold, not builtin sum(). CPython 3.12 sums floats with
+        # Neumaier compensation, which changes the bits of this norm versus
+        # the 3.11 run that pinned the golden digest.
+        norm_sq = 0.0
+        for value in acc:
+            norm_sq += value * value
+        norm = math.sqrt(norm_sq)
         if norm > plan.grad_clip:
             factor = plan.grad_clip / norm
             acc = [v * factor for v in acc]
