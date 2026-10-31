@@ -40,6 +40,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history required for MASTER portable harness ancestry gates
+          # (engineering SHA must be a real ancestor; missing objects must FAIL,
+          # never skip). Default shallow checkout previously soft-skipped those
+          # required lineage assertions.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

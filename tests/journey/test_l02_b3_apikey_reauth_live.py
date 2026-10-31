@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
 from pathlib import Path
 
@@ -17,6 +16,7 @@ import pytest
 
 from tests.fake_ollama import FakeOllama
 from tests.journey.harness import JOURNEY_MODEL, LiveServer
+from tests.totp_clock import next_step_mid
 
 EVIDENCE = Path(os.environ.get("ORNEUR_L02_EVIDENCE_DIR", "/tmp/orneur-l02-evidence"))
 PW = "Journey-Pass-91x"
@@ -75,7 +75,9 @@ def test_live_stepup_on_two_real_workers(pair):
     r = httpx.post(f"{b.base}/api/auth/apikeys", json={"name": "z", "password": PW}, headers=_h(tok), timeout=30)
     out["mfa_password_only"] = [r.status_code, r.json().get("code")]
     assert r.status_code == 401
-    code = totp_now(secret, time.time() + 31)
+    # Live workers use real wall clocks; next_step_mid stays inside the product ±1 window
+    # (unlike time.time()+31, which rejects at second-of-step 29).
+    code = totp_now(secret, next_step_mid())
     ok = httpx.post(f"{a.base}/api/auth/apikeys", json={"name": "z", "password": PW, "totp_code": code}, headers=_h(tok), timeout=30)
     replay = httpx.post(f"{b.base}/api/auth/apikeys", json={"name": "z2", "password": PW, "totp_code": code}, headers=_h(tok), timeout=30)
     out["mfa_code_first_worker_a"], out["mfa_code_replay_worker_b"] = ok.status_code, [replay.status_code, replay.json().get("code")]
@@ -84,7 +86,13 @@ def test_live_stepup_on_two_real_workers(pair):
     # lockout is shared: failures on A lock creation on B
     for _ in range(8):
         httpx.post(f"{a.base}/api/auth/apikeys", json={"name": "k", "password": "wrong-wrong-wrong"}, headers=_h(tok), timeout=30)
-    locked = httpx.post(f"{b.base}/api/auth/apikeys", json={"name": "k", "password": PW, "totp_code": totp_now(secret, time.time() - 31)}, headers=_h(tok), timeout=30)
+    # Prior-step code is still inside the accepted drift window; lockout must refuse it anyway.
+    locked = httpx.post(
+        f"{b.base}/api/auth/apikeys",
+        json={"name": "k", "password": PW, "totp_code": totp_now(secret, next_step_mid() - 30)},
+        headers=_h(tok),
+        timeout=30,
+    )
     out["lockout_seen_on_other_worker"] = [locked.status_code, locked.json().get("code")]
     assert locked.status_code == 429 and locked.json()["code"] == "too_many_attempts"
     EVIDENCE.mkdir(parents=True, exist_ok=True)

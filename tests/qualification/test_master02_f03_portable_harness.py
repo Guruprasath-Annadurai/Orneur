@@ -59,7 +59,8 @@ ORIGINAL_AUDIT_SHA = "75a7a648984d9883774292f35a511089e6ffd474"
 ENGINEERING_SHA = "0fe98e04c2e0c77c7a4e9dc4abfc97bbb3a54d51"
 PARENT_SHA = "649d90f84069fc618ba4d69b4c26a66bed731caa"
 CONSUMER_PATH = "orca/rse/imp1/consumer_verification.py"
-# git blob + content digest of CONSUMER_PATH at ENGINEERING_SHA (shallow-clone safe).
+# git blob + content digest of CONSUMER_PATH at ENGINEERING_SHA.
+# Ancestry qualification requires complete git history (CI checkout fetch-depth: 0).
 ENGINEERING_CONSUMER_GIT_BLOB = "a42286de9a0babe348a2f9b03840a29fb4664e64"
 ENGINEERING_CONSUMER_SHA256 = (
     "bbabb322e0c7dbbeea92b95590bdf50758fdadde38f28a2a474fd8e2f8311241"
@@ -105,11 +106,11 @@ def test_portable_worktree_resolves():
 
 
 def test_engineering_sha_is_ancestor_of_integrated_head():
-    """When full history is present, engineering SHA must be an ancestor.
+    """Engineering SHA must be a git ancestor of HEAD.
 
-    GitHub Actions default checkout is shallow and often lacks historical
-    objects; in that case we skip the ancestry probe and rely on the
-    content-digest gate below (always executed).
+    Missing commit objects are a hard failure — ancestry must not pass or skip
+    merely because a shallow/partial clone omitted history. Applicable CI
+    checkouts use ``fetch-depth: 0``.
     """
     wt = _worktree()
     head = _git("rev-parse", "HEAD", cwd=wt)
@@ -117,11 +118,10 @@ def test_engineering_sha_is_ancestor_of_integrated_head():
         "Integrated tip unexpectedly equals lone F03 engineering SHA; "
         "MASTER-02 tip must be a multi-PR merge commit."
     )
-    if not _git_object_exists(ENGINEERING_SHA, wt):
-        pytest.skip(
-            f"shallow/partial clone missing {ENGINEERING_SHA}; "
-            "content-digest gate remains mandatory"
-        )
+    assert _git_object_exists(ENGINEERING_SHA, wt), (
+        f"required ancestry commit {ENGINEERING_SHA} is missing from the worktree "
+        f"(incomplete checkout). Refusing to skip; configure full-history fetch."
+    )
     rc = subprocess.call(
         ["git", "merge-base", "--is-ancestor", ENGINEERING_SHA, head],
         cwd=str(wt),
@@ -132,8 +132,9 @@ def test_engineering_sha_is_ancestor_of_integrated_head():
 def test_parent_and_engineering_blob_identity_preserved():
     """consumer_verification.py at HEAD must match engineering tip bytes.
 
-    Prefer git blob identity when objects exist; always enforce the pinned
-    sha256 so shallow CI clones still prove content identity.
+    Pinned sha256 + git blob identity always enforced. Parent/engineering
+    blob cross-check requires the historical commits and fails closed if they
+    are absent (no skip-on-missing-object path).
     """
     wt = _worktree()
     consumer = wt / CONSUMER_PATH
@@ -147,23 +148,30 @@ def test_parent_and_engineering_blob_identity_preserved():
         f"HEAD blob {tip_blob} != pinned engineering blob "
         f"{ENGINEERING_CONSUMER_GIT_BLOB}"
     )
-    if _git_object_exists(ENGINEERING_SHA, wt) and _git_object_exists(PARENT_SHA, wt):
-        eng_blob = _git("rev-parse", f"{ENGINEERING_SHA}:{CONSUMER_PATH}", cwd=wt)
-        assert tip_blob == eng_blob
-        code_diff = _git(
-            "diff",
-            "--name-only",
-            PARENT_SHA,
-            ENGINEERING_SHA,
-            "--",
-            "orca/rse/imp1/consumer_verification.py",
-            "tests/rse/test_c06_c07_consumer_verification.py",
-            cwd=wt,
-        ).splitlines()
-        assert set(code_diff) == {
-            "orca/rse/imp1/consumer_verification.py",
-            "tests/rse/test_c06_c07_consumer_verification.py",
-        }
+    assert _git_object_exists(ENGINEERING_SHA, wt), (
+        f"required engineering commit {ENGINEERING_SHA} missing; "
+        "blob cross-check cannot be skipped"
+    )
+    assert _git_object_exists(PARENT_SHA, wt), (
+        f"required parent commit {PARENT_SHA} missing; "
+        "blob cross-check cannot be skipped"
+    )
+    eng_blob = _git("rev-parse", f"{ENGINEERING_SHA}:{CONSUMER_PATH}", cwd=wt)
+    assert tip_blob == eng_blob
+    code_diff = _git(
+        "diff",
+        "--name-only",
+        PARENT_SHA,
+        ENGINEERING_SHA,
+        "--",
+        "orca/rse/imp1/consumer_verification.py",
+        "tests/rse/test_c06_c07_consumer_verification.py",
+        cwd=wt,
+    ).splitlines()
+    assert set(code_diff) == {
+        "orca/rse/imp1/consumer_verification.py",
+        "tests/rse/test_c06_c07_consumer_verification.py",
+    }
 
 
 def test_formal_acceptance_still_zero_on_integrated_tip():
