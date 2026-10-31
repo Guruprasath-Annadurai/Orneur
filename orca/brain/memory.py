@@ -594,7 +594,7 @@ def _delete_sync(session_id: str, deadline_s: float | None = None) -> "DeletionR
     store = _vs.Store(MEMORY_DIR / "vectors")
     name = f"orca_{session_id[:8]}"
     try:
-        res = store.delete_collection(name, deadline_s=deadline_s)
+        res = store.delete_collection(name, deadline_s=deadline_s, binding=_vs.session_binding(session_id))
     except _vs.VectorNotFound:
         res = {"existed": False, "removed": True}
     except (_vs.VectorTimeout, _vs.VectorUnavailable, _vs.VectorBusy):
@@ -603,6 +603,9 @@ def _delete_sync(session_id: str, deadline_s: float | None = None) -> "DeletionR
         return DeletionResult(logical_deleted=False, physical_reclamation=FAILED)
     except Exception:
         return DeletionResult(logical_deleted=False, physical_reclamation=FAILED)
+    if res.get("refused") == "not_owner":
+        _count("ownership_refusals")
+        return DeletionResult(logical_deleted=True, physical_reclamation=NOT_APPLICABLE)    # the collection holds another conversation's data; nothing of THIS one is in it, and it is left intact
     if not res.get("removed"):
         return DeletionResult(logical_deleted=False, physical_reclamation=FAILED)      # asked to delete and it is still listed: not deleted
     try:
@@ -862,3 +865,20 @@ class MemoryEngine:
         cross-session `all_sessions_summary` fallback was a real,
         confirmed unscoped read leak, retired in Phase 5.1)."""
         return self.semantic.recall_fact(f"session_{self.session_id[:8]}") or ""
+
+
+def vector_maintenance() -> dict:
+    """Periodic maintenance (the deletion sweep): retry byte reclamation that was deferred and deletions that could not be confirmed. Bounded, idempotent, never raises."""
+    out = {}
+    try:
+        out["memory_reclamation"] = retry_pending_reclamations()
+        out["logical_deletions"] = check_pending_logical_deletions() if _load_pending_logical_deletions() else {"checked": 0}
+    except Exception as exc:
+        out["memory_error"] = type(exc).__name__
+    try:
+        from orca.docs.store import retry_pending_doc_reclamation
+
+        out["docs_reclamation"] = retry_pending_doc_reclamation()
+    except Exception as exc:
+        out["docs_error"] = type(exc).__name__
+    return out

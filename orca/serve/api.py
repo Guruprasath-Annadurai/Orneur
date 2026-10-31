@@ -126,6 +126,7 @@ def _reconcile_resources() -> dict:
 async def _deletion_sweep_loop():
     """L02-01/02: a deletion that a crash or an unavailable store left unfinished must not wait for the 6-hour retention pass. Each step is independent,
     idempotent, bounded and lease-guarded, so several workers running this loop is safe."""
+    from orca.brain.memory import vector_maintenance
     from orca.docs.store import sweep_document_deletions
     from orca.serve import deletions, temporary_chat
 
@@ -135,6 +136,7 @@ async def _deletion_sweep_loop():
             ("document", sweep_document_deletions, (CONFIG.ollama.host,)),               # documents left "deleting"
             ("temporary chat", temporary_chat.expire_due, ()),                            # TTL-expired and failed temporary chats
             ("resource reconciliation", _reconcile_resources, ()),                        # L02-05: orphan deployment records / document chunks / temp files
+            ("vector maintenance", vector_maintenance, ()),                               # L03: deferred byte reclamation and unconfirmed vector deletions are retried, not forgotten
         ):
             try:
                 await asyncio.to_thread(fn, *args)

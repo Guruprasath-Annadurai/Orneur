@@ -11,6 +11,7 @@ what it needs. Deletes, vacuum and recycling take the exclusive side of a reader
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 import threading
 import time
@@ -168,6 +169,8 @@ class ChromaHost:
                 return self._info(req)
             if op == "vacuum":
                 return self._vacuum(req)
+            if op == "rebuild_without":
+                return self._rebuild_without(req)
             raise ValueError("unknown op")
         except BaseException:
             self.counters["errors"] += 1
@@ -251,6 +254,16 @@ class ChromaHost:
 
     def _delete_collection(self, req: dict) -> dict:
         st = self._store(req["root"])
+        binding = req.get("binding")
+        if binding:
+            # Deleting by NAME would destroy a different conversation's data when two conversations share a collection name. A collection bound to someone else is not ours to delete.
+            conn = self._bindings_db(st)
+            try:
+                row = conn.execute("SELECT binding FROM bindings WHERE collection=?", (req["collection"],)).fetchone()
+            finally:
+                conn.close()
+            if row is not None and row[0] != binding:
+                return {"existed": True, "removed": False, "refused": "not_owner"}
         with st.gate.exclusive():
             client = self._client(st)
             existed = True
@@ -304,12 +317,59 @@ class ChromaHost:
                 conn = sqlite3.connect(str(db), timeout=float(req.get("timeout_s", 2.0)))
                 try:
                     conn.execute("VACUUM")
+                    live = {r[0] for r in conn.execute("SELECT id FROM segments")}
                 finally:
                     conn.close()
+                # delete_collection leaves the removed collection's HNSW segment directory behind (its vectors are derived from the deleted text): remove every directory no segment names
+                removed = 0
+                for child in st.root.iterdir():
+                    if child.is_dir() and len(child.name) == 36 and child.name.count("-") == 4 and child.name not in live:
+                        shutil.rmtree(child)
+                        removed += 1
                 self.counters["vacuums"] += 1
-                return {"status": RECLAIMED}
+                return {"status": RECLAIMED, "orphan_segment_dirs_removed": removed}
             except Exception:
                 return {"status": DEFERRED}
+
+    def _rebuild_without(self, req: dict) -> dict:
+        """True erasure of chosen records from a LIVE collection. ``collection.delete(where=...)`` removes records from every read path, but chromadb 1.5.9 (embedded) never purges its
+        write-ahead log table, so the deleted records' text stays in ``embeddings_queue`` (measured, evidence/baseline). The only public-API way to drop it is to copy what is kept
+        into a fresh collection (a fresh log), delete the old one and rename. Runs under the exclusive gate; the old collection is untouched unless the copy was verified."""
+        st = self._store(req["root"])
+        name, key, value = req["collection"], req.get("key"), req.get("value")
+        tmp = name + "__rebuild"
+        with st.gate.exclusive():
+            client = self._client(st)
+            try:
+                client.delete_collection(name=tmp)                      # a leftover from an earlier interrupted rebuild
+            except Exception:
+                pass
+            old = client.get_collection(name=name)
+            where = {key: {"$ne": value}} if key else None
+            new = client.create_collection(name=tmp, metadata=dict(old.metadata or {"hnsw:space": "cosine"}))
+            try:
+                copied, offset = 0, 0
+                while True:
+                    page = old.get(where=where, include=["documents", "metadatas", "embeddings"], limit=500, offset=offset)
+                    ids = page.get("ids") or []
+                    if not ids:
+                        break
+                    new.add(ids=ids, documents=page.get("documents"), metadatas=page.get("metadatas"), embeddings=page.get("embeddings"))
+                    copied += len(ids)
+                    offset += len(ids)
+                expected = len(old.get(where=where, include=[], limit=1_000_000).get("ids") or [])
+                if new.count() != copied or copied != expected:
+                    raise RuntimeError("rebuild verification failed")
+            except BaseException:
+                try:
+                    client.delete_collection(name=tmp)
+                except Exception:
+                    pass
+                raise
+            client.delete_collection(name=name)
+            new.modify(name=name)
+            st.touched.add(name)
+        return {"kept": copied}
 
     def stats(self) -> dict:
         per = {}

@@ -174,8 +174,11 @@ def backlog_report() -> dict:
     try:
         from orca.brain import memory as _m
 
+        from orca.docs.store import DOCS_DIR
+        from orca.vectorstore import pending as _pending
+
         out["vector_deletions_unconfirmed"] = len(_m._load_pending_logical_deletions())
-        out["vector_reclamation_pending"] = len(_m._load_pending_reclamations())
+        out["vector_reclamation_pending"] = len(_m._load_pending_reclamations()) + len(_pending.load(DOCS_DIR / "vectors"))
     except Exception:
         out["vector_deletions_unconfirmed"] = out["vector_reclamation_pending"] = "unknown"
     return out

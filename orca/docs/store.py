@@ -349,7 +349,7 @@ class DocStore:
         return [{"text": e["text"], "filename": e["filename"], "chunk_idx": e["chunk_idx"], "doc_id": e.get("doc_id", "")}
                 for _, e in scored[:top_k]]
 
-    def delete_doc_detailed(self, doc_id: str) -> dict:
+    def delete_doc_detailed(self, doc_id: str, *, reclaim: bool = True) -> dict:
         """Remove a document from EVERY store that can serve it, and say exactly what happened.
 
         L02-01: the vector collection and the keyword fallback are both retrieval paths (``retrieve`` falls back to the keyword file whenever the
@@ -385,6 +385,8 @@ class DocStore:
             except Exception:
                 out["fallback"] = "failed"
         out["ok"] = "failed" not in (out["collection"], out["fallback"])
+        # L03: logical removal is not physical erasure. The deleted chunks' text stays in freed pages of the shared vector database until it is rewritten; say what happened.
+        out["bytes"] = reclaim_doc_vectors(self._col_name, doc_id) if (reclaim and out["collection"] == "ok") else ("not_attempted" if out["collection"] == "ok" else "n/a")
         return out
 
     def delete_doc(self, doc_id: str) -> bool:
@@ -415,6 +417,65 @@ class DocStore:
                 pass
         if self._fallback_file.exists():
             self._fallback_file.unlink()
+
+
+def reclaim_doc_vectors(collection: str | None = None, doc_id: str | None = None, timeout_s: float = 2.0) -> str:
+    """Make a deletion PHYSICAL for the document vector store. With ``collection``: rebuild it without ``doc_id`` (drops the write-ahead log rows that still hold the deleted text),
+    then rewrite the shared database and remove orphaned segment directories. RECLAIMED only when every step completed; otherwise DEFERRED, recorded durably (counted in the
+    operator backlog) and retried by the maintenance sweep. Never raises."""
+    from orca import vectorstore as vs
+    from orca.vectorstore import pending
+
+    if not vs.available():
+        return "NOT_APPLICABLE"
+    root = DOCS_DIR / "vectors"
+    try:
+        store = vs.Store(root)
+        if collection:
+            try:
+                store.rebuild_without(collection, "doc_id" if doc_id else None, doc_id, deadline_s=60.0)
+            except vs.VectorNotFound:
+                pass                                                   # the collection is already gone: nothing left to purge
+        status = store.vacuum(timeout_s=timeout_s, deadline_s=timeout_s + 3.0)
+    except vs.VectorError:
+        status = vs.DEFERRED
+    if status == vs.DEFERRED:
+        pending.record(root, collection or "docs", "physical reclamation did not complete")
+    elif status == vs.RECLAIMED and not collection:
+        pending.clear_all(root)
+    elif status == vs.RECLAIMED:
+        pending.clear_key(root, collection)
+    return status
+
+
+def drop_session_collection(session_id: str) -> str:
+    """Session deletion: remove the conversation's whole document collection (its log goes with it), then reclaim the bytes. Returns the reclamation status."""
+    from orca import vectorstore as vs
+
+    if not vs.available():
+        return "NOT_APPLICABLE"                                        # no chromadb: only the keyword index exists
+    root = DOCS_DIR / "vectors"
+    name = f"docs_{session_id[:12].replace('-', '')}"
+    try:
+        res = vs.Store(root).delete_collection(name, deadline_s=10.0, binding=vs.session_binding(session_id))
+        if res.get("refused") == "not_owner":
+            return "NOT_APPLICABLE"
+        if not res.get("removed"):
+            raise vs.VectorUnavailable("collection still present")
+    except vs.VectorNotFound:
+        pass
+    return reclaim_doc_vectors()
+
+
+def retry_pending_doc_reclamation() -> dict:
+    from orca.vectorstore import pending
+
+    entries = pending.load(DOCS_DIR / "vectors")
+    results = {}
+    for e in entries:
+        key = e.get("key", "docs")
+        results[key] = reclaim_doc_vectors(None if key == "docs" else key, None)
+    return {"pending_before": len(entries), "results": results}
 
 
 # ── Registry helpers ──────────────────────────────────────────────────────────

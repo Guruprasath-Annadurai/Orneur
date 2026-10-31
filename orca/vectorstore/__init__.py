@@ -157,14 +157,20 @@ class Store:
     def get_or_create_collection(self, name: str, metadata: dict | None = None) -> Collection:
         return self.open_collection(name, metadata)[0]               # unbound: for tools and tests that manage their own naming
 
-    def delete_collection(self, name: str, deadline_s: float | None = None) -> dict:
-        return transport().call({"op": "delete_collection", "root": str(self.root), "collection": name}, deadline_s)
+    def delete_collection(self, name: str, deadline_s: float | None = None, binding: str | None = None) -> dict:
+        """Remove a collection and report whether it is verifiably gone. With ``binding``, a collection bound to a different conversation is left alone (``refused: not_owner``)."""
+        return transport().call({"op": "delete_collection", "root": str(self.root), "collection": name, "binding": binding}, deadline_s)
 
     def list_collections(self) -> list[str]:
         return transport().call({"op": "list_collections", "root": str(self.root)})["names"]
 
     def collection_info(self, name: str, deadline_s: float | None = None) -> dict:
         return transport().call({"op": "collection_info", "root": str(self.root), "collection": name}, deadline_s)
+
+    def rebuild_without(self, name: str, key: str | None = None, value=None, deadline_s: float | None = None) -> dict:
+        """Copy a collection without the records whose metadata ``key`` equals ``value`` into a fresh one (fresh write-ahead log), swap it in and drop the old - the only way to
+        erase individual records' text from disk. With no key it compacts (drops the log). The old collection is untouched unless the copy was verified."""
+        return transport().call({"op": "rebuild_without", "root": str(self.root), "collection": name, "key": key, "value": value}, deadline_s)
 
     def vacuum(self, timeout_s: float = 2.0, deadline_s: float | None = None) -> str:
         return transport().call({"op": "vacuum", "root": str(self.root), "timeout_s": timeout_s}, deadline_s)["status"]
