@@ -121,7 +121,7 @@ Phase 14A.1's disclosed gap depended on.
 - `orca/auth/db.py`'s SQLite/Postgres backend already had real
   backup/restore tooling before this phase (`orca/ops/backup.py`,
   `backup_sqlite()`/`backup_postgres()`/`restore_sqlite()`) — unchanged
-  this phase, not re-tested (it was not touched).
+  this phase, not re-tested (it was not touched). **Superseded by L02-B6: those functions now refuse; use `orca data-backup` (encrypted, deletion-aware).**
 - Model/checkpoint/dataset/training registries, memory stores, the
   Gateway worker registry: all plain JSON files under `ORCA_HOME`, with
   no dedicated backup tooling (a filesystem-level backup of `ORCA_HOME`

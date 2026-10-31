@@ -1,0 +1,10 @@
+# Baseline 38e0d31 (unmodified backup.py): reproduction run. Every FAILED line is a CONFIRMED risk (the test asserts the secure property). R4c = corrupt/missing manifest.
+FAILED tests/b6_baseline_repro.py::test_R1_a_backup_does_not_expose_customer_data_in_plaintext
+FAILED tests/b6_baseline_repro.py::test_R1b_backup_files_are_not_readable_by_other_local_users
+FAILED tests/b6_baseline_repro.py::test_R2_restoring_an_older_backup_does_not_resurrect_a_conversation_deleted_afterwards
+FAILED tests/b6_baseline_repro.py::test_R3_an_interrupted_restore_leaves_either_the_old_or_the_new_directory_never_a_mixture
+FAILED tests/b6_baseline_repro.py::test_R4a_verify_rejects_a_backup_whose_manifest_was_rewritten_to_match_tampered_files
+FAILED tests/b6_baseline_repro.py::test_R4b_verify_requires_the_core_components_to_be_present
+FAILED tests/b6_baseline_repro.py::test_R4c_a_corrupt_or_missing_manifest_is_a_controlled_refusal
+FAILED tests/b6_baseline_repro.py::test_R4d_a_backup_with_unlisted_extra_files_is_not_reported_as_exactly_what_was_made
+8 failed, 8 warnings in 1.83s

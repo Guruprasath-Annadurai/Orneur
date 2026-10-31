@@ -6,11 +6,13 @@ account has 2FA enabled), so it is bound to the operation, the user and the pres
 """
 from __future__ import annotations
 
-import time
+import threading
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.totp_clock import FIXED_TOTP_EPOCH, freeze_totp_wall_clock, next_step_mid
 
 PW = "correcthorsebatterystaple"
 
@@ -29,6 +31,13 @@ def client(isolated_home):
     c = TestClient(app)
     _user(c)  # the first account is the bootstrap owner; burn it so the identities below are ordinary members
     return c
+
+
+@pytest.fixture
+def totp_clock():
+    """Pin wall clock mid-step so next-step codes stay inside the real ±1 drift window."""
+    with freeze_totp_wall_clock(FIXED_TOTP_EPOCH) as epoch:
+        yield epoch
 
 
 def _user(client, pw=PW):
@@ -109,25 +118,25 @@ def test_with_2fa_enabled_the_password_alone_is_refused(client):
     assert _keys(uid) == []
 
 
-def test_with_2fa_enabled_password_and_a_valid_code_succeed_and_a_wrong_code_does_not(client):
+def test_with_2fa_enabled_password_and_a_valid_code_succeed_and_a_wrong_code_does_not(client, totp_clock):
     from orca.auth.totp import totp_now
 
     _, tok, uid = _user(client)
     secret = _enable_2fa(client, tok, uid)
     bad = _create(client, tok, password=PW, totp_code="000000" if totp_now(secret) != "000000" else "111111")
     assert bad.status_code == 401 and _keys(uid) == []
-    ok = _create(client, tok, password=PW, totp_code=totp_now(secret, time.time() + 31))
-    # the code of the NEXT step is inside the accepted drift window; either way it is a real, current code
+    # Next-step code under the frozen clock — inside the real ±1-step drift window
+    ok = _create(client, tok, password=PW, totp_code=totp_now(secret, next_step_mid(totp_clock)))
     assert ok.status_code == 200, ok.text
     assert len(_keys(uid)) == 1
 
 
-def test_a_totp_code_cannot_be_replayed_for_a_second_key(client):
+def test_a_totp_code_cannot_be_replayed_for_a_second_key(client, totp_clock):
     from orca.auth.totp import totp_now
 
     _, tok, uid = _user(client)
     secret = _enable_2fa(client, tok, uid)
-    code = totp_now(secret, time.time() + 31)  # a step the 2fa/enable call above did not use
+    code = totp_now(secret, next_step_mid(totp_clock))  # a step the 2fa/enable call above did not use
     assert _create(client, tok, password=PW, totp_code=code).status_code == 200
     again = _create(client, tok, password=PW, totp_code=code)
     assert again.status_code == 401 and again.json()["code"] == "reauth_failed"
@@ -228,7 +237,7 @@ def test_a_password_reset_still_revokes_existing_keys_and_account_recovery_is_un
 
 # ── audit: safe, useful, no secrets ─────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_audit_records_outcomes_without_passwords_codes_or_keys(client):
+def test_audit_records_outcomes_without_passwords_codes_or_keys(client, totp_clock):
     from orca import audit
     from orca.auth.totp import totp_now
 
@@ -236,10 +245,87 @@ def test_audit_records_outcomes_without_passwords_codes_or_keys(client):
     secret = _enable_2fa(client, tok, uid)
     _create(client, tok, password="a-wrong-password-9")
     _create(client, tok, password=PW, totp_code="123456")
-    good = _create(client, tok, password=PW, totp_code=totp_now(secret, time.time() + 31))
+    good = _create(client, tok, password=PW, totp_code=totp_now(secret, next_step_mid(totp_clock)))
     assert good.status_code == 200
     blob = repr(audit.recent(limit=200, user_id=uid))
     events = [e["event"] for e in audit.recent(limit=200, user_id=uid)]
     assert "api_key_created" in events and "api_key_reauth_failed" in events
     for secret_value in ("a-wrong-password-9", PW, "123456", good.json()["key"], secret):
         assert secret_value not in blob
+
+
+# ── simultaneous TOTP step claim (independent connections / processes) ─────────────────────────────
+
+def _totp_claim_worker(orca_home: str, user_id: str, totp_step: int, q) -> None:
+    """Spawn-safe child: reload auth against shared ORCA_HOME, claim one step, report."""
+    import importlib
+    import os
+
+    os.environ["ORCA_HOME"] = orca_home
+    os.environ["ORNEUR_HOME"] = orca_home
+    import orca.config as config_mod
+
+    importlib.reload(config_mod)
+    import orca.auth.db as db_mod
+
+    importlib.reload(db_mod)
+    import orca.auth.account_security as acct_mod
+
+    importlib.reload(acct_mod)
+    q.put(acct_mod.claim_totp_step(user_id, totp_step))
+
+
+def test_simultaneous_totp_step_claim_admits_exactly_one(isolated_home):
+    """True concurrent claim_totp_step: independent SQLite connections race ON CONFLICT DO NOTHING.
+
+    Product behaviour must admit exactly one winner without loosening replay prevention.
+    """
+    import multiprocessing as mp
+
+    from orca.auth import account_security as acct
+    from orca.auth import db
+    from orca.config import ORCA_HOME
+
+    db.init_db()
+    uid = "totp-race-" + uuid.uuid4().hex
+    step = 42_000_042
+
+    # Threads: independent connections sharing one process (WAL + busy timeout).
+    n_threads = 8
+    barrier = threading.Barrier(n_threads)
+    thread_hits: list[bool] = []
+    lock = threading.Lock()
+
+    def _thread_claim() -> None:
+        barrier.wait(timeout=10)
+        ok = acct.claim_totp_step(uid, step)
+        with lock:
+            thread_hits.append(ok)
+
+    threads = [threading.Thread(target=_thread_claim) for _ in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+        assert not t.is_alive()
+    assert thread_hits.count(True) == 1 and thread_hits.count(False) == n_threads - 1, thread_hits
+
+    # Processes: independent interpreters against the same auth.db (where SQLite WAL supports it).
+    home = str(ORCA_HOME)
+    step_b = step + 1
+    n_procs = 4
+    ctx = mp.get_context("spawn")
+    result_q = ctx.Queue()
+    procs = [
+        ctx.Process(target=_totp_claim_worker, args=(home, uid, step_b, result_q))
+        for _ in range(n_procs)
+    ]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(timeout=60)
+        assert p.exitcode == 0, p.exitcode
+    proc_hits = [result_q.get(timeout=5) for _ in range(n_procs)]
+    assert proc_hits.count(True) == 1 and proc_hits.count(False) == n_procs - 1, proc_hits
+    # Same step must still be refused after the race winner claimed it.
+    assert acct.claim_totp_step(uid, step_b) is False

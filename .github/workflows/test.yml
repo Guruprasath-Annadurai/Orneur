@@ -40,6 +40,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history required for MASTER portable harness ancestry gates
+          # (engineering SHA must be a real ancestor; missing objects must FAIL,
+          # never skip). Default shallow checkout previously soft-skipped those
+          # required lineage assertions.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -387,7 +393,7 @@ jobs:
           python -m pytest tests/journey/test_b01_browser_streaming.py -k fixture -p no:cacheprovider -v
           # LANDMARK-02: deletion under real failures (Redis frozen/restored in a throwaway container, locked/unusable stores, restart), outcome truth after
           # worker death / dropped connections, and measured operations (startup, drain, concurrency, saturation, kill -9). Fixture provider only.
-          python -m pytest tests/journey/test_l02_deletion_live.py -k "not D6" tests/journey/test_l02_recovery_live.py tests/journey/test_l02_operations_live.py tests/journey/test_l02_account_live.py tests/journey/test_l02_b3_apikey_reauth_live.py -p no:cacheprovider -v
+          python -m pytest tests/journey/test_l02_deletion_live.py -k "not D6" tests/journey/test_l02_recovery_live.py tests/journey/test_l02_operations_live.py tests/journey/test_l02_account_live.py tests/journey/test_l02_b3_apikey_reauth_live.py tests/journey/test_l02_b6_backup_live.py -p no:cacheprovider -v
           # LANDMARK-02: the three customer journeys (student, developer, business owner) in real Chromium on the approved page - fixture provider
           python -m pytest tests/journey/test_l02_customer_journeys.py -k fixture -p no:cacheprovider -v
 
