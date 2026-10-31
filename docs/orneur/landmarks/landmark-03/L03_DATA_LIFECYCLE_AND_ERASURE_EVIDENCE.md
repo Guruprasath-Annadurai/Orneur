@@ -19,7 +19,7 @@ Nothing is reported `complete`/`RECLAIMED` unless it was confirmed; a timeout, a
 
 Measured after the change (`evidence/after/l03_after_e12_{embedded,service}.json`): deleted document text found on disk: **0 occurrences** (baseline 4); segment directories after the cascade: 1 (the other conversation's) vs 2; empty collection left for a deleted conversation: **no** (baseline: yes).
 
-## Adversarial scenarios (all run in `embedded` **and** `service` transports against real chromadb — `tests/test_l03_lifecycle.py`, 24 tests; plus `tests/test_l03_failure_lab.py`, `tests/journey/test_l03_vector_live.py`)
+## Adversarial scenarios (all run in `embedded` **and** `service` transports against real chromadb — `tests/test_l03_lifecycle.py`, 26 tests; plus `tests/test_l03_failure_lab.py`, `tests/journey/test_l03_vector_live.py`)
 | Required scenario | Test | Result |
 |---|---|---|
 | User deletes a conversation while retrieval is running / a handle built before the deletion is still held | `test_a_deleted_conversation_is_not_retrievable_through_a_cached_handle_and_a_stale_write_cannot_recreate_the_collection` | cached memory and document handles return nothing; a late write neither raises into the caller nor re-creates any collection; the canary is absent from both vector databases |

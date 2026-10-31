@@ -1,12 +1,12 @@
 # L03 — security and regression results
 
-Engineering-owned evidence; nothing here is independent qualification. Local runs on the workstation (chromadb 1.5.9 installed — the `memory` extra); CI results are in `L03_EXACT_HEAD_CI.md`.
+Engineering-owned evidence; nothing here is independent qualification. Local runs on the workstation (chromadb 1.5.9 installed — the `memory` extra); CI results (run 41189270383, 10/10 green, 54 L03 tests passed there) are in `L03_EXACT_HEAD_CI.md`.
 
-## New tests (51 + 3 evidence scripts)
+## New tests (54 + evidence scripts)
 | File | Tests | What it proves |
 |---|---:|---|
-| `tests/test_l03_vector_service.py` | 13 | real owner process: roundtrip, application never imports chromadb, exactly one owner under 6 simultaneous starters, token/path refusal, deadline release + unfrozen application under a held lock, frozen-owner replacement, bounded admission, per-collection isolation, `SIGKILL` mid-indexing, second-worker visibility, graceful stop, idle exit, memory-limit recycling, bounded stuck writes |
-| `tests/test_l03_lifecycle.py` | 24 (12 × {embedded, service}) | the Phase D/E scenarios in `L03_DATA_LIFECYCLE_AND_ERASURE_EVIDENCE.md` |
+| `tests/test_l03_vector_service.py` | 14 | real owner process: roundtrip, application never imports chromadb, exactly one owner under 6 simultaneous starters, token/path refusal, deadline release + unfrozen application under a held lock, frozen-owner replacement, bounded admission, per-collection isolation, `SIGKILL` mid-indexing, second-worker visibility, graceful stop, idle exit, memory-limit recycling, bounded stuck writes |
+| `tests/test_l03_lifecycle.py` | 26 (13 × {embedded, service}) | the Phase D/E scenarios in `L03_DATA_LIFECYCLE_AND_ERASURE_EVIDENCE.md` |
 | `tests/test_l03_failure_lab.py` | 8 | descriptor pressure (two ways), damaged binding database, legacy adoption, half-finished deletion with expired lease, missing embedding service, conflicting identifiers |
 | `tests/journey/test_l03_vector_live.py` | 6 | two real `orca serve` workers (V1–V6) — added to the CI Journeys job |
 | `docs/…/evidence/baseline/l03_baseline_lab.py` | E1–E12 | failing-before evidence against an exact `38e0d31` checkout |

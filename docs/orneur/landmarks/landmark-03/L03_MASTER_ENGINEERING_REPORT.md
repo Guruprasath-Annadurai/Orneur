@@ -1,6 +1,6 @@
 # LANDMARK-03 — master engineering report
 
-**Engineering state: `VERIFIED_ENGINEERING` for the independently testable portion — pending only the exact-head CI recorded in `L03_EXACT_HEAD_CI.md`; not independently qualified.** Base: PR #139 branch head `38e0d311991875366f2bc88a39690c7b2b6ea3ee`. Nothing merged, deployed, provisioned or trained; no real customer data or secrets; formal pretraining acceptance remains 0/95. PR #143 (B6), #145 (MASTER-02), #141 and Cursor's MASTER-03 branch were not modified; the B6 comparison ran in a local, unpublished merge worktree.
+**Engineering state: `VERIFIED_ENGINEERING` for the independently testable portion; not independently qualified.** Final code-bearing head `c8b0f54bafe364c18e507425570d34be1e7b8dd7`, CI run 41189270383 green on all 10 jobs (deterministic 9332 passed / 0 failed / 399 skipped — the same skipped set as PR #139 — / 6 xfailed; 54 L03 tests passed in the Journeys job). Failed and cancelled runs and their causes are kept in `L03_EXACT_HEAD_CI.md`. Base: PR #139 branch head `38e0d311991875366f2bc88a39690c7b2b6ea3ee`. Nothing merged, deployed, provisioned or trained; no real customer data or secrets; formal pretraining acceptance remains 0/95. PR #143 (B6), #145 (MASTER-02), #141 and Cursor's MASTER-03 branch were not modified; the B6 comparison ran in a local, unpublished merge worktree.
 
 ## What was asked, what was found, what was done
 | Phase | Outcome |
@@ -11,7 +11,7 @@
 | **D — lifecycle** | Access revoked / collection removed / bytes reclaimed / cleanup pending are separate, reported and counted. True per-document erasure (rebuild without the document + vacuum + orphan-segment removal); conversation deletion drops the document collection; deletion by name honours ownership; tombstone gate in the vector layer; interrupted rebuild self-heals. B6 compared in isolation (`L03_DATA_LIFECYCLE_AND_ERASURE_EVIDENCE.md`, blocker L03-B1) |
 | **E — RAG** | Registry authority, document identity, lexical/dense merge, stale-dimension fallback, injection/tool gates and quota/commit semantics re-tested after the lifecycle changes: green. A vector outage degrades to the same conversation's keyword index, never to another's data |
 | **F — failure lab** | 10 required scenarios + the stall/frozen-owner/limit/idle cases, both refusal and recovery asserted, on two real workers (`L03_MULTIWORKER_FAILURE_MATRIX.md`) |
-| **G — regression / CI** | See `L03_SECURITY_REGRESSION_RESULTS.md` and `L03_EXACT_HEAD_CI.md` (every failed run and its cause is kept) |
+| **G — regression / CI** | Local broad run 510 passed / 1 pre-existing skip / 2 pre-existing xfail / 0 failed; exact-head CI green after two CI-found defects were fixed (flat indexing deadline; job time limit) — `L03_SECURITY_REGRESSION_RESULTS.md`, `L03_EXACT_HEAD_CI.md` |
 
 ## Headline measurements (same workstation, before → after)
 | Measurement | Baseline `38e0d31` | This branch |
