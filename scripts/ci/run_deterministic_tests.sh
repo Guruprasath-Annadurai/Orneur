@@ -45,4 +45,6 @@ set -euo pipefail
 # (not masked by `tee`, per this script's own original fix above).
 
 pytest tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-sentinel-log.txt
-pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-log.txt
+# LANDMARK-03: the vector-service tests start real owner processes and real chromadb; with the rest of the suite they pushed this job past its 25-minute limit (run 41187453633 was
+# cancelled at the limit). They run, unchanged, in the Journeys job (real servers, 45-minute limit) -- see .github/workflows/test.yml.
+pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py --ignore=tests/test_l03_vector_service.py --ignore=tests/test_l03_lifecycle.py --ignore=tests/test_l03_failure_lab.py -v 2>&1 | tee /tmp/pytest-log.txt

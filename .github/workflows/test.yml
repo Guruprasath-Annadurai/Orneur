@@ -331,6 +331,8 @@ jobs:
           python -m pytest tests/journey/test_l02_deletion_live.py -k "not D6" tests/journey/test_l02_recovery_live.py tests/journey/test_l02_operations_live.py tests/journey/test_l02_account_live.py -p no:cacheprovider -v
           # LANDMARK-02: the three customer journeys (student, developer, business owner) in real Chromium on the approved page - fixture provider
           python -m pytest tests/journey/test_l02_customer_journeys.py -k fixture -p no:cacheprovider -v
+          # LANDMARK-03: the vector-service, lifecycle/erasure and failure-lab tests (real owner processes, real chromadb; moved here from the deterministic job, which was at its time limit)
+          python -m pytest tests/test_l03_vector_service.py tests/test_l03_lifecycle.py tests/test_l03_failure_lab.py -p no:cacheprovider -v
           # LANDMARK-03: vector containment on two real orca serve workers + the real vector-service owner + real chromadb (stall, SIGKILL, SIGTERM, descriptors, documents)
           python -m pytest tests/journey/test_l03_vector_live.py -p no:cacheprovider -v
 
