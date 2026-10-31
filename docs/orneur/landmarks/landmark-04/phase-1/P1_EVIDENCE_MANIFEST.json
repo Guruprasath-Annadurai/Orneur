@@ -1,0 +1,241 @@
+{
+ "work_order": "LANDMARK-04 Phase 1",
+ "date": "2026-10-31",
+ "git": {
+  "base_main_sha": "0a4c5180555a3102a4e0d61f56e0f8539975f4ee",
+  "base_main_tree": "106487db24a66672c7ca3e660a1d1e0792281238",
+  "branch": "claude/landmark-04-phase1-real-app",
+  "final_code_sha": "02572dd6ef72bfc07dd4847b7cff3977766ee96e",
+  "final_code_tree": "40bdf43ce56c07e99cd8f8a7d0115d796814f4ee",
+  "draft_pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/151"
+ },
+ "environment": {
+  "cpu": "AMD Ryzen 7 9700X (16 threads)",
+  "ram_gb": 15.2,
+  "os": "WSL2 Linux 6.18",
+  "python": "3.11",
+  "node": "22.11",
+  "playwright": "1.49.1 / Chromium",
+  "redis": "7-alpine (local container)",
+  "ollama_model": "llama3.2:1b (local, third-party weights)"
+ },
+ "ci": {
+  "code_head_push_run": {
+   "id": 41217652876,
+   "sha": "02572dd6ef72bfc07dd4847b7cff3977766ee96e",
+   "conclusion": "success",
+   "jobs": 10,
+   "deterministic": "9749 passed, 425 skipped, 6 xfailed, 0 failed"
+  },
+  "earlier_head_c2a6081": {
+   "push_run_41216759729": "success",
+   "pull_request_run_41216772491": "failure (Journeys: racy test assertion; fixed in 02572dd)"
+  },
+  "main_reference": {
+   "test_suite_run": 41207007702,
+   "deterministic": "9730 passed, 425 skipped, 6 xfailed"
+  },
+  "docs_head_f44547b": {
+   "push_run_41219703041": "success on attempt 3 (attempts 1-2 failed: inherited flaky L03 test, register P1-X-10)",
+   "pull_request_run_41219705198": "success on attempt 2 (attempt 1 failed: same test)"
+  }
+ },
+ "verification_states": {
+  "P1-A_ui": "VERIFIED_ENGINEERING (automated accessibility checks only)",
+  "P1-B_inference": "VERIFIED_ENGINEERING (local 1B model only)",
+  "P1-C_streaming": "VERIFIED_ENGINEERING",
+  "P1-D_accounts": "VERIFIED_ENGINEERING except real email BLOCKED_EXTERNAL and MFA recovery NOT_IMPLEMENTED",
+  "P1-E_persistence": "VERIFIED_ENGINEERING",
+  "P1-F_routing_quotas": "VERIFIED_ENGINEERING; background-call metering open (P1-X-04)",
+  "security": "VERIFIED_ENGINEERING for listed probes; INDEPENDENTLY_QUALIFIED: none"
+ },
+ "verdict": "LANDMARK-04 PHASE 1 \u2014 PARTIALLY VERIFIED, EXTERNAL BLOCKERS REMAIN",
+ "governance": {
+  "FORMAL_PRETRAINING_ACCEPTANCE": "0/95",
+  "TRAINING_AUTHORIZATION": "NOT_AUTHORIZED",
+  "GENESIS": "INTERFACE_ONLY",
+  "NOVUS": "NOT_AVAILABLE",
+  "AETERNUM": "NOT_AVAILABLE"
+ },
+ "test_files_added": [
+  "tests/journey/browser_p1_account.py",
+  "tests/journey/browser_p1_auth.py",
+  "tests/journey/browser_p1_csp.py",
+  "tests/journey/browser_p1_manage.py",
+  "tests/journey/browser_p1_xss.py",
+  "tests/journey/test_p1_browser_account.py",
+  "tests/journey/test_p1_browser_accounts.py",
+  "tests/journey/test_p1_browser_csp.py",
+  "tests/journey/test_p1_browser_manage.py",
+  "tests/journey/test_p1_browser_security.py",
+  "tests/journey/test_p1_quota_live.py",
+  "tests/test_p1_background_extraction_bound.py",
+  "tests/test_p1_mfa_login.py",
+  "tests/test_p1_sensitive_ops.py",
+  "tests/test_p1_ui_asset_references.py",
+  "tests/test_p1_ui_security_headers.py"
+ ],
+ "evidence_files": [
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_ANTIGRAVITY_INDEPENDENT_HANDOFF.md",
+   "sha256": "54dade9c1834e5d8b46686aa2cbe16c4bfe0da9afc2bdecc1024f22b169d5b7b",
+   "bytes": 3646
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_AUTH_ACCOUNT_SECURITY.md",
+   "sha256": "ed54fdc40c58bc1a96842b480fc0d3feab98f8c34b166b8e4899187bb09f61c3",
+   "bytes": 2906
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_BROWSER_USER_JOURNEYS.md",
+   "sha256": "68e6464518b8a2af67389ae4da1614caa2f573404a9c759e9b440f74c888fcb7",
+   "bytes": 2187
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_CONVERSATION_PERSISTENCE.md",
+   "sha256": "65cb0600a3e84896eb83257d20165819f19b2d16b6e86e80e0e8282899eb74f7",
+   "bytes": 1672
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_EXACT_SHA_CI_REPORT.md",
+   "sha256": "69541e5e526e283bbd0f06711540629879b1c6d39ee5e67961262546c1148ee3",
+   "bytes": 3762
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_GAP_AND_DEFECT_REGISTER.md",
+   "sha256": "a259b5f9df6b75b8e8fb8adddb79a10bd4c95859dface7c11911799f94b6f9a3",
+   "bytes": 7224
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_IMPLEMENTATION_BASELINE.md",
+   "sha256": "b2c34a01ca53c090ee84439117d262ee519a8ee334a9436b5d4b259c95cb4237",
+   "bytes": 3064
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_MASTER_ENGINEERING_COMPLETION_REPORT.md",
+   "sha256": "13e23dacaffcda2e349e3de494305021b36778d112ef19529ae8e066c4e7e5b4",
+   "bytes": 5790
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_MODEL_ROUTING_AND_QUOTAS.md",
+   "sha256": "71b651cb271fb69b49511f12a6205527965a7792aecc24e85f200cf8f95330d5",
+   "bytes": 1952
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_PERFORMANCE_AND_RELIABILITY.md",
+   "sha256": "289bc0a2ac0e685935b82fa2bdc655bffaac1bdc9092ac182887765393676f73",
+   "bytes": 2574
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_PRODUCTION_READINESS_GAP_REGISTER.md",
+   "sha256": "e755b69d1c8e49a51063e88d172d4a817b7ea9b6983ea9b6f135eda250c12889",
+   "bytes": 2303
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_REAL_INFERENCE_EVIDENCE.md",
+   "sha256": "1fa569ce8945dd5fc64add1f5ecbb4e477627b085ce51e503f1f942cb734210c",
+   "bytes": 2675
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_SECURITY_ADVERSARIAL_RESULTS.md",
+   "sha256": "a128d4d58607dde9ebe1f4ad99bac804da0b9a844ebbc962be449d32e70c62d6",
+   "bytes": 3046
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_STREAMING_CANCELLATION_RECOVERY.md",
+   "sha256": "687fce9a1e8d81c61d6152b4ae48e493644bd1ab3e2d005d8f8970071feee177",
+   "bytes": 2324
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_UIUX_COMPLETION_MATRIX.md",
+   "sha256": "2270cd6a8e8a633c1abdec2d160672be6d6619ad62f7895535cae9c793cfb8a3",
+   "bytes": 3543
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/green_on_branch.txt",
+   "sha256": "39f0b5bab3b0eeef7441c2d4a65eb6144ce610a203ac652aee40c8301cc61919",
+   "bytes": 33
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/p1_perf.py",
+   "sha256": "c8b737fc5485eb3eca571a91b6da2007bd8cdd127851ccbd905a4d17fc9c04e7",
+   "bytes": 8056
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/p1_perf_baseline_main_0a4c518.json",
+   "sha256": "07e64001c546a9f0295a8376a83076c7e483de525e12ddb58a9950635d34777f",
+   "bytes": 2046
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/p1_perf_results.json",
+   "sha256": "3c594cfd9eadf09fe9b3c25022b10ede617b2467521e775a40d4804ac4b3df1e",
+   "bytes": 2042
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/p1_real_inference_identity.json",
+   "sha256": "9f6bca214316c2d1d49704835da586194c7bbd6bbb7e2138d8085c7886d57ee1",
+   "bytes": 774
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/p1_real_inference_identity.py",
+   "sha256": "22eac9078cd4f98dbdd542f82479d729409bfbfef0c393ece5b067fdbce4e97d",
+   "bytes": 1785
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/p1_screenshots.py",
+   "sha256": "a33b0de2621a09c1ab192c7fa7a6587a7930741b160e77f6a597854038645143",
+   "bytes": 3188
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/red_on_baseline_0a4c518.txt",
+   "sha256": "ace9ef4e37fe4b34f9f660da0eb0688b27b3ddcef79cf82370c110cd912261bd",
+   "bytes": 1251
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/01_desktop_signin.png",
+   "sha256": "e28d8f4b1b80646105bebbd1f300ae1d63e14eceb6fab354b5bb89e16c70e758",
+   "bytes": 25127
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/02_desktop_forgot_password.png",
+   "sha256": "5b467cb1e8ea39b0d42c2dbeac5c91a34517f3dab47f6fbebbd0762b4cabb28f",
+   "bytes": 23855
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/03_desktop_empty_conversation.png",
+   "sha256": "df6a099e6645bb5bc7d11b4ca1070d74ca25707ecf4ef629ffaa42df7d233677",
+   "bytes": 54438
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/04_desktop_answer_dark.png",
+   "sha256": "ac19d52df3db93f63e36e7a19266b943bae6e8ee007c0df291592f900d57800a",
+   "bytes": 59988
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/05_desktop_answer_light.png",
+   "sha256": "ac19d52df3db93f63e36e7a19266b943bae6e8ee007c0df291592f900d57800a",
+   "bytes": 59988
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/06_desktop_account_dialog.png",
+   "sha256": "8b7daa8b53c73331cf67e2be629beff5312bfe53e38a5998ce51ef5fcf941eec",
+   "bytes": 90888
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/07_mobile_answer.png",
+   "sha256": "80b237d73de58ba42f11d51de1bbdba8037f05e2ee9032e3c63dba07be4e5ff4",
+   "bytes": 83215
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/08_mobile_navigation_drawer.png",
+   "sha256": "4659990189ba89200ff828bfa3fe7bb30cc4a101d66d7e073e48702bf7fdd13d",
+   "bytes": 81394
+  },
+  {
+   "path": "docs/orneur/landmarks/landmark-04/phase-1/evidence/screenshots/09_tablet_conversation_list.png",
+   "sha256": "58c62e2cd723b1091c071f48deefe4746b4f0e30803d28742234ad5123fac1f3",
+   "bytes": 38487
+  }
+ ],
+ "note": "Hashes cover files present when this manifest was generated; the manifest itself and later documentation commits are excluded."
+}

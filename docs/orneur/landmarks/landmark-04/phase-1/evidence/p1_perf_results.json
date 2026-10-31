@@ -1,0 +1,124 @@
+{
+ "hardware": {
+  "cpu": "AMD Ryzen 7 9700X (16 threads)",
+  "ram_gb": 15.2,
+  "os": "WSL2 Linux 6.18",
+  "ollama_model": "llama3.2:1b",
+  "model_size_note": "llama3.2:1b local"
+ },
+ "server_start_to_livez_s": 0.54,
+ "resources_idle": {
+  "fds": 39,
+  "rss_mb": 73.6,
+  "cpu_s": 0.43
+ },
+ "sequential": {
+  "requests": 12,
+  "ok": 12,
+  "ttft_s": {
+   "n": 12,
+   "p50": 0.428,
+   "p95": 1.717,
+   "min": 0.11,
+   "max": 2.164
+  },
+  "total_s": {
+   "n": 12,
+   "p50": 1.275,
+   "p95": 2.655,
+   "min": 0.536,
+   "max": 3.017
+  },
+  "chunks_median": 95.5,
+  "progressive": true,
+  "sample_done_event_keys": [
+   "citation_compliance",
+   "context_freshness",
+   "degradation_reason",
+   "degraded",
+   "delivery",
+   "message_id",
+   "model_identity",
+   "persisted",
+   "source_summary",
+   "sources",
+   "tools",
+   "type",
+   "user_message_id"
+  ],
+  "served_identity_sample": {
+   "delivery": "upstream",
+   "persisted": "saved"
+  }
+ },
+ "resources_after_sequential": {
+  "fds": 33,
+  "rss_mb": 85.8,
+  "cpu_s": 1.65
+ },
+ "concurrent": {
+  "streams": 4,
+  "wall_s": 2.73,
+  "ok": 4,
+  "failures": [],
+  "ttft_s": {
+   "n": 4,
+   "p50": 1.543,
+   "p95": 1.918,
+   "min": 0.152,
+   "max": 1.918
+  },
+  "total_s": {
+   "n": 4,
+   "p50": 2.178,
+   "p95": 2.733,
+   "min": 0.711,
+   "max": 2.733
+  }
+ },
+ "resources_after_concurrent": {
+  "fds": 47,
+  "rss_mb": 90.9,
+  "cpu_s": 2.26
+ },
+ "restart": {
+  "sessions_before": null,
+  "sessions_after_restart": 14
+ },
+ "cancellation_provider_hangup_latency_s": {
+  "n": 8,
+  "p50": 0.506,
+  "p95": 0.507,
+  "min": 0.496,
+  "max": 0.507
+ },
+ "cancellation_leak_check": {
+  "provider_streams_open_after": 0,
+  "server_fds": 25
+ },
+ "browser_initial_load_ms": {
+  "n": 10,
+  "domcontentloaded": {
+   "n": 10,
+   "p50": 30.9,
+   "p95": 43.4,
+   "min": 16.2,
+   "max": 43.4
+  },
+  "load": {
+   "n": 10,
+   "p50": 31.8,
+   "p95": 43.6,
+   "min": 18.7,
+   "max": 43.6
+  },
+  "signin_form_visible": {
+   "n": 10,
+   "p50": 53.7,
+   "p95": 86,
+   "min": 49.4,
+   "max": 86
+  },
+  "html_bytes": 247740
+ }
+}

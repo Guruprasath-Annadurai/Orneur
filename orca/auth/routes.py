@@ -292,8 +292,19 @@ async def verify_login_2fa(req: TwoFAVerifyLoginRequest, request: Request):
     if not totp_state["enabled"] or not totp_state["secret"]:
         raise HTTPException(400, "2FA is not enabled on this account.")
 
-    if not verify_totp(totp_state["secret"], req.code):
+    # P1-D: the second factor is bounded per ACCOUNT (not only per IP) and every code is single-use, exactly like the API-key step-up.
+    wait = acct.stepup_locked(user.id)
+    if wait > 0:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Too many failed attempts. Try again later.", "error": "Too many failed attempts. Try again later.", "code": "too_many_attempts"},
+                            status_code=429, headers={"Retry-After": str(int(wait) + 1)})
+    step = verify_totp_step(totp_state["secret"], req.code)
+    if step is None or not acct.claim_totp_step(user.id, step):
+        acct.record_stepup_failure(user.id)
+        from orca import audit
+        audit.log("mfa_login_failed", user_id=user.id, detail={"reason": "invalid" if step is None else "replayed"})
         raise HTTPException(401, "Invalid or expired code.")
+    acct.clear_stepup_failures(user.id)
 
     return _make_response(user)
 
@@ -352,8 +363,14 @@ async def disable_2fa(req: TwoFADisableRequest, user: User = Depends(get_current
     state = get_totp_state(user.id)
     if not state["enabled"]:
         raise HTTPException(400, "2FA is not enabled on this account.")
-    if not verify_totp(state["secret"], req.code):
+    wait = acct.stepup_locked(user.id)
+    if wait > 0:
+        raise HTTPException(429, "Too many failed attempts. Try again later.", headers={"Retry-After": str(int(wait) + 1)})
+    step = verify_totp_step(state["secret"], req.code)
+    if step is None or not acct.claim_totp_step(user.id, step):
+        acct.record_stepup_failure(user.id)
         raise HTTPException(401, "Invalid code.")
+    acct.clear_stepup_failures(user.id)
 
     disable_totp(user.id)
     return {"enabled": False}
@@ -389,6 +406,7 @@ class ResetRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+    totp_code: str | None = None      # required when the account has 2FA enabled
 
 
 @router.get("/email-status")
@@ -474,7 +492,7 @@ async def verify_email_confirm(request: Request):
     mark_verified(user.id)
     from orca import audit
     audit.log("email_verified", user_id=user.id, detail={})
-    return _verify_page("<p style=\"color:#888;letter-spacing:.15em;margin-top:8px\">EMAIL VERIFIED</p><p style=\"color:#555;margin-top:20px\">Your account is now active. <a href=\"/app\" style=\"color:#fff\">Return to ORNEUR →</a></p>")
+    return _verify_page("<p style=\"color:#888;letter-spacing:.15em;margin-top:8px\">EMAIL VERIFIED</p><p style=\"color:#555;margin-top:20px\">Your account is now active. <a href=\"/conversation\" style=\"color:#fff\">Return to ORNEUR →</a></p>")
 
 
 @router.post("/forgot-password")
@@ -524,15 +542,44 @@ async def reset_password(req: ResetRequest):
     return _make_response(user)
 
 
+async def _fresh_auth(user: User, password: str | None, totp_code: str | None, *, wrong_password_status: int = 401):
+    """P1-D: fresh, server-verified authentication for a sensitive operation (same rules as API-key creation, L02-B3).
+
+    Returns None when it succeeded, else the refusal response. The password is checked first; an account with 2FA must also present a single-use code. Failures are counted PER
+    ACCOUNT (a stolen session token cannot guess at the IP rate limit); while locked even correct answers are refused.
+    """
+    wait = acct.stepup_locked(user.id)
+    if wait > 0:
+        return _reauth_refusal("too_many_attempts", 429, "Too many failed attempts. Try again later.", {"Retry-After": str(int(wait) + 1)})
+    verified = await _asyncio_to_thread(authenticate, user.email, password or "")
+    if verified is None or verified.id != user.id:
+        acct.record_stepup_failure(user.id)
+        return _reauth_refusal("reauth_failed", wrong_password_status, "Current password is incorrect." if wrong_password_status == 400 else "Incorrect password.")
+    state = get_totp_state(user.id)
+    if state["enabled"]:
+        if not totp_code:
+            return _reauth_refusal("reauth_required", 401, "Enter the code from your authenticator app to confirm.")
+        step = verify_totp_step(state["secret"], totp_code)
+        if step is None or not acct.claim_totp_step(user.id, step):
+            acct.record_stepup_failure(user.id)
+            return _reauth_refusal("reauth_failed", 401, "Invalid or expired code.")
+    acct.clear_stepup_failures(user.id)
+    return None
+
+
 @router.post("/change-password")
 async def change_password(req: ChangePasswordRequest, user: User = Depends(get_current_user)):
-    from orca.auth.store import authenticate, update_password
-    if not authenticate(user.email, req.current_password):
-        raise HTTPException(400, "Current password is incorrect")
+    from orca.auth.store import update_password
     if len(req.new_password) < 8:
         raise HTTPException(400, "New password must be at least 8 characters")
-    update_password(user.id, req.new_password)
-    return {"updated": True}
+    refusal = await _fresh_auth(user, req.current_password, req.totp_code, wrong_password_status=400)
+    if refusal is not None:
+        return refusal
+    update_password(user.id, req.new_password)        # every session issued before now is dead, including the caller's
+    from orca import audit
+    audit.log("password_changed", user_id=user.id, detail={})
+    # the caller changed their own password on purpose: continue THEIR session with a fresh token rather than silently signing them out
+    return {"updated": True, **_make_response(get_user_by_id(user.id))}
 
 
 # ── API Key routes ────────────────────────────────────────────────────────────
@@ -659,6 +706,7 @@ async def admin_set_role(
 
 class DeleteAccountRequest(BaseModel):
     password: str
+    totp_code: str | None = None      # required when the account has 2FA enabled
 
 
 @router.post("/account/delete")
@@ -670,9 +718,9 @@ async def delete_account_endpoint(req: DeleteAccountRequest, user: User = Depend
     stolen JWT) shouldn't be enough to trigger an irreversible account
     deletion.
     """
-    from orca.auth.store import authenticate
-    if not authenticate(user.email, req.password):
-        raise HTTPException(401, "Incorrect password.")
+    refusal = await _fresh_auth(user, req.password, req.totp_code)
+    if refusal is not None:
+        return refusal
 
     from orca.serve.account_delete import delete_account
     report = delete_account(user.id)

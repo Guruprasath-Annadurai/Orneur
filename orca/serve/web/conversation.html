@@ -27,8 +27,9 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 
 /* Sidebar -- B01/B02/B03 locked structure */
 .sidebar{width:246px;min-width:246px;background:var(--rail);color:#EDECE9;padding:24px 15px 18px;display:flex;flex-direction:column}
-.branding{margin:0 12px 28px;height:40px;display:flex;align-items:center}
-.branding img{width:170px;height:auto;max-height:40px;object-fit:contain}
+.branding{margin:0 12px 28px;height:40px;display:flex;align-items:center;gap:10px}
+.branding .brand-emblem{width:32px;height:32px;object-fit:contain}
+.branding .brand-wordmark{width:125px;height:auto;max-height:40px;object-fit:contain}
 .primary{display:flex;flex-direction:column;gap:5px}
 .navrow{display:flex;gap:13px;align-items:center;height:42px;padding:0 14px;border-radius:10px;color:#BDBCB9;font-size:14px;letter-spacing:-.12px;cursor:pointer;border:none;background:none;width:100%;text-align:left;font-family:inherit}
 .navrow svg{opacity:.8;flex-shrink:0}
@@ -357,7 +358,28 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
 .authtabs{display:flex;gap:6px;margin-bottom:16px}
 .authtabs button{flex:1;border:1px solid var(--border);background:none;border-radius:9px;padding:8px;font-size:12.5px;cursor:pointer;color:var(--soft);font-family:inherit}
 .authtabs button.active{background:var(--chip);color:var(--ink);font-weight:650}
+#account-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:110;display:flex;align-items:center;justify-content:center;padding:16px}
+#account-overlay.hidden{display:none}
+.acctcard{width:420px;max-width:100%;max-height:92vh;overflow:auto;border:1px solid var(--border);border-radius:16px;padding:24px;background:var(--compose);color:var(--ink)}
+.acctcard h1{font-size:18px;margin:0}
+.acctcard h2{font-size:13.5px;margin:0 0 8px}
+.acctcard p.sub{color:var(--muted);font-size:12.5px;margin:4px 0 12px}
+.acctcard input[type=password],.acctcard input[type=text]{width:100%;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;margin-bottom:10px;background:var(--bg);color:var(--ink);font-family:inherit}
+.acctcard button.primary{width:100%;border:none;background:var(--accent);color:#fff;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.acctcard button.primary:disabled{opacity:.6;cursor:default}
+.acctcard input:focus-visible,.acctcard button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.acct-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.acct-sec{border-top:1px solid var(--border);padding-top:14px;margin-top:14px}
+.acct-secret{display:block;word-break:break-all;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:12.5px;margin-bottom:10px;user-select:all}
+.acct-check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--soft);margin:2px 0 10px}
+.acct-danger .acct-del-btn{background:var(--error)}
+button.navrow.profile{width:100%;text-align:left;font-family:inherit;color:inherit}
 .autherr{color:var(--error);font-size:12px;min-height:16px;margin-bottom:6px}
+.authnote{color:var(--soft);font-size:12px;min-height:16px;margin-bottom:6px}
+.authlinks{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
+.authlink{background:none;border:none;padding:6px 2px;min-height:32px;font-size:12px;color:var(--soft);text-decoration:underline;cursor:pointer;font-family:inherit}
+.authlink[hidden]{display:none}
+.authlink:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .authskip{display:block;width:100%;text-align:center;margin-top:14px;font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none;font-family:inherit;padding:0}
 .authskip:focus-visible,.authtabs button:focus-visible,.authcard input:focus-visible,.authcard button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -397,6 +419,10 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
       <input id="si-email" type="email" placeholder="Email" autocomplete="username"/>
       <input id="si-password" type="password" placeholder="Password" autocomplete="current-password"/>
       <button class="primary" id="si-btn" onclick="doLogin()">Sign in</button>
+      <div class="authlinks">
+        <button type="button" class="authlink" id="si-forgot-btn" onclick="switchAuthTab('forgot')">Forgot password?</button>
+        <button type="button" class="authlink" id="si-resend-btn" onclick="doResendVerification()" hidden>Resend verification email</button>
+      </div>
     </div>
     <div id="form-signup" style="display:none">
       <h1 id="auth-su-title">Create your account</h1>
@@ -407,7 +433,74 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
       <input id="su-password" type="password" placeholder="Password (min 8 characters)" autocomplete="new-password"/>
       <button class="primary" id="su-btn" onclick="doSignup()">Create account</button>
     </div>
+    <div id="form-forgot" style="display:none">
+      <h1 id="auth-fp-title">Reset your password</h1>
+      <p class="sub">Enter your email address and we will send a reset link if an account exists.</p>
+      <div class="authnote" id="fp-msg" role="status" aria-live="polite"></div>
+      <input id="fp-email" type="email" placeholder="Email" autocomplete="username"/>
+      <button class="primary" id="fp-btn" onclick="doForgot()">Send reset link</button>
+      <div class="authlinks"><button type="button" class="authlink" onclick="switchAuthTab('signin')">Back to sign in</button></div>
+    </div>
+    <div id="form-reset" style="display:none">
+      <h1 id="auth-rp-title">Choose a new password</h1>
+      <p class="sub">Your reset link is valid once. Signing in again will be required on every other device.</p>
+      <div class="autherr" id="rp-error" role="alert"></div>
+      <input id="rp-password" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password"/>
+      <button class="primary" id="rp-btn" onclick="doReset()">Set new password</button>
+      <div class="authlinks"><button type="button" class="authlink" onclick="switchAuthTab('signin')">Back to sign in</button></div>
+    </div>
+    <div id="form-mfa" style="display:none">
+      <h1 id="auth-mfa-title">Enter your security code</h1>
+      <p class="sub">Open your authenticator app and enter the 6-digit code for ORNEUR.</p>
+      <div class="autherr" id="mfa-error" role="alert"></div>
+      <input id="mfa-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="6-digit code" autocomplete="one-time-code"/>
+      <button class="primary" id="mfa-btn" onclick="doMfa()">Verify</button>
+      <div class="authlinks"><button type="button" class="authlink" onclick="switchAuthTab('signin')">Use a different account</button></div>
+    </div>
     <button type="button" class="authskip" id="auth-skip-btn" onclick="continueAnonymous()">Continue without an account</button>
+  </div>
+</div>
+
+<div id="account-overlay" class="hidden">
+  <div class="acctcard" id="acctcard" role="dialog" aria-modal="true" aria-labelledby="acct-title" tabindex="-1">
+    <div class="acct-head">
+      <h1 id="acct-title">Account</h1>
+      <button type="button" class="authlink" id="acct-close" onclick="closeAccountDialog()" aria-label="Close account settings">Close</button>
+    </div>
+    <p class="sub" id="acct-who"></p>
+    <section class="acct-sec" aria-labelledby="acct-pw-h">
+      <h2 id="acct-pw-h">Change password</h2>
+      <div class="authnote" id="acct-cp-msg" role="status" aria-live="polite"></div>
+      <input id="acct-cp-current" type="password" placeholder="Current password" autocomplete="current-password" aria-label="Current password"/>
+      <input id="acct-cp-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password" aria-label="New password"/>
+      <input id="acct-cp-code" type="text" inputmode="numeric" maxlength="8" placeholder="Authenticator code" autocomplete="one-time-code" aria-label="Authenticator code" style="display:none"/>
+      <button class="primary" id="acct-cp-btn" onclick="acctChangePassword()">Update password</button>
+    </section>
+    <section class="acct-sec" aria-labelledby="acct-2fa-h">
+      <h2 id="acct-2fa-h">Two-step verification</h2>
+      <div class="authnote" id="acct-2fa-msg" role="status" aria-live="polite"></div>
+      <p class="sub" id="acct-2fa-status"></p>
+      <button class="primary" id="acct-2fa-setup-btn" onclick="acctStart2fa()">Set up authenticator app</button>
+      <div id="acct-2fa-setup" style="display:none">
+        <p class="sub">Add this key to your authenticator app, then enter the 6-digit code it shows.</p>
+        <code id="acct-2fa-secret" class="acct-secret"></code>
+        <input id="acct-2fa-code" type="text" inputmode="numeric" maxlength="8" placeholder="6-digit code" autocomplete="one-time-code" aria-label="6-digit code from your authenticator app"/>
+        <button class="primary" id="acct-2fa-confirm-btn" onclick="acctEnable2fa()">Turn on</button>
+      </div>
+      <div id="acct-2fa-off" style="display:none">
+        <input id="acct-2fa-disable-code" type="text" inputmode="numeric" maxlength="8" placeholder="Authenticator code" autocomplete="one-time-code" aria-label="Authenticator code to turn off two-step verification"/>
+        <button class="primary" id="acct-2fa-disable-btn" onclick="acctDisable2fa()">Turn off</button>
+      </div>
+    </section>
+    <section class="acct-sec acct-danger" aria-labelledby="acct-del-h">
+      <h2 id="acct-del-h">Delete account</h2>
+      <p class="sub">This permanently removes your account and conversations. It cannot be undone.</p>
+      <div class="autherr" id="acct-del-msg" role="alert"></div>
+      <input id="acct-del-password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password to confirm deletion"/>
+      <input id="acct-del-code" type="text" inputmode="numeric" maxlength="8" placeholder="Authenticator code" autocomplete="one-time-code" aria-label="Authenticator code to confirm deletion" style="display:none"/>
+      <label class="acct-check"><input type="checkbox" id="acct-del-confirm"/> I understand this is permanent</label>
+      <button class="primary acct-del-btn" id="acct-del-btn" onclick="acctDeleteAccount()">Delete my account</button>
+    </section>
   </div>
 </div>
 
@@ -497,7 +590,7 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
 
 <div class="app" id="app-root">
   <aside class="sidebar" aria-label="Primary navigation">
-    <div class="branding"><img src="/static/b01_approved_assets/orneur_logo_horizontal.png" alt="ORNEUR"/></div>
+    <div class="branding"><img class="brand-emblem" src="/static/brand/orneur-emblem-64.7ade6284.png" srcset="/static/brand/orneur-emblem-64.7ade6284.png 64w, /static/brand/orneur-emblem-192.40a30f86.png 192w, /static/brand/orneur-emblem-256.5b8e8b28.png 256w" sizes="32px" width="32" height="32" alt="" decoding="async"/><img class="brand-wordmark" src="/static/brand/orneur-wordmark-240.9a2ab2a8.png" srcset="/static/brand/orneur-wordmark-240.9a2ab2a8.png 240w, /static/brand/orneur-wordmark-480.d89f850e.png 480w" sizes="125px" width="125" height="14" alt="ORNEUR" decoding="async"/></div>
     <nav class="primary">
       <button type="button" class="navrow navnew" onclick="_withTempChatGuard(() => newConversation())">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5h7v7M19 5l-9 9"/><path d="M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"/></svg>
@@ -511,10 +604,10 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
     <div class="sidecap">RECENT CONVERSATIONS</div>
     <div class="recents" id="recents-list"><div class="recents-empty">Sign in to see your conversations</div></div>
     <div class="sidebottom">
-      <div class="navrow profile" id="account-row" onclick="toggleThemeFromSidebar()">
+      <button type="button" class="navrow profile" id="account-row" onclick="openAccountDialog()" aria-haspopup="dialog" aria-label="Account settings">
         <span class="avatar" id="sidebar-avatar">—</span>
         <span id="sidebar-account-label">Account</span>
-      </div>
+      </button>
       <button type="button" class="navrow" onclick="doLogout()" id="logout-row" style="display:none">
         <span>Sign out</span>
       </button>
@@ -887,6 +980,7 @@ function mdToHtml(md, sources) {
   h = h.replace(new RegExp(`${nonce}(\\d+)${nonce}`, 'g'), (_, i) => codeStore[Number(i)]);
   h = h.replace(/\n\n/g, '</p><p>');
   h = h.replace(/\n/g, '<br>');
+  h = h.replace(/<\/ul>(?:<br>)?<ul>/g, '').replace(/<\/li><br>(?=<li>)/g, '</li>').replace(/<ul><br>/g, '<ul>').replace(/<br><\/ul>/g, '</ul>'); // list items are block rows; the newline between them is not a line break
   return `<p>${h}</p>`
     .replace(/<p><\/p>/g, '')
     .replace(/<p>(<(?:pre|ul|ol|h[123])>)/g, '$1')
@@ -899,7 +993,6 @@ function applyTheme(dark) {
   try { localStorage.setItem('orneur_theme', dark ? 'dark' : 'light'); } catch (e) {}
 }
 function toggleTheme() { applyTheme(!document.body.classList.contains('dark')); }
-function toggleThemeFromSidebar() {} // account row reserved for future account menu; no-op for now
 
 (function initTheme() {
   let stored = null;
@@ -3625,16 +3718,25 @@ async function openSession(sid, title) {
 }
 
 /* ── Auth ─────────────────────────────────────────────────────────── */
+const _AUTH_FORMS = {
+  signin: { form: 'form-signin', title: 'auth-si-title', first: 'si-email' },
+  signup: { form: 'form-signup', title: 'auth-su-title', first: 'su-name' },
+  forgot: { form: 'form-forgot', title: 'auth-fp-title', first: 'fp-email' },
+  reset:  { form: 'form-reset',  title: 'auth-rp-title', first: 'rp-password' },
+  mfa:    { form: 'form-mfa',    title: 'auth-mfa-title', first: 'mfa-code' },
+};
 function switchAuthTab(tab) {
-  document.getElementById('form-signin').style.display = tab === 'signin' ? '' : 'none';
-  document.getElementById('form-signup').style.display = tab === 'signup' ? '' : 'none';
+  for (const [name, cfg] of Object.entries(_AUTH_FORMS)) document.getElementById(cfg.form).style.display = name === tab ? '' : 'none';
   document.getElementById('tab-signin').classList.toggle('active', tab === 'signin');
   document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
+  // Contextual steps (recovery, reset, security challenge) replace the sign-in/create tabs: C11 Variant B guidance.
+  document.querySelector('#authcard .authtabs').style.display = (tab === 'signin' || tab === 'signup') ? '' : 'none';
+  if (tab !== 'mfa') _mfaPending = null;
   // AUDIT-B81-A-P1-03: the dialog's accessible name must track whichever
   // form is actually visible -- a stale aria-labelledby pointing at a
   // hidden h1 would announce the wrong title to assistive tech.
-  document.getElementById('authcard').setAttribute('aria-labelledby', tab === 'signin' ? 'auth-si-title' : 'auth-su-title');
-  const firstField = document.getElementById(tab === 'signin' ? 'si-email' : 'su-name');
+  document.getElementById('authcard').setAttribute('aria-labelledby', _AUTH_FORMS[tab].title);
+  const firstField = document.getElementById(_AUTH_FORMS[tab].first);
   if (firstField) firstField.focus();
 }
 
@@ -3705,13 +3807,230 @@ async function doLogin() {
     const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass }) });
     const d = await r.json();
     // L02-04: a refusal can carry a structured detail ({error, code}); never print an object.
-    if (!r.ok) { errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Sign in failed.'; return; }
-    if (d.requires_2fa) { errEl.textContent = '2FA is enabled on this account; use the main app to complete sign-in.'; return; }
+    if (!r.ok) {
+      errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Sign in failed.';
+      // C11 Variant B: an unverified address gets contextual guidance and a way forward, not just a refusal.
+      document.getElementById('si-resend-btn').hidden = !(d.detail && d.detail.code === 'email_verification_required');
+      return;
+    }
+    document.getElementById('si-resend-btn').hidden = true;
+    if (d.requires_2fa) { _beginMfa(d.pending_token); return; }
     onAuthSuccess(d);
   } catch (e) {
     errEl.textContent = 'Network error. Try again.';
   } finally {
     btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+
+/* ── Account settings dialog (P1-D): change password, two-step verification, delete account ─────────────
+   Every action goes through the same server endpoints and fresh-authentication rules as the API; this page never decides security, it only asks. */
+let _acctPrevFocus = null;
+function _acctEls() { return [...document.querySelectorAll('#acctcard button, #acctcard input')].filter((e) => e.offsetParent !== null && !e.disabled); }
+function _acctSet(id, text, kind) { const el = document.getElementById(id); if (el) el.textContent = text || ''; }
+async function _acctRefresh() {
+  try {
+    const r = await fetch('/api/auth/me', { headers: _authHeaders() });
+    if (r.status === 401) { closeAccountDialog(); _handleSessionExpired(); return; }
+    const d = await r.json();
+    _authUser = d.user;
+  } catch (e) { /* keep the last known state; the actions below report their own outcome */ }
+  const u = _authUser || {};
+  const on = !!u.totp_enabled;
+  document.getElementById('acct-who').textContent = (u.name ? u.name + ' · ' : '') + (u.email || '');
+  document.getElementById('acct-2fa-status').textContent = on ? 'Two-step verification is on for this account.' : 'Two-step verification is off.';
+  document.getElementById('acct-2fa-setup-btn').style.display = on ? 'none' : '';
+  document.getElementById('acct-2fa-off').style.display = on ? '' : 'none';
+  document.getElementById('acct-2fa-setup').style.display = 'none';
+  document.getElementById('acct-cp-code').style.display = on ? '' : 'none';
+  document.getElementById('acct-del-code').style.display = on ? '' : 'none';
+}
+function openAccountDialog() {
+  if (!_authUser) { openAuthOverlay(); return; }
+  _acctPrevFocus = document.activeElement;
+  for (const id of ['acct-cp-msg', 'acct-2fa-msg', 'acct-del-msg']) _acctSet(id, '');
+  for (const id of ['acct-cp-current', 'acct-cp-new', 'acct-cp-code', 'acct-2fa-code', 'acct-2fa-disable-code', 'acct-del-password', 'acct-del-code']) document.getElementById(id).value = '';
+  document.getElementById('acct-del-confirm').checked = false;
+  document.getElementById('account-overlay').classList.remove('hidden');
+  setMobileSidebarOpen(false);
+  _acctRefresh();
+  document.getElementById('acct-cp-current').focus();
+}
+function closeAccountDialog() {
+  document.getElementById('account-overlay').classList.add('hidden');
+  for (const id of ['acct-cp-current', 'acct-cp-new', 'acct-cp-code', 'acct-2fa-code', 'acct-2fa-disable-code', 'acct-del-password', 'acct-del-code']) document.getElementById(id).value = '';
+  document.getElementById('acct-2fa-secret').textContent = '';   // the setup secret must not linger in the DOM
+  if (_acctPrevFocus && document.body.contains(_acctPrevFocus)) _acctPrevFocus.focus();
+  _acctPrevFocus = null;
+}
+document.getElementById('account-overlay').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeAccountDialog(); return; }
+  if (e.key !== 'Tab') return;
+  const f = _acctEls(); if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+function _acctDetail(d, r, fallback) { return _authDetail(d, fallback) + (r && r.status === 429 ? '' : ''); }
+async function acctChangePassword() {
+  const cur = document.getElementById('acct-cp-current').value, nw = document.getElementById('acct-cp-new').value, code = document.getElementById('acct-cp-code').value.trim();
+  const msg = document.getElementById('acct-cp-msg'), btn = document.getElementById('acct-cp-btn');
+  if (!cur || !nw) { msg.textContent = 'Enter your current and new password.'; return; }
+  if (nw.length < 8) { msg.textContent = 'New password must be at least 8 characters.'; return; }
+  const token = _authToken;
+  btn.disabled = true; msg.textContent = 'Saving...';
+  try {
+    const r = await fetch('/api/auth/change-password', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ current_password: cur, new_password: nw, totp_code: code || undefined }) });
+    const d = await r.json().catch(() => ({}));
+    if (token !== _authToken) return;
+    if (!r.ok) { msg.textContent = _authDetail(d, 'Could not update the password.'); return; }
+    // Every older session (other devices, other tabs) is ended by the server; this one continues on the fresh token it returned.
+    _authToken = d.token; _authUser = d.user;
+    try { localStorage.setItem('orneur_token', d.token); } catch (e) {}
+    for (const id of ['acct-cp-current', 'acct-cp-new', 'acct-cp-code']) document.getElementById(id).value = '';
+    msg.textContent = 'Password updated. You were signed out on your other devices.';
+  } catch (e) { msg.textContent = 'Network error. Nothing was changed that we could confirm; try again.'; }
+  finally { btn.disabled = false; }
+}
+async function acctStart2fa() {
+  const msg = document.getElementById('acct-2fa-msg');
+  msg.textContent = '';
+  try {
+    const r = await fetch('/api/auth/2fa/setup', { method: 'POST', headers: _authHeaders() });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = _authDetail(d, 'Could not start setup.'); return; }
+    document.getElementById('acct-2fa-secret').textContent = d.secret;
+    document.getElementById('acct-2fa-setup').style.display = '';
+    document.getElementById('acct-2fa-setup-btn').style.display = 'none';
+    document.getElementById('acct-2fa-code').focus();
+  } catch (e) { msg.textContent = 'Network error. Try again.'; }
+}
+async function acctEnable2fa() {
+  const code = document.getElementById('acct-2fa-code').value.trim(), msg = document.getElementById('acct-2fa-msg');
+  if (!/^[0-9]{6,8}$/.test(code)) { msg.textContent = 'Enter the 6-digit code from your authenticator app.'; return; }
+  try {
+    const r = await fetch('/api/auth/2fa/enable', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = _authDetail(d, 'That code was not accepted.'); return; }
+    document.getElementById('acct-2fa-secret').textContent = '';
+    await _acctRefresh();
+    msg.textContent = 'Two-step verification is now on. You will need a code each time you sign in.';
+  } catch (e) { msg.textContent = 'Network error. Try again.'; }
+}
+async function acctDisable2fa() {
+  const code = document.getElementById('acct-2fa-disable-code').value.trim(), msg = document.getElementById('acct-2fa-msg');
+  if (!/^[0-9]{6,8}$/.test(code)) { msg.textContent = 'Enter the current code from your authenticator app.'; return; }
+  try {
+    const r = await fetch('/api/auth/2fa/disable', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = _authDetail(d, 'That code was not accepted.'); return; }
+    document.getElementById('acct-2fa-disable-code').value = '';
+    await _acctRefresh();
+    msg.textContent = 'Two-step verification is off.';
+  } catch (e) { msg.textContent = 'Network error. Try again.'; }
+}
+async function acctDeleteAccount() {
+  const pw = document.getElementById('acct-del-password').value, code = document.getElementById('acct-del-code').value.trim();
+  const msg = document.getElementById('acct-del-msg'), btn = document.getElementById('acct-del-btn');
+  msg.textContent = '';
+  if (!document.getElementById('acct-del-confirm').checked) { msg.textContent = 'Tick the box to confirm you want to delete your account.'; return; }
+  if (!pw) { msg.textContent = 'Enter your password to confirm.'; return; }
+  const token = _authToken;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/auth/account/delete', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ password: pw, totp_code: code || undefined }) });
+    const d = await r.json().catch(() => ({}));
+    if (token !== _authToken) return;
+    if (!r.ok) { msg.textContent = _authDetail(d, 'Your account was not deleted.'); return; }
+    closeAccountDialog();
+    _clearAuthStateAndShowSignIn(`Your account was deleted (${d.sessions_processed || 0} conversation${d.sessions_processed === 1 ? '' : 's'} processed). Audit-log entries are kept by design.`);
+  } catch (e) { msg.textContent = 'Network error. We could not confirm whether the account was deleted; sign in to check.'; }
+  finally { btn.disabled = false; }
+}
+
+let _mfaPending = null;
+let _resetToken = null;
+function _beginMfa(pendingToken) {
+  switchAuthTab('mfa');
+  _mfaPending = pendingToken; // after switchAuthTab, which clears the pending value when leaving the challenge
+  document.getElementById('mfa-code').value = '';
+  document.getElementById('mfa-error').textContent = '';
+}
+function _authDetail(d, fallback) {
+  return (d && (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error)) || fallback;
+}
+async function doMfa() {
+  const code = document.getElementById('mfa-code').value.trim();
+  const errEl = document.getElementById('mfa-error');
+  const btn = document.getElementById('mfa-btn');
+  errEl.textContent = '';
+  if (!_mfaPending) { switchAuthTab('signin'); document.getElementById('si-error').textContent = 'Your sign-in expired. Please sign in again.'; return; }
+  if (!/^[0-9]{6,8}$/.test(code)) { errEl.textContent = 'Enter the 6-digit code from your authenticator app.'; return; }
+  btn.disabled = true; btn.textContent = 'Verifying...';
+  try {
+    const r = await fetch('/api/auth/2fa/verify-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pending_token: _mfaPending, code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = _authDetail(d, 'Verification failed.');
+      if (r.status === 401 && /expired or invalid|log in again/i.test(msg)) { switchAuthTab('signin'); document.getElementById('si-error').textContent = 'Your sign-in expired. Please sign in again.'; return; }
+      errEl.textContent = msg; return;
+    }
+    _mfaPending = null;
+    onAuthSuccess(d);
+  } catch (e) {
+    errEl.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verify';
+  }
+}
+async function doForgot() {
+  const email = document.getElementById('fp-email').value.trim();
+  const msg = document.getElementById('fp-msg');
+  const btn = document.getElementById('fp-btn');
+  if (!email) { msg.textContent = 'Enter your email address.'; return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    // One answer for every address (registered or not): the page must not reveal who has an account.
+    msg.textContent = r.ok ? 'If an account exists for that address, a reset link is on its way. Check your inbox.' : (r.status === 429 ? 'Too many requests. Please wait a few minutes and try again.' : 'Could not send a reset link right now. Try again shortly.');
+  } catch (e) {
+    msg.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function doReset() {
+  const password = document.getElementById('rp-password').value;
+  const errEl = document.getElementById('rp-error');
+  const btn = document.getElementById('rp-btn');
+  errEl.textContent = '';
+  if (password.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
+  if (!_resetToken) { errEl.textContent = 'This reset link is missing or already used. Request a new one.'; return; }
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const r = await fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: _resetToken, password }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { errEl.textContent = _authDetail(d, 'Reset failed.'); _resetToken = null; return; }
+    _resetToken = null;
+    document.getElementById('rp-password').value = '';
+    if (d.requires_2fa) { _beginMfa(d.pending_token); return; }
+    onAuthSuccess(d);
+  } catch (e) {
+    errEl.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Set new password';
+  }
+}
+async function doResendVerification() {
+  const email = document.getElementById('si-email').value.trim();
+  const errEl = document.getElementById('si-error');
+  if (!email) { errEl.textContent = 'Enter your email address first.'; return; }
+  try {
+    const r = await fetch('/api/auth/verification/resend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    const d = await r.json().catch(() => ({}));
+    errEl.textContent = r.ok ? (d.message || 'If this address has an unverified account, a new verification link has been sent.') : _authDetail(d, 'Could not send right now. Try again shortly.');
+  } catch (e) {
+    errEl.textContent = 'Network error. Try again.';
   }
 }
 
@@ -3988,6 +4307,20 @@ document.querySelector('.navnew').addEventListener('click', () => setMobileSideb
   showEmptyView();
   updateSendEnabled();
   wireConversationSearch();
+  // A password-reset link: take the token out of the address bar immediately (history, referrers, screenshots), then ask for the new password.
+  try {
+    const q = new URLSearchParams(location.search);
+    const rt = q.get('reset_token');
+    if (rt) {
+      _resetToken = rt;
+      history.replaceState({}, '', location.pathname);
+      _identityResolved = true; // a recovery visit must not be overridden by a stale stored session
+      try { localStorage.removeItem('orneur_token'); } catch (e) {}
+      await loadModels();
+      switchAuthTab('reset');
+      return;
+    }
+  } catch (e) {}
   const restored = await tryRestoreSession();
   if (!restored) {
     await loadModels(); // models are visible even signed-out; sending still requires auth per /api/chat's own rules
