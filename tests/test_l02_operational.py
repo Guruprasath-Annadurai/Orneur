@@ -49,7 +49,7 @@ def test_readyz_reports_each_dependency_separately_and_is_ready_when_healthy(rea
     deps = body["dependencies"]
     assert code == 200 and body["status"] == "ready"
     assert deps["transcript_store"]["status"] == "ok" and deps["disk"]["state"] in ("ok", "low")
-    assert set(deps["maintenance_backlog"]) == {"conversation_deletions_incomplete", "document_deletions_pending", "reconciler_blocked"}
+    assert set(deps["maintenance_backlog"]) == {"conversation_deletions_incomplete", "document_deletions_pending", "reconciler_blocked", "vector_deletions_unconfirmed", "vector_reclamation_pending"}   # L03 added the two vector cleanup counters
     assert deps["streams"]["capacity"] >= 1 and deps["redis"]["status"] in ("ok", "not_configured", "unavailable")
     assert "password" not in json.dumps(body).lower() and "secret" not in json.dumps(body).lower()
 

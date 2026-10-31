@@ -1,0 +1,22 @@
+/home/ubuntu/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.....................................................................    [100%]
+=============================== warnings summary ===============================
+tests/test_l02_b6_backup.py: 36 warnings
+tests/test_l02_b6_corrective.py: 16 warnings
+  /home/ubuntu/worktrees/master-04/orca/config.py:401: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.
+    ORCA_HOME = Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
+
+tests/test_l02_b6_backup.py::test_readiness_reports_not_ready_while_a_restore_is_unfinished
+tests/test_l02_b6_backup.py::test_readiness_reports_not_ready_while_a_restore_is_unfinished
+  /home/ubuntu/worktrees/master-04/orca/auth/secret.py:45: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.
+    return Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
+
+tests/test_l02_b6_backup.py::test_the_cli_refuses_without_a_key_and_never_creates_one
+  /home/ubuntu/.local/lib/python3.12/site-packages/typer/params.py:948: DeprecationWarning: The 'is_flag' and 'flag_value' parameters are not supported by Typer and will be removed entirely in a future release.
+    return OptionInfo(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+69 passed, 55 warnings in 9.26s

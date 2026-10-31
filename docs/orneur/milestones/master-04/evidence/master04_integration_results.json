@@ -1,0 +1,101 @@
+{
+  "A_ancestry": {
+    "head": "4295550b7991972e7a6b5cd1d25123b58355cbf1",
+    "parents": [
+      "b96cc3260078b6f677a22381b05fe1f72026256f",
+      "bfeaae2bc7470251262b3526e32fede7412996d8"
+    ],
+    "required": {
+      "master03_tip": "b96cc3260078b6f677a22381b05fe1f72026256f",
+      "l03_code": "c8b0f54bafe364c18e507425570d34be1e7b8dd7",
+      "l03_doc_head": "bfeaae2bc7470251262b3526e32fede7412996d8",
+      "main": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a"
+    },
+    "missing": []
+  },
+  "B_restore_while_owner": {
+    "refused": "a server is running on this data directory: stop it before restoring",
+    "owner_pid": 3955
+  },
+  "B_owner_under_restore": {
+    "error": "VectorUnavailable",
+    "msg": "vector owner refused to start (data-directory lock held by a restore or unavailable)",
+    "pid": null
+  },
+  "C_active_owner_backup": {
+    "files": 10,
+    "path": "/tmp/pytest-of-ubuntu/pytest-3/test_C_active_owner_never_yiel0/live.orbk",
+    "bytes": 614231,
+    "consistent": false,
+    "unstable_files": [
+      "memory/vectors/(owner_active_no_quiesce_no_barrier)"
+    ],
+    "vector": {
+      "present": true,
+      "quiesced": false,
+      "barrier": null,
+      "owner_was_running": true,
+      "owner_active_during_copy": true,
+      "consistent_claim_allowed": false
+    }
+  },
+  "C_quiesced_backup": {
+    "files": 10,
+    "path": "/tmp/pytest-of-ubuntu/pytest-3/test_C_quiesced_owner_allows_c0/quiet.orbk",
+    "bytes": 614194,
+    "consistent": true,
+    "unstable_files": [],
+    "vector": {
+      "present": true,
+      "quiesced": true,
+      "barrier": "owner_lock_exclusive",
+      "owner_was_running": true,
+      "owner_active_during_copy": false,
+      "consistent_claim_allowed": true
+    }
+  },
+  "D_lifecycle": {
+    "history_sources": [
+      "live_ledger"
+    ],
+    "tombstone_applied": {
+      "session": 1,
+      "doc": 0,
+      "user": 0
+    },
+    "recall_of_deleted_after_restore": [],
+    "collection_present_right_after_restore": true,
+    "swept": 1,
+    "collection_present_after_sweep": false,
+    "deleted_text_on_disk_after_sweep": false,
+    "kept_conversation_recall_hits": 1,
+    "states": {
+      "access_revoked_via_tombstone": true,
+      "logical_delete_applied": true,
+      "collection_removed_after_sweep": true,
+      "reclamation_observed": true,
+      "physical_erasure_of_medium_unproven": true
+    }
+  },
+  "E_restore_race": {
+    "results": [
+      [
+        "RestoreFailed",
+        "a server is running on this data directory: stop it before restoring"
+      ],
+      [
+        "RestoreFailed",
+        "a server is running on this data directory: stop it before restoring"
+      ],
+      [
+        "RestoreFailed",
+        "a server is running on this data directory: stop it before restoring"
+      ],
+      [
+        "RestoreFailed",
+        "a server is running on this data directory: stop it before restoring"
+      ]
+    ],
+    "owner_alive": true
+  }
+}

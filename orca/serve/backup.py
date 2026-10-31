@@ -80,8 +80,104 @@ def _put(w: EncryptedWriter, rel: str, src: Path, kind: str, files: dict, snapsh
     files[rel] = {"sha256": h.hexdigest(), "size": size, "kind": kind, "snapshot_at": snapshot_at}
 
 
-def create(home: Path, out_file: Path, *, key: bytes) -> dict:
-    """Encrypt a snapshot of ``home`` into the new file ``out_file``. The archive appears under its final name only when complete and flushed."""
+def _vector_root(home: Path) -> Path:
+    return Path(home) / "memory" / "vectors"
+
+
+def _vector_present(home: Path) -> bool:
+    root = _vector_root(home)
+    return root.is_dir() and any(p.is_file() for p in root.rglob("*"))
+
+
+def _vector_owner_pid(home: Path) -> int | None:
+    """Best-effort live owner pid without importing chromadb. Matches ServiceTransport.owner_pid semantics."""
+    try:
+        from orca.vectorstore import paths as vpaths
+    except Exception:
+        return None
+    home = Path(home).resolve()
+    try:
+        pid = int(vpaths.pid_path(home).read_text().strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return None
+    return pid if b"orca.vectorstore.server" in cmd and str(home).encode() in cmd else None
+
+
+def _quiesce_vector_owner(home: Path, wait_s: float = 10.0) -> bool:
+    """Option A: stop a live vector owner so HNSW segments and SQLite are not written during the snapshot. Returns True when no owner is alive afterwards."""
+    home = Path(home).resolve()
+    pid = _vector_owner_pid(home)
+    if pid is None:
+        return True
+    try:
+        os.kill(pid, 15)  # SIGTERM
+    except OSError:
+        return _vector_owner_pid(home) is None
+    end = time.time() + wait_s
+    while time.time() < end:
+        if _vector_owner_pid(home) is None:
+            return True
+        time.sleep(0.05)
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
+    end = time.time() + 2.0
+    while time.time() < end:
+        if _vector_owner_pid(home) is None:
+            return True
+        time.sleep(0.05)
+    return _vector_owner_pid(home) is None
+
+
+@contextlib.contextmanager
+def _vector_owner_barrier(home: Path, *, retries: int = 1, retry_s: float = 0.05):
+    """Option B: verifiable exclusive hold on the vector owner.lock proving no owner is serving this data directory."""
+    try:
+        from orca.vectorstore import paths as vpaths
+    except Exception:
+        yield None
+        return
+    home = Path(home).resolve()
+    lock_path = vpaths.owner_lock_path(home)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+    held = False
+    try:
+        for attempt in range(max(1, retries)):
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held = True
+                break
+            except OSError:
+                if attempt + 1 >= retries:
+                    yield None
+                    return
+                time.sleep(retry_s)
+        yield "owner_lock_exclusive"
+    finally:
+        if held:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def create(home: Path, out_file: Path, *, key: bytes, quiesce_vector: bool = False) -> dict:
+    """Encrypt a snapshot of ``home`` into the new file ``out_file``. The archive appears under its final name only when complete and flushed.
+
+    Vector consistency (MASTER-04): ``consistent: true`` is never claimed from one readable sample of HNSW/segment files alone. When a vector store is present, either the
+    owner must be quiesced (``quiesce_vector=True``, Option A) or a verifiable exclusive owner-lock barrier must be held for the copy (Option B). Otherwise the archive is
+    flagged inconsistent even if individual file mtimes appeared stable.
+    """
     home, out_file = Path(home), Path(out_file)
     if out_file.exists():
         raise FileExistsError("backup destination already exists")
@@ -99,53 +195,81 @@ def create(home: Path, out_file: Path, *, key: bytes) -> dict:
     started = time.time()
     scratch = Path(tempfile.mkdtemp(prefix=".orbk-", dir=str(out_file.parent)))      # transient, private; holds one database snapshot at a time
     os.chmod(scratch, 0o700)
-    fd = os.open(str(partial), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    vector_meta = {"present": _vector_present(home), "quiesced": False, "barrier": None, "owner_was_running": _vector_owner_pid(home) is not None,
+                   "owner_active_during_copy": False}
+    if vector_meta["present"] and quiesce_vector:
+        vector_meta["quiesced"] = _quiesce_vector_owner(home)
+        if not vector_meta["quiesced"]:
+            raise BackupIncompleteError("vector owner could not be quiesced for a coherent vector backup")
+        # Give the kernel a moment to release the dead owner's flock before the barrier attempt.
+        for _ in range(20):
+            if _vector_owner_pid(home) is None:
+                break
+            time.sleep(0.05)
+        time.sleep(0.05)
+    consistent = False
     try:
-        with os.fdopen(fd, "wb") as raw:
-            w = EncryptedWriter(raw, key)
-            dbs = sorted(p for p in home.rglob("*") if p.is_file() and p.suffix in _DBS_SUFFIX and not _excluded(home, p))
-            for src in dbs:
-                rel = str(src.relative_to(home))
-                snap = scratch / "snap.db"
-                s, d = sqlite3.connect(str(src), timeout=30), sqlite3.connect(str(snap))
-                try:
-                    s.backup(d)                                           # consistent snapshot, safe while the server writes
-                finally:
-                    d.close()
-                    s.close()
-                _put(w, rel, snap, "sqlite_online_backup", files, time.time())
-                snap.unlink()
-            dbset = set(dbs)
-            for src in sorted(p for p in home.rglob("*") if p.is_file() and p not in dbset and not _excluded(home, p)):
-                rel = str(src.relative_to(home))
-                for _attempt in range(3):                                 # a file that changes while it is read is retried, then flagged
-                    before = src.stat()
-                    tmp = scratch / "copy.bin"
-                    shutil.copyfile(src, tmp)
-                    after = src.stat()
-                    if (before.st_size, before.st_mtime_ns) == (after.st_size, after.st_mtime_ns):
-                        break
-                else:
-                    unstable.append(rel)
-                _put(w, rel, tmp, "file_copy", files, time.time())
-                tmp.unlink()
-            if not any(c in files for c in _CORE):
-                raise BackupIncompleteError("nothing to back up: the data directory has neither an accounts nor a transcript database")
-            manifest = {"format": FORMAT, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "created_epoch": started, "files": files,
-                        "core": [c for c in _CORE if c in files], "unstable_files": unstable, "consistent": not unstable,
-                        "ledger": ledger_info, "excluded_dirs": sorted(_SKIP_DIRS)}
-            body = json.dumps(manifest, sort_keys=True).encode()
-            w.write(b"M" + len(body).to_bytes(4, "big") + body)
-            w.close()
-            raw.flush()
-            os.fsync(raw.fileno())
-        os.replace(partial, out_file)
-    except BaseException:
-        partial.unlink(missing_ok=True)
-        raise
+        with _vector_owner_barrier(home, retries=(40 if vector_meta["quiesced"] else 1)) as barrier:
+            vector_meta["barrier"] = barrier
+            if vector_meta["present"] and barrier is None and not vector_meta["quiesced"]:
+                # Owner still holds its exclusive owner.lock (or barrier unavailable): never claim vector consistency from a readable sample.
+                vector_meta["owner_active_during_copy"] = True
+            fd = os.open(str(partial), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(fd, "wb") as raw:
+                    w = EncryptedWriter(raw, key)
+                    dbs = sorted(p for p in home.rglob("*") if p.is_file() and p.suffix in _DBS_SUFFIX and not _excluded(home, p))
+                    for src in dbs:
+                        rel = str(src.relative_to(home))
+                        snap = scratch / "snap.db"
+                        s, d = sqlite3.connect(str(src), timeout=30), sqlite3.connect(str(snap))
+                        try:
+                            s.backup(d)                                           # consistent snapshot, safe while the server writes
+                        finally:
+                            d.close()
+                            s.close()
+                        _put(w, rel, snap, "sqlite_online_backup", files, time.time())
+                        snap.unlink()
+                    dbset = set(dbs)
+                    for src in sorted(p for p in home.rglob("*") if p.is_file() and p not in dbset and not _excluded(home, p)):
+                        rel = str(src.relative_to(home))
+                        for _attempt in range(3):                                 # a file that changes while it is read is retried, then flagged
+                            before = src.stat()
+                            tmp = scratch / "copy.bin"
+                            shutil.copyfile(src, tmp)
+                            after = src.stat()
+                            if (before.st_size, before.st_mtime_ns) == (after.st_size, after.st_mtime_ns):
+                                break
+                        else:
+                            unstable.append(rel)
+                        _put(w, rel, tmp, "file_copy", files, time.time())
+                        tmp.unlink()
+                    if vector_meta["present"] and vector_meta["owner_active_during_copy"]:
+                        marker = "memory/vectors/(owner_active_no_quiesce_no_barrier)"
+                        if marker not in unstable:
+                            unstable.append(marker)
+                    if not any(c in files for c in _CORE):
+                        raise BackupIncompleteError("nothing to back up: the data directory has neither an accounts nor a transcript database")
+                    vector_ok = (not vector_meta["present"]) or bool(vector_meta["quiesced"] or vector_meta["barrier"])
+                    consistent = (not unstable) and vector_ok
+                    vector_meta["consistent_claim_allowed"] = vector_ok
+                    manifest = {"format": FORMAT, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "created_epoch": started, "files": files,
+                                "core": [c for c in _CORE if c in files], "unstable_files": unstable, "consistent": consistent,
+                                "vector": vector_meta, "ledger": ledger_info, "excluded_dirs": sorted(_SKIP_DIRS)}
+                    body = json.dumps(manifest, sort_keys=True).encode()
+                    w.write(b"M" + len(body).to_bytes(4, "big") + body)
+                    w.close()
+                    raw.flush()
+                    os.fsync(raw.fileno())
+                os.replace(partial, out_file)
+            except BaseException:
+                partial.unlink(missing_ok=True)
+                raise
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    return {"files": len(files), "path": str(out_file), "bytes": out_file.stat().st_size, "consistent": not unstable, "unstable_files": unstable}
+    return {"files": len(files), "path": str(out_file), "bytes": out_file.stat().st_size, "consistent": consistent, "unstable_files": unstable, "vector": vector_meta}
+
+
 
 
 # ── read / verify ────────────────────────────────────────────────────────────────────────────────────────────────────────────────

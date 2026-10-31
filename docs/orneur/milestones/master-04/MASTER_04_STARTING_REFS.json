@@ -1,0 +1,15 @@
+{
+  "refreshed_at": "2026-10-31T10:08:00Z",
+  "master03_pr146_head": "b96cc3260078b6f677a22381b05fe1f72026256f",
+  "master03_pr146_tree": "168a6a2c75bd11e0cbac113e06ff4d50e88f9cae",
+  "master03_ci": "41178651529",
+  "l03_pr147_code": "c8b0f54bafe364c18e507425570d34be1e7b8dd7",
+  "l03_pr147_doc_head": "bfeaae2bc7470251262b3526e32fede7412996d8",
+  "l03_code_ci": "41189270383",
+  "l03_doc_head_ci": "41190351398",
+  "l03_doc_head_introduces_code": false,
+  "main": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+  "antigravity_audit_test": "167e0ca0b53a1f3bda5a7813155dd009ee1e9a00",
+  "source_prs_unmodified": ["#146", "#147"],
+  "observed_match": true
+}

@@ -1719,5 +1719,30 @@ def backup_recover():
     console.print("[green]rolled back an interrupted restore[/green]" if r["recovered"] else "nothing to recover")
 
 
+vector_app = typer.Typer(help="The vector-store service (L03): status and a clean stop. Stop it before restoring a backup or moving the data directory.")
+app.add_typer(vector_app, name="vector")
+
+
+@vector_app.command("status")
+def vector_status():
+    """Mode, owner process, queue/stall/descriptor figures and pending cleanup counts. No content."""
+    from orca.serve import ops
+
+    console.print_json(data={"vector": ops.vector_report(), "cleanup_backlog": {k: v for k, v in ops.backlog_report().items() if k.startswith("vector")}})
+
+
+@vector_app.command("stop")
+def vector_stop():
+    """Gracefully stop the vector-service owner for this data directory (it also exits by itself when idle). Needed before a restore or a move of the data directory."""
+    from orca import vectorstore
+
+    if vectorstore.mode() != "service":
+        console.print("vector service mode is not active in this environment; nothing to stop.")
+        return
+    ok = vectorstore.transport().stop_owner()
+    console.print("[green]vector service stopped[/green]" if ok else "[red]the vector service did not stop within 10 s[/red]")
+    raise typer.Exit(0 if ok else 1)
+
+
 if __name__ == "__main__":
     app()

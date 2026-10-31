@@ -1,0 +1,42 @@
+/home/ubuntu/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.2.0, pluggy-1.7.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/ubuntu/worktrees/master-04
+configfile: pyproject.toml
+plugins: asyncio-1.4.1, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 9 items
+
+tests/qualification/test_master04_integration.py::test_A_merge_ancestry_fail_closed_and_complete PASSED [ 11%]
+tests/qualification/test_master04_integration.py::test_B_restore_refuses_while_owner_holds_serving_lock PASSED [ 22%]
+tests/qualification/test_master04_integration.py::test_B_owner_refuses_to_start_under_exclusive_restore_lock PASSED [ 33%]
+tests/qualification/test_master04_integration.py::test_C_active_owner_never_yields_consistent_true_from_readable_sample PASSED [ 44%]
+tests/qualification/test_master04_integration.py::test_C_quiesced_owner_allows_consistent_vector_backup PASSED [ 55%]
+tests/qualification/test_master04_integration.py::test_D_restore_after_stop_applies_tombstones_and_sweep_removes_bytes PASSED [ 66%]
+tests/qualification/test_master04_integration.py::test_E_multiprocess_restore_vs_owner_lock_race PASSED [ 77%]
+tests/qualification/test_master04_integration.py::test_F_dockerfile_does_not_silently_enable_chroma_or_backup_crypto PASSED [ 88%]
+tests/qualification/test_master04_integration.py::test_F_proposed_catch_and_continue_patch_is_not_in_owner PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/qualification/test_master04_integration.py::test_B_restore_refuses_while_owner_holds_serving_lock
+tests/qualification/test_master04_integration.py::test_B_owner_refuses_to_start_under_exclusive_restore_lock
+tests/qualification/test_master04_integration.py::test_C_active_owner_never_yields_consistent_true_from_readable_sample
+tests/qualification/test_master04_integration.py::test_C_quiesced_owner_allows_consistent_vector_backup
+tests/qualification/test_master04_integration.py::test_D_restore_after_stop_applies_tombstones_and_sweep_removes_bytes
+tests/qualification/test_master04_integration.py::test_E_multiprocess_restore_vs_owner_lock_race
+  /home/ubuntu/worktrees/master-04/orca/config.py:401: DeprecationWarning: ORCA_HOME is deprecated; set ORNEUR_HOME instead. ORCA_HOME fallback support will be removed in a future release.
+    ORCA_HOME = Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
+
+tests/qualification/test_master04_integration.py::test_E_multiprocess_restore_vs_owner_lock_race
+tests/qualification/test_master04_integration.py::test_E_multiprocess_restore_vs_owner_lock_race
+tests/qualification/test_master04_integration.py::test_E_multiprocess_restore_vs_owner_lock_race
+tests/qualification/test_master04_integration.py::test_E_multiprocess_restore_vs_owner_lock_race
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=3903) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 9 passed, 10 warnings in 12.76s ========================

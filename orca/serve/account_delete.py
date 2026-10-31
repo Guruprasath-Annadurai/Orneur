@@ -111,12 +111,15 @@ def _delete_session_data(session_id: str) -> dict:
             store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
             removed = 0
             for d in docs:
-                if store.delete_doc(d["doc_id"]):                 # L02-01: unregister only what every store confirmed
+                if store.delete_doc_detailed(d["doc_id"], reclaim=False)["ok"]:        # L02-01: unregister only what every store confirmed (L03: one rewrite for the whole set, below)
                     unregister_doc(session_id, d["doc_id"])
                     removed += 1
             result["docs_deleted"] = removed
             if removed != len(docs):
                 result["docs_error"] = f"{len(docs) - removed} document(s) not fully removed"
+        from orca.docs.store import drop_session_collection
+
+        result["docs_vector_physical_reclamation"] = drop_session_collection(session_id)
     except Exception as e:
         result["docs_error"] = str(e)
 

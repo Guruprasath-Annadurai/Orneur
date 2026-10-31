@@ -126,6 +126,7 @@ def _reconcile_resources() -> dict:
 async def _deletion_sweep_loop():
     """L02-01/02: a deletion that a crash or an unavailable store left unfinished must not wait for the 6-hour retention pass. Each step is independent,
     idempotent, bounded and lease-guarded, so several workers running this loop is safe."""
+    from orca.brain.memory import vector_maintenance
     from orca.docs.store import sweep_document_deletions
     from orca.serve import deletions, temporary_chat
 
@@ -135,6 +136,7 @@ async def _deletion_sweep_loop():
             ("document", sweep_document_deletions, (CONFIG.ollama.host,)),               # documents left "deleting"
             ("temporary chat", temporary_chat.expire_due, ()),                            # TTL-expired and failed temporary chats
             ("resource reconciliation", _reconcile_resources, ()),                        # L02-05: orphan deployment records / document chunks / temp files
+            ("vector maintenance", vector_maintenance, ()),                               # L03: deferred byte reclamation and unconfirmed vector deletions are retried, not forgotten
         ):
             try:
                 await asyncio.to_thread(fn, *args)
@@ -150,7 +152,9 @@ async def _lifespan(_app: FastAPI):
     from orca.config import ORCA_HOME as _lock_home
     from orca.serve import datadir_lock as _datadir_lock
     from orca.serve.backup_errors import RestoreFailed as _RestoreFailed
+    from orca import vectorstore as _vectorstore
 
+    _vectorstore.enable_service_mode(True)       # L03: chromadb runs in a supervised owner process (deadlines on the socket, bounded admission), never inside this one
     _lock = contextlib.ExitStack()
     try:
         _lock.enter_context(_datadir_lock.serving_lock(_lock_home))
@@ -165,7 +169,19 @@ async def _lifespan(_app: FastAPI):
     finally:
         _retention_task.cancel()
         _sweep_task.cancel()
+        # MASTER-04: stop the vector owner before releasing the API serving lock so a post-shutdown
+        # restore is not blocked by an orphaned owner still holding the shared datadir lock.
+        try:
+            if _vectorstore.mode() == "service":
+                _vectorstore.transport().stop_owner(wait_s=5.0)
+        except Exception:
+            _logger.debug("vector owner stop during shutdown failed", exc_info=True)
         _lock.close()
+        # MASTER-04: service mode is process-scoped for `orca serve`. TestClient lifespan must not
+        # leave it sticky for later tests that never enter lifespan (those expect embedded mode, and
+        # monkeypatched MEMORY_DIR/DOCS_DIR outside ORCA_HOME would otherwise fail as bad_root).
+        _vectorstore.enable_service_mode(False)
+        _vectorstore.reset_for_tests()
         from orca.serve import ops as _ops
 
         _ops.close_inflight_as_shutdown()          # turns still running here will never commit: say so durably before the process exits
@@ -1876,6 +1892,7 @@ async def readyz():
         ready = False
     dependencies["redis"] = ops.redis_report()
     dependencies["maintenance_backlog"] = ops.backlog_report()
+    dependencies["vector"] = ops.vector_report()          # advisory: chat does not depend on long-term vector memory; a degraded index is reported, not hidden
     dependencies["streams"] = ops.stream_report()
     if ops.draining():
         dependencies["lifecycle"] = {"status": "draining"}
@@ -2261,7 +2278,7 @@ async def _chat_dispatch(
     _busy = _hold_turn(request, sess.id, user)
     if _busy is not None:
         return JSONResponse(_busy.as_json(), status_code=_busy.status)
-    mem_ctx = sess.memory.recall_context(req.message, n=3)
+    mem_ctx = await asyncio.to_thread(sess.memory.recall_context, req.message, 3)       # L03: never on the event loop (a vector stall must not hold every request)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
     persona_system = get_persona_system(sess.model_variant)
     if mod_result.action == "support":
@@ -2338,7 +2355,7 @@ async def _chat_dispatch(
         sess.memory.add_turn("user", req.message)
         sess.memory.add_turn("assistant", final)
         if not _omit_long_term(sess.id):
-            sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
+            await asyncio.to_thread(sess.memory.commit_to_long_term, f"Q: {req.message[:200]}\nA: {final[:500]}")
             # Phase 5: additive, significance-gated Memory Continuum ingestion --
             # does NOT replace the unconditional legacy commit_to_long_term()
             # call above (see orca/memory/turn_ingest.py's own docstring for why).
@@ -2651,7 +2668,7 @@ async def _stream_dispatch(
         mem_ctx = sess.memory.recall_context(message, n=3)
         return f"[Relevant memory]\n{mem_ctx}\n\n{message}" if mem_ctx else message
 
-    enriched = None if stream_kernel else _enrich(req.message)      # a streamed turn only needs it if the Kernel defers to the agent loop
+    enriched = None if stream_kernel else await asyncio.to_thread(_enrich, req.message)      # a streamed turn only needs it if the Kernel defers to the agent loop
 
     # Kernel's direct-answer path is used whenever the Kernel actually
     # produced an answer -- either because this session has no loaded
@@ -2807,7 +2824,7 @@ async def _stream_dispatch(
                         yield f"data: {json.dumps({'type': 'chunk', 'text': tail})}\n\n"
                     full = redactor.safe_text() or full           # what the client saw is exactly what is stored and later fed back to the model
                 if enriched is None and not use_kernel_direct:
-                    enriched = _enrich(req.message)
+                    enriched = await asyncio.to_thread(_enrich, req.message)
                 identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
                 if streamed_upstream and identity != early:
                     audit.log("model_identity_corrected", user_id=user.id if user else None, detail={"session_id": sess.id})
@@ -2909,7 +2926,7 @@ async def _stream_dispatch(
                 sess.memory.add_turn("user", req.message)
                 sess.memory.add_turn("assistant", full)
                 if not _omit_long_term(sess.id):
-                    sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
+                    await asyncio.to_thread(sess.memory.commit_to_long_term, f"Q: {req.message[:200]}\nA: {full[:500]}")
                     from orca.memory.turn_ingest import maybe_ingest_turn
                     maybe_ingest_turn(sess.id, req.message, full)
                 from orca.serve import deletions as _deletions, temporary_chat
@@ -2971,10 +2988,29 @@ async def _stream_dispatch(
     )
 
 
+def _vector_failure_response(exc: Exception):
+    """An explicit fact the user asked us to remember, or a recall they asked for, must not fail silently: report the truth with the established capacity/timeout codes."""
+    from orca import vectorstore
+
+    if isinstance(exc, vectorstore.VectorTimeout):
+        code = "request_timeout"
+    elif isinstance(exc, (vectorstore.VectorBusy, vectorstore.VectorUnavailable)):
+        code = "server_busy"
+    elif isinstance(exc, vectorstore.VectorOwnershipError):
+        code = "not_found"
+    else:
+        raise exc
+    e = coded_error(code)
+    return JSONResponse(e.as_json(), status_code=e.status)
+
+
 @app.post("/api/memory/recall")
 async def recall_memory(req: MemoryRequest, user: User | None = Depends(get_current_user_optional)):
     sess = _get_session(req.session_id, user_id=user.id if user else None)
-    hits = sess.memory.long.recall(req.query, n=8)
+    try:
+        hits = await asyncio.to_thread(sess.memory.long.recall, req.query, 8, strict=True)       # strict: "no memories" must never be what a failure looks like
+    except Exception as exc:
+        return _vector_failure_response(exc)
     prior = sess.memory.load_prior_context()
     return {
         "hits": hits,
@@ -2986,7 +3022,10 @@ async def recall_memory(req: MemoryRequest, user: User | None = Depends(get_curr
 @app.post("/api/remember")
 async def remember(req: RememberRequest, user: User | None = Depends(get_current_user_optional)):
     sess = _get_session(req.session_id, user_id=user.id if user else None)
-    sess.memory.commit_to_long_term(req.fact, {"type": "user_fact", "manual": True})
+    try:
+        stored_id = await asyncio.to_thread(sess.memory.long.store, req.fact, {"type": "user_fact", "manual": True}, strict=True)
+    except Exception as exc:
+        return _vector_failure_response(exc)
     # G-006: this route used to ALSO append every user's note to one global,
     # unscoped `all_sessions_summary` string. Nothing reads it any more (the
     # read path was retired in Phase 5.1), and it mixed tenants' private text
@@ -3394,6 +3433,7 @@ async def delete_conversation(session_id: str, user: User | None = Depends(get_c
         "deleted": job["deleted"], "state": job["state"], "session_id": session_id, "deletion_id": job["deletion_id"],
         "access_revoked": True, "retryable": job["retryable"], "stores": {k: v for k, v in job["stores"].items() if not k.startswith("_")},
         "vector_store_physical_reclamation": job["stores"].get("_vector_physical_reclamation"),
+        "vector_store_collection": job["stores"].get("_vector_collection"),
         "retention": deletions.RETENTION_NOTICE,
     }
     return JSONResponse(body, status_code=200 if job["deleted"] else 202)
@@ -3944,9 +3984,7 @@ async def ultra_run(req: UltraRequest, request: Request, user: User | None = Dep
         sess.memory.add_turn("user", req.task)
         sess.memory.add_turn("assistant", text)
         _persist_turn(user, sess.id, req.task, text)
-        sess.memory.commit_to_long_term(
-            f"[Ultra] Q: {req.task[:200]}\nA: {text[:500]}"
-        )
+        await asyncio.to_thread(sess.memory.commit_to_long_term, f"[Ultra] Q: {req.task[:200]}\nA: {text[:500]}")
         # Note: OrcaUltra doesn't run through AgentLoop, so this turn won't
         # appear in agent.get_history() — persist_to_redis() still preserves
         # model_variant continuity even though the turn itself isn't captured.

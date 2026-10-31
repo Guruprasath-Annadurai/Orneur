@@ -1,0 +1,298 @@
+"""The vector-service OWNER process: the only process that runs chromadb for one data directory.
+
+    python -m orca.vectorstore.server --home <ORNEUR_HOME>
+
+* single owner: an exclusive ``flock`` on ``owner.lock`` is held for the process's life; a second instance exits immediately (so two owners can never exist).
+* bounded: ``workers`` execution threads, a bounded job queue (``queue_max``), a bounded number of client connections, and a per-collection in-flight limit. Anything beyond is
+  answered ``busy`` at once - never queued without bound.
+* a stalled native call freezes THIS process only. Clients enforce their own deadlines on the socket and a supervisor kills and restarts a stalled owner; SQLite makes that safe.
+* local only: a Unix socket in a private directory (mode 0600) and a random token checked in constant time on every request. No pickle: frames are JSON.
+* exits by itself after ``idle_exit_s`` without requests, releasing every descriptor (so a stopped server leaves nothing holding the data directory).
+"""
+from __future__ import annotations
+
+import argparse
+import faulthandler
+import fcntl
+import hmac
+import os
+import queue
+import signal
+import socket
+import sys
+import threading
+import time
+from pathlib import Path
+
+from orca.vectorstore import paths, protocol
+from orca.vectorstore.host import ChromaHost
+
+
+class Owner:
+    def __init__(self, home: Path, *, workers=4, queue_max=32, max_conns=64, per_collection=2, idle_exit_s=300.0, max_open=32, max_rss_mb=0):
+        self.home = Path(home).resolve()
+        self.host = ChromaHost(max_open=max_open)
+        # Two bounded lanes. A write that is stuck behind a competing process's database lock occupies a worker until the lock is released; if reads shared those workers, a few
+        # stuck writes would starve every read. Reads (WAL mode) keep being served; stuck writes can only fill the write lane, after which further writes are refused immediately.
+        self.jobs: queue.Queue = queue.Queue(maxsize=queue_max)               # read lane
+        self.wjobs: queue.Queue = queue.Queue(maxsize=queue_max)              # write lane
+        self.write_workers = int(os.environ.get("ORNEUR_VECTOR_WRITE_WORKERS", "2"))
+        self.max_rss_mb, self._rss_checked = int(max_rss_mb), 0.0
+        self.exit_reason = "idle"
+        self.workers, self.max_conns, self.per_collection, self.idle_exit_s = workers, max_conns, per_collection, idle_exit_s
+        self.conns = 0
+        self.conn_lock = threading.Lock()
+        self.inflight_by_collection: dict[str, int] = {}
+        self.coll_lock = threading.Lock()
+        self.last_activity = time.monotonic()
+        self.stop = threading.Event()
+        self.running: dict[int, float] = {}
+        self.run_lock = threading.Lock()
+        self.refused = {"busy_queue": 0, "busy_connections": 0, "busy_collection": 0, "expired": 0}
+        self.token = paths.token_path(self.home).read_text().strip()
+
+    # ── request handling ─────────────────────────────────────────────────────────────────────────────────────────────
+    READ_METHODS = {"query", "get", "peek", "count"}
+    READ_OPS = {"list_collections", "collection_info", "binding_report"}
+
+    def _is_read(self, req: dict) -> bool:
+        op = req.get("op")
+        return op in self.READ_OPS or (op == "call" and req.get("method") in self.READ_METHODS)
+
+    def _valid_root(self, req: dict) -> bool:
+        root = req.get("root")
+        if root is None:
+            return True
+        try:
+            Path(root).resolve().relative_to(self.home)
+            return True
+        except (ValueError, OSError):
+            return False
+
+    def _worker(self, lane: "queue.Queue"):
+        while not self.stop.is_set():
+            try:
+                conn, req, deadline = lane.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            key = f'{req.get("root")}|{req.get("collection")}' if req.get("collection") else None
+            try:
+                if time.monotonic() > deadline:
+                    self.refused["expired"] += 1
+                    resp = {"ok": False, "error": "expired"}              # the client already gave up: do not do the work
+                else:
+                    tid = threading.get_ident()
+                    with self.run_lock:
+                        self.running[tid] = time.monotonic()
+                    try:
+                        resp = {"ok": True, **self.host.execute(req)}
+                    except Exception as exc:                              # type name only: messages can quote user content
+                        name = type(exc).__name__
+                        resp = {"ok": False, "error": "not_found" if "NotFound" in name or "does not exist" in str(exc).lower() else "op_failed", "type": name}
+                    finally:
+                        with self.run_lock:
+                            self.running.pop(tid, None)
+                try:
+                    protocol.send(conn, resp)
+                except OSError:
+                    pass
+            finally:
+                if key:
+                    with self.coll_lock:
+                        self.inflight_by_collection[key] = max(0, self.inflight_by_collection.get(key, 1) - 1)
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                self.last_activity = time.monotonic()
+
+    def _handle(self, conn: socket.socket):
+        try:
+            req = protocol.recv(conn, time.monotonic() + 10)
+        except Exception:
+            conn.close()
+            with self.conn_lock:
+                self.conns -= 1
+            return
+        with self.conn_lock:
+            self.conns -= 1
+        try:
+            if not hmac.compare_digest(str(req.get("token", "")), self.token):
+                protocol.send(conn, {"ok": False, "error": "auth"})
+                conn.close()
+                return
+            self.last_activity = time.monotonic()
+            if req.get("op") == "ping":                                    # answered inline: liveness must not wait behind the work queue
+                protocol.send(conn, {"ok": True, "pong": True, "pid": os.getpid()})
+                conn.close()
+                return
+            if req.get("op") == "stats":                                   # also inline, so diagnostics work while the queue is saturated
+                protocol.send(conn, {"ok": True, **self.stats()})
+                conn.close()
+                return
+            if not self._valid_root(req):
+                protocol.send(conn, {"ok": False, "error": "bad_root"})
+                conn.close()
+                return
+            key = f'{req.get("root")}|{req.get("collection")}' if req.get("collection") else None
+            if key:
+                with self.coll_lock:
+                    n = self.inflight_by_collection.get(key, 0)
+                    if n >= self.per_collection:
+                        self.refused["busy_collection"] += 1
+                        protocol.send(conn, {"ok": False, "error": "busy", "scope": "collection"})
+                        conn.close()
+                        return
+                    self.inflight_by_collection[key] = n + 1
+            deadline = time.monotonic() + max(0.05, float(req.get("deadline_ms", 5000)) / 1000.0)
+            lane = self.jobs if self._is_read(req) else self.wjobs
+            try:
+                lane.put_nowait((conn, req, deadline))
+            except queue.Full:
+                if key:
+                    with self.coll_lock:
+                        self.inflight_by_collection[key] = max(0, self.inflight_by_collection.get(key, 1) - 1)
+                self.refused["busy_queue"] += 1
+                protocol.send(conn, {"ok": False, "error": "busy", "scope": "queue"})
+                conn.close()
+        except Exception:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def serve(self):
+        sp = paths.sock_path(self.home)
+        if sp.exists() or sp.is_symlink():
+            sp.unlink()                                                    # stale: we hold the owner lock, so nobody else is serving it
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        old = os.umask(0o177)
+        try:
+            srv.bind(str(sp))
+        finally:
+            os.umask(old)
+        os.chmod(sp, 0o600)
+        srv.listen(64)
+        srv.settimeout(0.5)
+        threading.Thread(target=self._warm_embedder, daemon=True, name="vector-warmup").start()
+        for _ in range(self.workers):
+            threading.Thread(target=self._worker, args=(self.jobs,), daemon=True).start()
+        for _ in range(self.write_workers):
+            threading.Thread(target=self._worker, args=(self.wjobs,), daemon=True).start()
+        while not self.stop.is_set():
+            if time.monotonic() - self.last_activity > self.idle_exit_s and self.jobs.empty() and self.wjobs.empty():
+                break
+            if self.max_rss_mb and time.monotonic() - self._rss_checked > 1.0:
+                self._rss_checked = time.monotonic()
+                from orca.vectorstore.host import proc_rss_mb
+
+                with self.run_lock:
+                    quiet = not self.running
+                if quiet and self.jobs.empty() and self.wjobs.empty() and proc_rss_mb() > self.max_rss_mb:
+                    # chromadb does not give memory back when collections are closed (measured). The only reliable release is a new process: leave when nothing is running; the next call starts a
+                    # fresh owner (~0.6 s) and the data is untouched.
+                    self.exit_reason = "rss"
+                    break
+            try:
+                conn, _ = srv.accept()
+            except socket.timeout:
+                continue
+            with self.conn_lock:
+                if self.conns >= self.max_conns:
+                    self.refused["busy_connections"] += 1
+                    try:
+                        protocol.send(conn, {"ok": False, "error": "busy", "scope": "connections"})
+                    finally:
+                        conn.close()
+                    continue
+                self.conns += 1
+            threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+        srv.close()
+        try:
+            sp.unlink()
+        except OSError:
+            pass
+        self.host.close()
+
+    @staticmethod
+    def _warm_embedder() -> None:
+        """Load chromadb's default embedding model once, off the request path, so the first indexing request does not pay model-load time inside its deadline. Failure is harmless
+        (the model loads on first use instead)."""
+        try:
+            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+            DefaultEmbeddingFunction()(["warm up"])
+        except Exception:
+            pass
+
+    def stats(self) -> dict:
+        with self.run_lock:
+            oldest = round(time.monotonic() - min(self.running.values()), 2) if self.running else 0.0
+            running = len(self.running)
+        return {**self.host.stats(), "queue_depth": self.jobs.qsize() + self.wjobs.qsize(), "read_queue": self.jobs.qsize(), "write_queue": self.wjobs.qsize(), "connections": self.conns, "refused": dict(self.refused), "workers": self.workers, "write_workers": self.write_workers, "running": running,
+                "oldest_running_s": oldest}
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--home", required=True)
+    a = ap.parse_args(argv)
+    home = Path(a.home)
+    lock_fd = os.open(str(paths.owner_lock_path(home)), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return 0                                                           # another owner is running: exactly one per data directory
+    # MASTER-04: the owner participates in B6's data-directory lock contract both directions. FAIL-CLOSED: a restore (or any
+    # exclusive holder) must refuse to start this owner, and while this owner is up a restore must refuse to begin. Catching
+    # the lock refusal and continuing into serve() is prohibited — the process exits without advertising readiness.
+    from orca.serve import datadir_lock
+    from orca.serve.backup_errors import RestoreFailed
+
+    try:
+        serving_cm = datadir_lock.serving_lock(home)
+        serving_cm.__enter__()
+    except RestoreFailed as exc:
+        sys.stderr.write(f"vector owner refused to start: {exc}\n")
+        try:
+            paths.pid_path(home).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 2
+    except OSError as exc:
+        sys.stderr.write(f"vector owner refused to start (serving lock unavailable): {exc}\n")
+        try:
+            paths.pid_path(home).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 2
+    paths.pid_path(home).write_text(str(os.getpid()))
+    cap = os.environ.get("ORNEUR_VECTOR_NOFILE")                        # an operator (or a test) can cap the owner's own descriptor limit
+    if cap:
+        import resource
+
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(int(cap), hard if hard != resource.RLIM_INFINITY else int(cap)), hard))
+    env = os.environ.get
+    owner = Owner(home, workers=int(env("ORNEUR_VECTOR_WORKERS", "4")), queue_max=int(env("ORNEUR_VECTOR_QUEUE_MAX", "32")), max_conns=int(env("ORNEUR_VECTOR_MAX_CONNS", "64")),
+                  per_collection=int(env("ORNEUR_VECTOR_PER_COLLECTION", "2")), idle_exit_s=float(env("ORNEUR_VECTOR_IDLE_EXIT_S", "300")), max_open=int(env("ORNEUR_VECTOR_MAX_OPEN", "32")),
+                  max_rss_mb=int(env("ORNEUR_VECTOR_MAX_RSS_MB", "1536")))
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True)               # `kill -USR1 <owner pid>` writes every thread's stack to owner.log (diagnosing a stall)
+    signal.signal(signal.SIGTERM, lambda *_: owner.stop.set())
+    try:
+        owner.serve()
+    finally:
+        try:
+            serving_cm.__exit__(None, None, None)
+        except Exception:
+            pass
+        try:
+            paths.pid_path(home).unlink(missing_ok=True)
+        except OSError:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

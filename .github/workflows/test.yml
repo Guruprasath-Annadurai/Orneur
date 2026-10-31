@@ -363,6 +363,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # MASTER-04: ancestry gate (test_A) must see M03/L03/main objects; shallow checkout
+          # fail-closed with missing SHAs. Same full-history requirement as Deterministic.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -396,6 +400,12 @@ jobs:
           python -m pytest tests/journey/test_l02_deletion_live.py -k "not D6" tests/journey/test_l02_recovery_live.py tests/journey/test_l02_operations_live.py tests/journey/test_l02_account_live.py tests/journey/test_l02_b3_apikey_reauth_live.py tests/journey/test_l02_b6_backup_live.py -p no:cacheprovider -v
           # LANDMARK-02: the three customer journeys (student, developer, business owner) in real Chromium on the approved page - fixture provider
           python -m pytest tests/journey/test_l02_customer_journeys.py -k fixture -p no:cacheprovider -v
+          # LANDMARK-03: the vector-service, lifecycle/erasure and failure-lab tests (real owner processes, real chromadb; moved here from the deterministic job, which was at its time limit)
+          python -m pytest tests/test_l03_vector_service.py tests/test_l03_lifecycle.py tests/test_l03_failure_lab.py -p no:cacheprovider -v
+          # LANDMARK-03: vector containment on two real orca serve workers + the real vector-service owner + real chromadb (stall, SIGKILL, SIGTERM, descriptors, documents)
+          python -m pytest tests/journey/test_l03_vector_live.py -p no:cacheprovider -v
+          # MASTER-04: vector-owner × B6 lock / backup consistency / deletion non-resurrection / multi-process races (real owner + chromadb + encrypted backup)
+          python -m pytest tests/qualification/test_master04_integration.py -p no:cacheprovider -v
 
       - name: Upload journey screenshots on failure
         if: failure()

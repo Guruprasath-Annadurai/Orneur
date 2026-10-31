@@ -1,0 +1,53 @@
+{
+ "X1_backup": {
+  "files": 22,
+  "consistent_flag": true,
+  "unstable_files": [],
+  "writes_during": 8
+ },
+ "X1_restore": {
+  "restored_files": 22,
+  "sqlite_counts": {
+   "embeddings_rows": 11,
+   "collections": 4
+  },
+  "collections_answering": 4,
+  "counts": {
+   "orca_0d4ecf10": 2,
+   "orca_10047935": 3,
+   "orca_339bc51c": 3,
+   "orca_4be62814": 3
+  }
+ },
+ "X2_running_owner": {
+  "restore_error": "RestoreFailed",
+  "owner_pid_before": 234364,
+  "owner_alive_after_restore": true,
+  "owner_view_keep": 1,
+  "owner_view_deleted_collection_count": "VectorNotFound"
+ },
+ "X3_restore_after_stop": {
+  "history_sources": [
+   "live_ledger"
+  ],
+  "tombstone_applied": {
+   "session": 1,
+   "doc": 0,
+   "user": 0
+  },
+  "recall_of_deleted_after_restore": [],
+  "collection_present_right_after_restore": true,
+  "swept": 1,
+  "collection_present_after_sweep": false,
+  "deleted_text_on_disk_after_sweep": false,
+  "kept_conversation_recall_hits": 1
+ },
+ "X4_archive_vector_top_level_files": [
+  "memory/vectors/chroma.sqlite3",
+  "memory/vectors/orneur_bindings.sqlite"
+ ],
+ "X5_with_owner_holding_serving_lock": {
+  "restore_while_owner_running": "a server is running on this data directory: stop it before restoring",
+  "restore_after_owner_stopped": true
+ }
+}
