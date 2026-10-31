@@ -1,0 +1,4 @@
+# CI run 41052123184 (head e5266c7): Production Container Build + Boot Smoke failed: 'ModuleNotFoundError: No module named cryptography' from orca/serve/api.py lifespan -> backup -> backup_crypto. Local reproduction (cryptography import blocked) BEFORE the fix, captured runner output:
+FAILED tests/test_l02_b6_no_crypto_dependency.py::test_the_server_starts_reports_ready_and_deletes_without_the_cryptography_package
+FAILED tests/test_l02_b6_no_crypto_dependency.py::test_the_backup_commands_say_what_is_missing_instead_of_a_traceback
+2 failed in 0.98s

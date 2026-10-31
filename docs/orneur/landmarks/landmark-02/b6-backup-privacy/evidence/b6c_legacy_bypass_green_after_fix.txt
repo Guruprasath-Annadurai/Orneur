@@ -1,0 +1,2 @@
+# Same reproduction file, run on the corrective head (captured runner output): the secure properties now hold.
+4 passed, 1 warning in 0.41s

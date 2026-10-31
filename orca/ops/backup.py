@@ -1,4 +1,10 @@
 """
+RETIRED FOR CREATION AND RESTORE (L02-B6). ``backup_sqlite``, ``backup_postgres``, ``run_backup`` and ``restore_sqlite`` now refuse: they produced unencrypted copies of the
+accounts database and restored one without consulting deletion history. Use ``orca data-backup`` (orca/serve/backup.py). ``list_backups`` / ``prune_old_backups`` remain so that
+existing plaintext files can be found, migrated offline (``orca data-backup import-legacy``) and destroyed.
+
+Original description (historical):
+
 Automated backup / disaster recovery — real gap this closes: SQLite/Postgres
 had ZERO backup automation. One bad `rm`, disk failure, or corrupted write
 loses the auth DB (users, audit log, everything) with no way back.
@@ -32,6 +38,7 @@ import shutil
 import sqlite3
 import subprocess
 import time
+from typing import NoReturn
 from pathlib import Path
 
 from orca.config import ORCA_HOME, orneur_env
@@ -62,67 +69,30 @@ def _unique_backup_path(prefix: str, suffix: str) -> Path:
             return candidate
 
 
+_REFUSAL = ("the legacy plaintext backup/restore is retired (L02-B6): it wrote an UNENCRYPTED copy of the accounts database and restored one over the live database without "
+            "consulting deletion history, which could bring back accounts customers had deleted. Use `orca data-backup create|verify|restore` with a provisioned key "
+            "(docs/orneur/landmarks/landmark-02/b6-backup-privacy). To keep an existing plaintext backup, migrate it OFFLINE with `orca data-backup import-legacy`.")
+
+
+def _refuse() -> "NoReturn":
+    from orca.serve.backup_crypto import BackupError
+
+    raise BackupError(_REFUSAL)
+
+
 def backup_sqlite() -> Path:
-    """
-    Consistent snapshot via SQLite's own backup API — safe to run while the
-    live DB is being written to (this project uses WAL mode, see
-    orca/auth/db.py), unlike a raw file copy which could capture a
-    half-written state.
-    """
-    if not AUTH_DB.exists():
-        raise FileNotFoundError(f"No SQLite database found at {AUTH_DB} — nothing to back up.")
-
-    dest = _unique_backup_path("auth_backup", ".db")
-
-    source_conn = sqlite3.connect(str(AUTH_DB))
-    dest_conn = sqlite3.connect(str(dest))
-    try:
-        source_conn.backup(dest_conn)
-    finally:
-        source_conn.close()
-        dest_conn.close()
-
-    return dest
+    """RETIRED: refuses. See ``_REFUSAL``."""
+    _refuse()
 
 
 def backup_postgres(database_url: str) -> Path:
-    """Shells out to pg_dump — requires it installed. Custom format (-Fc), restorable via pg_restore."""
-    if shutil.which("pg_dump") is None:
-        raise RuntimeError(
-            "pg_dump not found on PATH. Install PostgreSQL client tools "
-            "(e.g. `brew install postgresql` or your distro's postgresql-client "
-            "package) before running Postgres backups."
-        )
-
-    dest = _unique_backup_path("auth_backup", ".pgdump")
-
-    result = subprocess.run(
-        ["pg_dump", database_url, "-Fc", "-f", str(dest)],
-        capture_output=True, text=True, timeout=300,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"pg_dump failed: {result.stderr}")
-
-    return dest
+    """RETIRED: refuses (a ``pg_dump`` is an unencrypted copy of every account and bypasses deletion history on restore). See ``_REFUSAL``."""
+    _refuse()
 
 
 def run_backup() -> dict:
-    """Dispatches to the right backup method based on the active DB backend."""
-    if BACKEND == "postgres":
-        database_url = orneur_env("DATABASE_URL")
-        path = backup_postgres(database_url)
-        backend = "postgres"
-    else:
-        path = backup_sqlite()
-        backend = "sqlite"
-
-    size_bytes = path.stat().st_size
-    return {
-        "backend": backend,
-        "path": str(path),
-        "size_bytes": size_bytes,
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
+    """RETIRED: refuses. See ``_REFUSAL``."""
+    _refuse()
 
 
 def list_backups() -> list[dict]:
@@ -153,28 +123,5 @@ def prune_old_backups(keep_last_n: int = 7) -> dict:
 
 
 def restore_sqlite(backup_path: str, confirm: bool = False) -> dict:
-    """
-    Restores a SQLite backup over the LIVE database — destructive, requires
-    explicit confirm=True. Does not restore Postgres (see module docstring
-    for why — use pg_restore directly for that backend).
-    """
-    if BACKEND != "sqlite":
-        raise RuntimeError(f"Current backend is '{BACKEND}', not sqlite. This function only restores SQLite backups.")
-    if not confirm:
-        raise ValueError("Restoring will OVERWRITE the live database. Call with confirm=True to proceed.")
-
-    src = Path(backup_path)
-    if not src.exists():
-        raise FileNotFoundError(f"Backup file not found: {backup_path}")
-
-    # Back up the CURRENT (about-to-be-overwritten) state first, so a bad
-    # restore choice is itself recoverable rather than a second data-loss event.
-    pre_restore_backup = backup_sqlite()
-
-    shutil.copy2(src, AUTH_DB)
-
-    return {
-        "restored_from": str(src),
-        "pre_restore_backup": str(pre_restore_backup),
-        "restored_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
+    """RETIRED: refuses. A plaintext restore over the live accounts database could resurrect deleted accounts and cannot verify integrity or completeness. See ``_REFUSAL``."""
+    _refuse()

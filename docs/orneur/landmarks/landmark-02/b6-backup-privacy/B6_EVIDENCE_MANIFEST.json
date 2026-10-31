@@ -1,0 +1,113 @@
+{
+ "schema": "l02-b6-evidence-manifest/1",
+ "milestone_status": "VERIFIED_ENGINEERING (independently testable portion; corrective pass applied) / BLOCKED (founder decisions B6-B1..B4)",
+ "independently_qualified": false,
+ "baseline": "38e0d311991875366f2bc88a39690c7b2b6ea3ee",
+ "branch": "claude/l02-b6-backup-privacy",
+ "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/143",
+ "pr_state": "draft",
+ "final_code_bearing_sha": "14e1160dc50024d726f2f379fba510fbd2a88f66",
+ "ci": {
+  "run": 41055502902,
+  "head": "14e1160dc50024d726f2f379fba510fbd2a88f66",
+  "conclusion": "success (10/10, first attempt of this head)",
+  "deterministic": "9398 passed, 0 failed, 399 skipped, 190 deselected, 6 xfailed",
+  "skipped_set": "identical to PR #139 head run 40998377463",
+  "journeys_fixture": "39 + 15 + 24 + 3 passed",
+  "history": [
+   {
+    "head": "ba36e74",
+    "run": 41043199842,
+    "result": "success 10/10 (9378 passed) - candidate later shown incomplete by the CTO finding"
+   },
+   {
+    "head": "e5266c7",
+    "run": 41052123184,
+    "result": "FAILURE: Production Container Build + Boot Smoke (cryptography absent from the image)"
+   },
+   {
+    "head": "14e1160",
+    "run": 41055502902,
+    "result": "success 10/10"
+   }
+  ]
+ },
+ "baseline_reproduction": {
+  "file": "evidence/b6_baseline_repro.py",
+  "output": "evidence/b6_baseline_red_38e0d31.txt",
+  "result": "8 failed of 8 (all suspected risks confirmed; none disproved)"
+ },
+ "tests": {
+  "deterministic": {
+   "cmd": "pytest tests/test_l02_b6_backup.py tests/test_l02_operational.py",
+   "result": "46 + 13 passed",
+   "class": "DET"
+  },
+  "live": {
+   "cmd": "pytest tests/journey/test_l02_b6_backup_live.py",
+   "result": "1 passed (extended: restore refused while a server runs; retired CLI commands refuse)",
+   "evidence": "evidence/b6_backup_live_restore_vs_deletion.json",
+   "class": "LIVE+FIX (real orca serve + real CLI, test-only key, synthetic data)"
+  },
+  "adjacent_local": "l02 groups, b_conversations, temporary chat, account delete, g006, serve_streaming: 393 passed, 1 pre-existing documented skip, 2 xfailed",
+  "corrective": {
+   "cmd": "pytest tests/test_l02_b6_corrective.py tests/test_l02_b6_no_crypto_dependency.py tests/test_l02_b6_backup.py tests/test_ops_backup.py tests/test_l02_operational.py",
+   "result": "90 passed locally; same files green in CI",
+   "red_before_fix": [
+    "evidence/b6c_legacy_bypass_red_b1c56b9.txt (4/4)",
+    "evidence/b6c_corrective_tests_red_b1c56b9.txt (20 failed, 3 passed)",
+    "evidence/b6c_no_crypto_red_e5266c7.txt (2/2)"
+   ],
+   "green_after_fix": "evidence/b6c_legacy_bypass_green_after_fix.txt"
+  }
+ },
+ "changed_existing_tests": [
+  "tests/test_l02_operational.py (3 backup tests moved to the encrypted API; format is incompatible)"
+ ],
+ "changed_user_facing_text": [
+  "deletions.RETENTION_NOTICE['application_backups'] (previously claimed ORNEUR creates no backups)"
+ ],
+ "incompatible_changes": [
+  "plaintext directory backups can no longer be created or restored",
+  "orca backup / orca restore / orca.ops.backup.* creation and restore are retired (fail closed)",
+  "restored directories are 0700 / files 0600",
+  "restore requires the server to be stopped (flock) and a deletion history from the same ledger lineage"
+ ],
+ "blocked": [
+  "B6-B1 key custody",
+  "B6-B2 historical-backup retention / immutable or off-host storage",
+  "B6-B3 off-host anchoring of the deletion ledger (completeness cannot be verified without it)",
+  "B6-B4 Postgres plaintext dumps",
+  "B6-B5 production image does not include the optional backup extra"
+ ],
+ "not_run": [
+  "very large data directories",
+  "real KMS/HSM",
+  "restore while the server runs",
+  "vector-store instant-consistency with the databases",
+  "independent qualification"
+ ],
+ "commits_after_final_code_sha": "documentation/evidence only",
+ "corrective": {
+  "finding": "P1 legacy backup/restore bypass (orca/ops/backup.py, orca backup, orca restore) on PR #143 candidate b1c56b9/ba36e74",
+  "repro": "evidence/b6c_legacy_bypass_repro.py -> evidence/b6c_legacy_bypass_red_b1c56b9.txt (4 of 4 failed before the fix)",
+  "red_before_fix": "evidence/b6c_corrective_tests_red_b1c56b9.txt (20 failed, 3 passed)",
+  "history_of_claims": "the first B6 delivery (code ba36e74, CI green) claimed the boundary was closed; that was incorrect and is corrected in B6_BACKUP_PRIVACY_REPORT.md section 7. The earlier green CI record is preserved in B6_EXACT_HEAD_CI.md.",
+  "ci_found_defect": {
+   "run": 41052123184,
+   "head": "e5266c7",
+   "job": "Production Container Build + Boot Smoke",
+   "cause": "server lifespan imported the backup module -> cryptography (optional, absent from the image)",
+   "red": "evidence/b6c_no_crypto_red_e5266c7.txt",
+   "fix": "stdlib-only backup_errors / datadir_lock; lazy KDF import in deletion_ledger; CLI dependency message; 'backup' extra"
+  }
+ },
+ "not_claimed": [
+  "ledger is tamper-proof",
+  "ledger is independently authoritative",
+  "deletion history is complete",
+  "offline copies are erased",
+  "NFS / multi-host locking"
+ ],
+ "superseded_code_sha": "ba36e747aee0cb690d1e2efdb938dd18020eb315 (green CI, but incomplete: legacy plaintext bypass)"
+}

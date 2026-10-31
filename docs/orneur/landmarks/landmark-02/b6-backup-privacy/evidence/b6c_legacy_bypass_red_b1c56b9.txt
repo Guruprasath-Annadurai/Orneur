@@ -1,0 +1,6 @@
+# PR #143 candidate b1c56b9 (code ba36e74): legacy backup/restore bypass reproduction BEFORE the corrective fix (captured test-runner output). FAILED = bypass confirmed.
+FAILED tests/b6c_legacy_bypass_repro.py::test_L1_the_legacy_programmatic_backup_does_not_write_customer_data_in_plaintext
+FAILED tests/b6c_legacy_bypass_repro.py::test_L1b_the_legacy_cli_backup_command_does_not_write_a_plaintext_backup
+FAILED tests/b6c_legacy_bypass_repro.py::test_L2_the_legacy_restore_does_not_resurrect_an_account_deleted_after_the_backup
+FAILED tests/b6c_legacy_bypass_repro.py::test_L2b_the_legacy_cli_restore_does_not_resurrect_a_deleted_account
+4 failed, 1 warning in 2.34s
