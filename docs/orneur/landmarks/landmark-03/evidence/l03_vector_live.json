@@ -1,0 +1,47 @@
+{
+ "V1": {
+  "owner_pids": [
+   125396
+  ],
+  "app_pids": [
+   125382,
+   125383
+  ],
+  "second_worker_read_ok": true
+ },
+ "V2": {
+  "refused_after_s": 2.01,
+  "code": "request_timeout",
+  "probes": 16,
+  "worst_probe_s": 0.53,
+  "chat_turn_s": 2.23
+ },
+ "V3": {
+  "owner_before": [
+   125396
+  ],
+  "owner_after": [
+   125648
+  ],
+  "recovered": true
+ },
+ "V4": {
+  "worker_a_exit_code": -15,
+  "owner_unchanged": true,
+  "worker_b_served": true
+ },
+ "V5": {
+  "conversations": 80,
+  "app_fds_before": 28,
+  "app_fds_after": 24,
+  "owner_fds_before": 31,
+  "owner_fds_after": 78,
+  "max_open": 16,
+  "owner_client_recycles": 4
+ },
+ "V6": {
+  "upload": 200,
+  "turn_done": true,
+  "sources_event": true
+ }
+}

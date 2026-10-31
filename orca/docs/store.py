@@ -126,15 +126,63 @@ class DocStore:
         self.enforce_registry = enforce_registry
         self.ollama_host = ollama_host
         self._col_name = f"docs_{session_id[:12].replace('-', '')}"
-        self._chroma = None                                     # kept for callers that test "is there a vector store"; the handle is a vectorstore.Store
-        self._collection = None
         self.degraded = None                                    # why the vector index is not in use for this instance (None = in use or not installed)
+        self._inited = False                                    # L03: the vector index (and the embedding-service probe) are opened on first use, not while a request builds a session
+        self._init_lock = threading.Lock()
+        self._chroma_v = None                                   # a vectorstore.Store when the index is usable
+        self._collection_v = None
         self._fallback_file = DOCS_DIR / f"kw_{session_id[:8]}.jsonl"
-        self._use_embeddings = False
-        self._init_store()
+        self._use_embeddings_v = False
+        self._lexical_only_v = False
+
+    def _lazy(self):
+        if not self._inited:
+            with self._init_lock:
+                if not self._inited:
+                    try:
+                        self._init_store()
+                    finally:
+                        self._inited = True
+
+    @property
+    def _chroma(self):
+        self._lazy()
+        return self._chroma_v
+
+    @_chroma.setter
+    def _chroma(self, v):
+        self._chroma_v = v
+
+    @property
+    def _collection(self):
+        self._lazy()
+        return self._collection_v
+
+    @_collection.setter
+    def _collection(self, v):
+        self._inited = True                                     # a caller (a test) that installs its own collection owns the index
+        self._collection_v = v
+
+    @property
+    def _use_embeddings(self):
+        self._lazy()
+        return self._use_embeddings_v
+
+    @_use_embeddings.setter
+    def _use_embeddings(self, v):
+        self._use_embeddings_v = v
+
+    @property
+    def _lexical_only(self):
+        self._lazy()
+        return self._lexical_only_v
+
+    @_lexical_only.setter
+    def _lexical_only(self, v):
+        self._lexical_only_v = v
 
     def _init_store(self):
-        self._lexical_only = False
+        self._lexical_only_v = False
         from orca import vectorstore as vs
 
         if not vs.available():
@@ -156,20 +204,20 @@ class DocStore:
         if info.get("status") == "mismatch":
             self.degraded = "ownership"                         # the collection belongs to another conversation: not read, not written
             return
-        self._chroma, self._collection = store, col
+        self._chroma_v, self._collection_v = store, col
         # Check if Ollama embeddings are available
         test = _ollama_embed(["test"], self.ollama_host)
         service_up = test is not None
         # L02-02: the collection already lives in ONE embedding space (the service's, or chroma's default). Whatever the service is doing right now, this
         # instance must keep talking to that space, or a query vector of the wrong dimension makes every search fail silently.
-        stored_dim = self._stored_dimension()
+        stored_dim = self._stored_dimension(col)
         in_service_space = stored_dim is not None and stored_dim == EMBED_DIM
-        self._use_embeddings = service_up and (stored_dim is None or in_service_space)
-        self._lexical_only = in_service_space and not service_up
+        self._use_embeddings_v = service_up and (stored_dim is None or in_service_space)
+        self._lexical_only_v = in_service_space and not service_up
 
-    def _stored_dimension(self) -> int | None:
+    def _stored_dimension(self, col=None) -> int | None:
         try:
-            peek = self._collection.peek(1)
+            peek = (col or self._collection).peek(1)
             emb = peek.get("embeddings") if isinstance(peek, dict) else None
             if emb is not None and len(emb) > 0:
                 return len(emb[0])

@@ -237,13 +237,20 @@ class ServiceTransport:
         return {"client": dict(self.counters), "latency_ms": {"p50": pct(0.5), "p95": pct(0.95), "p99": pct(0.99), "n": len(lat)}, "max_inflight": self.max_inflight,
                 "max_waiting": self.max_waiting}
 
-    def owner_stats_quick(self) -> dict | None:
-        """Owner statistics for a readiness probe: a half-second budget, no spawning."""
+    def owner_stats_quick(self, max_age_s: float = 2.0) -> dict | None:
+        """Owner statistics for a readiness probe: a half-second budget, no spawning, and the answer (or the failure) is reused for ``max_age_s`` so a probe storm does not turn
+        into a storm of half-second waits on a stalled owner."""
+        now = time.monotonic()
+        cached = getattr(self, "_quick", None)
+        if cached and now - cached[0] < max_age_s:
+            return cached[1]
         try:
             r = self._raw({"op": "stats"}, 0.5)
-            return r if r.get("ok") else None
+            val = r if r.get("ok") else None
         except Exception:
-            return None
+            val = None
+        self._quick = (time.monotonic(), val)
+        return val
 
     def owner_stats(self) -> dict | None:
         try:

@@ -2245,7 +2245,7 @@ async def _chat_dispatch(
     _busy = _hold_turn(request, sess.id, user)
     if _busy is not None:
         return JSONResponse(_busy.as_json(), status_code=_busy.status)
-    mem_ctx = sess.memory.recall_context(req.message, n=3)
+    mem_ctx = await asyncio.to_thread(sess.memory.recall_context, req.message, 3)       # L03: never on the event loop (a vector stall must not hold every request)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
     persona_system = get_persona_system(sess.model_variant)
     if mod_result.action == "support":
@@ -2322,7 +2322,7 @@ async def _chat_dispatch(
         sess.memory.add_turn("user", req.message)
         sess.memory.add_turn("assistant", final)
         if not _omit_long_term(sess.id):
-            sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
+            await asyncio.to_thread(sess.memory.commit_to_long_term, f"Q: {req.message[:200]}\nA: {final[:500]}")
             # Phase 5: additive, significance-gated Memory Continuum ingestion --
             # does NOT replace the unconditional legacy commit_to_long_term()
             # call above (see orca/memory/turn_ingest.py's own docstring for why).
@@ -2635,7 +2635,7 @@ async def _stream_dispatch(
         mem_ctx = sess.memory.recall_context(message, n=3)
         return f"[Relevant memory]\n{mem_ctx}\n\n{message}" if mem_ctx else message
 
-    enriched = None if stream_kernel else _enrich(req.message)      # a streamed turn only needs it if the Kernel defers to the agent loop
+    enriched = None if stream_kernel else await asyncio.to_thread(_enrich, req.message)      # a streamed turn only needs it if the Kernel defers to the agent loop
 
     # Kernel's direct-answer path is used whenever the Kernel actually
     # produced an answer -- either because this session has no loaded
@@ -2791,7 +2791,7 @@ async def _stream_dispatch(
                         yield f"data: {json.dumps({'type': 'chunk', 'text': tail})}\n\n"
                     full = redactor.safe_text() or full           # what the client saw is exactly what is stored and later fed back to the model
                 if enriched is None and not use_kernel_direct:
-                    enriched = _enrich(req.message)
+                    enriched = await asyncio.to_thread(_enrich, req.message)
                 identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
                 if streamed_upstream and identity != early:
                     audit.log("model_identity_corrected", user_id=user.id if user else None, detail={"session_id": sess.id})
@@ -2893,7 +2893,7 @@ async def _stream_dispatch(
                 sess.memory.add_turn("user", req.message)
                 sess.memory.add_turn("assistant", full)
                 if not _omit_long_term(sess.id):
-                    sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
+                    await asyncio.to_thread(sess.memory.commit_to_long_term, f"Q: {req.message[:200]}\nA: {full[:500]}")
                     from orca.memory.turn_ingest import maybe_ingest_turn
                     maybe_ingest_turn(sess.id, req.message, full)
                 from orca.serve import deletions as _deletions, temporary_chat
@@ -3951,9 +3951,7 @@ async def ultra_run(req: UltraRequest, request: Request, user: User | None = Dep
         sess.memory.add_turn("user", req.task)
         sess.memory.add_turn("assistant", text)
         _persist_turn(user, sess.id, req.task, text)
-        sess.memory.commit_to_long_term(
-            f"[Ultra] Q: {req.task[:200]}\nA: {text[:500]}"
-        )
+        await asyncio.to_thread(sess.memory.commit_to_long_term, f"[Ultra] Q: {req.task[:200]}\nA: {text[:500]}")
         # Note: OrcaUltra doesn't run through AgentLoop, so this turn won't
         # appear in agent.get_history() — persist_to_redis() still preserves
         # model_variant continuity even though the turn itself isn't captured.

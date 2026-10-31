@@ -204,37 +204,37 @@ def _sweep_doc_chunks(conn, now, budget) -> dict:
 
     out = {"collections_scanned": 0, "orphan_documents_seen": 0, "removed_documents": 0}
     known = _registry_doc_ids_by_prefix()
-    # vector collections
+    # vector collections (through the vector layer: this sweep must never run chromadb inside the serving process)
     try:
-        import chromadb
+        from orca import vectorstore as vs
 
-        client = chromadb.PersistentClient(path=str(DOCS_DIR / "vectors"))
-        for col in client.list_collections()[:20]:
-            name = col if isinstance(col, str) else col.name
-            if not name.startswith("docs_"):
-                continue
-            out["collections_scanned"] += 1
-            collection = client.get_collection(name)
-            metas = (collection.get(include=["metadatas"], limit=5000).get("metadatas") or [])
-            doc_ids = {m.get("doc_id") for m in metas if m and m.get("doc_id")}
-            registered = known.get(name[len("docs_"):], set())
-            for doc_id in sorted(doc_ids - registered):
-                rid = f"vec:{name}:{doc_id}"
-                out["orphan_documents_seen"] += 1
-                row = _observe(conn, "doc_chunks", rid, now)
-                if row["state"] == "observed" and row["observations"] >= 2 and now - row["first_seen"] >= OBSERVE_GRACE_S and budget["n"] > 0:
-                    try:
-                        collection.delete(where={"doc_id": doc_id})
-                        conn.execute("UPDATE resource_ledger SET state='removed', updated_at=? WHERE kind='doc_chunks' AND resource_id=?", (now, rid))
-                        _audit(conn, "doc_chunks", rid, "remove", "ok")
-                        out["removed_documents"] += 1
-                        budget["n"] -= 1
-                    except Exception as e:
-                        _fail(conn, "doc_chunks", rid, repr(e), now)
-            for doc_id in doc_ids & registered:
-                _release(conn, "doc_chunks", f"vec:{name}:{doc_id}")
-    except ImportError:
-        pass
+        if vs.available():
+            store = vs.Store(DOCS_DIR / "vectors")
+            for name in store.list_collections()[:20]:
+                if not name.startswith("docs_"):
+                    continue
+                out["collections_scanned"] += 1
+                collection = vs.Collection(DOCS_DIR / "vectors", name)
+                metas = (collection.get(include=["metadatas"], limit=5000).get("metadatas") or [])
+                doc_ids = {m.get("doc_id") for m in metas if m and m.get("doc_id")}
+                registered = known.get(name[len("docs_"):], set())
+                for doc_id in sorted(doc_ids - registered):
+                    rid = f"vec:{name}:{doc_id}"
+                    out["orphan_documents_seen"] += 1
+                    row = _observe(conn, "doc_chunks", rid, now)
+                    if row["state"] == "observed" and row["observations"] >= 2 and now - row["first_seen"] >= OBSERVE_GRACE_S and budget["n"] > 0:
+                        try:
+                            collection.delete(where={"doc_id": doc_id})
+                            conn.execute("UPDATE resource_ledger SET state='removed', updated_at=? WHERE kind='doc_chunks' AND resource_id=?", (now, rid))
+                            _audit(conn, "doc_chunks", rid, "remove", "ok")
+                            out["removed_documents"] += 1
+                            budget["n"] -= 1
+                        except Exception as e:
+                            _fail(conn, "doc_chunks", rid, repr(e), now)
+                for doc_id in doc_ids & registered:
+                    _release(conn, "doc_chunks", f"vec:{name}:{doc_id}")
+    except vs.VectorError:
+        out["vector_unavailable"] = True                  # a stalled or restarting index: skip this sweep, nothing is judged orphaned on a failed read
     # keyword files
     for f in DOCS_DIR.glob("kw_*.jsonl"):
         registered = known.get("kw8:" + f.stem[3:], set())
