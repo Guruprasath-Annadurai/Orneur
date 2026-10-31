@@ -980,7 +980,7 @@ function mdToHtml(md, sources) {
   h = h.replace(new RegExp(`${nonce}(\\d+)${nonce}`, 'g'), (_, i) => codeStore[Number(i)]);
   h = h.replace(/\n\n/g, '</p><p>');
   h = h.replace(/\n/g, '<br>');
-  h = h.replace(/<\/li><br>(?=<li>)/g, '</li>').replace(/<ul><br>/g, '<ul>').replace(/<br><\/ul>/g, '</ul>'); // list items are block rows; the newline between them is not a line break
+  h = h.replace(/<\/ul>(?:<br>)?<ul>/g, '').replace(/<\/li><br>(?=<li>)/g, '</li>').replace(/<ul><br>/g, '<ul>').replace(/<br><\/ul>/g, '</ul>'); // list items are block rows; the newline between them is not a line break
   return `<p>${h}</p>`
     .replace(/<p><\/p>/g, '')
     .replace(/<p>(<(?:pre|ul|ol|h[123])>)/g, '$1')

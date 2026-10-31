@@ -83,7 +83,7 @@ with sync_playwright() as pw:
         injected = page.evaluate("() => document.querySelectorAll('#recents-list img, #recents-list script, #recents-list svg[onload], #recents-list [onerror]').length")
         report("X5_sidebar_title_is_escaped", injected == 0 and not page.evaluate("() => window.__pwned || null"), f"injected elements: {injected}")
         lst = page.evaluate("() => mdToHtml('- first\\n- second\\n\\ntext')")
-        report("X8_lists_render_as_tight_rows", "<br>" not in lst.split("</ul>")[0], lst)
+        report("X8_lists_render_as_one_tight_list", lst.count("<ul>") == 1 and "<br>" not in lst.split("</ul>")[0], lst)
         report("X6_no_uncaught_page_errors", not errors, "; ".join(errors)[:400])
     except Exception as exc:
         report("X0_driver", False, f"{type(exc).__name__}: {str(exc)[:600]}")
