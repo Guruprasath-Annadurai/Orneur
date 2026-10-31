@@ -152,27 +152,15 @@ def _finish(session_id: str, state: str, stores: dict) -> dict:
 
 
 def _vector_collection_absent(session_id: str, budget_s: float = 5.0) -> bool:
-    """True only if the session's vector collection can be PROVEN absent within ``budget_s``. A lock, a timeout or any other doubt answers False."""
-    import concurrent.futures
+    """True only if the session's vector collection can be PROVEN absent within ``budget_s``. A lock, a timeout, an unreachable service or any other doubt answers False."""
+    from orca import vectorstore
+    from orca.brain.memory import MEMORY_DIR
 
-    def probe() -> bool:
-        import chromadb
-        from orca.brain.memory import MEMORY_DIR
-
-        client = chromadb.PersistentClient(path=str(MEMORY_DIR / "vectors"))
-        try:
-            client.get_collection(name=f"orca_{session_id[:8]}")
-            return False
-        except Exception as exc:
-            return "does not exist" in str(exc).lower() or type(exc).__name__ in ("NotFoundError", "InvalidCollectionException")
-
-    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        return bool(ex.submit(probe).result(timeout=budget_s))
+        info = vectorstore.Store(MEMORY_DIR / "vectors").collection_info(f"orca_{session_id[:8]}", deadline_s=budget_s)
     except Exception:
         return False
-    finally:
-        ex.shutdown(wait=False)
+    return info.get("exists") is False
 
 
 def classify(result: dict) -> dict[str, str]:

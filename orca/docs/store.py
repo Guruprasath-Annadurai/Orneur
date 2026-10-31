@@ -126,34 +126,46 @@ class DocStore:
         self.enforce_registry = enforce_registry
         self.ollama_host = ollama_host
         self._col_name = f"docs_{session_id[:12].replace('-', '')}"
-        self._chroma = None
+        self._chroma = None                                     # kept for callers that test "is there a vector store"; the handle is a vectorstore.Store
         self._collection = None
+        self.degraded = None                                    # why the vector index is not in use for this instance (None = in use or not installed)
         self._fallback_file = DOCS_DIR / f"kw_{session_id[:8]}.jsonl"
         self._use_embeddings = False
         self._init_store()
 
     def _init_store(self):
         self._lexical_only = False
+        from orca import vectorstore as vs
+
+        if not vs.available():
+            return                                              # ChromaDB not installed -- use keyword fallback
+        db_path = DOCS_DIR / "vectors"
+        db_path.mkdir(parents=True, exist_ok=True)
         try:
-            import chromadb
-            db_path = DOCS_DIR / "vectors"
-            db_path.mkdir(parents=True, exist_ok=True)
-            self._chroma = chromadb.PersistentClient(path=str(db_path))
-            self._collection = self._chroma.get_or_create_collection(
-                name=self._col_name,
-                metadata={"hnsw:space": "cosine"},
-            )
-            # Check if Ollama embeddings are available
-            test = _ollama_embed(["test"], self.ollama_host)
-            service_up = test is not None
-            # L02-02: the collection already lives in ONE embedding space (the service's, or chroma's default). Whatever the service is doing right now, this
-            # instance must keep talking to that space, or a query vector of the wrong dimension makes every search fail silently.
-            stored_dim = self._stored_dimension()
-            in_service_space = stored_dim is not None and stored_dim == EMBED_DIM
-            self._use_embeddings = service_up and (stored_dim is None or in_service_space)
-            self._lexical_only = in_service_space and not service_up
-        except ImportError:
-            pass  # ChromaDB not installed — use keyword fallback
+            from orca.serve import deletions
+
+            if deletions.is_tombstoned(self.session_id):        # a deleted conversation has no index to open (fails closed)
+                self.degraded = "tombstoned"
+                return
+            store = vs.Store(db_path)
+            col, info = store.open_collection(self._col_name, {"hnsw:space": "cosine"}, binding=vs.session_binding(self.session_id))
+        except vs.VectorError as exc:
+            # The index is unreachable (timeout / busy / restarting). Documents stay answerable from the keyword index of THIS conversation; nothing is borrowed from anywhere else.
+            self.degraded = type(exc).__name__
+            return
+        if info.get("status") == "mismatch":
+            self.degraded = "ownership"                         # the collection belongs to another conversation: not read, not written
+            return
+        self._chroma, self._collection = store, col
+        # Check if Ollama embeddings are available
+        test = _ollama_embed(["test"], self.ollama_host)
+        service_up = test is not None
+        # L02-02: the collection already lives in ONE embedding space (the service's, or chroma's default). Whatever the service is doing right now, this
+        # instance must keep talking to that space, or a query vector of the wrong dimension makes every search fail silently.
+        stored_dim = self._stored_dimension()
+        in_service_space = stored_dim is not None and stored_dim == EMBED_DIM
+        self._use_embeddings = service_up and (stored_dim is None or in_service_space)
+        self._lexical_only = in_service_space and not service_up
 
     def _stored_dimension(self) -> int | None:
         try:
@@ -205,6 +217,10 @@ class DocStore:
 
     def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
         """Retrieve most relevant chunks for a query. Each hit carries its ``doc_id`` (chunk identity = doc_id + chunk_idx)."""
+        from orca.serve import deletions
+
+        if self.degraded == "tombstoned" or deletions.is_tombstoned(self.session_id):       # a deleted conversation retrieves nothing, through any path (fails closed)
+            return []
         allowed = self._authorized_doc_ids()
         if allowed is not None and not allowed:
             return []
@@ -343,10 +359,10 @@ class DocStore:
     def clear(self) -> None:
         if self._collection is not None:
             try:
+                from orca import vectorstore as vs
+
                 self._chroma.delete_collection(self._col_name)
-                self._collection = self._chroma.get_or_create_collection(
-                    name=self._col_name, metadata={"hnsw:space": "cosine"},
-                )
+                self._collection = self._chroma.open_collection(self._col_name, {"hnsw:space": "cosine"}, binding=vs.session_binding(self.session_id))[0]
             except Exception:
                 pass
         if self._fallback_file.exists():

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
+from orca import vectorstore as _vs
 from orca.safe_cache import open_cache
 
 from orca.config import MEMORY_DIR, CACHE_DIR, _mkdir_owner_only
@@ -278,22 +279,11 @@ def retry_pending_reclamations(*, timeout_s: float = _RECLAIM_TIMEOUT_S) -> dict
 
 
 def _vacuum_shared_file(*, timeout_s: float = _RECLAIM_TIMEOUT_S) -> str:
-    """The actual VACUUM, with an explicit short timeout. MUST be called
-    only while the caller already holds `_CHROMA_LOCK` -- does not acquire
-    it itself (see delete()/_vacuum_after_delete())."""
-    import sqlite3
-
-    db_path = MEMORY_DIR / "vectors" / "chroma.sqlite3"
-    if not db_path.exists():
-        return NOT_APPLICABLE
+    """The actual VACUUM of the shared vector file, bounded. Runs inside the vector service (service mode) or in-process (embedded). Returns RECLAIMED / DEFERRED /
+    NOT_APPLICABLE; an unreachable or timed-out service is DEFERRED (nothing was confirmed), never RECLAIMED."""
     try:
-        conn = sqlite3.connect(str(db_path), timeout=timeout_s)
-        try:
-            conn.execute("VACUUM")
-        finally:
-            conn.close()
-        return RECLAIMED
-    except Exception:
+        return _vs.Store(MEMORY_DIR / "vectors").vacuum(timeout_s=timeout_s, deadline_s=timeout_s + 3.0)
+    except _vs.VectorError:
         return DEFERRED
 
 
@@ -399,61 +389,89 @@ def check_pending_logical_deletions() -> dict:
     return {"checked": len(entries), "results": results, "still_pending": len(_load_pending_logical_deletions())}
 
 
+session_binding = _vs.session_binding
+
+
 class LongTermMemory:
-    """ChromaDB vector store for semantic retrieval across sessions.
-    Falls back to simple JSON search if chromadb is not installed."""
+    """Vector store for semantic retrieval across a conversation's turns (service-contained chromadb, see orca/vectorstore). Falls back to simple JSON search if chromadb is
+    not installed.
+
+    L03: the constructor does no I/O (a request thread can never block while building a session). The collection is opened on first use, its ownership binding is verified
+    (a collection bound to a different conversation is not read or written), and a conversation with a deletion tombstone is refused. Failures of the vector service degrade a
+    derived-state write or read (counted, never silent); callers that must not lose data (``strict=True``) get the error instead."""
 
     def __init__(self, session_id: str):
         self._session_id = session_id
         self._fallback_file = MEMORY_DIR / "vectors" / f"{session_id[:8]}.jsonl"
-        try:
-            import chromadb
-            Path(str(MEMORY_DIR / "vectors")).mkdir(parents=True, exist_ok=True)
-            # A fresh PersistentClient + get_or_create_collection() touches the
-            # same shared chroma.sqlite3 file as store()/recall()/delete() --
-            # confirmed by reproduction that constructing a new LongTermMemory
-            # (this constructor) concurrently with another session's delete()
-            # VACUUM raised a raw SQLite disk I/O error, since this was the one
-            # chroma-touching operation in the class NOT already covered by
-            # _CHROMA_LOCK.
-            with _CHROMA_LOCK:
-                self._client = chromadb.PersistentClient(path=str(MEMORY_DIR / "vectors"))
-                self._collection = self._client.get_or_create_collection(
-                    name=f"orca_{session_id[:8]}",
-                    metadata={"hnsw:space": "cosine"},
-                )
-            self._available = True
-        except ImportError:
-            self._available = False
+        self._available = _vs.available()
+        self._col = None
+        self._open_lock = threading.Lock()
+        self.last_status = "unopened"
+        if not self._available:
             self._fallback_file.parent.mkdir(parents=True, exist_ok=True)
 
-    def store(self, text: str, metadata: dict | None = None) -> str:
+    @property
+    def _collection(self):
+        return self._ensure()
+
+    @_collection.setter
+    def _collection(self, value):                              # tests substitute a fake collection
+        self._col = value
+
+    @property
+    def _name(self) -> str:
+        return f"orca_{self._session_id[:8]}"
+
+    def _ensure(self):
+        """The collection handle, opened (and ownership-checked) on first use. Raises VectorOwnershipError / VectorUnavailable / VectorBusy / VectorTimeout."""
+        if self._col is not None:
+            return self._col
+        with self._open_lock:
+            if self._col is not None:
+                return self._col
+            from orca.serve import deletions
+
+            if deletions.is_tombstoned(self._session_id):           # fails closed: an unreadable tombstone store means "unavailable"
+                self.last_status = "tombstoned"
+                raise _vs.VectorOwnershipError("conversation is deleted")
+            Path(str(MEMORY_DIR / "vectors")).mkdir(parents=True, exist_ok=True)
+            col, info = _vs.Store(MEMORY_DIR / "vectors").open_collection(self._name, {"hnsw:space": "cosine"}, binding=session_binding(self._session_id))
+            self.last_status = info.get("status", "ok")
+            if self.last_status == "mismatch":
+                _count("ownership_refusals")
+                raise _vs.VectorOwnershipError("collection belongs to another conversation")
+            self._col = col
+            return col
+
+    def store(self, text: str, metadata: dict | None = None, *, strict: bool = False) -> str:
         if self._available:
             doc_id = str(uuid.uuid4())
-            # A real production bug, found via load testing: newer chromadb
-            # versions reject an EMPTY metadata dict outright ("Expected
-            # metadata to be a non-empty dict") — every commit_to_long_term()
-            # call with no explicit metadata (the normal case) crashed the
-            # whole request. Always include at least a timestamp so the
-            # dict is never empty, regardless of what the caller passed.
+            # A real production bug, found via load testing: newer chromadb versions reject an EMPTY metadata dict outright ("Expected metadata to be a non-empty dict") --
+            # every commit_to_long_term() call with no explicit metadata (the normal case) crashed the whole request. Always include at least a timestamp.
             stored_metadata = dict(metadata) if metadata else {}
             stored_metadata.setdefault("stored_at", time.time())
-            with _CHROMA_LOCK:
-                self._collection.add(
-                    documents=[text],
-                    ids=[doc_id],
-                    metadatas=[stored_metadata],
-                )
+            try:
+                self._ensure().add(documents=[text], ids=[doc_id], metadatas=[stored_metadata])
+            except _vs.VectorError as exc:
+                if strict:
+                    raise
+                _count("dropped_writes", type(exc).__name__)       # derived state: the turn is already durable, so it is not failed; the loss is counted and visible
+                return ""
             return doc_id
         # Fallback: append to JSONL
         with open(self._fallback_file, "a") as f:
             f.write(json.dumps({"text": text, "metadata": metadata or {}}) + "\n")
         return ""
 
-    def recall(self, query: str, n: int = 5) -> list[dict]:
+    def recall(self, query: str, n: int = 5, *, strict: bool = False) -> list[dict]:
         if self._available:
-            with _CHROMA_LOCK:
-                results = self._collection.query(query_texts=[query], n_results=n)
+            try:
+                results = self._ensure().query(query_texts=[query], n_results=n)
+            except _vs.VectorError as exc:
+                if strict:
+                    raise
+                _count("empty_recalls", type(exc).__name__)
+                return []
             docs = results.get("documents", [[]])[0]
             metas = results.get("metadatas", [[]])[0]
             return [{"text": d, "metadata": m} for d, m in zip(docs, metas)]
@@ -531,20 +549,28 @@ class LongTermMemory:
 
     @classmethod
     def delete_session(cls, session_id: str, *, fallback_file: Path | None = None) -> "DeletionResult":
-        """The real, fully-bounded deletion entry point -- does not require
-        (and deliberately does not use) a pre-constructed instance, so
-        nothing related to deletion can block on the calling thread before
-        the watchdog starts. `delete()` above is a thin convenience wrapper
-        for existing callers; new code (and `account_delete.py`) should
-        prefer calling this directly."""
+        """The deletion entry point. Nothing here constructs a chromadb client on the calling thread.
+
+        L03: in service mode the delete and the VACUUM are operations on the vector-service process with a deadline enforced on the socket, so the caller is released at
+        ``_DELETE_REQUEST_BUDGET_S`` however the native call behaves. In embedded mode (no deadline possible) the previous bounded-worker-thread design is kept.
+        States (never conflated): ``logical_deleted`` only when the service CONFIRMED the collection is gone (or never existed); ``physical_reclamation`` is RECLAIMED only when
+        the VACUUM completed, DEFERRED when it could not (recorded durably and retried), PENDING when even the deletion could not be confirmed in time (recorded durably),
+        FAILED when the deletion itself failed."""
         fallback_file = fallback_file or (MEMORY_DIR / "vectors" / f"{session_id[:8]}.jsonl")
-        try:
-            import chromadb  # noqa: F401 -- availability probe only, mirrors __init__'s own check
-        except ImportError:
+        if not _vs.available():
             if fallback_file.exists():
                 fallback_file.unlink()
                 return DeletionResult(logical_deleted=True, physical_reclamation=NOT_APPLICABLE)
             return DeletionResult(logical_deleted=False, physical_reclamation=NOT_APPLICABLE)
+
+        if _vs.mode() == "service":
+            try:
+                result = _delete_sync(session_id, deadline_s=_DELETE_REQUEST_BUDGET_S)
+            except (_vs.VectorTimeout, _vs.VectorUnavailable, _vs.VectorBusy):
+                _record_pending_logical_deletion(session_id, "the vector service did not confirm the deletion within the request budget")
+                return DeletionResult(logical_deleted=False, physical_reclamation=PENDING)
+            _resolve_pending_logical_deletion(session_id, result)
+            return result
 
         future = _delete_executor.submit(_delete_sync, session_id)
         try:
@@ -562,53 +588,49 @@ class LongTermMemory:
             return DeletionResult(logical_deleted=False, physical_reclamation=PENDING)
 
 
-def _delete_sync(session_id: str) -> "DeletionResult":
-    """The actual synchronous critical section -- client construction,
-    delete_collection(), and vacuum, ALL inside this one call -- run
-    inside `_delete_executor`'s single worker thread by
-    `LongTermMemory.delete_session()`. Module-level (not a method) and
-    constructs its own fresh client rather than reusing any
-    already-constructed instance's `self._client`, specifically so
-    nothing related to deletion can block on the thread that calls
-    `delete_session()`/`delete()` -- see that method's docstring for the
-    real-held-lock reproduction that found this requirement.
-
-    2026-10-15: a fresh client constructed in a different THREAD of the
-    SAME process sees a just-created collection immediately (confirmed by
-    direct reproduction) -- this is NOT the same as a fresh client in a
-    different OS PROCESS, which was found to be unreliable even after
-    several seconds of retry (see PENDING's docstring in this module for
-    the full finding on why a multiprocessing-based redesign was tried and
-    rejected). That is precisely why this critical section runs on a
-    worker THREAD, not a worker process, despite the thread-based timeout
-    itself being only cooperatively, not OS-, enforced."""
-    with _CHROMA_LOCK:
-        try:
-            import chromadb
-            client = chromadb.PersistentClient(path=str(MEMORY_DIR / "vectors"))
-            client.delete_collection(name=f"orca_{session_id[:8]}")
-        except Exception:
-            return DeletionResult(logical_deleted=False, physical_reclamation=FAILED)
-        try:
-            status = _vacuum_shared_file()
-            deferred_reason = "VACUUM did not complete within the bounded timeout"
-        except Exception as e:
-            # _vacuum_shared_file() already catches everything it expects
-            # internally and returns DEFERRED rather than raising; this is
-            # defense in depth against a genuinely unexpected failure (e.g.
-            # a path operation before the sqlite connection itself). The
-            # logical deletion above already succeeded regardless -- never
-            # let a surprise here crash the caller's delete() request.
-            status, deferred_reason = DEFERRED, f"unexpected: {e!r}"
-        if status == DEFERRED:
-            _record_pending_reclamation(session_id, deferred_reason)
-        elif status == RECLAIMED:
-            # One VACUUM call rebuilds the WHOLE shared file, so it
-            # satisfies every other session's earlier-deferred reclamation
-            # too, not just this one -- self-healing, cheap, no new
-            # scheduled-job infrastructure needed.
-            _save_pending_reclamations([])
+def _delete_sync(session_id: str, deadline_s: float | None = None) -> "DeletionResult":
+    """Delete the conversation's collection and reclaim its bytes. In embedded mode this runs on ``_delete_executor``'s worker thread; in service mode on the caller, bounded by
+    ``deadline_s`` on the socket. Raises Vector* errors only when NOTHING could be confirmed (the caller records PENDING)."""
+    store = _vs.Store(MEMORY_DIR / "vectors")
+    name = f"orca_{session_id[:8]}"
+    try:
+        res = store.delete_collection(name, deadline_s=deadline_s)
+    except _vs.VectorNotFound:
+        res = {"existed": False, "removed": True}
+    except (_vs.VectorTimeout, _vs.VectorUnavailable, _vs.VectorBusy):
+        if deadline_s is not None:
+            raise
+        return DeletionResult(logical_deleted=False, physical_reclamation=FAILED)
+    except Exception:
+        return DeletionResult(logical_deleted=False, physical_reclamation=FAILED)
+    if not res.get("removed"):
+        return DeletionResult(logical_deleted=False, physical_reclamation=FAILED)      # asked to delete and it is still listed: not deleted
+    try:
+        status = _vacuum_shared_file()
+        deferred_reason = "VACUUM did not complete within the bounded timeout"
+    except Exception as e:      # defence in depth: the logical deletion above already succeeded regardless -- never let a surprise here crash the caller's delete() request
+        status, deferred_reason = DEFERRED, f"unexpected: {type(e).__name__}"
+    if status == DEFERRED:
+        _record_pending_reclamation(session_id, deferred_reason)
+    elif status == RECLAIMED:
+        _save_pending_reclamations([])            # one VACUUM rewrites the whole shared file, so it satisfies every earlier-deferred reclamation too
     return DeletionResult(logical_deleted=True, physical_reclamation=status)
+
+
+_COUNTERS: dict[str, int] = {}
+_COUNTER_LOCK = threading.Lock()
+
+
+def _count(name: str, kind: str = "") -> None:
+    key = f"{name}:{kind}" if kind else name
+    with _COUNTER_LOCK:
+        _COUNTERS[key] = _COUNTERS.get(key, 0) + 1
+
+
+def vector_memory_counters() -> dict[str, int]:
+    """Counts of degraded derived-state operations (dropped writes, empty recalls, ownership refusals) since process start. No content."""
+    with _COUNTER_LOCK:
+        return dict(_COUNTERS)
 
 
 class EpisodicMemory:
