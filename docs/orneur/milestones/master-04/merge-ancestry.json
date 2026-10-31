@@ -1,6 +1,6 @@
 {
-  "head": "d3afeccb281887c25b629067cd43582a9384ea77",
-  "tree": "13da074378c7bfc413d57673e6a1e6c2ba91fb90",
+  "head": "a646421856c86bd589b75000de30cee8156d5bdc",
+  "tree": "32a9cd27bf16f311745b729bc8f533f58dd4dec7",
   "merge_commit": "4295550b7991972e7a6b5cd1d25123b58355cbf1",
   "merge_parents": [
     "b96cc3260078b6f677a22381b05fe1f72026256f",
@@ -55,5 +55,6 @@
     "docs/orneur/landmarks/landmark-03/L03_MASTER_ENGINEERING_REPORT.md",
     "docs/orneur/landmarks/landmark-03/L03_SECURITY_REGRESSION_RESULTS.md"
   ],
-  "l03_doc_head_introduces_code": false
+  "l03_doc_head_introduces_code": false,
+  "evidence_commit_note": "docs package committed on tip; code fix at d3afecc parent if different"
 }
