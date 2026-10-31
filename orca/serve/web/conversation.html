@@ -357,6 +357,22 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
 .authtabs{display:flex;gap:6px;margin-bottom:16px}
 .authtabs button{flex:1;border:1px solid var(--border);background:none;border-radius:9px;padding:8px;font-size:12.5px;cursor:pointer;color:var(--soft);font-family:inherit}
 .authtabs button.active{background:var(--chip);color:var(--ink);font-weight:650}
+#account-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:110;display:flex;align-items:center;justify-content:center;padding:16px}
+#account-overlay.hidden{display:none}
+.acctcard{width:420px;max-width:100%;max-height:92vh;overflow:auto;border:1px solid var(--border);border-radius:16px;padding:24px;background:var(--compose);color:var(--ink)}
+.acctcard h1{font-size:18px;margin:0}
+.acctcard h2{font-size:13.5px;margin:0 0 8px}
+.acctcard p.sub{color:var(--muted);font-size:12.5px;margin:4px 0 12px}
+.acctcard input[type=password],.acctcard input[type=text]{width:100%;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;margin-bottom:10px;background:var(--bg);color:var(--ink);font-family:inherit}
+.acctcard button.primary{width:100%;border:none;background:var(--accent);color:#fff;border-radius:9px;padding:11px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.acctcard button.primary:disabled{opacity:.6;cursor:default}
+.acctcard input:focus-visible,.acctcard button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.acct-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.acct-sec{border-top:1px solid var(--border);padding-top:14px;margin-top:14px}
+.acct-secret{display:block;word-break:break-all;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:12.5px;margin-bottom:10px;user-select:all}
+.acct-check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--soft);margin:2px 0 10px}
+.acct-danger .acct-del-btn{background:var(--error)}
+button.navrow.profile{width:100%;text-align:left;font-family:inherit;color:inherit}
 .autherr{color:var(--error);font-size:12px;min-height:16px;margin-bottom:6px}
 .authnote{color:var(--soft);font-size:12px;min-height:16px;margin-bottom:6px}
 .authlinks{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
@@ -441,6 +457,49 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
       <div class="authlinks"><button type="button" class="authlink" onclick="switchAuthTab('signin')">Use a different account</button></div>
     </div>
     <button type="button" class="authskip" id="auth-skip-btn" onclick="continueAnonymous()">Continue without an account</button>
+  </div>
+</div>
+
+<div id="account-overlay" class="hidden">
+  <div class="acctcard" id="acctcard" role="dialog" aria-modal="true" aria-labelledby="acct-title" tabindex="-1">
+    <div class="acct-head">
+      <h1 id="acct-title">Account</h1>
+      <button type="button" class="authlink" id="acct-close" onclick="closeAccountDialog()" aria-label="Close account settings">Close</button>
+    </div>
+    <p class="sub" id="acct-who"></p>
+    <section class="acct-sec" aria-labelledby="acct-pw-h">
+      <h2 id="acct-pw-h">Change password</h2>
+      <div class="authnote" id="acct-cp-msg" role="status" aria-live="polite"></div>
+      <input id="acct-cp-current" type="password" placeholder="Current password" autocomplete="current-password" aria-label="Current password"/>
+      <input id="acct-cp-new" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password" aria-label="New password"/>
+      <input id="acct-cp-code" type="text" inputmode="numeric" maxlength="8" placeholder="Authenticator code" autocomplete="one-time-code" aria-label="Authenticator code" style="display:none"/>
+      <button class="primary" id="acct-cp-btn" onclick="acctChangePassword()">Update password</button>
+    </section>
+    <section class="acct-sec" aria-labelledby="acct-2fa-h">
+      <h2 id="acct-2fa-h">Two-step verification</h2>
+      <div class="authnote" id="acct-2fa-msg" role="status" aria-live="polite"></div>
+      <p class="sub" id="acct-2fa-status"></p>
+      <button class="primary" id="acct-2fa-setup-btn" onclick="acctStart2fa()">Set up authenticator app</button>
+      <div id="acct-2fa-setup" style="display:none">
+        <p class="sub">Add this key to your authenticator app, then enter the 6-digit code it shows.</p>
+        <code id="acct-2fa-secret" class="acct-secret"></code>
+        <input id="acct-2fa-code" type="text" inputmode="numeric" maxlength="8" placeholder="6-digit code" autocomplete="one-time-code" aria-label="6-digit code from your authenticator app"/>
+        <button class="primary" id="acct-2fa-confirm-btn" onclick="acctEnable2fa()">Turn on</button>
+      </div>
+      <div id="acct-2fa-off" style="display:none">
+        <input id="acct-2fa-disable-code" type="text" inputmode="numeric" maxlength="8" placeholder="Authenticator code" autocomplete="one-time-code" aria-label="Authenticator code to turn off two-step verification"/>
+        <button class="primary" id="acct-2fa-disable-btn" onclick="acctDisable2fa()">Turn off</button>
+      </div>
+    </section>
+    <section class="acct-sec acct-danger" aria-labelledby="acct-del-h">
+      <h2 id="acct-del-h">Delete account</h2>
+      <p class="sub">This permanently removes your account and conversations. It cannot be undone.</p>
+      <div class="autherr" id="acct-del-msg" role="alert"></div>
+      <input id="acct-del-password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password to confirm deletion"/>
+      <input id="acct-del-code" type="text" inputmode="numeric" maxlength="8" placeholder="Authenticator code" autocomplete="one-time-code" aria-label="Authenticator code to confirm deletion" style="display:none"/>
+      <label class="acct-check"><input type="checkbox" id="acct-del-confirm"/> I understand this is permanent</label>
+      <button class="primary acct-del-btn" id="acct-del-btn" onclick="acctDeleteAccount()">Delete my account</button>
+    </section>
   </div>
 </div>
 
@@ -544,10 +603,10 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
     <div class="sidecap">RECENT CONVERSATIONS</div>
     <div class="recents" id="recents-list"><div class="recents-empty">Sign in to see your conversations</div></div>
     <div class="sidebottom">
-      <div class="navrow profile" id="account-row" onclick="toggleThemeFromSidebar()">
+      <button type="button" class="navrow profile" id="account-row" onclick="openAccountDialog()" aria-haspopup="dialog" aria-label="Account settings">
         <span class="avatar" id="sidebar-avatar">—</span>
         <span id="sidebar-account-label">Account</span>
-      </div>
+      </button>
       <button type="button" class="navrow" onclick="doLogout()" id="logout-row" style="display:none">
         <span>Sign out</span>
       </button>
@@ -932,7 +991,6 @@ function applyTheme(dark) {
   try { localStorage.setItem('orneur_theme', dark ? 'dark' : 'light'); } catch (e) {}
 }
 function toggleTheme() { applyTheme(!document.body.classList.contains('dark')); }
-function toggleThemeFromSidebar() {} // account row reserved for future account menu; no-op for now
 
 (function initTheme() {
   let stored = null;
@@ -3761,6 +3819,131 @@ async function doLogin() {
   } finally {
     btn.disabled = false; btn.textContent = 'Sign in';
   }
+}
+
+/* ── Account settings dialog (P1-D): change password, two-step verification, delete account ─────────────
+   Every action goes through the same server endpoints and fresh-authentication rules as the API; this page never decides security, it only asks. */
+let _acctPrevFocus = null;
+function _acctEls() { return [...document.querySelectorAll('#acctcard button, #acctcard input')].filter((e) => e.offsetParent !== null && !e.disabled); }
+function _acctSet(id, text, kind) { const el = document.getElementById(id); if (el) el.textContent = text || ''; }
+async function _acctRefresh() {
+  try {
+    const r = await fetch('/api/auth/me', { headers: _authHeaders() });
+    if (r.status === 401) { closeAccountDialog(); _handleSessionExpired(); return; }
+    const d = await r.json();
+    _authUser = d.user;
+  } catch (e) { /* keep the last known state; the actions below report their own outcome */ }
+  const u = _authUser || {};
+  const on = !!u.totp_enabled;
+  document.getElementById('acct-who').textContent = (u.name ? u.name + ' · ' : '') + (u.email || '');
+  document.getElementById('acct-2fa-status').textContent = on ? 'Two-step verification is on for this account.' : 'Two-step verification is off.';
+  document.getElementById('acct-2fa-setup-btn').style.display = on ? 'none' : '';
+  document.getElementById('acct-2fa-off').style.display = on ? '' : 'none';
+  document.getElementById('acct-2fa-setup').style.display = 'none';
+  document.getElementById('acct-cp-code').style.display = on ? '' : 'none';
+  document.getElementById('acct-del-code').style.display = on ? '' : 'none';
+}
+function openAccountDialog() {
+  if (!_authUser) { openAuthOverlay(); return; }
+  _acctPrevFocus = document.activeElement;
+  for (const id of ['acct-cp-msg', 'acct-2fa-msg', 'acct-del-msg']) _acctSet(id, '');
+  for (const id of ['acct-cp-current', 'acct-cp-new', 'acct-cp-code', 'acct-2fa-code', 'acct-2fa-disable-code', 'acct-del-password', 'acct-del-code']) document.getElementById(id).value = '';
+  document.getElementById('acct-del-confirm').checked = false;
+  document.getElementById('account-overlay').classList.remove('hidden');
+  setMobileSidebarOpen(false);
+  _acctRefresh();
+  document.getElementById('acct-cp-current').focus();
+}
+function closeAccountDialog() {
+  document.getElementById('account-overlay').classList.add('hidden');
+  for (const id of ['acct-cp-current', 'acct-cp-new', 'acct-cp-code', 'acct-2fa-code', 'acct-2fa-disable-code', 'acct-del-password', 'acct-del-code']) document.getElementById(id).value = '';
+  document.getElementById('acct-2fa-secret').textContent = '';   // the setup secret must not linger in the DOM
+  if (_acctPrevFocus && document.body.contains(_acctPrevFocus)) _acctPrevFocus.focus();
+  _acctPrevFocus = null;
+}
+document.getElementById('account-overlay').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeAccountDialog(); return; }
+  if (e.key !== 'Tab') return;
+  const f = _acctEls(); if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+function _acctDetail(d, r, fallback) { return _authDetail(d, fallback) + (r && r.status === 429 ? '' : ''); }
+async function acctChangePassword() {
+  const cur = document.getElementById('acct-cp-current').value, nw = document.getElementById('acct-cp-new').value, code = document.getElementById('acct-cp-code').value.trim();
+  const msg = document.getElementById('acct-cp-msg'), btn = document.getElementById('acct-cp-btn');
+  if (!cur || !nw) { msg.textContent = 'Enter your current and new password.'; return; }
+  if (nw.length < 8) { msg.textContent = 'New password must be at least 8 characters.'; return; }
+  const token = _authToken;
+  btn.disabled = true; msg.textContent = 'Saving...';
+  try {
+    const r = await fetch('/api/auth/change-password', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ current_password: cur, new_password: nw, totp_code: code || undefined }) });
+    const d = await r.json().catch(() => ({}));
+    if (token !== _authToken) return;
+    if (!r.ok) { msg.textContent = _authDetail(d, 'Could not update the password.'); return; }
+    // Every older session (other devices, other tabs) is ended by the server; this one continues on the fresh token it returned.
+    _authToken = d.token; _authUser = d.user;
+    try { localStorage.setItem('orneur_token', d.token); } catch (e) {}
+    for (const id of ['acct-cp-current', 'acct-cp-new', 'acct-cp-code']) document.getElementById(id).value = '';
+    msg.textContent = 'Password updated. You were signed out on your other devices.';
+  } catch (e) { msg.textContent = 'Network error. Nothing was changed that we could confirm; try again.'; }
+  finally { btn.disabled = false; }
+}
+async function acctStart2fa() {
+  const msg = document.getElementById('acct-2fa-msg');
+  msg.textContent = '';
+  try {
+    const r = await fetch('/api/auth/2fa/setup', { method: 'POST', headers: _authHeaders() });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = _authDetail(d, 'Could not start setup.'); return; }
+    document.getElementById('acct-2fa-secret').textContent = d.secret;
+    document.getElementById('acct-2fa-setup').style.display = '';
+    document.getElementById('acct-2fa-setup-btn').style.display = 'none';
+    document.getElementById('acct-2fa-code').focus();
+  } catch (e) { msg.textContent = 'Network error. Try again.'; }
+}
+async function acctEnable2fa() {
+  const code = document.getElementById('acct-2fa-code').value.trim(), msg = document.getElementById('acct-2fa-msg');
+  if (!/^[0-9]{6,8}$/.test(code)) { msg.textContent = 'Enter the 6-digit code from your authenticator app.'; return; }
+  try {
+    const r = await fetch('/api/auth/2fa/enable', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = _authDetail(d, 'That code was not accepted.'); return; }
+    document.getElementById('acct-2fa-secret').textContent = '';
+    await _acctRefresh();
+    msg.textContent = 'Two-step verification is now on. You will need a code each time you sign in.';
+  } catch (e) { msg.textContent = 'Network error. Try again.'; }
+}
+async function acctDisable2fa() {
+  const code = document.getElementById('acct-2fa-disable-code').value.trim(), msg = document.getElementById('acct-2fa-msg');
+  if (!/^[0-9]{6,8}$/.test(code)) { msg.textContent = 'Enter the current code from your authenticator app.'; return; }
+  try {
+    const r = await fetch('/api/auth/2fa/disable', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = _authDetail(d, 'That code was not accepted.'); return; }
+    document.getElementById('acct-2fa-disable-code').value = '';
+    await _acctRefresh();
+    msg.textContent = 'Two-step verification is off.';
+  } catch (e) { msg.textContent = 'Network error. Try again.'; }
+}
+async function acctDeleteAccount() {
+  const pw = document.getElementById('acct-del-password').value, code = document.getElementById('acct-del-code').value.trim();
+  const msg = document.getElementById('acct-del-msg'), btn = document.getElementById('acct-del-btn');
+  msg.textContent = '';
+  if (!document.getElementById('acct-del-confirm').checked) { msg.textContent = 'Tick the box to confirm you want to delete your account.'; return; }
+  if (!pw) { msg.textContent = 'Enter your password to confirm.'; return; }
+  const token = _authToken;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/auth/account/delete', { method: 'POST', headers: _authHeaders(), body: JSON.stringify({ password: pw, totp_code: code || undefined }) });
+    const d = await r.json().catch(() => ({}));
+    if (token !== _authToken) return;
+    if (!r.ok) { msg.textContent = _authDetail(d, 'Your account was not deleted.'); return; }
+    closeAccountDialog();
+    _clearAuthStateAndShowSignIn(`Your account was deleted (${d.sessions_processed || 0} conversation${d.sessions_processed === 1 ? '' : 's'} processed). Audit-log entries are kept by design.`);
+  } catch (e) { msg.textContent = 'Network error. We could not confirm whether the account was deleted; sign in to check.'; }
+  finally { btn.disabled = false; }
 }
 
 let _mfaPending = null;
