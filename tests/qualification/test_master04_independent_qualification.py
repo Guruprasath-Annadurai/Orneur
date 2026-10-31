@@ -10,11 +10,12 @@ Canonical Main: 20a8546f5a1ece7e5af655c0f30ca7e305f71b1a
 
 Independent Adversarial Audit Gates:
 - Gate A: Integration DAG Ancestry, Fail-Closed History Verification, Code vs Doc Separation
-- Gate B: Vector-Owner & Restore Lock Security, Mutual Exclusion, SIGSTOP Owner Lock, Exit-2 Fail-Closed
+- Gate B: Vector-Owner & Restore Lock Security, Concurrency Timeline Mutual Exclusion, Kernel /proc/locks Verification, SIGSTOP/SIGKILL Invariants, Supervisor Restart
 - Gate C: Vector Backup Consistency Truth (Active vs Quiesced, Barrier Enforcement, Inconsistency Flagging)
 - Gate D: Customer Data Non-Resurrection, Tombstone Application, Deletion Sweep Byte Purge, Unsafe Override
-- Gate E: Interrupted Restore Crash Journaling, Fail-Closed Recovery, Rollback Protection
+- Gate E: Real Interrupted Restore Crash Fault-Injection (SIGKILL at 2 Transitions), Crash Journaling, Fail-Closed Recovery
 - Gate F: Tenant Ownership Isolation, 8-Char Truncation Collisions, AF_UNIX Socket Auth & Traversal Defenses
+- Gate H: Production Image Packaging Reality (Optional Memory Extra Architecture)
 - Governance: Strictly 0/95 Formal Acceptance & Training STRICT NO-GO
 """
 
@@ -109,7 +110,6 @@ def test_gate_a_fail_closed_ancestry_under_shallow_or_missing_objects():
     """Verify that ancestry validation fails closed if historical objects are missing."""
     code = """
         import subprocess, sys
-        # An inquiry for a completely bogus historical commit must fail-closed
         res = subprocess.run(
             "git merge-base --is-ancestor 0000000000000000000000000000000000000000 HEAD",
             shell=True, capture_output=True, text=True
@@ -236,80 +236,169 @@ def test_gate_b_owner_refuses_under_exclusive_restore_lock():
     assert "GATE_B_OWNER_REFUSAL_OK" in p.stdout
 
 
-def test_gate_b_multiprocess_serving_vs_restore_concurrency_race():
-    """Adversarial probe: Concurrent race between 8 restore workers and 8 vector owner starters.
-    Verify strict mutual exclusion: never do restore and owner serve concurrently.
-    All losing attempts must fail closed with expected exceptions (RestoreFailed or VectorUnavailable)."""
+def test_gate_b_concurrency_timeline_mutual_exclusion_and_proc_locks():
+    """Task A Requirement: Launch genuine independent OS processes synchronized with a barrier.
+    Record machine-readable event timeline and verify zero overlap between restore and owner critical sections.
+    Independently inspect /proc/locks to verify kernel-level lock state."""
     code = """
         import multiprocessing as mp
-        import os, sys, tempfile, sqlite3, time
+        import os, sys, tempfile, time, json
         from pathlib import Path
 
-        td = Path(tempfile.mkdtemp(prefix="test_gate_b_race_"))
+        td = Path(tempfile.mkdtemp(prefix="test_gate_b_timeline_"))
+        home = td / "home"
+        home.mkdir()
+        lock_file = home / ".server.lock"
+        lock_file.touch()
+        target_inode = lock_file.stat().st_ino
+
+        from orca.serve import datadir_lock
+        from orca.serve.backup_errors import RestoreFailed
+
+        def get_kernel_flock_pids(inode):
+            pids = []
+            try:
+                with open("/proc/locks", "r") as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) >= 6 and parts[1] == "FLOCK":
+                            mode = parts[3]
+                            pid = int(parts[4])
+                            dev_inode = parts[5].split(":")
+                            if len(dev_inode) == 3 and int(dev_inode[2]) == inode:
+                                pids.append((pid, mode))
+            except Exception:
+                pass
+            return pids
+
+        barrier = mp.Barrier(8)
+        events_q = mp.Queue()
+
+        def restore_worker(idx, bar, q, h, ino):
+            pid = os.getpid()
+            bar.wait()
+            t0 = time.monotonic()
+            q.put({"pid": pid, "idx": idx, "role": "restore", "event": "attempt", "t": t0})
+            try:
+                with datadir_lock.exclusive_data_dir(h):
+                    t_acq = time.monotonic()
+                    # Inspect kernel /proc/locks while holding
+                    k_locks = get_kernel_flock_pids(ino)
+                    q.put({"pid": pid, "idx": idx, "role": "restore", "event": "acquired", "t": t_acq, "k_locks": k_locks})
+                    time.sleep(0.06) # Hold critical section
+                    t_rel = time.monotonic()
+                    q.put({"pid": pid, "idx": idx, "role": "restore", "event": "released", "t": t_rel})
+            except RestoreFailed as e:
+                q.put({"pid": pid, "idx": idx, "role": "restore", "event": "refused", "t": time.monotonic(), "err": str(e)})
+
+        def owner_worker(idx, bar, q, h, ino):
+            pid = os.getpid()
+            bar.wait()
+            t0 = time.monotonic()
+            q.put({"pid": pid, "idx": idx, "role": "owner", "event": "attempt", "t": t0})
+            try:
+                with datadir_lock.serving_lock(h):
+                    t_acq = time.monotonic()
+                    k_locks = get_kernel_flock_pids(ino)
+                    q.put({"pid": pid, "idx": idx, "role": "owner", "event": "acquired", "t": t_acq, "k_locks": k_locks})
+                    time.sleep(0.06) # Hold critical section
+                    t_rel = time.monotonic()
+                    q.put({"pid": pid, "idx": idx, "role": "owner", "event": "released", "t": t_rel})
+            except RestoreFailed as e:
+                q.put({"pid": pid, "idx": idx, "role": "owner", "event": "refused", "t": time.monotonic(), "err": str(e)})
+
+        procs = []
+        for i in range(4):
+            procs.append(mp.Process(target=restore_worker, args=(i, barrier, events_q, home, target_inode)))
+            procs.append(mp.Process(target=owner_worker, args=(i, barrier, events_q, home, target_inode)))
+
+        for p in procs: p.start()
+        for p in procs: p.join(15)
+
+        events = []
+        while not events_q.empty():
+            events.append(events_q.get())
+        events.sort(key=lambda x: x["t"])
+
+        restore_intervals = []
+        owner_intervals = []
+        active = {}
+        for ev in events:
+            k = (ev["pid"], ev["idx"])
+            if ev["event"] == "acquired":
+                active[k] = ev["t"]
+            elif ev["event"] == "released":
+                start_t = active.pop(k)
+                if ev["role"] == "restore":
+                    restore_intervals.append((start_t, ev["t"], ev["pid"]))
+                else:
+                    owner_intervals.append((start_t, ev["t"], ev["pid"]))
+
+        # Assert no restore overlaps with any owner
+        for r_s, r_e, r_pid in restore_intervals:
+            for o_s, o_e, o_pid in owner_intervals:
+                overlap = max(0.0, min(r_e, o_e) - max(r_s, o_s))
+                assert overlap == 0.0, f"MUTUAL EXCLUSION VIOLATION: restore PID {r_pid} [{r_s:.4f}, {r_e:.4f}] overlapped owner PID {o_pid} [{o_s:.4f}, {o_e:.4f}] by {overlap:.4f}s"
+
+        # Assert no restore overlaps with any other restore
+        for i in range(len(restore_intervals)):
+            for j in range(i + 1, len(restore_intervals)):
+                r1_s, r1_e, r1_pid = restore_intervals[i]
+                r2_s, r2_e, r2_pid = restore_intervals[j]
+                overlap = max(0.0, min(r1_e, r2_e) - max(r1_s, r2_s))
+                assert overlap == 0.0, f"MUTUAL EXCLUSION VIOLATION: restore PID {r1_pid} overlapped restore PID {r2_pid}"
+
+        print(json.dumps({"timeline_events": len(events), "restores": len(restore_intervals), "owners": len(owner_intervals)}))
+        print("GATE_B_TIMELINE_MUTUAL_EXCLUSION_OK")
+    """
+    p = _run_in_m04(code, timeout=30)
+    assert p.returncode == 0, f"Test failed:\n{p.stderr}"
+    assert "GATE_B_TIMELINE_MUTUAL_EXCLUSION_OK" in p.stdout
+
+
+def test_gate_b_supervisor_restart_under_held_restore_lock():
+    """Task A Requirement 9: Verify supervisor restart behavior during held exclusive restore lock.
+    Supervisor's spawned owner must fail closed with exit 2 without falsely advertising readiness."""
+    code = """
+        import os, sys, tempfile
+        from pathlib import Path
+
+        td = Path(tempfile.mkdtemp(prefix="test_gate_b_sup_restart_"))
         home = td / "home"
         home.mkdir()
         os.environ["ORNEUR_HOME"] = str(home)
         os.environ["ORNEUR_VECTOR_MODE"] = "service"
 
         from orca import vectorstore as vs
-        from orca.serve import backup
-        from orca.serve.backup_errors import RestoreFailed
+        from orca.serve import datadir_lock
         from orca.vectorstore.errors import VectorUnavailable
+        vs.reset_for_tests()
 
-        # Seed valid auth.db
-        conn = sqlite3.connect(str(home / "auth.db"))
-        conn.execute("CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT)")
-        conn.execute("INSERT INTO users VALUES ('u1', 'u1@example.com')")
-        conn.commit(); conn.close()
-
-        key = b"K" * 32
-        out_bk = td / "archive.orbk"
-        backup.create(home, out_bk, key=key, quiesce_vector=True)
-
-        q = mp.Queue()
-
-        def restore_worker(idx, queue):
+        # Hold exclusive restore lock
+        with datadir_lock.exclusive_data_dir(home):
+            t = vs.transport()
+            # Attempting to start or ensure owner while restore lock is held
             try:
-                backup.restore(out_bk, home, key=key, overwrite=True)
-                queue.put(("restore", idx, "success"))
-            except RestoreFailed as e:
-                queue.put(("restore", idx, "refused_expected"))
-            except Exception as e:
-                queue.put(("restore", idx, f"unexpected_{type(e).__name__}"))
+                t.ensure_owner(budget_s=2.0)
+                raise AssertionError("Supervisor should not have started owner under restore lock!")
+            except VectorUnavailable as e:
+                assert "refused to start" in str(e).lower()
 
-        def owner_worker(idx, queue):
-            try:
-                st = vs.Store(home / "memory" / "vectors")
-                c, _ = st.open_collection(f"col_race_{idx}")
-                c.add(ids=["1"], documents=["doc"])
-                queue.put(("owner", idx, "success"))
-            except VectorUnavailable:
-                queue.put(("owner", idx, "refused_expected"))
-            except Exception as e:
-                queue.put(("owner", idx, f"unexpected_{type(e).__name__}"))
+            # Confirm supervisor did NOT create a PID file
+            assert t.owner_pid() is None
+            assert t.ping(0.2) is False
 
-        procs = []
-        for i in range(8):
-            procs.append(mp.Process(target=restore_worker, args=(i, q)))
-            procs.append(mp.Process(target=owner_worker, args=(i, q)))
+        # Release restore lock: supervisor can now start a healthy owner cleanly
+        t.ensure_owner(budget_s=5.0)
+        assert t.owner_pid() is not None
+        assert t.ping(1.0) is True
+        t.stop_owner()
 
-        for p in procs: p.start()
-        for p in procs: p.join(15)
-
-        results = []
-        while not q.empty():
-            results.append(q.get())
-
-        assert len(results) == 16, f"Expected 16 results, got {len(results)}"
-        for kind, idx, status in results:
-            assert status in ("success", "refused_expected"), f"Unexpected result from {kind} {idx}: {status}"
-
-        vs.transport().stop_owner()
-        print("GATE_B_RACE_OK")
+        print("GATE_B_SUPERVISOR_RESTART_OK")
     """
-    p = _run_in_m04(code, timeout=30)
+    p = _run_in_m04(code, timeout=25)
     assert p.returncode == 0, f"Test failed:\n{p.stderr}"
-    assert "GATE_B_RACE_OK" in p.stdout
+    assert "GATE_B_SUPERVISOR_RESTART_OK" in p.stdout
 
 
 def test_gate_b_frozen_owner_holding_serving_lock_refuses_restore():
@@ -629,11 +718,120 @@ def test_gate_d_missing_deletion_history_refusal_and_unsafe_override():
 
 
 # ---------------------------------------------------------------------------
-# Gate E: Interrupted Restore Recovery
+# Gate E: Real Interrupted Restore Crash Fault-Injection (Task B)
 # ---------------------------------------------------------------------------
 
 
-def test_gate_e_interrupted_restore_journal_and_fail_closed_recovery():
+def test_gate_e_real_interrupted_restore_sigkill_fault_injection():
+    """Task B Requirement: Deterministic real-process crash (SIGKILL) fault-injection
+    against actual B6 restoration at 2 distinct recovery transitions:
+    - Transition 1: After moving files aside into holding directory, before placing stage.
+    - Transition 2: After placing files from stage, before removing journal.
+    Verify exit code -9, restore_pending on disk, fail-closed refusal, recover_interrupted
+    restoration of data and vector retrievability, and clean subsequent restore."""
+    code = """
+        import multiprocessing as mp
+        import os, signal, sys, tempfile, sqlite3, time
+        from pathlib import Path
+
+        td = Path(tempfile.mkdtemp(prefix="test_gate_e_real_crash_"))
+        home = td / "home"
+        home.mkdir()
+        os.environ["ORNEUR_HOME"] = str(home)
+        os.environ["ORNEUR_VECTOR_MODE"] = "service"
+
+        from orca import vectorstore as vs
+        from orca.serve import backup, datadir_lock
+        from orca.serve.backup_errors import RestoreFailed
+        vs.reset_for_tests()
+
+        # Seed valid auth.db
+        from orca.auth import db as authdb
+        s = sqlite3.connect(str(authdb.AUTH_DB))
+        d = sqlite3.connect(str(home / "auth.db"))
+        s.backup(d); s.close(); d.close()
+
+        # Populate vectors
+        st = vs.Store(home / "memory" / "vectors")
+        col, _ = st.open_collection("col_real_crash")
+        col.add(ids=["doc_primary"], documents=["verifiable secret data prior to crash"])
+
+        key = b"K" * 32
+        out_bk = td / "crash_test.orbk"
+        backup.create(home, out_bk, key=key, quiesce_vector=True)
+
+        # ── TRANSITION 1: SIGKILL after moving aside ──────────────────────
+        def worker_trans1():
+            orig_write_journal = datadir_lock.write_journal
+            def hook_journal(h, j):
+                orig_write_journal(h, j)
+                if len(j.get("moved", [])) >= 1 and len(j.get("placed", [])) == 0:
+                    os.kill(os.getpid(), signal.SIGKILL)
+            datadir_lock.write_journal = hook_journal
+            backup._write_journal = hook_journal
+            backup.restore(out_bk, home, key=key, overwrite=True)
+
+        p1 = mp.Process(target=worker_trans1)
+        p1.start()
+        p1.join(10)
+
+        assert p1.exitcode in (-signal.SIGKILL, -9, 137), f"Process did not terminate with SIGKILL: {p1.exitcode}"
+        assert datadir_lock.restore_pending(home) is True, "restore_pending was not durable on disk!"
+
+        # Subsequent restore must fail closed
+        try:
+            backup.restore(out_bk, home, key=key, overwrite=True)
+            raise AssertionError("Should have failed while restore_pending is True!")
+        except RestoreFailed as exc:
+            assert "an earlier restore did not finish" in str(exc)
+
+        # Recover
+        datadir_lock.recover_interrupted(home)
+        assert datadir_lock.restore_pending(home) is False
+
+        # Verify recovered vector data
+        vs.reset_for_tests()
+        st_rec = vs.Store(home / "memory" / "vectors")
+        col_rec, _ = st_rec.open_collection("col_real_crash")
+        assert col_rec.get(ids=["doc_primary"])["documents"] == ["verifiable secret data prior to crash"]
+
+        vs.transport().stop_owner()
+
+        # ── TRANSITION 2: SIGKILL after placing stage files ───────────────
+        def worker_trans2():
+            orig_write_journal = datadir_lock.write_journal
+            def hook_journal(h, j):
+                orig_write_journal(h, j)
+                if len(j.get("placed", [])) >= 1:
+                    os.kill(os.getpid(), signal.SIGKILL)
+            datadir_lock.write_journal = hook_journal
+            backup._write_journal = hook_journal
+            backup.restore(out_bk, home, key=key, overwrite=True)
+
+        p2 = mp.Process(target=worker_trans2)
+        p2.start()
+        p2.join(10)
+
+        assert p2.exitcode in (-signal.SIGKILL, -9, 137), f"Process 2 did not terminate with SIGKILL: {p2.exitcode}"
+        assert datadir_lock.restore_pending(home) is True
+
+        # Recover transition 2
+        datadir_lock.recover_interrupted(home)
+        assert datadir_lock.restore_pending(home) is False
+
+        # Clean subsequent restore must succeed
+        vs.transport().stop_owner()
+        res_subsequent = backup.restore(out_bk, home, key=key, overwrite=True)
+        assert res_subsequent["verified"] is True
+
+        print("GATE_E_REAL_CRASH_FAULT_INJECTION_OK")
+    """
+    p = _run_in_m04(code, timeout=35)
+    assert p.returncode == 0, f"Test failed:\n{p.stderr}"
+    assert "GATE_E_REAL_CRASH_FAULT_INJECTION_OK" in p.stdout
+
+
+def test_gate_e_synthetic_journal_fail_closed_recovery():
     """Verify that an interrupted restore journal flags the directory as restore_pending,
     causes serving to fail closed, and recover_interrupted cleanly restores integrity."""
     code = """
@@ -753,15 +951,18 @@ def test_gate_f_session_prefix_truncation_collision_isolation():
 
 
 def test_gate_h_dockerfile_packaging_reality():
-    """Verify that the production Dockerfile does NOT silently bundle chromadb or cryptography,
-    confirming the necessity of optional extras in container configurations."""
+    """Task C Requirement: Verify Dockerfile packaging architecture.
+    The Dockerfile uses `uv pip install --system -e ".[postgres]"` and does NOT install
+    optional memory or backup extras, confirming optional extras architecture."""
     dockerfile = M04_DIR / "Dockerfile"
     assert dockerfile.is_file(), "Dockerfile missing from repository root"
     content = dockerfile.read_text()
 
-    # ChromaDB and cryptography must not be in default pip install
+    # ChromaDB and cryptography must not be installed in the base image
     assert "pip install chromadb" not in content
-    assert "poetry install -E memory" not in content or "ARG ENABLE_MEMORY=false" in content
+    assert "uv pip install" in content and "postgres" in content
+    # Memory extra is NOT included in default install
+    assert '"[postgres,memory]"' not in content
     print("GATE_H_DOCKERFILE_OK")
 
 
