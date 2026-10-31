@@ -14,4 +14,4 @@
 | M04-10 | — | Physical erasure of storage medium | **UNPROVEN by design** |
 | M04-11 | P1 | Lifespan left `enable_service_mode(True)` sticky → Deterministic CI vector deletions failed (`bad_root`) | **FIXED (engineering)** — lifespan clears service mode + transport cache on exit; Journeys `fetch-depth:0` for ancestry |
 
-Unresolved P0: 0. Engineering P1 for integration: closed pending independent retest / exact-head CI. Formal acceptance **0/95**.
+Unresolved P0: 0. Engineering P1 for integration: closed on tip `cadad0e` (CI 41196122676, 10/10). Independent Antigravity OWN_EVIDENCE still required. Formal acceptance **0/95**.

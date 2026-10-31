@@ -9,6 +9,8 @@ Local: `pytest tests/qualification/test_master04_integration.py` — **9 passed*
 
 Deterministic CI red→green lever: lifespan must clear service mode on exit (B6 `with TestClient` was contaminating later L02 deletion/DocStore tests via sticky service mode + MEMORY_DIR outside ORCA_HOME → owner `bad_root`). Journeys red→green for ancestry: `fetch-depth: 0`.
 
+Exact-head green: tip `cadad0e` — Deterministic 9730 passed / 0 failed; Journeys M04 9/9; run [41196122676](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41196122676).
+
 | Test | Proves |
 |---|---|
 | A ancestry | M03 + L03 SHAs are ancestors; missing objects would fail closed |

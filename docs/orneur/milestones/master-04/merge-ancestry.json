@@ -1,6 +1,13 @@
 {
-  "code_fix_head": "d3afeccb281887c25b629067cd43582a9384ea77",
-  "code_fix_tree": "13da074378c7bfc413d57673e6a1e6c2ba91fb90",
+  "exact_head_verified": {
+    "sha": "cadad0e525c5f84698af9945d048b9ba36aa4f0e",
+    "tree": "d1742759c1ecf25629f7bca1376719a75bd52d71",
+    "ci_run": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41196122676",
+    "ci_conclusion": "success",
+    "jobs": 10
+  },
+  "code_fix_head": "cadad0e525c5f84698af9945d048b9ba36aa4f0e",
+  "code_fix_tree": "d1742759c1ecf25629f7bca1376719a75bd52d71",
   "merge_commit": "4295550b7991972e7a6b5cd1d25123b58355cbf1",
   "merge_parents": [
     "b96cc3260078b6f677a22381b05fe1f72026256f",
@@ -8,7 +15,8 @@
   ],
   "branch": "cursor/master-04-vector-backup-security-integration",
   "base_for_pr": "cursor/master-03-security-corrected-b882",
-  "head_note": "exact tip SHA is branch HEAD at push/CI time; code identity for lock/consistency fixes is code_fix_head",
+  "pr": "https://github.com/Guruprasath-Annadurai/Orneur/pull/148",
+  "head_note": "exact_head_verified is the tip with full 10/10 CI; later evidence-binding commits may advance branch HEAD — retest PR HEAD and confirm CI on that SHA",
   "required_refs": {
     "master03_pr146_head": {
       "sha": "b96cc3260078b6f677a22381b05fe1f72026256f",
@@ -50,6 +58,6 @@
   "l03_doc_head_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41190351398",
   "l03_code_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41189270383",
   "master03_ci": "https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/41178651529",
-  "head": "457d77652a0e6e5a4ee260ac3d734be92f584556",
-  "tree": "220b221717b7cb6333dc89354ffe7dfb0514e29d"
+  "head": "cadad0e525c5f84698af9945d048b9ba36aa4f0e",
+  "tree": "d1742759c1ecf25629f7bca1376719a75bd52d71"
 }
