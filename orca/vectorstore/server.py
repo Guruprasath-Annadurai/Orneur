@@ -243,6 +243,29 @@ def main(argv=None) -> int:
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         return 0                                                           # another owner is running: exactly one per data directory
+    # MASTER-04: the owner participates in B6's data-directory lock contract both directions. FAIL-CLOSED: a restore (or any
+    # exclusive holder) must refuse to start this owner, and while this owner is up a restore must refuse to begin. Catching
+    # the lock refusal and continuing into serve() is prohibited — the process exits without advertising readiness.
+    from orca.serve import datadir_lock
+    from orca.serve.backup_errors import RestoreFailed
+
+    try:
+        serving_cm = datadir_lock.serving_lock(home)
+        serving_cm.__enter__()
+    except RestoreFailed as exc:
+        sys.stderr.write(f"vector owner refused to start: {exc}\n")
+        try:
+            paths.pid_path(home).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 2
+    except OSError as exc:
+        sys.stderr.write(f"vector owner refused to start (serving lock unavailable): {exc}\n")
+        try:
+            paths.pid_path(home).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 2
     paths.pid_path(home).write_text(str(os.getpid()))
     cap = os.environ.get("ORNEUR_VECTOR_NOFILE")                        # an operator (or a test) can cap the owner's own descriptor limit
     if cap:
@@ -257,7 +280,17 @@ def main(argv=None) -> int:
 
     faulthandler.register(signal.SIGUSR1, all_threads=True)               # `kill -USR1 <owner pid>` writes every thread's stack to owner.log (diagnosing a stall)
     signal.signal(signal.SIGTERM, lambda *_: owner.stop.set())
-    owner.serve()
+    try:
+        owner.serve()
+    finally:
+        try:
+            serving_cm.__exit__(None, None, None)
+        except Exception:
+            pass
+        try:
+            paths.pid_path(home).unlink(missing_ok=True)
+        except OSError:
+            pass
     return 0
 
 

@@ -120,14 +120,23 @@ class ServiceTransport:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)                                   # one starter at a time, across every application process
             last_spawn = 0.0
+            lock_refused = 0
             while time.monotonic() < end:
                 if self.ping(max(0.1, min(0.5, end - time.monotonic()))):
                     return
                 # No live owner process (never started, or killed by the supervisor): start one. A previous owner that is merely FROZEN still holds the owner lock, and a new
                 # instance would exit at once, so only spawn when none is alive, and retry while waiting (the supervisor may kill the frozen one a moment from now).
                 if self.owner_pid() is None and time.monotonic() - last_spawn > 1.0:
+                    # MASTER-04: a spawn that exits immediately with no socket is not "ready". Track rapid exit without ping as a lock-refusal / fail-closed start.
+                    before = time.monotonic()
                     self._spawn()
                     last_spawn = time.monotonic()
+                    time.sleep(0.15)
+                    if self.owner_pid() is None and not self.ping(0.2):
+                        lock_refused += 1
+                        if lock_refused >= 2 and (time.monotonic() - before) < 2.0:
+                            self.counters["lock_refused"] = self.counters.get("lock_refused", 0) + 1
+                            raise VectorUnavailable("vector owner refused to start (data-directory lock held by a restore or unavailable)")
                 time.sleep(0.1)
             raise VectorUnavailable("vector service did not start")
         finally:

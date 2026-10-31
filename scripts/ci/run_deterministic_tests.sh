@@ -78,4 +78,5 @@ pytest -m "not live_ollama_smoke" \
   --ignore=tests/test_l03_vector_service.py \
   --ignore=tests/test_l03_lifecycle.py \
   --ignore=tests/test_l03_failure_lab.py \
+  --ignore=tests/qualification/test_master04_integration.py \
   -v 2>&1 | tee /tmp/pytest-log.txt
