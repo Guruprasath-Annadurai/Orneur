@@ -61,7 +61,7 @@ with sync_playwright() as pw:
         hostile_user_text = '<img src=x onerror="window.__pwned=\'user\'"> <script>window.__pwned="u2"</script>'
         type_and_send(page, hostile_user_text)
         page.wait_for_selector(".answer .msg-body", timeout=30000)
-        page.wait_for_function("() => document.getElementById('send-btn') && !document.getElementById('send-btn').classList.contains('stop')", timeout=30000)
+        page.wait_for_function("() => document.getElementById('send-btn') && !document.getElementById('send-btn').classList.contains('stop-mode')", timeout=30000)
         time.sleep(1.0)
         sid = page.evaluate("() => sessionId")
         live = page.evaluate(SCAN)
