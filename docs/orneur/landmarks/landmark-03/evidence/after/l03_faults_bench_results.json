@@ -1,0 +1,81 @@
+{
+ "environment": {
+  "product_sha": "2ffada18c3b97cfbb383fca9e44994c03d53bbd6",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "cpus": 16,
+  "recorded_at": "2026-10-31T08:41:22Z"
+ },
+ "sigkill_owner_to_first_success_s": {
+  "trials": [
+   0.48,
+   0.48,
+   0.48,
+   0.48,
+   0.48,
+   0.49,
+   0.48,
+   0.49
+  ],
+  "median": 0.48,
+  "max": 0.49
+ },
+ "sigstop_frozen_owner_to_first_success_s": {
+  "trials": [
+   6.89,
+   6.91,
+   6.93
+  ],
+  "note": "the supervisor probes after a failed call, kills the unresponsive owner and the next call starts a new one"
+ },
+ "held_lock_write_release": [
+  {
+   "released_after_s": 3.0,
+   "outcome": "VectorTimeout",
+   "deadline_s": 3
+  },
+  {
+   "released_after_s": 3.0,
+   "outcome": "VectorTimeout",
+   "deadline_s": 3
+  },
+  {
+   "released_after_s": 3.0,
+   "outcome": "VectorTimeout",
+   "deadline_s": 3
+  },
+  {
+   "released_after_s": 3.1,
+   "outcome": "VectorUnavailable",
+   "deadline_s": 3
+  },
+  {
+   "released_after_s": 3.0,
+   "outcome": "VectorTimeout",
+   "deadline_s": 3
+  }
+ ],
+ "read_flood_64_threads_6s": {
+  "outcomes": {
+   "ok": 40,
+   "busy": 43532,
+   "timeout": 0,
+   "unavailable": 0
+  },
+  "latency_s": {
+   "p50": 0.005,
+   "p95": 0.03,
+   "p99": 0.058,
+   "max": 0.462
+  },
+  "owner_refused": {
+   "busy_queue": 0,
+   "busy_connections": 0,
+   "busy_collection": 1,
+   "expired": 0
+  },
+  "client_caps": {
+   "max_inflight": 8,
+   "max_waiting": 16
+  }
+ }
+}

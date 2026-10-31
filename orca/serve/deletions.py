@@ -159,27 +159,15 @@ def _finish(session_id: str, state: str, stores: dict) -> dict:
 
 
 def _vector_collection_absent(session_id: str, budget_s: float = 5.0) -> bool:
-    """True only if the session's vector collection can be PROVEN absent within ``budget_s``. A lock, a timeout or any other doubt answers False."""
-    import concurrent.futures
+    """True only if the session's vector collection can be PROVEN absent within ``budget_s``. A lock, a timeout, an unreachable service or any other doubt answers False."""
+    from orca import vectorstore
+    from orca.brain.memory import MEMORY_DIR
 
-    def probe() -> bool:
-        import chromadb
-        from orca.brain.memory import MEMORY_DIR
-
-        client = chromadb.PersistentClient(path=str(MEMORY_DIR / "vectors"))
-        try:
-            client.get_collection(name=f"orca_{session_id[:8]}")
-            return False
-        except Exception as exc:
-            return "does not exist" in str(exc).lower() or type(exc).__name__ in ("NotFoundError", "InvalidCollectionException")
-
-    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        return bool(ex.submit(probe).result(timeout=budget_s))
+        info = vectorstore.Store(MEMORY_DIR / "vectors").collection_info(f"orca_{session_id[:8]}", deadline_s=budget_s)
     except Exception:
         return False
-    finally:
-        ex.shutdown(wait=False)
+    return info.get("exists") is False
 
 
 def classify(result: dict) -> dict[str, str]:
@@ -226,6 +214,9 @@ def run_with_report(session_id: str, user_id: str) -> tuple[dict, dict | None]:
         _remove_session_title(session_id)
         stores = classify(result)
         stores["_vector_physical_reclamation"] = str(result.get("long_term_vector_memory_physical_reclamation") or "n/a")
+        # L03: what is known about the collection itself, separate from the raw bytes: removed (confirmed gone) / unconfirmed (could not be confirmed in time) / failed / n/a
+        _ld = result.get("long_term_vector_memory_logically_deleted")
+        stores["_vector_collection"] = "removed" if _ld else ("unconfirmed" if stores["_vector_physical_reclamation"] == "PENDING" else "failed" if _ld is False else "n/a")
         ok = all(v == "ok" for k, v in stores.items() if not k.startswith("_"))
         if ok:
             from orca.auth.store import release_session

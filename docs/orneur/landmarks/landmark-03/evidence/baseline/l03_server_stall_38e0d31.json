@@ -1,0 +1,43 @@
+{
+ "product_checkout": "/home/pc/projects/Orneur-l02",
+ "product_sha": "38e0d311991875366f2bc88a39690c7b2b6ea3ee",
+ "lock_seconds": 18.0,
+ "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+ "recorded_at": "2026-10-31T07:50:58Z",
+ "seed_remember": 200,
+ "seed_remember_read_conversation": 200,
+ "requests": {
+  "remember_new_conversation_1": {
+   "status": 200,
+   "code": null,
+   "seconds": 17.63
+  },
+  "recall_open_conversation": {
+   "status": 200,
+   "code": null,
+   "seconds": 17.63
+  },
+  "remember_new_conversation_2": {
+   "status": 200,
+   "code": null,
+   "seconds": 17.63
+  },
+  "delete_seeded_conversation": {
+   "status": 200,
+   "code": null,
+   "seconds": 17.68
+  }
+ },
+ "livez_probes": {
+  "count": 9,
+  "worst_seconds": 17.61,
+  "slow_over_1s": [
+   [
+    1.02,
+    true,
+    17.61
+   ]
+  ],
+  "failed": []
+ }
+}

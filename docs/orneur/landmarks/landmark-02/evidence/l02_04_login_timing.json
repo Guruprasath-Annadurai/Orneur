@@ -1,5 +1,6 @@
 {
   "master_03_note": "MASTER-03 retained both colliding historical measurements under provenance-bound filenames; this path is an index only and does not rewrite either original measurement.",
+  "master_04_note": "MASTER-04 merge kept the dual-provenance index; LANDMARK-03's single-workstation sample is not substituted for either historical blob.",
   "retained_measurements": [
     {
       "path": "docs/orneur/landmarks/landmark-02/evidence/l02_04_login_timing_master02-1a17fb0.json",

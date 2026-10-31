@@ -68,8 +68,14 @@ set -euo pipefail
 # post-remediation. Excluded from this job for the identical reasons as
 # the Audit #71 file above.
 pytest tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-sentinel-log.txt
+# LANDMARK-03: the vector-service tests start real owner processes and real chromadb; with the rest of the suite they pushed this job past its 25-minute limit (run 41187453633 was
+# cancelled at the limit). They run, unchanged, in the Journeys job (real servers, 45-minute limit) -- see .github/workflows/test.yml.
+# MASTER-03: keep the adversarial-audit ignores that must not run in this job.
 pytest -m "not live_ollama_smoke" \
   --ignore=tests/test_trainprep_sentinel.py \
   --ignore=tests/test_audit_genesis_hardening_adversarial.py \
   --ignore=tests/test_native_learning_engine_adversarial_audit.py \
+  --ignore=tests/test_l03_vector_service.py \
+  --ignore=tests/test_l03_lifecycle.py \
+  --ignore=tests/test_l03_failure_lab.py \
   -v 2>&1 | tee /tmp/pytest-log.txt
