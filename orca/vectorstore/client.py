@@ -112,6 +112,14 @@ class ServiceTransport:
         threading.Thread(target=proc.wait, daemon=True, name="vector-owner-reaper").start()      # reap it when it exits, so a replaced owner never lingers as a zombie
         self.counters["owner_starts"] += 1
 
+    def _owner_lock_refusal_logged(self) -> bool:
+        """True when the most recent owner.log lines show a fail-closed datadir-lock refusal (exit 2), not a slow start."""
+        try:
+            text = paths.log_path(self.home).read_text(errors="replace")[-4000:]
+        except OSError:
+            return False
+        return "vector owner refused to start" in text
+
     def ensure_owner(self, budget_s: float | None = None) -> None:
         end = time.monotonic() + (budget_s if budget_s is not None else self.start_timeout_s)
         if self.ping(max(0.1, min(1.0, end - time.monotonic()))):
@@ -120,24 +128,23 @@ class ServiceTransport:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)                                   # one starter at a time, across every application process
             last_spawn = 0.0
-            lock_refused = 0
             while time.monotonic() < end:
                 if self.ping(max(0.1, min(0.5, end - time.monotonic()))):
                     return
                 # No live owner process (never started, or killed by the supervisor): start one. A previous owner that is merely FROZEN still holds the owner lock, and a new
                 # instance would exit at once, so only spawn when none is alive, and retry while waiting (the supervisor may kill the frozen one a moment from now).
                 if self.owner_pid() is None and time.monotonic() - last_spawn > 1.0:
-                    # MASTER-04: a spawn that exits immediately with no socket is not "ready". Track rapid exit without ping as a lock-refusal / fail-closed start.
-                    before = time.monotonic()
                     self._spawn()
                     last_spawn = time.monotonic()
-                    time.sleep(0.15)
-                    if self.owner_pid() is None and not self.ping(0.2):
-                        lock_refused += 1
-                        if lock_refused >= 2 and (time.monotonic() - before) < 2.0:
-                            self.counters["lock_refused"] = self.counters.get("lock_refused", 0) + 1
-                            raise VectorUnavailable("vector owner refused to start (data-directory lock held by a restore or unavailable)")
+                    time.sleep(0.2)
+                    # MASTER-04: lock refusal is fail-closed and logged by the owner before exit 2. Do NOT treat a slow chromadb start as a refusal.
+                    if self.owner_pid() is None and self._owner_lock_refusal_logged():
+                        self.counters["lock_refused"] = self.counters.get("lock_refused", 0) + 1
+                        raise VectorUnavailable("vector owner refused to start (data-directory lock held by a restore or unavailable)")
                 time.sleep(0.1)
+            if self._owner_lock_refusal_logged():
+                self.counters["lock_refused"] = self.counters.get("lock_refused", 0) + 1
+                raise VectorUnavailable("vector owner refused to start (data-directory lock held by a restore or unavailable)")
             raise VectorUnavailable("vector service did not start")
         finally:
             os.close(fd)

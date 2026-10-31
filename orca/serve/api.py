@@ -169,6 +169,13 @@ async def _lifespan(_app: FastAPI):
     finally:
         _retention_task.cancel()
         _sweep_task.cancel()
+        # MASTER-04: stop the vector owner before releasing the API serving lock so a post-shutdown
+        # restore is not blocked by an orphaned owner still holding the shared datadir lock.
+        try:
+            if _vectorstore.mode() == "service":
+                _vectorstore.transport().stop_owner(wait_s=5.0)
+        except Exception:
+            _logger.debug("vector owner stop during shutdown failed", exc_info=True)
         _lock.close()
         from orca.serve import ops as _ops
 
