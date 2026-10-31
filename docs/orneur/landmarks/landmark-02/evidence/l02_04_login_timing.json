@@ -1,18 +1,7 @@
 {
-  "master_03_note": "MASTER-03 retained both colliding historical measurements under provenance-bound filenames; this path is an index only and does not rewrite either original measurement.",
-  "master_04_note": "MASTER-04 merge kept the dual-provenance index; LANDMARK-03's single-workstation sample is not substituted for either historical blob.",
-  "retained_measurements": [
-    {
-      "path": "docs/orneur/landmarks/landmark-02/evidence/l02_04_login_timing_master02-1a17fb0.json",
-      "binding_commit": "1a17fb01a7aed5648d48be37ab21a1a392c1eb7f",
-      "original_git_blob": "41a2eaf7b7c55e89451fdba6b954b44d678b7272",
-      "ratio": 0.918
-    },
-    {
-      "path": "docs/orneur/landmarks/landmark-02/evidence/l02_04_login_timing_b6-e5266c7.json",
-      "binding_commit": "e5266c71d8a9a50e2571eaef1ca30f1c976d5f59",
-      "original_git_blob": "fae93a2d4b06cc41202ca1d14b94ad96b56acc44",
-      "ratio": 0.976
-    }
-  ]
+  "wrong_password_known_account_mean_s": 0.031,
+  "unknown_account_mean_s": 0.0306,
+  "ratio": 0.985,
+  "samples_each": 5,
+  "note": "single workstation, wall clock; recorded, not a security proof"
 }

@@ -292,8 +292,19 @@ async def verify_login_2fa(req: TwoFAVerifyLoginRequest, request: Request):
     if not totp_state["enabled"] or not totp_state["secret"]:
         raise HTTPException(400, "2FA is not enabled on this account.")
 
-    if not verify_totp(totp_state["secret"], req.code):
+    # P1-D: the second factor is bounded per ACCOUNT (not only per IP) and every code is single-use, exactly like the API-key step-up.
+    wait = acct.stepup_locked(user.id)
+    if wait > 0:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Too many failed attempts. Try again later.", "error": "Too many failed attempts. Try again later.", "code": "too_many_attempts"},
+                            status_code=429, headers={"Retry-After": str(int(wait) + 1)})
+    step = verify_totp_step(totp_state["secret"], req.code)
+    if step is None or not acct.claim_totp_step(user.id, step):
+        acct.record_stepup_failure(user.id)
+        from orca import audit
+        audit.log("mfa_login_failed", user_id=user.id, detail={"reason": "invalid" if step is None else "replayed"})
         raise HTTPException(401, "Invalid or expired code.")
+    acct.clear_stepup_failures(user.id)
 
     return _make_response(user)
 
@@ -352,8 +363,14 @@ async def disable_2fa(req: TwoFADisableRequest, user: User = Depends(get_current
     state = get_totp_state(user.id)
     if not state["enabled"]:
         raise HTTPException(400, "2FA is not enabled on this account.")
-    if not verify_totp(state["secret"], req.code):
+    wait = acct.stepup_locked(user.id)
+    if wait > 0:
+        raise HTTPException(429, "Too many failed attempts. Try again later.", headers={"Retry-After": str(int(wait) + 1)})
+    step = verify_totp_step(state["secret"], req.code)
+    if step is None or not acct.claim_totp_step(user.id, step):
+        acct.record_stepup_failure(user.id)
         raise HTTPException(401, "Invalid code.")
+    acct.clear_stepup_failures(user.id)
 
     disable_totp(user.id)
     return {"enabled": False}
@@ -474,7 +491,7 @@ async def verify_email_confirm(request: Request):
     mark_verified(user.id)
     from orca import audit
     audit.log("email_verified", user_id=user.id, detail={})
-    return _verify_page("<p style=\"color:#888;letter-spacing:.15em;margin-top:8px\">EMAIL VERIFIED</p><p style=\"color:#555;margin-top:20px\">Your account is now active. <a href=\"/app\" style=\"color:#fff\">Return to ORNEUR →</a></p>")
+    return _verify_page("<p style=\"color:#888;letter-spacing:.15em;margin-top:8px\">EMAIL VERIFIED</p><p style=\"color:#555;margin-top:20px\">Your account is now active. <a href=\"/conversation\" style=\"color:#fff\">Return to ORNEUR →</a></p>")
 
 
 @router.post("/forgot-password")

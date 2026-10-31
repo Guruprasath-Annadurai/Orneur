@@ -358,6 +358,11 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
 .authtabs button{flex:1;border:1px solid var(--border);background:none;border-radius:9px;padding:8px;font-size:12.5px;cursor:pointer;color:var(--soft);font-family:inherit}
 .authtabs button.active{background:var(--chip);color:var(--ink);font-weight:650}
 .autherr{color:var(--error);font-size:12px;min-height:16px;margin-bottom:6px}
+.authnote{color:var(--soft);font-size:12px;min-height:16px;margin-bottom:6px}
+.authlinks{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
+.authlink{background:none;border:none;padding:6px 2px;min-height:32px;font-size:12px;color:var(--soft);text-decoration:underline;cursor:pointer;font-family:inherit}
+.authlink[hidden]{display:none}
+.authlink:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .authskip{display:block;width:100%;text-align:center;margin-top:14px;font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none;font-family:inherit;padding:0}
 .authskip:focus-visible,.authtabs button:focus-visible,.authcard input:focus-visible,.authcard button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -397,6 +402,10 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
       <input id="si-email" type="email" placeholder="Email" autocomplete="username"/>
       <input id="si-password" type="password" placeholder="Password" autocomplete="current-password"/>
       <button class="primary" id="si-btn" onclick="doLogin()">Sign in</button>
+      <div class="authlinks">
+        <button type="button" class="authlink" id="si-forgot-btn" onclick="switchAuthTab('forgot')">Forgot password?</button>
+        <button type="button" class="authlink" id="si-resend-btn" onclick="doResendVerification()" hidden>Resend verification email</button>
+      </div>
     </div>
     <div id="form-signup" style="display:none">
       <h1 id="auth-su-title">Create your account</h1>
@@ -406,6 +415,30 @@ body.light .temp-mode-backdrop{background:rgba(25,22,19,.35)}
       <input id="su-email" type="email" placeholder="Email" autocomplete="username"/>
       <input id="su-password" type="password" placeholder="Password (min 8 characters)" autocomplete="new-password"/>
       <button class="primary" id="su-btn" onclick="doSignup()">Create account</button>
+    </div>
+    <div id="form-forgot" style="display:none">
+      <h1 id="auth-fp-title">Reset your password</h1>
+      <p class="sub">Enter your email address and we will send a reset link if an account exists.</p>
+      <div class="authnote" id="fp-msg" role="status" aria-live="polite"></div>
+      <input id="fp-email" type="email" placeholder="Email" autocomplete="username"/>
+      <button class="primary" id="fp-btn" onclick="doForgot()">Send reset link</button>
+      <div class="authlinks"><button type="button" class="authlink" onclick="switchAuthTab('signin')">Back to sign in</button></div>
+    </div>
+    <div id="form-reset" style="display:none">
+      <h1 id="auth-rp-title">Choose a new password</h1>
+      <p class="sub">Your reset link is valid once. Signing in again will be required on every other device.</p>
+      <div class="autherr" id="rp-error" role="alert"></div>
+      <input id="rp-password" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password"/>
+      <button class="primary" id="rp-btn" onclick="doReset()">Set new password</button>
+      <div class="authlinks"><button type="button" class="authlink" onclick="switchAuthTab('signin')">Back to sign in</button></div>
+    </div>
+    <div id="form-mfa" style="display:none">
+      <h1 id="auth-mfa-title">Enter your security code</h1>
+      <p class="sub">Open your authenticator app and enter the 6-digit code for ORNEUR.</p>
+      <div class="autherr" id="mfa-error" role="alert"></div>
+      <input id="mfa-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="6-digit code" autocomplete="one-time-code"/>
+      <button class="primary" id="mfa-btn" onclick="doMfa()">Verify</button>
+      <div class="authlinks"><button type="button" class="authlink" onclick="switchAuthTab('signin')">Use a different account</button></div>
     </div>
     <button type="button" class="authskip" id="auth-skip-btn" onclick="continueAnonymous()">Continue without an account</button>
   </div>
@@ -3625,16 +3658,25 @@ async function openSession(sid, title) {
 }
 
 /* ── Auth ─────────────────────────────────────────────────────────── */
+const _AUTH_FORMS = {
+  signin: { form: 'form-signin', title: 'auth-si-title', first: 'si-email' },
+  signup: { form: 'form-signup', title: 'auth-su-title', first: 'su-name' },
+  forgot: { form: 'form-forgot', title: 'auth-fp-title', first: 'fp-email' },
+  reset:  { form: 'form-reset',  title: 'auth-rp-title', first: 'rp-password' },
+  mfa:    { form: 'form-mfa',    title: 'auth-mfa-title', first: 'mfa-code' },
+};
 function switchAuthTab(tab) {
-  document.getElementById('form-signin').style.display = tab === 'signin' ? '' : 'none';
-  document.getElementById('form-signup').style.display = tab === 'signup' ? '' : 'none';
+  for (const [name, cfg] of Object.entries(_AUTH_FORMS)) document.getElementById(cfg.form).style.display = name === tab ? '' : 'none';
   document.getElementById('tab-signin').classList.toggle('active', tab === 'signin');
   document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
+  // Contextual steps (recovery, reset, security challenge) replace the sign-in/create tabs: C11 Variant B guidance.
+  document.querySelector('#authcard .authtabs').style.display = (tab === 'signin' || tab === 'signup') ? '' : 'none';
+  if (tab !== 'mfa') _mfaPending = null;
   // AUDIT-B81-A-P1-03: the dialog's accessible name must track whichever
   // form is actually visible -- a stale aria-labelledby pointing at a
   // hidden h1 would announce the wrong title to assistive tech.
-  document.getElementById('authcard').setAttribute('aria-labelledby', tab === 'signin' ? 'auth-si-title' : 'auth-su-title');
-  const firstField = document.getElementById(tab === 'signin' ? 'si-email' : 'su-name');
+  document.getElementById('authcard').setAttribute('aria-labelledby', _AUTH_FORMS[tab].title);
+  const firstField = document.getElementById(_AUTH_FORMS[tab].first);
   if (firstField) firstField.focus();
 }
 
@@ -3705,13 +3747,105 @@ async function doLogin() {
     const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass }) });
     const d = await r.json();
     // L02-04: a refusal can carry a structured detail ({error, code}); never print an object.
-    if (!r.ok) { errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Sign in failed.'; return; }
-    if (d.requires_2fa) { errEl.textContent = '2FA is enabled on this account; use the main app to complete sign-in.'; return; }
+    if (!r.ok) {
+      errEl.textContent = (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error) || 'Sign in failed.';
+      // C11 Variant B: an unverified address gets contextual guidance and a way forward, not just a refusal.
+      document.getElementById('si-resend-btn').hidden = !(d.detail && d.detail.code === 'email_verification_required');
+      return;
+    }
+    document.getElementById('si-resend-btn').hidden = true;
+    if (d.requires_2fa) { _beginMfa(d.pending_token); return; }
     onAuthSuccess(d);
   } catch (e) {
     errEl.textContent = 'Network error. Try again.';
   } finally {
     btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+
+let _mfaPending = null;
+let _resetToken = null;
+function _beginMfa(pendingToken) {
+  switchAuthTab('mfa');
+  _mfaPending = pendingToken; // after switchAuthTab, which clears the pending value when leaving the challenge
+  document.getElementById('mfa-code').value = '';
+  document.getElementById('mfa-error').textContent = '';
+}
+function _authDetail(d, fallback) {
+  return (d && (typeof d.detail === 'string' ? d.detail : (d.detail && d.detail.error) || d.error)) || fallback;
+}
+async function doMfa() {
+  const code = document.getElementById('mfa-code').value.trim();
+  const errEl = document.getElementById('mfa-error');
+  const btn = document.getElementById('mfa-btn');
+  errEl.textContent = '';
+  if (!_mfaPending) { switchAuthTab('signin'); document.getElementById('si-error').textContent = 'Your sign-in expired. Please sign in again.'; return; }
+  if (!/^[0-9]{6,8}$/.test(code)) { errEl.textContent = 'Enter the 6-digit code from your authenticator app.'; return; }
+  btn.disabled = true; btn.textContent = 'Verifying...';
+  try {
+    const r = await fetch('/api/auth/2fa/verify-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pending_token: _mfaPending, code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = _authDetail(d, 'Verification failed.');
+      if (r.status === 401 && /expired or invalid|log in again/i.test(msg)) { switchAuthTab('signin'); document.getElementById('si-error').textContent = 'Your sign-in expired. Please sign in again.'; return; }
+      errEl.textContent = msg; return;
+    }
+    _mfaPending = null;
+    onAuthSuccess(d);
+  } catch (e) {
+    errEl.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verify';
+  }
+}
+async function doForgot() {
+  const email = document.getElementById('fp-email').value.trim();
+  const msg = document.getElementById('fp-msg');
+  const btn = document.getElementById('fp-btn');
+  if (!email) { msg.textContent = 'Enter your email address.'; return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    // One answer for every address (registered or not): the page must not reveal who has an account.
+    msg.textContent = r.ok ? 'If an account exists for that address, a reset link is on its way. Check your inbox.' : (r.status === 429 ? 'Too many requests. Please wait a few minutes and try again.' : 'Could not send a reset link right now. Try again shortly.');
+  } catch (e) {
+    msg.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function doReset() {
+  const password = document.getElementById('rp-password').value;
+  const errEl = document.getElementById('rp-error');
+  const btn = document.getElementById('rp-btn');
+  errEl.textContent = '';
+  if (password.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
+  if (!_resetToken) { errEl.textContent = 'This reset link is missing or already used. Request a new one.'; return; }
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const r = await fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: _resetToken, password }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { errEl.textContent = _authDetail(d, 'Reset failed.'); _resetToken = null; return; }
+    _resetToken = null;
+    document.getElementById('rp-password').value = '';
+    if (d.requires_2fa) { _beginMfa(d.pending_token); return; }
+    onAuthSuccess(d);
+  } catch (e) {
+    errEl.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Set new password';
+  }
+}
+async function doResendVerification() {
+  const email = document.getElementById('si-email').value.trim();
+  const errEl = document.getElementById('si-error');
+  if (!email) { errEl.textContent = 'Enter your email address first.'; return; }
+  try {
+    const r = await fetch('/api/auth/verification/resend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    const d = await r.json().catch(() => ({}));
+    errEl.textContent = r.ok ? (d.message || 'If this address has an unverified account, a new verification link has been sent.') : _authDetail(d, 'Could not send right now. Try again shortly.');
+  } catch (e) {
+    errEl.textContent = 'Network error. Try again.';
   }
 }
 
@@ -3988,6 +4122,20 @@ document.querySelector('.navnew').addEventListener('click', () => setMobileSideb
   showEmptyView();
   updateSendEnabled();
   wireConversationSearch();
+  // A password-reset link: take the token out of the address bar immediately (history, referrers, screenshots), then ask for the new password.
+  try {
+    const q = new URLSearchParams(location.search);
+    const rt = q.get('reset_token');
+    if (rt) {
+      _resetToken = rt;
+      history.replaceState({}, '', location.pathname);
+      _identityResolved = true; // a recovery visit must not be overridden by a stale stored session
+      try { localStorage.removeItem('orneur_token'); } catch (e) {}
+      await loadModels();
+      switchAuthTab('reset');
+      return;
+    }
+  } catch (e) {}
   const restored = await tryRestoreSession();
   if (!restored) {
     await loadModels(); // models are visible even signed-out; sending still requires auth per /api/chat's own rules
