@@ -32,6 +32,18 @@ def env(tmp_path_factory):
         fake.__exit__(None, None, None)
 
 
+def _settle(fake, quiet=1.5, timeout=20.0):
+    """Wait until the provider has seen no new request for ``quiet`` seconds."""
+    end, last, since = time.time() + timeout, len(fake.requests), time.time()
+    while time.time() < end:
+        n = len(fake.requests)
+        if n != last:
+            last, since = n, time.time()
+        elif time.time() - since >= quiet:
+            return
+        time.sleep(0.1)
+
+
 def _used(u):
     return u.get("/api/usage").json()["today"]["messages"]
 
@@ -79,11 +91,15 @@ def test_Q2_limit_refuses_without_reaching_the_model_and_a_burst_cannot_overspen
     assert sum(1 for r in new if not r.get("stream")) <= 4, "ancillary model calls exceed the number of served turns"
     assert _used(u) == LIMIT
     # exhausted: the next request is refused with a stable machine-readable code, and costs nothing
-    reqs = len(fake.requests)
+    _settle(fake)                       # background extraction of the last served turns runs after its answer; let it finish before counting
+    streamed = sum(1 for r in fake.requests if r.get("stream"))
+    total = len(fake.requests)
     s, ev = u.stream("one more")
     body = json.dumps(ev)
     assert "quota_exceeded" in body or s == 429, (s, ev)
-    assert len(fake.requests) == reqs, "a quota-refused request still reached the model (streamed or ancillary)"
+    time.sleep(1.0)
+    assert sum(1 for r in fake.requests if r.get("stream")) == streamed, "a quota-refused request reached the model"
+    assert len(fake.requests) == total, "a quota-refused request triggered a model call (streamed or ancillary)"
     assert _used(u) == LIMIT
 
 
