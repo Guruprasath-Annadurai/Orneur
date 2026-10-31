@@ -37,6 +37,10 @@ def _alive(pid: int) -> bool:
     return state != "Z"                                                  # a zombie is dead; it only awaits its parent's wait()
 
 
+class _NotDelivered(OSError):
+    """The request never reached an owner (connection refused / no socket): safe to retry once after making sure an owner is running."""
+
+
 class ServiceTransport:
     def __init__(self, home: Path, *, max_inflight=8, max_waiting=16, queue_wait_s=2.0, default_deadline_s=5.0, start_timeout_s=20.0, stuck_after_s=8.0, owner_env=None):
         self.home = Path(home).resolve()
@@ -67,7 +71,10 @@ class ServiceTransport:
         deadline = time.monotonic() + timeout
         try:
             s.settimeout(timeout)
-            s.connect(str(paths.sock_path(self.home)))
+            try:
+                s.connect(str(paths.sock_path(self.home)))
+            except (ConnectionRefusedError, FileNotFoundError) as exc:
+                raise _NotDelivered(str(exc)) from None
             protocol.send(s, {**req, "token": self._token()})
             return protocol.recv(s, deadline)
         finally:
@@ -206,12 +213,19 @@ class ServiceTransport:
             self.counters["timeouts"] += 1
             raise VectorTimeout("vector operation deadline passed before it started")
         try:
-            resp = self._raw({**req, "deadline_ms": int(left * 1000)}, left)
+            try:
+                resp = self._raw({**req, "deadline_ms": int(left * 1000)}, left)
+            except _NotDelivered:                                          # e.g. the owner just exited to recycle its memory: start one and send once more
+                self.ensure_owner(budget_s=max(0.5, deadline_s - (time.monotonic() - t0)))
+                left = deadline_s - (time.monotonic() - t0)
+                if left <= 0:
+                    raise socket.timeout("deadline") from None
+                resp = self._raw({**req, "deadline_ms": int(left * 1000)}, left)
         except socket.timeout:
             self.counters["timeouts"] += 1
             self._suspect()
             raise VectorTimeout("vector operation exceeded its deadline") from None
-        except (OSError, protocol.FrameError):
+        except (OSError, protocol.FrameError, VectorUnavailable):
             self.counters["unavailable"] += 1
             self._suspect()
             raise VectorUnavailable("vector service unavailable") from None

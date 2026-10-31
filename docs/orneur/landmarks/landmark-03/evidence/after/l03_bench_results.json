@@ -1,0 +1,167 @@
+{
+ "environment": {
+  "product_checkout": "/home/pc/projects/Orneur-l03",
+  "product_sha": "4e45685fe2668f46a169ba4231e134d71786bf4d",
+  "orca_module": "/home/pc/projects/Orneur-l03/orca/__init__.py",
+  "python": "3.11.18",
+  "chromadb": "1.5.9",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "cpus": 16,
+  "soft_fd_limit": 1048576,
+  "recorded_at": "2026-10-31T07:37:14Z"
+ },
+ "runs": {
+  "service": {
+   "10": {
+    "sessions": 10,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 4,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 44,
+    "latency_p50_s": 0.298,
+    "latency_p95_s": 0.33,
+    "latency_max_s": 0.858,
+    "chromadb_loaded_in_app_process": false,
+    "owner_fds": 58,
+    "owner_rss_mb": 293,
+    "owner_open_collections": 10,
+    "owner_client_recycles": 0,
+    "owner_refused": {
+     "busy_queue": 0,
+     "busy_connections": 0,
+     "busy_collection": 0,
+     "expired": 0
+    }
+   },
+   "50": {
+    "sessions": 50,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 4,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 44,
+    "latency_p50_s": 0.267,
+    "latency_p95_s": 0.312,
+    "latency_max_s": 0.858,
+    "chromadb_loaded_in_app_process": false,
+    "owner_fds": 93,
+    "owner_rss_mb": 366,
+    "owner_open_collections": 18,
+    "owner_client_recycles": 1,
+    "owner_refused": {
+     "busy_queue": 0,
+     "busy_connections": 0,
+     "busy_collection": 0,
+     "expired": 0
+    }
+   },
+   "100": {
+    "sessions": 100,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 4,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 44,
+    "latency_p50_s": 0.263,
+    "latency_p95_s": 0.316,
+    "latency_max_s": 0.837,
+    "chromadb_loaded_in_app_process": false,
+    "owner_fds": 35,
+    "owner_rss_mb": 436,
+    "owner_open_collections": 4,
+    "owner_client_recycles": 3,
+    "owner_refused": {
+     "busy_queue": 0,
+     "busy_connections": 0,
+     "busy_collection": 0,
+     "expired": 0
+    }
+   },
+   "200": {
+    "sessions": 200,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 4,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 44,
+    "latency_p50_s": 0.258,
+    "latency_p95_s": 0.309,
+    "latency_max_s": 0.898,
+    "chromadb_loaded_in_app_process": false,
+    "owner_fds": 51,
+    "owner_rss_mb": 553,
+    "owner_open_collections": 8,
+    "owner_client_recycles": 6,
+    "owner_refused": {
+     "busy_queue": 0,
+     "busy_connections": 0,
+     "busy_collection": 0,
+     "expired": 0
+    }
+   }
+  },
+  "embedded": {
+   "10": {
+    "sessions": 10,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 55,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 180,
+    "latency_p50_s": 0.252,
+    "latency_p95_s": 0.272,
+    "latency_max_s": 0.669,
+    "chromadb_loaded_in_app_process": true,
+    "owner_fds": "(same process)",
+    "open_collections": 10,
+    "client_recycles": 0
+   },
+   "50": {
+    "sessions": 50,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 89,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 273,
+    "latency_p50_s": 0.263,
+    "latency_p95_s": 0.286,
+    "latency_max_s": 0.733,
+    "chromadb_loaded_in_app_process": true,
+    "owner_fds": "(same process)",
+    "open_collections": 18,
+    "client_recycles": 1
+   },
+   "100": {
+    "sessions": 100,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 31,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 341,
+    "latency_p50_s": 0.252,
+    "latency_p95_s": 0.294,
+    "latency_max_s": 0.644,
+    "chromadb_loaded_in_app_process": true,
+    "owner_fds": "(same process)",
+    "open_collections": 4,
+    "client_recycles": 3
+   },
+   "200": {
+    "sessions": 200,
+    "errors": 0,
+    "app_fd_base": 4,
+    "app_fd_after": 47,
+    "app_rss_mb_base": 42,
+    "app_rss_mb_after": 415,
+    "latency_p50_s": 0.257,
+    "latency_p95_s": 0.311,
+    "latency_max_s": 0.638,
+    "chromadb_loaded_in_app_process": true,
+    "owner_fds": "(same process)",
+    "open_collections": 8,
+    "client_recycles": 6
+   }
+  }
+ }
+}

@@ -29,10 +29,12 @@ from orca.vectorstore.host import ChromaHost
 
 
 class Owner:
-    def __init__(self, home: Path, *, workers=4, queue_max=32, max_conns=64, per_collection=2, idle_exit_s=300.0, max_open=32):
+    def __init__(self, home: Path, *, workers=4, queue_max=32, max_conns=64, per_collection=2, idle_exit_s=300.0, max_open=32, max_rss_mb=0):
         self.home = Path(home).resolve()
         self.host = ChromaHost(max_open=max_open)
         self.jobs: queue.Queue = queue.Queue(maxsize=queue_max)
+        self.max_rss_mb, self._rss_checked = int(max_rss_mb), 0.0
+        self.exit_reason = "idle"
         self.workers, self.max_conns, self.per_collection, self.idle_exit_s = workers, max_conns, per_collection, idle_exit_s
         self.conns = 0
         self.conn_lock = threading.Lock()
@@ -165,6 +167,17 @@ class Owner:
         while not self.stop.is_set():
             if time.monotonic() - self.last_activity > self.idle_exit_s and self.jobs.empty():
                 break
+            if self.max_rss_mb and time.monotonic() - self._rss_checked > 1.0:
+                self._rss_checked = time.monotonic()
+                from orca.vectorstore.host import proc_rss_mb
+
+                with self.run_lock:
+                    quiet = not self.running
+                if quiet and self.jobs.empty() and proc_rss_mb() > self.max_rss_mb:
+                    # chromadb does not give memory back when collections are closed (measured). The only reliable release is a new process: leave when nothing is running; the next call starts a
+                    # fresh owner (~0.6 s) and the data is untouched.
+                    self.exit_reason = "rss"
+                    break
             try:
                 conn, _ = srv.accept()
             except socket.timeout:
@@ -207,7 +220,8 @@ def main(argv=None) -> int:
     paths.pid_path(home).write_text(str(os.getpid()))
     env = os.environ.get
     owner = Owner(home, workers=int(env("ORNEUR_VECTOR_WORKERS", "4")), queue_max=int(env("ORNEUR_VECTOR_QUEUE_MAX", "32")), max_conns=int(env("ORNEUR_VECTOR_MAX_CONNS", "64")),
-                  per_collection=int(env("ORNEUR_VECTOR_PER_COLLECTION", "2")), idle_exit_s=float(env("ORNEUR_VECTOR_IDLE_EXIT_S", "300")), max_open=int(env("ORNEUR_VECTOR_MAX_OPEN", "32")))
+                  per_collection=int(env("ORNEUR_VECTOR_PER_COLLECTION", "2")), idle_exit_s=float(env("ORNEUR_VECTOR_IDLE_EXIT_S", "300")), max_open=int(env("ORNEUR_VECTOR_MAX_OPEN", "32")),
+                  max_rss_mb=int(env("ORNEUR_VECTOR_MAX_RSS_MB", "1536")))
 
     faulthandler.register(signal.SIGUSR1, all_threads=True)               # `kill -USR1 <owner pid>` writes every thread's stack to owner.log (diagnosing a stall)
     signal.signal(signal.SIGTERM, lambda *_: owner.stop.set())

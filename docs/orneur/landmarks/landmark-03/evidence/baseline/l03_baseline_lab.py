@@ -18,7 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path(os.environ.get("L03_REPO") or subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=Path(__file__).parent, capture_output=True, text=True).stdout.strip())      # the product checkout under test
 PY = sys.executable
 CANARY = "L03-CANARY-TEXT-"
 
@@ -352,7 +352,10 @@ EXPERIMENTS = {"E1": E1_held_lock_gil_stall, "E2": E2_concurrent_create_delete, 
 def main():
     import chromadb
     names = sys.argv[1:] or list(EXPERIMENTS)
-    report = {"environment": {"python": platform.python_version(), "chromadb": chromadb.__version__, "sqlite": sqlite3.sqlite_version, "platform": platform.platform(), "cpus": os.cpu_count(),
+    probe = subprocess.run([PY, "-c", "import orca,sys;print(orca.__file__)"], env={**os.environ, "PYTHONPATH": str(REPO)}, capture_output=True, text=True, cwd=REPO).stdout.strip()
+    assert probe.startswith(str(REPO)), f"the lab would import product code from {probe}, not from {REPO}"
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip()
+    report = {"environment": {"product_checkout": str(REPO), "product_sha": sha, "orca_module": probe, "python": platform.python_version(), "chromadb": chromadb.__version__, "sqlite": sqlite3.sqlite_version, "platform": platform.platform(), "cpus": os.cpu_count(),
                               "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, "experiments": {}}
     for n in names:
         home = Path(tempfile.mkdtemp(prefix=f"l03-{n}-", dir=os.environ.get("L03_LAB_DIR", "/tmp")))

@@ -298,3 +298,14 @@ def test_the_owner_exits_by_itself_when_idle_so_a_stopped_application_leaves_not
     while time.monotonic() < end and svc.t.owner_pid() is not None:
         time.sleep(0.5)
     assert svc.t.owner_pid() is None, "the idle owner did not exit"
+
+
+def test_an_owner_whose_memory_passes_its_limit_leaves_when_idle_and_the_next_call_starts_a_fresh_one_with_the_data_intact(svc):
+    svc.t.owner_env = {"ORNEUR_VECTOR_MAX_RSS_MB": "150", "ORNEUR_VECTOR_IDLE_EXIT_S": "120"}         # the embedder alone is larger than this
+    col = _seed(svc, n=2)
+    pid0 = svc.t.owner_pid()
+    end = time.monotonic() + 20
+    while time.monotonic() < end and svc.t.owner_pid() == pid0:
+        time.sleep(0.3)
+    assert svc.t.owner_pid() != pid0, "the over-limit owner did not recycle"
+    assert col.count() == 2 and svc.t.owner_pid() not in (None, pid0)
