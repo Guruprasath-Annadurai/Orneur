@@ -32,6 +32,9 @@ Comparison with exact-main run 41207007702: **skipped 425 → 425, xfailed 6 →
 
 No exact-head green is claimed for any SHA other than the one listed.
 
+| 41219703041 (push) | `f44547b` (docs only: 3 files under `docs/orneur/landmarks/landmark-04/`, 0 code files) | Journeys **failed** twice (first run, then `--failed` rerun); every other job passed | inherited LANDMARK-03 test `test_an_owner_whose_memory_passes_its_limit…` — cold-start budget too tight on a loaded runner (register P1-X-10). Passes 12/12 locally on this branch and on pristine `main`; same code passed on `02572dd` | not edited (protected foundation); **attempt 3 of this run: all 10 jobs success** (docs-only head `f44547b`) |
+| 41219705198 (pull_request) | `f44547b` | Journeys failed on attempt 1, **success on attempt 2** | same test | |
+
 ## Documentation head
 This file lives in a documentation-only commit that follows the code commit. The CI result for that exact documentation head is reported in the final handover and as a PR comment (a file cannot cite its own commit's SHA).
 

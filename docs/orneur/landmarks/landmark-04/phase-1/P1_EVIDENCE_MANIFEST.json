@@ -34,6 +34,10 @@
   "main_reference": {
    "test_suite_run": 41207007702,
    "deterministic": "9730 passed, 425 skipped, 6 xfailed"
+  },
+  "docs_head_f44547b": {
+   "push_run_41219703041": "success on attempt 3 (attempts 1-2 failed: inherited flaky L03 test, register P1-X-10)",
+   "pull_request_run_41219705198": "success on attempt 2 (attempt 1 failed: same test)"
   }
  },
  "verification_states": {
@@ -94,13 +98,13 @@
   },
   {
    "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_EXACT_SHA_CI_REPORT.md",
-   "sha256": "68039a928747cb989cdd8311d48a68417ed669bf91674dadf45a4eb68ecd0046",
-   "bytes": 3097
+   "sha256": "69541e5e526e283bbd0f06711540629879b1c6d39ee5e67961262546c1148ee3",
+   "bytes": 3762
   },
   {
    "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_GAP_AND_DEFECT_REGISTER.md",
-   "sha256": "8ecf051032c34eb0b2b546898d22f71e88950a0c3b0be3cd0b592e9a26c1a4f5",
-   "bytes": 6391
+   "sha256": "a259b5f9df6b75b8e8fb8adddb79a10bd4c95859dface7c11911799f94b6f9a3",
+   "bytes": 7224
   },
   {
    "path": "docs/orneur/landmarks/landmark-04/phase-1/P1_IMPLEMENTATION_BASELINE.md",
