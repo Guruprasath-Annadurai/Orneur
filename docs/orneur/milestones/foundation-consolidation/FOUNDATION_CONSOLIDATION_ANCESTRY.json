@@ -1,0 +1,102 @@
+{
+  "package": "FOUNDATION_CONSOLIDATION",
+  "phase": "A",
+  "status": "PREFLIGHT_COMPLETE",
+  "phase_h_protected_merge": "INACTIVE",
+  "refreshed_at_utc": "2026-10-31T13:25:00Z",
+  "sha_drift": false,
+  "baseline_match": true,
+  "identities": {
+    "main": {
+      "ref": "origin/main",
+      "sha": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+      "tree": "4707492d800aea61a4c6f159a1adf3d59d8a23d6"
+    },
+    "pr_145_master02": {
+      "pr": 145,
+      "branch": "cursor/master-02-integration-candidate-316a",
+      "sha": "d8827409248dcdb5da55a010d8224d9e0e3bddbe",
+      "tree": "615c6a3483e64acc3bdb6ccc2d2351d4f63ca96e",
+      "draft": true,
+      "base": "main",
+      "mergeable": "MERGEABLE"
+    },
+    "pr_146_master03": {
+      "pr": 146,
+      "branch": "cursor/master-03-security-corrected-b882",
+      "sha": "b96cc3260078b6f677a22381b05fe1f72026256f",
+      "tree": "168a6a2c75bd11e0cbac113e06ff4d50e88f9cae",
+      "draft": true,
+      "base": "cursor/master-02-integration-candidate-316a",
+      "mergeable": "MERGEABLE"
+    },
+    "pr_148_master04_eng": {
+      "role": "engineering_code_tip",
+      "sha": "cadad0e525c5f84698af9945d048b9ba36aa4f0e",
+      "tree": "d1742759c1ecf25629f7bca1376719a75bd52d71",
+      "ci_run": 41196122676
+    },
+    "pr_148_master04_head": {
+      "pr": 148,
+      "branch": "cursor/master-04-vector-backup-security-integration",
+      "sha": "da699a01bdb811ac54ef00cf0c9585f70eb74a57",
+      "tree": "106487db24a66672c7ca3e660a1d1e0792281238",
+      "draft": true,
+      "base": "cursor/master-03-security-corrected-b882",
+      "mergeable": "MERGEABLE",
+      "ci_run": 41197716243,
+      "note": "evidence-binding tip; docs-only delta vs eng tip cadad0e"
+    },
+    "antigravity_final": {
+      "branch": "antigravity/phase01-independent-qualification",
+      "sha": "83978d48f071fac575f360605baadf35c3fac1e0",
+      "tree": "9c04e89515330a9a4735e1beef47ed06e72856e3",
+      "disposition": "MASTER-04 FINAL LIMITED-SCOPE EVIDENCE CLOSED",
+      "path": "B",
+      "merged_into_148": false
+    },
+    "pr_149_docs_only": {
+      "pr": 149,
+      "branch": "cursor/master-04-protected-merge-readiness-bb5d",
+      "sha": "44e130e7ef6421370f48c4144f2c30a74c6f521b",
+      "tree": "fc10e6dc830bae7d33d14fe52012c04d16e71d27",
+      "draft": true,
+      "base": "main",
+      "role": "docs_only_not_substitute_for_145_146_148",
+      "files_changed_vs_main": [
+        "docs/orneur/milestones/master-04/ORNEUR_MASTER04_PROTECTED_MERGE_READINESS_REVIEW.md"
+      ]
+    }
+  },
+  "ancestry_checks": [
+    {"claim": "main ⊂ #145", "ancestor": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a", "descendant": "d8827409248dcdb5da55a010d8224d9e0e3bddbe", "result": "OK"},
+    {"claim": "#145 ⊂ #146", "ancestor": "d8827409248dcdb5da55a010d8224d9e0e3bddbe", "descendant": "b96cc3260078b6f677a22381b05fe1f72026256f", "result": "OK"},
+    {"claim": "#146 ⊂ #148", "ancestor": "b96cc3260078b6f677a22381b05fe1f72026256f", "descendant": "da699a01bdb811ac54ef00cf0c9585f70eb74a57", "result": "OK"},
+    {"claim": "main ⊂ #146", "ancestor": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a", "descendant": "b96cc3260078b6f677a22381b05fe1f72026256f", "result": "OK"},
+    {"claim": "main ⊂ #148", "ancestor": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a", "descendant": "da699a01bdb811ac54ef00cf0c9585f70eb74a57", "result": "OK"},
+    {"claim": "eng cadad0e ⊂ PR HEAD da699a0", "ancestor": "cadad0e525c5f84698af9945d048b9ba36aa4f0e", "descendant": "da699a01bdb811ac54ef00cf0c9585f70eb74a57", "result": "OK"},
+    {"claim": "#146 ⊂ eng tip", "ancestor": "b96cc3260078b6f677a22381b05fe1f72026256f", "descendant": "cadad0e525c5f84698af9945d048b9ba36aa4f0e", "result": "OK"}
+  ],
+  "history_markers_reachable_from_148": [
+    {"id": "F02", "sha": "25b794a50689c7801b074fb586aa1f95c449206d", "subject": "merge(master-02): integrate F02 #140 @ 649d90f84069fc618ba4d69b4c26a66bed731caa", "preserved": true},
+    {"id": "F03", "sha": "d064b67bfe0c2e87f0efcec13cf857f2f31c19b9", "subject": "merge(master-02): integrate F03 #142 @ 9cdc22bfc64f35e46e57769e3e255dabf5d11cb4", "preserved": true},
+    {"id": "L02-B3", "sha": "7fb78a3d9c522edff26335a551ceadc5d500f941", "subject": "merge(master-02): integrate L02-B3 #141 @ 66ce8aeace2077b89195735211d75ebd566716c8", "preserved": true},
+    {"id": "L02-B6", "sha": "34b6688450fdc199baf336fd5884164fd5684f63", "subject": "merge(master-03): integrate L02-B6 #143 @ 4ab809df6b9895812def68e5d9e9cef03a09f4d7", "preserved": true},
+    {"id": "L03-into-M03", "sha": "4295550b7991972e7a6b5cd1d25123b58355cbf1", "subject": "merge(master-04): integrate LANDMARK-03 vector containment into MASTER-03 tip", "parents": ["b96cc3260078b6f677a22381b05fe1f72026256f", "bfeaae2bc7470251262b3526e32fede7412996d8"], "preserved": true}
+  ],
+  "stack_topology": "main → #145 → #146 → #148",
+  "delta_vs_main": {
+    "files_changed": 642,
+    "insertions": 101387,
+    "deletions": 941
+  },
+  "commits_main_to_148": 265,
+  "fail_closed": true,
+  "shallow_bypass_prohibited": true,
+  "notes": [
+    "No SHA drift vs assignment baseline after GitHub refresh.",
+    "#149 is docs-only and is not a substitute for integrating #145/#146/#148.",
+    "Antigravity FINAL tip is reference/qualification only; not merged into #148.",
+    "Phase H protected merge remains INACTIVE."
+  ]
+}

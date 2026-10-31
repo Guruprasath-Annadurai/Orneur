@@ -1,0 +1,97 @@
+{
+  "package": "FOUNDATION_CONSOLIDATION",
+  "schema_version": "orneur-foundation-consolidation-execution-manifest/1",
+  "status_line": "FOUNDATION CONSOLIDATED \u2014 EXACT MAIN VERIFIED \u2014 INDEPENDENT POST-MERGE REVIEW PENDING",
+  "refreshed_at_utc": "2026-10-31T14:09:00Z",
+  "sha_drift": false,
+  "baseline_match": true,
+  "phases": {
+    "A_inventory_ancestry": "COMPLETE",
+    "B_security_functional_preservation": "COMPLETE",
+    "C_branch_protection_ci_reconcile": "COMPLETE",
+    "D_isolated_dry_run_tree_equivalence": "COMPLETE",
+    "E_attribution_inventory": "COMPLETE",
+    "F_rollback_plan": "COMPLETE",
+    "G_founder_decision_package": "COMPLETE",
+    "H_protected_merge": "COMPLETE",
+    "I_exact_main_ci_verification": "COMPLETE",
+    "J_antigravity_post_merge_handoff": "COMPLETE"
+  },
+  "items": {
+    "1_ANCESTRY": "FOUNDATION_CONSOLIDATION_ANCESTRY.json",
+    "2_SECURITY_MATRIX": "FOUNDATION_CONSOLIDATION_SECURITY_MATRIX.md",
+    "3_CI_REGISTER": "FOUNDATION_CONSOLIDATION_CI_REGISTER.md",
+    "4_BRANCH_PROTECTION": "FOUNDATION_CONSOLIDATION_BRANCH_PROTECTION.md",
+    "5_DRY_RUN": "FOUNDATION_CONSOLIDATION_DRY_RUN.md",
+    "6_TREE_EQUIVALENCE": "FOUNDATION_CONSOLIDATION_TREE_EQUIVALENCE.md",
+    "7_ATTRIBUTION_REVIEW": "FOUNDATION_CONSOLIDATION_ATTRIBUTION_REVIEW.md",
+    "8_ROLLBACK_PLAN": "FOUNDATION_CONSOLIDATION_ROLLBACK_PLAN.md",
+    "9_FOUNDER_DECISION": "ORNEUR_FOUNDATION_CONSOLIDATION_FINAL_FOUNDER_DECISION.md",
+    "10_EXECUTION_MANIFEST": "FOUNDATION_CONSOLIDATION_EXECUTION_MANIFEST.json",
+    "11_MERGE_RECEIPT": "FOUNDATION_MERGE_RECEIPTS.md",
+    "12_POST_MERGE_VERIFICATION": "FOUNDATION_POST_MERGE_VERIFICATION.md",
+    "13_ANTIGRAVITY_HANDOFF": "FOUNDATION_ANTIGRAVITY_POST_MERGE_HANDOFF.md"
+  },
+  "identities": {
+    "main_sha_before": "20a8546f5a1ece7e5af655c0f30ca7e305f71b1a",
+    "main_sha_after": "0a4c5180555a3102a4e0d61f56e0f8539975f4ee",
+    "main_tree_after": "106487db24a66672c7ca3e660a1d1e0792281238",
+    "pr_145_sha": "d8827409248dcdb5da55a010d8224d9e0e3bddbe",
+    "pr_146_sha": "b96cc3260078b6f677a22381b05fe1f72026256f",
+    "pr_148_head_sha": "da699a01bdb811ac54ef00cf0c9585f70eb74a57",
+    "merge_145": "793633bbf442df0fb125f02102a8af33cc8ed490",
+    "merge_146": "867464b21bd8f1b369a611b937b5260b2d91b261",
+    "merge_148": "0a4c5180555a3102a4e0d61f56e0f8539975f4ee",
+    "antigravity_final_sha": "83978d48f071fac575f360605baadf35c3fac1e0"
+  },
+  "exact_main_ci": {
+    "head_sha": "0a4c5180555a3102a4e0d61f56e0f8539975f4ee",
+    "test_suite_run": 41207007702,
+    "test_suite_jobs": "10/10 success",
+    "eval_static_run": 41207007703,
+    "eval_static_conclusion": "success",
+    "commit_check_runs": "11/11 success",
+    "pre_merge_ci_reused": false
+  },
+  "governance": {
+    "formal_acceptance": "0/95",
+    "training_authorization": "NOT_AUTHORIZED",
+    "genesis": "INTERFACE_ONLY",
+    "novus": "NOT_AVAILABLE",
+    "aeternum": "NOT_AVAILABLE"
+  },
+  "merge_controls": {
+    "strategy": "merge_commit_only",
+    "squash": false,
+    "rebase": false,
+    "admin_bypass": false,
+    "audited_heads_mutated": false,
+    "tree_equivalence_to_qualified_m04": true
+  },
+  "prohibited_actions_honored": [
+    "no_production_deploy",
+    "no_spend",
+    "no_training",
+    "no_tags",
+    "no_formal_acceptance_promotion",
+    "no_history_rewrite",
+    "no_branch_protection_bypass"
+  ],
+  "recommendation": {
+    "phase_h_i_j": "COMPLETE",
+    "independent_post_merge_review": "PENDING",
+    "production": "NO_GO",
+    "overall": "FOUNDATION CONSOLIDATED \u2014 EXACT MAIN VERIFIED \u2014 INDEPENDENT POST-MERGE REVIEW PENDING"
+  },
+  "store_path": "/cursor/stores/self/docs/foundation-consolidation/",
+  "repo_docs_path": "docs/orneur/milestones/foundation-consolidation/",
+  "docs_pr": {
+    "number": 150,
+    "url": "https://github.com/Guruprasath-Annadurai/Orneur/pull/150",
+    "branch": "cursor/foundation-consolidation-preflight-8d90",
+    "draft": true,
+    "base": "main",
+    "role": "review_only_docs_package",
+    "head_sha": "da96d373c2c2d11e22feef1154bc85980c5f0d5d"
+  }
+}
