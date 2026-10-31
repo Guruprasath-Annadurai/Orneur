@@ -152,7 +152,7 @@ class Store:
         return Collection(self.root, name, metadata, deadline_s), info
 
     def binding_report(self) -> dict:
-        return transport().call({"op": "binding_report", "root": str(self.root)})
+        return {k: v for k, v in transport().call({"op": "binding_report", "root": str(self.root)}).items() if k != "ok"}
 
     def get_or_create_collection(self, name: str, metadata: dict | None = None) -> Collection:
         return self.open_collection(name, metadata)[0]               # unbound: for tools and tests that manage their own naming

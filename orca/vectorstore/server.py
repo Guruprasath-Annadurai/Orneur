@@ -232,6 +232,12 @@ def main(argv=None) -> int:
     except OSError:
         return 0                                                           # another owner is running: exactly one per data directory
     paths.pid_path(home).write_text(str(os.getpid()))
+    cap = os.environ.get("ORNEUR_VECTOR_NOFILE")                        # an operator (or a test) can cap the owner's own descriptor limit
+    if cap:
+        import resource
+
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(int(cap), hard if hard != resource.RLIM_INFINITY else int(cap)), hard))
     env = os.environ.get
     owner = Owner(home, workers=int(env("ORNEUR_VECTOR_WORKERS", "4")), queue_max=int(env("ORNEUR_VECTOR_QUEUE_MAX", "32")), max_conns=int(env("ORNEUR_VECTOR_MAX_CONNS", "64")),
                   per_collection=int(env("ORNEUR_VECTOR_PER_COLLECTION", "2")), idle_exit_s=float(env("ORNEUR_VECTOR_IDLE_EXIT_S", "300")), max_open=int(env("ORNEUR_VECTOR_MAX_OPEN", "32")),

@@ -132,11 +132,21 @@ class ChromaHost:
                     st.touched = set()
         return st.client
 
+    def _fd_pressure(self) -> bool:
+        """Descriptors above 70% of this process's soft limit: recycle before an EMFILE turns into failed operations."""
+        try:
+            import resource
+
+            soft = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+            return soft > 0 and proc_fds() > 0.7 * soft
+        except (ValueError, OSError):
+            return False
+
     def _maybe_recycle(self, st: _Store) -> None:
-        if len(st.touched) <= self.max_open or st.gate.inflight:
+        if (len(st.touched) <= self.max_open and not self._fd_pressure()) or st.gate.inflight:
             return
         with st.gate.exclusive():
-            if len(st.touched) <= self.max_open or st.client is None:
+            if (len(st.touched) <= self.max_open and not self._fd_pressure()) or st.client is None:
                 return
             try:
                 st.client.close()
