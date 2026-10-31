@@ -51,6 +51,8 @@ class ServiceTransport:
         self.max_write_inflight = max(1, min(max_inflight, int(os.environ.get("ORNEUR_VECTOR_MAX_WRITE_INFLIGHT", "3"))))
         self._wsem = threading.BoundedSemaphore(self.max_write_inflight)             # write lane: writes are what block behind a database lock, so they get their own, smaller budget
         self._waiting = 0
+        self.per_collection = int(os.environ.get("ORNEUR_VECTOR_PER_COLLECTION", "2"))
+        self._coll_inflight: dict[str, int] = {}                                      # this process's calls per collection (the owner enforces the same cap across processes)
         self._wlock = threading.Lock()
         self._probe_lock = threading.Lock()
         self._probing = False
@@ -181,6 +183,21 @@ class ServiceTransport:
     def call(self, req: dict, deadline_s: float | None = None) -> dict:
         deadline_s = float(deadline_s or self.default_deadline_s)
         self.counters["calls"] += 1
+        ckey = f'{req.get("root")}|{req["collection"]}' if req.get("collection") and req.get("op") in ("call", "open_collection") else None
+        if ckey:
+            with self._wlock:                                                         # refuse a flood on one conversation HERE: a refusal that still costs the owner a connection would starve everyone else
+                if self._coll_inflight.get(ckey, 0) >= self.per_collection:
+                    self.counters["busy_local"] += 1
+                    raise VectorBusy("this conversation has too many vector operations in flight")
+                self._coll_inflight[ckey] = self._coll_inflight.get(ckey, 0) + 1
+        try:
+            return self._admit_and_call(req, deadline_s)
+        finally:
+            if ckey:
+                with self._wlock:
+                    self._coll_inflight[ckey] = max(0, self._coll_inflight.get(ckey, 1) - 1)
+
+    def _admit_and_call(self, req: dict, deadline_s: float) -> dict:
         is_read = req.get("op") in ("list_collections", "collection_info", "binding_report", "ping", "stats") or (req.get("op") == "call" and req.get("method") in ("query", "get", "peek", "count"))
         sem = self._sem if is_read else self._wsem
         with self._wlock:

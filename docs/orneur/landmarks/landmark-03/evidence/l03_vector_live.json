@@ -1,11 +1,11 @@
 {
  "V1": {
   "owner_pids": [
-   125396
+   287645
   ],
   "app_pids": [
-   125382,
-   125383
+   287632,
+   287633
   ],
   "second_worker_read_ok": true
  },
@@ -14,14 +14,14 @@
   "code": "request_timeout",
   "probes": 16,
   "worst_probe_s": 0.53,
-  "chat_turn_s": 2.23
+  "chat_turn_s": 2.25
  },
  "V3": {
   "owner_before": [
-   125396
+   287645
   ],
   "owner_after": [
-   125648
+   287903
   ],
   "recovered": true
  },
@@ -34,8 +34,8 @@
   "conversations": 80,
   "app_fds_before": 28,
   "app_fds_after": 24,
-  "owner_fds_before": 31,
-  "owner_fds_after": 78,
+  "owner_fds_before": 30,
+  "owner_fds_after": 79,
   "max_open": 16,
   "owner_client_recycles": 4
  },

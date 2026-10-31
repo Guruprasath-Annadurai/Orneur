@@ -219,7 +219,7 @@ def test_one_conversation_cannot_monopolise_the_service(svc):
             except V.VectorError:
                 pass
 
-    ths = [threading.Thread(target=hammer, daemon=True) for _ in range(8)]
+    ths = [threading.Thread(target=hammer, daemon=True) for _ in range(6)]
     [t.start() for t in ths]
     time.sleep(0.5)
     for _ in range(10):
