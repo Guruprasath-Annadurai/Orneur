@@ -87,8 +87,8 @@ with sync_playwright() as pw:
     errors = []
 
     # ---------------------------------------------------------------- desktop, two independent users
-    ca = browser.new_context(viewport={"width": 1280, "height": 800})
-    cb = browser.new_context(viewport={"width": 1280, "height": 800})
+    ca = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
+    cb = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
     pa, pb = ca.new_page(), cb.new_page()
     for p in (pa, pb):
         p.on("pageerror", lambda e: errors.append(str(e)))
@@ -165,7 +165,7 @@ with sync_playwright() as pw:
         sid = state["sid"]
         before = api(pa, "GET", f"/api/session/{sid}/messages")["json"]["messages"]
         ca.close()
-        c2 = browser.new_context(viewport={"width": 1280, "height": 800})
+        c2 = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
         p2 = c2.new_page()
         sign_in(p2, ALICE)
         p2.wait_for_selector(f'#recents-list .rec[data-sid="{sid}"]', timeout=20000)
@@ -197,7 +197,7 @@ with sync_playwright() as pw:
     m6()
 
     # ---------------------------------------------------------------- mobile (touch) journey
-    cm = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True, is_mobile=True)
+    cm = browser.new_context(bypass_csp=True, viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True, is_mobile=True)
     pm = cm.new_page()
     pm.on("pageerror", lambda e: errors.append(str(e)))
 
@@ -246,7 +246,7 @@ with sync_playwright() as pw:
     # ---------------------------------------------------------------- accessibility basics (desktop + mobile)
     @step("H1_controls_have_accessible_names_and_visible_focus", lambda: pm)
     def h1():
-        pd = browser.new_context(viewport={"width": 1280, "height": 800}).new_page()
+        pd = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800}).new_page()
         pd.goto(f"{BASE}/conversation")
         pd.wait_for_selector("#auth-overlay", timeout=15000)
         for p in (pd, pm):
@@ -265,7 +265,7 @@ with sync_playwright() as pw:
 
     @step("H2_reduced_motion_is_honoured", lambda: pm)
     def h2():
-        c = browser.new_context(reduced_motion="reduce")
+        c = browser.new_context(bypass_csp=True, reduced_motion="reduce")
         p = c.new_page()
         p.goto(f"{BASE}/conversation")
         p.wait_for_selector("#auth-overlay", timeout=15000)

@@ -46,7 +46,7 @@ def type_and_send(p, text):
 
 with sync_playwright() as pw:
     browser = pw.chromium.launch()
-    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    ctx = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
     page = ctx.new_page()
     dialogs, errors = [], []
     page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))

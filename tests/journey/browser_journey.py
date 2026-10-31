@@ -143,7 +143,7 @@ with sync_playwright() as pw:
     bob_email = f"ui-bob-{uuid.uuid4().hex[:6]}@example.com"
     api_signup(alice_email, "Alice")
     api_signup(bob_email, "Bob")
-    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    ctx = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
     # Tee every /api/stream response into window.__sseLog (event + arrival time) so a step can assert on the delivery the BROWSER actually received.
     ctx.add_init_script("""
       window.__sseLog = [];
@@ -352,7 +352,7 @@ with sync_playwright() as pw:
 
     @step("G2_logout_with_server_unreachable_is_reported_honestly")
     def g2():
-        c = browser.new_context(viewport={"width": 1280, "height": 800})
+        c = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
         p2 = c.new_page()
         sign_in(p2, alice_email)
         p2.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
@@ -373,7 +373,7 @@ with sync_playwright() as pw:
 
     @step("D1_second_user_sees_none_of_the_first_users_conversations")
     def d1():
-        ctx2 = browser.new_context(viewport={"width": 1280, "height": 800})
+        ctx2 = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
         p2 = ctx2.new_page()
         sign_in(p2, bob_email)
         p2.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
@@ -387,7 +387,7 @@ with sync_playwright() as pw:
 
     @step("E4_two_tabs_edit_their_own_messages_by_authoritative_id")
     def e4():
-        c = browser.new_context(viewport={"width": 1280, "height": 800})
+        c = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
         tab_a = c.new_page()
         sign_in(tab_a, alice_email)
         tab_a.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)
@@ -425,7 +425,7 @@ with sync_playwright() as pw:
 
     @step("C2_each_new_conversation_appears_in_the_sidebar_without_reload")
     def c2():
-        c = browser.new_context(viewport={"width": 1280, "height": 800})
+        c = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800})
         pg = c.new_page()
         sign_in(pg, alice_email)
         pg.wait_for_selector("#auth-overlay", state="hidden", timeout=15000)

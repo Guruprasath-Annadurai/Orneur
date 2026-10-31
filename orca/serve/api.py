@@ -276,18 +276,32 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts())
 MAX_REQUEST_BODY_BYTES = int(orneur_env("MAX_REQUEST_BODY_BYTES", str(30 * 1024 * 1024)))  # 30MB default
 
 
+_CSP_COMMON = "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+_CSP_STRICT = f"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; {_CSP_COMMON}"
+# the marketing/console pages still import Google Fonts; the approved /conversation page loads nothing third-party
+_CSP_FONTS = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+              f"img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; {_CSP_COMMON}")
+_UI_CSP = {"/conversation": _CSP_STRICT, "/app": _CSP_FONTS, "/": _CSP_FONTS, "/trust": _CSP_FONTS}
+
+
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     """Phase 14C spec Step 22: safe-by-default browser security headers.
-    Deliberately conservative -- no CSP (would require auditing every
-    inline script/style in orca/serve/web first, out of scope here) and
-    no frame-ancestors/X-Frame-Options DENY (the `/app` UI may need to
-    remain embeddable in contexts not yet audited); HSTS is only added
+    CSP and framing protection apply to the browser UI pages only (see
+    _UI_CSP); HSTS is only added
     when the request actually arrived over HTTPS (or is marked as such
     by a trusted proxy's X-Forwarded-Proto), never unconditionally, so
     a local plain-HTTP dev server is never told to force HTTPS on
     itself."""
     response = await call_next(request)
+    _path = request.url.path
+    if _path in _UI_CSP:
+        # P1: clickjacking + exfiltration limits for the browser UI pages. The pages are built with inline script/style, so those stay 'unsafe-inline'
+        # (nonce migration is a tracked follow-up); everything else (network destinations, plugins, <base>, form targets, framing) is closed.
+        response.headers.setdefault("Content-Security-Policy", _UI_CSP[_path])
+        response.headers.setdefault("X-Frame-Options", "DENY")
+    if _path.startswith("/api/auth/") and request.method != "OPTIONS":
+        response.headers.setdefault("Cache-Control", "no-store")   # login/reset/2FA bodies carry credentials
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
