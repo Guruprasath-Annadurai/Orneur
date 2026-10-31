@@ -1,7 +1,7 @@
 {
   "package": "FOUNDATION_CONSOLIDATION",
   "schema_version": "orneur-foundation-consolidation-execution-manifest/1",
-  "status_line": "FOUNDATION CONSOLIDATED — EXACT MAIN VERIFIED — INDEPENDENT POST-MERGE REVIEW PENDING",
+  "status_line": "FOUNDATION CONSOLIDATED \u2014 EXACT MAIN VERIFIED \u2014 INDEPENDENT POST-MERGE REVIEW PENDING",
   "refreshed_at_utc": "2026-10-31T14:09:00Z",
   "sha_drift": false,
   "baseline_match": true,
@@ -81,7 +81,7 @@
     "phase_h_i_j": "COMPLETE",
     "independent_post_merge_review": "PENDING",
     "production": "NO_GO",
-    "overall": "FOUNDATION CONSOLIDATED — EXACT MAIN VERIFIED — INDEPENDENT POST-MERGE REVIEW PENDING"
+    "overall": "FOUNDATION CONSOLIDATED \u2014 EXACT MAIN VERIFIED \u2014 INDEPENDENT POST-MERGE REVIEW PENDING"
   },
   "store_path": "/cursor/stores/self/docs/foundation-consolidation/",
   "repo_docs_path": "docs/orneur/milestones/foundation-consolidation/",
@@ -91,6 +91,7 @@
     "branch": "cursor/foundation-consolidation-preflight-8d90",
     "draft": true,
     "base": "main",
-    "role": "review_only_docs_package"
+    "role": "review_only_docs_package",
+    "head_sha": "db2062ddcfb24e64bfad07449eaaed028914232b"
   }
 }
