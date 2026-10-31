@@ -207,6 +207,9 @@ def run_with_report(session_id: str, user_id: str) -> tuple[dict, dict | None]:
         _remove_session_title(session_id)
         stores = classify(result)
         stores["_vector_physical_reclamation"] = str(result.get("long_term_vector_memory_physical_reclamation") or "n/a")
+        # L03: what is known about the collection itself, separate from the raw bytes: removed (confirmed gone) / unconfirmed (could not be confirmed in time) / failed / n/a
+        _ld = result.get("long_term_vector_memory_logically_deleted")
+        stores["_vector_collection"] = "removed" if _ld else ("unconfirmed" if stores["_vector_physical_reclamation"] == "PENDING" else "failed" if _ld is False else "n/a")
         ok = all(v == "ok" for k, v in stores.items() if not k.startswith("_"))
         if ok:
             from orca.auth.store import release_session

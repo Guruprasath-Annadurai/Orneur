@@ -237,6 +237,14 @@ class ServiceTransport:
         return {"client": dict(self.counters), "latency_ms": {"p50": pct(0.5), "p95": pct(0.95), "p99": pct(0.99), "n": len(lat)}, "max_inflight": self.max_inflight,
                 "max_waiting": self.max_waiting}
 
+    def owner_stats_quick(self) -> dict | None:
+        """Owner statistics for a readiness probe: a half-second budget, no spawning."""
+        try:
+            r = self._raw({"op": "stats"}, 0.5)
+            return r if r.get("ok") else None
+        except Exception:
+            return None
+
     def owner_stats(self) -> dict | None:
         try:
             r = self._raw({"op": "stats"}, 1.5)
