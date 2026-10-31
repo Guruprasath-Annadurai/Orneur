@@ -1,0 +1,36 @@
+{
+ "environment": {
+  "product_checkout": "/home/pc/projects/Orneur-l03",
+  "product_sha": "52b2eb3d2f5006f8105d4bb3baba79a6a34ea87d",
+  "orca_module": "/home/pc/projects/Orneur-l03/orca/__init__.py",
+  "python": "3.11.18",
+  "chromadb": "1.5.9",
+  "sqlite": "3.53.1",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "cpus": 16,
+  "recorded_at": "2026-10-31T08:14:03Z"
+ },
+ "experiments": {
+  "E12": {
+   "result": {
+    "exit": 0,
+    "wall_s": 1.6,
+    "delete_doc_detailed": {
+     "collection": "ok",
+     "fallback": "absent",
+     "ok": true,
+     "bytes": "RECLAIMED"
+    },
+    "after_document_delete": {},
+    "embeddings_queue_rows": 1,
+    "after_conversation_cascade_docs_deleted": 1,
+    "segment_dirs_remaining": [
+     "25f52044-4099-4cc7-a7bd-d8a04e2de44b"
+    ],
+    "after_cascade_second_doc_found_in": {},
+    "empty_collection_left_for_deleted_session": false
+   },
+   "lab_seconds": 1.6
+  }
+ }
+}

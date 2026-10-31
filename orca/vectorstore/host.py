@@ -225,7 +225,12 @@ class ChromaHost:
         name, binding = req["collection"], req.get("binding")
         with st.gate.shared():
             client = self._client(st)
-            existed = name in {c.name for c in client.list_collections()}
+            names = {c.name for c in client.list_collections()}
+            if name not in names and name + "__rebuild" in names:
+                # a rebuild was interrupted after the old collection was dropped and before the copy was renamed: the copy IS the collection - finish the rename
+                client.get_collection(name=name + "__rebuild").modify(name=name)
+                names = {c.name for c in client.list_collections()}
+            existed = name in names
             if binding:
                 conn = self._bindings_db(st)
                 try:
@@ -350,6 +355,10 @@ class ChromaHost:
         tmp = name + "__rebuild"
         with st.gate.exclusive():
             client = self._client(st)
+            have = {c.name for c in client.list_collections()}
+            if name not in have and tmp in have:
+                client.get_collection(name=tmp).modify(name=name)        # interrupted after the old one was dropped: complete that rename first, then fall through
+                have = {c.name for c in client.list_collections()}
             try:
                 client.delete_collection(name=tmp)                      # a leftover from an earlier interrupted rebuild
             except Exception:

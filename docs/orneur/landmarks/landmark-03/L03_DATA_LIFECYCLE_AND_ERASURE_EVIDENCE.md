@@ -1,0 +1,45 @@
+# L03 Phase D/E — data lifecycle, erasure state and retrieval authority
+
+## States that are now kept apart
+| State | Meaning | Where it is reported |
+|---|---|---|
+| **Access revoked** | the conversation has a deletion tombstone (conversation tombstone, L02-01); every access gate and, since L03, the vector layer refuse it | `access_revoked: true` in the deletion response |
+| **Logical deletion** | the vector service confirmed the collection is gone (removed from the listing) or never existed | store status `long_term_vector_memory` ok/failed |
+| **Collection removed / unconfirmed / failed** | what is known about the collection itself | new `vector_store_collection` (`removed` · `unconfirmed` · `failed` · `n/a`) |
+| **Raw bytes reclaimed** | the shared database was rewritten **and** orphaned segment directories removed | `vector_store_physical_reclamation` = `RECLAIMED`; `DEFERRED` (could not complete, recorded durably, retried by the maintenance sweep); `PENDING` (even the deletion was not confirmed in time); `FAILED`; `NOT_APPLICABLE` |
+| **Cleanup pending** | operator-visible counters | `/readyz` → `maintenance_backlog`: `vector_deletions_unconfirmed`, `vector_reclamation_pending`, `conversation_deletions_incomplete`, `document_deletions_pending` |
+Nothing is reported `complete`/`RECLAIMED` unless it was confirmed; a timeout, an outage or a refusal is `partial`/`PENDING`/`DEFERRED` and keeps being retried (conversation sweep, vector maintenance sweep, `check_pending_logical_deletions`, `retry_pending_reclamations`, `retry_pending_doc_reclamation`).
+
+## What changed to make deletion physically true
+1. **Per-document erasure** (new): `collection.delete(where=…)` removes records from every read path but chromadb 1.5.9 keeps the original add in its `embeddings_queue` log forever (baseline E12: text still in `chroma.sqlite3` after delete and after the whole-conversation cascade). Deleting a document now (a) deletes its chunks (unchanged semantics and failure injection point), then (b) **rebuilds the collection without it** — copy the kept records into a fresh collection (fresh log), verify counts, delete the old collection, rename — then (c) VACUUMs the database and (d) removes segment directories no segment names. The old collection is untouched unless the verified copy succeeded; if the process dies after the old collection is dropped and before the rename, the next open (or rebuild) completes the rename, so nothing is lost (tested by injecting the crash at exactly that point).
+2. **Whole-conversation deletion** now also drops the document collection (previously an empty collection stayed behind for a deleted conversation) and reclaims bytes once for the whole set.
+3. **Segment directories** of deleted collections (their vectors derive from the deleted text) are removed during reclamation.
+4. **Deletion by name respects ownership**: a conversation whose collection name collides with another's can no longer delete the other's data (baseline E11: victim's memory destroyed).
+5. **Tombstone gate**: `LongTermMemory`/`DocStore` refuse a conversation with a deletion tombstone, including through handles created before the deletion; a stale handle's write cannot re-create a deleted collection (`Collection` never creates).
+
+Measured after the change (`evidence/after/l03_after_e12_{embedded,service}.json`): deleted document text found on disk: **0 occurrences** (baseline 4); segment directories after the cascade: 1 (the other conversation's) vs 2; empty collection left for a deleted conversation: **no** (baseline: yes).
+
+## Adversarial scenarios (all run in `embedded` **and** `service` transports against real chromadb — `tests/test_l03_lifecycle.py`, 24 tests; plus `tests/test_l03_failure_lab.py`, `tests/journey/test_l03_vector_live.py`)
+| Required scenario | Test | Result |
+|---|---|---|
+| User deletes a conversation while retrieval is running / a handle built before the deletion is still held | `test_a_deleted_conversation_is_not_retrievable_through_a_cached_handle_and_a_stale_write_cannot_recreate_the_collection` | cached memory and document handles return nothing; a late write neither raises into the caller nor re-creates any collection; the canary is absent from both vector databases |
+| Document deleted while the embedding worker is stalled | `test_a_document_deleted_while_its_embedding_was_stalled_never_enters_a_prompt_even_if_the_late_write_lands` | a chunk landing after the document started deleting is not retrievable; after deletion `bytes: RECLAIMED` and the text is not on disk |
+| Account/conversation deletion begins while a vector operation is active | `…cached_handle…` (late write), `test_two_workers_deleting_the_same_conversation…`, live V4 (SIGTERM mid-operation) | no resurrection; one complete deletion; the owner outlives a worker |
+| Worker crashes after revocation, before vector cleanup | `test_a_crash_after_access_revocation_but_before_cleanup_leaves_data_unreachable_and_the_sweep_finishes_it` | data unreachable while its bytes are still there; the sweep removes the collection |
+| Two workers attempt the same deletion | `test_two_workers_deleting_the_same_conversation_converge_on_one_complete_deletion` | one lease holder, final state `complete`, collection absent |
+| Old vector files exist after restart | `test_old_vector_files_present_after_a_restart_are_unreachable_and_then_removed` | unreachable then removed |
+| A previously deleted document is present in an older snapshot | `test_a_document_deleted_after_a_snapshot_stays_out_of_retrieval_when_the_snapshot_files_come_back` | old vector files restored over the live ones → registry authority still excludes it |
+| Cleanup repeatedly fails | `test_repeated_cleanup_failure_is_never_reported_as_deleted_and_stays_visible_until_it_heals` | three failed attempts: `partial`, `retryable`, `access_revoked`, visible in the backlog; after healing the sweep completes it |
+| One customer's vector records associated with another's session | `test_two_conversations_sharing_a_collection_name_never_read_or_destroy_each_other`, `test_a_colliding_conversation_gets_no_documents_from_the_shared_keyword_file`, `test_a_collection_without_a_binding_is_adopted_once_and_then_protected` | refused (`ownership_refusals` counted), neither read nor written nor deleted; the keyword file shared by the prefix cannot leak a document that is not in the asker's registry |
+| Stale collection or orphaned chunk met by retrieval | `test_an_orphaned_chunk_and_a_chunk_of_an_unregistered_document_are_never_cited`; L02's stale-dimension tests | never cited |
+| Physical-erasure honesty | `test_reclaimed_means_the_bytes_are_gone_and_deferred_means_they_may_not_be` | `RECLAIMED` ⇒ text absent from every file; with the vacuum made impossible the state is `DEFERRED`, recorded, visible, and `retry_pending_reclamations` later reports `RECLAIMED` |
+| Damaged ownership records | `test_a_damaged_binding_database_fails_closed…` | nothing served or written until repaired |
+
+## Retrieval correctness (Phase E)
+Preserved and re-tested after the lifecycle changes: registry-enforced retrieval (`tests/test_l02_document_rag.py`, `test_l02_doc_store_deletion.py`, `test_l02_embedding_consistency.py`, `test_l02_upload_security.py`, `test_l02_judge_trust_boundary.py`, `test_l02_tool_authority.py`, `test_l02_document_dispatch.py`: all green — 95 tests across the document suites in the final local run); dense and lexical hits keep `doc_id`; stale embedding dimensions fall back to lexical; a vector timeout/outage degrades the instance (`degraded` reason) to the **same conversation's** keyword index filtered by its registry, never to another conversation's data; prompt-injected documents cannot grant tool permissions (unchanged gate); quota and turn-commit semantics are unchanged (the long-term write runs off the event loop after the durable commit and cannot fail the turn); real-parser fixtures (`test_l02_upload_parsers_live.py`) and real-Ollama document tests are workstation-only and were not re-run for this change (their code path through `DocStore` is exercised by the deterministic suites and by live V6).
+
+## Honest limits
+* Chromadb's `embeddings_queue` is never purged for **live** collections: a deleted *conversation* is clean (its collection is dropped), a deleted *document* is clean (rebuild), but any text that remains in a live conversation's collection stays in its log as well as in its index for as long as the collection exists. Long-term memory has no per-item delete.
+* Offline copies are not touched: an older backup, snapshot or replica retains deleted data until its holder destroys it. A local editable deletion ledger (B6) cannot establish complete deletion history without independent anchoring.
+* VACUUM and file removal are not secure erasure of the storage medium (journals, SSD wear-levelling, filesystem snapshots).
+* Legacy collections are adopted by the first opener; a pre-existing collision cannot be detected retroactively.

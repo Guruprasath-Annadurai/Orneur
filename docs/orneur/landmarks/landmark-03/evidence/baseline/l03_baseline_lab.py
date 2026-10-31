@@ -26,6 +26,9 @@ CANARY = "L03-CANARY-TEXT-"
 def child(code: str, home: Path, timeout: float, extra_env=None):
     env = {k: v for k, v in os.environ.items() if not k.startswith(("ORNEUR_", "ORCA_"))}
     env.update({"ORNEUR_HOME": str(home), "PYTHONPATH": str(REPO), **(extra_env or {})})
+    for kv in filter(None, os.environ.get("L03_PASS_ENV", "").split(",")):          # e.g. L03_PASS_ENV=ORNEUR_VECTOR_MODE=service when re-running the lab against the changed code
+        k, _, v = kv.partition("=")
+        env[k] = v
     t = time.time()
     try:
         p = subprocess.run([PY, "-c", code], env=env, capture_output=True, text=True, timeout=timeout, cwd=REPO)
@@ -345,8 +348,51 @@ print(json.dumps({"doc_collection_a": a._col_name, "doc_collection_b": b._col_na
     return r
 
 
+def E12_deleted_document_bytes(home):
+    """A document is deleted (the product's own DocStore.delete_doc_detailed, then the whole-conversation cascade). Where does its text remain on disk?"""
+    code = PRELUDE + f"""
+import uuid
+from orca.docs import store as ds
+sid = str(uuid.uuid4()); other = str(uuid.uuid4())
+def put(session, text, doc):
+    st = ds.DocStore(session, enforce_registry=True)
+    c = type("C", (), {{"text": text, "chunk_idx": 0, "to_metadata": lambda self: {{"doc_id": doc, "filename": "f.txt", "chunk_idx": 0}}}})()
+    st.add_chunks([c], doc, "f.txt")
+    reg = ds._load_registry(); reg.setdefault(session, []).append({{"doc_id": doc, "filename": "f.txt", "chunk_count": 1, "state": "ready", "sha256": uuid.uuid4().hex}}); ds._save_registry(reg)
+    return st
+put(other, "{CANARY}KEEP-OTHER-DOC", "o1")
+st = put(sid, "{CANARY}DOCUMENT-TEXT-TO-ERASE payroll", "d1")
+r = st.delete_doc_detailed("d1")
+ds.unregister_doc(sid, "d1")
+root = ds.DOCS_DIR / "vectors"
+def scan():
+    found = {{}}
+    for p in root.rglob("*"):
+        if p.is_file() and b"DOCUMENT-TEXT-TO-ERASE" in p.read_bytes(): found[str(p.relative_to(root))] = p.read_bytes().count(b"DOCUMENT-TEXT-TO-ERASE")
+    return found
+import sqlite3
+queue_rows = sqlite3.connect(str(root / "chroma.sqlite3")).execute("select count(*) from embeddings_queue").fetchone()[0]
+out = {{"delete_doc_detailed": r, "after_document_delete": scan(), "embeddings_queue_rows": queue_rows}}
+# whole-conversation deletion cascade (what DELETE /api/session does for documents)
+st2 = put(sid, "{CANARY}SECOND-DOCUMENT-TO-ERASE ledger", "d2")
+from orca.serve.account_delete import _delete_session_data
+res = _delete_session_data(sid)
+out["after_conversation_cascade_docs_deleted"] = res.get("docs_deleted")
+out["segment_dirs_remaining"] = sorted(d.name for d in root.iterdir() if d.is_dir())
+found = {{}}
+for p in root.rglob("*"):
+    if p.is_file():
+        b = p.read_bytes()
+        if b"SECOND-DOCUMENT-TO-ERASE" in b: found[str(p.relative_to(root))] = b.count(b"SECOND-DOCUMENT-TO-ERASE")
+out["after_cascade_second_doc_found_in"] = found
+out["empty_collection_left_for_deleted_session"] = ("docs_" + sid[:12].replace("-", "")) in [c.name for c in __import__("chromadb").PersistentClient(path=str(root)).list_collections()]
+print(json.dumps(out))
+"""
+    return child(code, home, 120)
+
+
 EXPERIMENTS = {"E1": E1_held_lock_gil_stall, "E2": E2_concurrent_create_delete, "E3_E8": E3_E8_many_sessions_fd_rss, "E4": E4_delete_budget_overshoot, "E5": E5_head_of_line_blocking,
-               "E6": E6_crash_during_indexing, "E7": E7_interrupted_deletion_restart, "E9": E9_cross_process_visibility, "E10": E10_deleted_bytes_on_disk, "E11": E11_session_prefix_collision}
+               "E6": E6_crash_during_indexing, "E7": E7_interrupted_deletion_restart, "E9": E9_cross_process_visibility, "E10": E10_deleted_bytes_on_disk, "E11": E11_session_prefix_collision, "E12": E12_deleted_document_bytes}
 
 
 def main():

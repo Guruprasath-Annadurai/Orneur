@@ -267,3 +267,43 @@ def test_two_workers_deleting_the_same_conversation_converge_on_one_complete_del
     [t.join(60) for t in ths]
     assert deletions.get(sid)["state"] == "complete" and f"orca_{sid[:8]}" not in _collections(v.mem)
     assert all(o["access_revoked"] for o in out)
+
+
+def test_a_rebuild_interrupted_between_dropping_the_old_collection_and_renaming_the_copy_loses_nothing(v):
+    """The one window in the per-document erasure: the old collection is gone and the verified copy still carries the temporary name. The next open completes the rename."""
+    sid = str(uuid.uuid4())
+    st, doc_a = _doc_session(sid, CANARY + "kept document about turbines")
+    doc_b = uuid.uuid4().hex
+    c = type("C", (), {"text": CANARY + "document to erase about payroll", "chunk_idx": 0, "to_metadata": lambda self: {"doc_id": doc_b, "filename": "g.txt", "chunk_idx": 0}})()
+    st.add_chunks([c], doc_b, "g.txt")
+    from orca.vectorstore import host as vhost
+
+    name = f"docs_{sid[:12].replace('-', '')}"
+    if v.mode == "service":
+        v.t.stop_owner()
+    V.reset_for_tests()
+    h = vhost.ChromaHost()
+    real_exec = h._rebuild_without
+
+    class Boom(Exception):
+        pass
+
+    client = h._client(h._store(str(v.docs)))
+    real_delete = client.delete_collection
+
+    def crash_after_drop(name_arg=None, **kw):
+        real_delete(name=kw.get("name", name_arg))
+        if kw.get("name", name_arg) == name:
+            raise Boom("killed between drop and rename")
+
+    client.delete_collection = crash_after_drop
+    with pytest.raises(Boom):
+        h.execute({"op": "rebuild_without", "root": str(v.docs), "collection": name, "key": "doc_id", "value": doc_b})
+    client.delete_collection = real_delete
+    names = {c.name for c in client.list_collections()}
+    assert name not in names and name + "__rebuild" in names, "precondition: the window was reproduced"
+    h.close()
+    V.reset_for_tests()
+    again = ds.DocStore(sid, enforce_registry=True)                      # opening the conversation again completes the rename
+    assert [hit["doc_id"] for hit in again.retrieve("turbines")] == [doc_a]
+    assert name in _collections(v.docs) and name + "__rebuild" not in _collections(v.docs)
