@@ -243,7 +243,31 @@ with sync_playwright() as pw:
         assert pm.evaluate("() => document.documentElement.scrollWidth - window.innerWidth") <= 1
     n2()
 
+    @step("T1_tablet_layout_is_usable", lambda: pm)
+    def t1():
+        ct = browser.new_context(bypass_csp=True, viewport={"width": 820, "height": 1180}, has_touch=True)
+        pt = ct.new_page()
+        sign_in(pt, BOB)
+        assert pt.evaluate("() => document.documentElement.scrollWidth - window.innerWidth") <= 1, "horizontal scroll on tablet"
+        box = pt.locator("#msg-input").bounding_box()
+        assert box and box["width"] > 200 and 0 <= box["y"] <= 1180, box
+        pt.wait_for_selector("#recents-list .rec-row", timeout=15000)
+        ct.close()
+    t1()
+
     # ---------------------------------------------------------------- accessibility basics (desktop + mobile)
+    @step("B1_no_broken_images_and_the_official_brand_is_shown", lambda: pa)
+    def b1():
+        for name, p in (("desktop", state["p2"]), ("mobile", pm)):
+            p.goto(f"{BASE}/conversation")
+            p.wait_for_selector(".branding img", timeout=15000)
+            time.sleep(0.8)
+            broken = p.evaluate("() => [...document.images].filter(i => !(i.complete && i.naturalWidth > 0)).map(i => i.getAttribute('src'))")
+            assert not broken, f"{name}: broken images {broken}"
+            names = p.evaluate("() => [...document.querySelectorAll('.branding img')].map(i => i.getAttribute('src').split('/').pop())")
+            assert any(n.startswith("orneur-emblem") for n in names) and any(n.startswith("orneur-wordmark") for n in names), names
+    b1()
+
     @step("H1_controls_have_accessible_names_and_visible_focus", lambda: pm)
     def h1():
         pd = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 800}).new_page()

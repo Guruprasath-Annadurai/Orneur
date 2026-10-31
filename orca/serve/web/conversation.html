@@ -27,8 +27,9 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 
 /* Sidebar -- B01/B02/B03 locked structure */
 .sidebar{width:246px;min-width:246px;background:var(--rail);color:#EDECE9;padding:24px 15px 18px;display:flex;flex-direction:column}
-.branding{margin:0 12px 28px;height:40px;display:flex;align-items:center}
-.branding img{width:170px;height:auto;max-height:40px;object-fit:contain}
+.branding{margin:0 12px 28px;height:40px;display:flex;align-items:center;gap:10px}
+.branding .brand-emblem{width:32px;height:32px;object-fit:contain}
+.branding .brand-wordmark{width:125px;height:auto;max-height:40px;object-fit:contain}
 .primary{display:flex;flex-direction:column;gap:5px}
 .navrow{display:flex;gap:13px;align-items:center;height:42px;padding:0 14px;border-radius:10px;color:#BDBCB9;font-size:14px;letter-spacing:-.12px;cursor:pointer;border:none;background:none;width:100%;text-align:left;font-family:inherit}
 .navrow svg{opacity:.8;flex-shrink:0}
@@ -589,7 +590,7 @@ button.navrow.profile{width:100%;text-align:left;font-family:inherit;color:inher
 
 <div class="app" id="app-root">
   <aside class="sidebar" aria-label="Primary navigation">
-    <div class="branding"><img src="/static/b01_approved_assets/orneur_logo_horizontal.png" alt="ORNEUR"/></div>
+    <div class="branding"><img class="brand-emblem" src="/static/brand/orneur-emblem-64.7ade6284.png" srcset="/static/brand/orneur-emblem-64.7ade6284.png 64w, /static/brand/orneur-emblem-192.40a30f86.png 192w, /static/brand/orneur-emblem-256.5b8e8b28.png 256w" sizes="32px" width="32" height="32" alt="" decoding="async"/><img class="brand-wordmark" src="/static/brand/orneur-wordmark-240.9a2ab2a8.png" srcset="/static/brand/orneur-wordmark-240.9a2ab2a8.png 240w, /static/brand/orneur-wordmark-480.d89f850e.png 480w" sizes="125px" width="125" height="14" alt="ORNEUR" decoding="async"/></div>
     <nav class="primary">
       <button type="button" class="navrow navnew" onclick="_withTempChatGuard(() => newConversation())">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5h7v7M19 5l-9 9"/><path d="M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"/></svg>
@@ -979,6 +980,7 @@ function mdToHtml(md, sources) {
   h = h.replace(new RegExp(`${nonce}(\\d+)${nonce}`, 'g'), (_, i) => codeStore[Number(i)]);
   h = h.replace(/\n\n/g, '</p><p>');
   h = h.replace(/\n/g, '<br>');
+  h = h.replace(/<\/li><br>(?=<li>)/g, '</li>').replace(/<ul><br>/g, '<ul>').replace(/<br><\/ul>/g, '</ul>'); // list items are block rows; the newline between them is not a line break
   return `<p>${h}</p>`
     .replace(/<p><\/p>/g, '')
     .replace(/<p>(<(?:pre|ul|ol|h[123])>)/g, '$1')

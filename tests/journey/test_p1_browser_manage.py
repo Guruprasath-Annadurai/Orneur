@@ -17,7 +17,7 @@ PIECES = [f"w{i} " for i in range(16)]
 STEPS = ["M1_a_new_conversation_is_created_answered_and_listed", "M2_rename_from_the_menu_persists_across_reload",
          "M3_search_finds_own_conversation_by_content_and_never_anothers", "M4_another_user_cannot_read_modify_stream_into_or_delete_the_conversation",
          "M5_reopen_after_close_and_login_restores_the_exact_transcript", "M6_delete_needs_confirmation_then_removes_it_everywhere",
-         "N1_mobile_navigation_send_stream_stop_and_reopen", "N2_mobile_touch_targets_and_layout", "H1_controls_have_accessible_names_and_visible_focus",
+         "N1_mobile_navigation_send_stream_stop_and_reopen", "N2_mobile_touch_targets_and_layout", "T1_tablet_layout_is_usable", "B1_no_broken_images_and_the_official_brand_is_shown", "H1_controls_have_accessible_names_and_visible_focus",
          "H2_reduced_motion_is_honoured", "Z_no_uncaught_page_errors"]
 
 

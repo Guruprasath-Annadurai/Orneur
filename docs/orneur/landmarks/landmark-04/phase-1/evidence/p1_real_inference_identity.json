@@ -1,0 +1,32 @@
+{
+ "ollama_model_installed": [
+  "llama3.2:1b"
+ ],
+ "requested_model_sent_to_provider": [
+  "llama3.2:1b"
+ ],
+ "provider_calls_for_two_turns": 4,
+ "provider_http_paths": [
+  "/api/chat"
+ ],
+ "turn1_answer": "144",
+ "turn2_answer": "150",
+ "turn2_request_carried_turn1": true,
+ "disclosed_model_identity": {
+  "requested_tier": "core",
+  "served_tier": "nano",
+  "served_model": "llama3.2:1b",
+  "backend": "ollama",
+  "substituted": true,
+  "substitution_reason": "kernel_routing",
+  "fallback_from": null,
+  "lifecycle": "EXPERIMENTAL",
+  "disclosure": "Experimental model -- not qualified.",
+  "data_left_infrastructure": false,
+  "weights_origin": "third_party",
+  "native_orneur_weights": false,
+  "runtime": "ollama"
+ },
+ "delivery": "upstream",
+ "persisted": "saved"
+}

@@ -18,6 +18,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import threading
 import hashlib
 import hmac
 import contextlib
@@ -271,6 +272,26 @@ app.add_middleware(
 from starlette.middleware.trustedhost import TrustedHostMiddleware  # noqa: E402
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts())
+
+
+_KG_EXTRACT_SLOTS_N = int(orneur_env("KG_EXTRACT_SLOTS", "2"))
+_KG_EXTRACT_SLOTS = threading.BoundedSemaphore(max(1, _KG_EXTRACT_SLOTS_N))
+
+
+def _spawn_kg_extraction(sess, text: str):
+    """Post-turn knowledge extraction: best-effort, derived data, at most ``ORNEUR_KG_EXTRACT_SLOTS`` at a time. Returns the task, or None when every slot is busy
+    (the extraction is skipped rather than queued: an unbounded backlog of hidden model calls is worse than a missing graph edge)."""
+    if not _KG_EXTRACT_SLOTS.acquire(blocking=False):
+        metrics.record_event("refusal", "kg_extraction_skipped")
+        return None
+
+    def _run():
+        try:
+            sess.knowledge_graph.extract_and_add(text, "chat", sess.brain)
+        finally:
+            _KG_EXTRACT_SLOTS.release()
+
+    return asyncio.create_task(asyncio.to_thread(_run))
 
 
 MAX_REQUEST_BODY_BYTES = int(orneur_env("MAX_REQUEST_BODY_BYTES", str(30 * 1024 * 1024)))  # 30MB default
@@ -2949,10 +2970,7 @@ async def _stream_dispatch(
                     sess.persist_to_redis(fence_token=fence)
 
                 if not temporary_chat.is_hidden(sess.id) and not _gone:
-                    asyncio.create_task(asyncio.to_thread(
-                        sess.knowledge_graph.extract_and_add,
-                        f"{req.message}\n{full}", "chat", sess.brain,
-                    ))
+                    _spawn_kg_extraction(sess, f"{req.message}\n{full}")
 
             # Citation compliance: mechanical check, not just a prompt instruction.
             # If document context was available and the response cited zero
