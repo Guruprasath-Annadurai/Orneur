@@ -357,3 +357,14 @@ def test_writes_stuck_behind_a_held_lock_fill_only_the_write_lane_every_caller_i
             ok = False
             time.sleep(0.5)
     assert ok, "the service did not resume after the competing lock was released"
+
+
+def test_a_large_indexing_batch_is_not_mistaken_for_a_stall(svc, monkeypatch):
+    """The deadline scales with the batch: a 400-document add on a deliberately short base deadline completes, where a flat 2 s deadline would have refused it."""
+    monkeypatch.setenv("ORNEUR_VECTOR_DEADLINE_S", "2")
+    col, _ = svc.store.open_collection("orca_bulk00001", binding=V.session_binding("orca_bulk00001"))
+    docs = [f"chapter {i} describes the logistics of moving turbines across the northern border " * 4 for i in range(400)]
+    t0 = time.monotonic()
+    col.add(documents=docs, ids=[f"c{i}" for i in range(400)], metadatas=[{"a": i} for i in range(400)])
+    took = time.monotonic() - t0
+    assert col.count() == 400 and took < 45, f"took {took:.1f}s"

@@ -174,6 +174,7 @@ class Owner:
         os.chmod(sp, 0o600)
         srv.listen(64)
         srv.settimeout(0.5)
+        threading.Thread(target=self._warm_embedder, daemon=True, name="vector-warmup").start()
         for _ in range(self.workers):
             threading.Thread(target=self._worker, args=(self.jobs,), daemon=True).start()
         for _ in range(self.write_workers):
@@ -212,6 +213,17 @@ class Owner:
         except OSError:
             pass
         self.host.close()
+
+    @staticmethod
+    def _warm_embedder() -> None:
+        """Load chromadb's default embedding model once, off the request path, so the first indexing request does not pay model-load time inside its deadline. Failure is harmless
+        (the model loads on first use instead)."""
+        try:
+            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+            DefaultEmbeddingFunction()(["warm up"])
+        except Exception:
+            pass
 
     def stats(self) -> dict:
         with self.run_lock:

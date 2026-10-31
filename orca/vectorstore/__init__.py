@@ -117,7 +117,11 @@ class Collection:
 
     def add(self, documents=None, ids=None, metadatas=None, embeddings=None):
         kw = {k: v for k, v in (("documents", documents), ("ids", ids), ("metadatas", metadatas), ("embeddings", embeddings)) if v is not None}
-        self._call("add", kw)
+        # A batch costs time in proportion to its size (chromadb embeds every document it is given without embeddings): the deadline scales with the batch, capped, so indexing a
+        # large document is not refused as "stuck" while a genuinely stuck write is still released after a bounded time.
+        n = len(documents or ids or [])
+        base = float(os.environ.get("ORNEUR_VECTOR_DEADLINE_S", "5"))
+        self._call("add", kw, deadline_s=self._deadline or (base + min(115.0, 0.1 * n)))
 
     def query(self, query_texts=None, query_embeddings=None, n_results=5, where=None, include=None):
         kw = {k: v for k, v in (("query_texts", query_texts), ("query_embeddings", query_embeddings), ("where", where), ("include", include)) if v is not None}
