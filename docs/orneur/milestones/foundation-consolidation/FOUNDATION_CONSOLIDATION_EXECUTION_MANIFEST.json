@@ -101,9 +101,11 @@
     "number": 150,
     "url": "https://github.com/Guruprasath-Annadurai/Orneur/pull/150",
     "branch": "cursor/foundation-consolidation-preflight-8d90",
-    "head_sha": "2a6299b090eee98a69dfda4e425290e89644f609",
+    "head_sha": "8c8496c2ebb302f867afd31fed4e2c15e6bfd821",
     "draft": true,
     "base": "main",
-    "role": "review_only_docs_preflight_not_stack_merge"
+    "role": "review_only_docs_preflight_not_stack_merge",
+    "package_commit_sha": "ee47ceeacb4471aa9e987bb8028be26410a425ca",
+    "head_sha_note": "branch tip after PR-binding commit; package file payload landed in package_commit_sha"
   }
 }
