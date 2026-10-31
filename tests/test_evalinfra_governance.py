@@ -83,12 +83,60 @@ def test_committed_governance_state_is_untouched():
 FROZEN = ["docs/orneur/acceptance", "docs/orneur/authorization", "docs/orneur/phase-21/rse", "orca/rse", "orca/train/authorization.py",
           "docs/orneur/acceptance/register_graph.json", "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STATUS.json", "eval_private"]
 
+# Evalinfra originally pinned an empty diff vs cd6af2a. Multi-PR integration tips
+# intentionally carry later, independently qualified Foundation paths; those are
+# allowlisted by exact git blob identity. Any other frozen-path drift still fails.
+# Missing branch-point objects fail closed (no shallow-clone skip).
+_BRANCH_POINT = "cd6af2ac2cf1320b5ffd5ca646784c99ccc5ee8d"
+_ALLOWED_FROZEN_DIFF_BLOBS = {
+    # F02 / Workstream F genesis-native pretraining auth package (tip 649d90f…)
+    "docs/orneur/authorization/genesis_native_pretraining/AUTHORITY_REGISTRY.json":
+        "d236706d07d3934d191fad0ee81ac9a49c6d8463",
+    "docs/orneur/authorization/genesis_native_pretraining/AUTHORIZATION.json":
+        "1eff1d91fae0d028a9275b716824c0c4cc8f0833",
+    "docs/orneur/authorization/genesis_native_pretraining/REVOCATIONS.json":
+        "0cabf72961f637d81425564ac7bb64b0d611af7b",
+    # F03 engineering consumer_verification.py (0fe98e04… / blob a42286de…)
+    "orca/rse/imp1/consumer_verification.py":
+        "a42286de9a0babe348a2f9b03840a29fb4664e64",
+}
+
 
 def test_no_frozen_or_private_path_differs_from_the_branch_point():
-    """The branch was cut from cd6af2a; none of the frozen/governance paths may differ from it. Skipped where the commit is not available (e.g. a shallow clone)."""
-    base = "cd6af2ac2cf1320b5ffd5ca646784c99ccc5ee8d"
-    probe = subprocess.run(["git", "cat-file", "-e", base + "^{commit}"], cwd=ROOT, capture_output=True)
-    if probe.returncode != 0:
-        pytest.skip("branch-point commit not available")
-    out = subprocess.run(["git", "diff", "--name-only", base, "--", *FROZEN], cwd=ROOT, capture_output=True, text=True)
-    assert out.returncode == 0 and out.stdout.strip() == "", out.stdout
+    """Frozen/governance paths must match the evalinfra branch point, except exact
+    blobs from independently qualified Foundation tips that are ancestors of HEAD.
+
+    A missing branch-point commit is a hard failure — required CI checkouts use
+    full history. Soft-skipping on shallow clones previously false-greened this gate.
+    """
+    probe = subprocess.run(
+        ["git", "cat-file", "-e", _BRANCH_POINT + "^{commit}"],
+        cwd=ROOT,
+        capture_output=True,
+    )
+    assert probe.returncode == 0, (
+        f"required branch-point {_BRANCH_POINT} is missing from the worktree "
+        "(incomplete checkout). Refusing to skip; configure full-history fetch."
+    )
+    out = subprocess.run(
+        ["git", "diff", "--name-only", _BRANCH_POINT, "--", *FROZEN],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    changed = [p for p in out.stdout.splitlines() if p.strip()]
+    unexpected = [p for p in changed if p not in _ALLOWED_FROZEN_DIFF_BLOBS]
+    assert not unexpected, (
+        "frozen/governance paths changed beyond the allowlisted qualified lineage:\n"
+        + "\n".join(unexpected)
+    )
+    for path, expected_blob in _ALLOWED_FROZEN_DIFF_BLOBS.items():
+        if path not in changed:
+            continue
+        blob = subprocess.check_output(
+            ["git", "rev-parse", f"HEAD:{path}"], cwd=ROOT, text=True
+        ).strip()
+        assert blob == expected_blob, (
+            f"{path} blob {blob} != pinned qualified blob {expected_blob}"
+        )
