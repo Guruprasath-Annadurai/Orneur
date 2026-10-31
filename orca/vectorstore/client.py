@@ -112,13 +112,24 @@ class ServiceTransport:
         threading.Thread(target=proc.wait, daemon=True, name="vector-owner-reaper").start()      # reap it when it exits, so a replaced owner never lingers as a zombie
         self.counters["owner_starts"] += 1
 
-    def _owner_lock_refusal_logged(self) -> bool:
-        """True when the most recent owner.log lines show a fail-closed datadir-lock refusal (exit 2), not a slow start."""
+    def _owner_lock_refusal_logged(self, *, since_offset: int = 0) -> bool:
+        """True when owner.log shows a fail-closed datadir-lock refusal (exit 2) after ``since_offset``.
+
+        Only the suffix written since the latest spawn attempt is consulted — historical refusals from
+        an earlier exclusive-restore attempt must not poison a later free start.
+        """
         try:
-            text = paths.log_path(self.home).read_text(errors="replace")[-4000:]
+            raw = paths.log_path(self.home).read_bytes()
         except OSError:
             return False
+        text = raw[max(0, since_offset):].decode("utf-8", errors="replace")
         return "vector owner refused to start" in text
+
+    def _log_size(self) -> int:
+        try:
+            return paths.log_path(self.home).stat().st_size
+        except OSError:
+            return 0
 
     def ensure_owner(self, budget_s: float | None = None) -> None:
         end = time.monotonic() + (budget_s if budget_s is not None else self.start_timeout_s)
@@ -128,21 +139,23 @@ class ServiceTransport:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)                                   # one starter at a time, across every application process
             last_spawn = 0.0
+            spawn_log_at = 0
             while time.monotonic() < end:
                 if self.ping(max(0.1, min(0.5, end - time.monotonic()))):
                     return
                 # No live owner process (never started, or killed by the supervisor): start one. A previous owner that is merely FROZEN still holds the owner lock, and a new
                 # instance would exit at once, so only spawn when none is alive, and retry while waiting (the supervisor may kill the frozen one a moment from now).
                 if self.owner_pid() is None and time.monotonic() - last_spawn > 1.0:
+                    spawn_log_at = self._log_size()
                     self._spawn()
                     last_spawn = time.monotonic()
                     time.sleep(0.2)
                     # MASTER-04: lock refusal is fail-closed and logged by the owner before exit 2. Do NOT treat a slow chromadb start as a refusal.
-                    if self.owner_pid() is None and self._owner_lock_refusal_logged():
+                    if self.owner_pid() is None and self._owner_lock_refusal_logged(since_offset=spawn_log_at):
                         self.counters["lock_refused"] = self.counters.get("lock_refused", 0) + 1
                         raise VectorUnavailable("vector owner refused to start (data-directory lock held by a restore or unavailable)")
                 time.sleep(0.1)
-            if self._owner_lock_refusal_logged():
+            if self._owner_lock_refusal_logged(since_offset=spawn_log_at):
                 self.counters["lock_refused"] = self.counters.get("lock_refused", 0) + 1
                 raise VectorUnavailable("vector owner refused to start (data-directory lock held by a restore or unavailable)")
             raise VectorUnavailable("vector service did not start")

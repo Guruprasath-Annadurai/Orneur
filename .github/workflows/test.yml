@@ -363,6 +363,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # MASTER-04: ancestry gate (test_A) must see M03/L03/main objects; shallow checkout
+          # fail-closed with missing SHAs. Same full-history requirement as Deterministic.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -177,6 +177,11 @@ async def _lifespan(_app: FastAPI):
         except Exception:
             _logger.debug("vector owner stop during shutdown failed", exc_info=True)
         _lock.close()
+        # MASTER-04: service mode is process-scoped for `orca serve`. TestClient lifespan must not
+        # leave it sticky for later tests that never enter lifespan (those expect embedded mode, and
+        # monkeypatched MEMORY_DIR/DOCS_DIR outside ORCA_HOME would otherwise fail as bad_root).
+        _vectorstore.enable_service_mode(False)
+        _vectorstore.reset_for_tests()
         from orca.serve import ops as _ops
 
         _ops.close_inflight_as_shutdown()          # turns still running here will never commit: say so durably before the process exits

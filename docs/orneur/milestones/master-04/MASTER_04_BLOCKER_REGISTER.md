@@ -12,5 +12,6 @@
 | M04-8 | — | Paid infra / launch / training / protected merge | **BLOCKED** |
 | M04-9 | P2 | Chromadb WAL growth on live collections (L03-B3) | OPEN (engine behaviour) |
 | M04-10 | — | Physical erasure of storage medium | **UNPROVEN by design** |
+| M04-11 | P1 | Lifespan left `enable_service_mode(True)` sticky → Deterministic CI vector deletions failed (`bad_root`) | **FIXED (engineering)** — lifespan clears service mode + transport cache on exit; Journeys `fetch-depth:0` for ancestry |
 
-Unresolved P0: 0. Engineering P1 for integration: closed pending independent retest. Formal acceptance **0/95**.
+Unresolved P0: 0. Engineering P1 for integration: closed pending independent retest / exact-head CI. Formal acceptance **0/95**.

@@ -7,6 +7,8 @@
 ## Green (after fix on `d3afecc`)
 Local: `pytest tests/qualification/test_master04_integration.py` — **9 passed** (`evidence/master04_suite_green.log`).
 
+Deterministic CI red→green lever: lifespan must clear service mode on exit (B6 `with TestClient` was contaminating later L02 deletion/DocStore tests via sticky service mode + MEMORY_DIR outside ORCA_HOME → owner `bad_root`). Journeys red→green for ancestry: `fetch-depth: 0`.
+
 | Test | Proves |
 |---|---|
 | A ancestry | M03 + L03 SHAs are ancestors; missing objects would fail closed |
