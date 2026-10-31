@@ -32,7 +32,11 @@ class Owner:
     def __init__(self, home: Path, *, workers=4, queue_max=32, max_conns=64, per_collection=2, idle_exit_s=300.0, max_open=32, max_rss_mb=0):
         self.home = Path(home).resolve()
         self.host = ChromaHost(max_open=max_open)
-        self.jobs: queue.Queue = queue.Queue(maxsize=queue_max)
+        # Two bounded lanes. A write that is stuck behind a competing process's database lock occupies a worker until the lock is released; if reads shared those workers, a few
+        # stuck writes would starve every read. Reads (WAL mode) keep being served; stuck writes can only fill the write lane, after which further writes are refused immediately.
+        self.jobs: queue.Queue = queue.Queue(maxsize=queue_max)               # read lane
+        self.wjobs: queue.Queue = queue.Queue(maxsize=queue_max)              # write lane
+        self.write_workers = int(os.environ.get("ORNEUR_VECTOR_WRITE_WORKERS", "2"))
         self.max_rss_mb, self._rss_checked = int(max_rss_mb), 0.0
         self.exit_reason = "idle"
         self.workers, self.max_conns, self.per_collection, self.idle_exit_s = workers, max_conns, per_collection, idle_exit_s
@@ -48,6 +52,13 @@ class Owner:
         self.token = paths.token_path(self.home).read_text().strip()
 
     # ── request handling ─────────────────────────────────────────────────────────────────────────────────────────────
+    READ_METHODS = {"query", "get", "peek", "count"}
+    READ_OPS = {"list_collections", "collection_info", "binding_report"}
+
+    def _is_read(self, req: dict) -> bool:
+        op = req.get("op")
+        return op in self.READ_OPS or (op == "call" and req.get("method") in self.READ_METHODS)
+
     def _valid_root(self, req: dict) -> bool:
         root = req.get("root")
         if root is None:
@@ -58,10 +69,10 @@ class Owner:
         except (ValueError, OSError):
             return False
 
-    def _worker(self):
+    def _worker(self, lane: "queue.Queue"):
         while not self.stop.is_set():
             try:
-                conn, req, deadline = self.jobs.get(timeout=0.5)
+                conn, req, deadline = lane.get(timeout=0.5)
             except queue.Empty:
                 continue
             key = f'{req.get("root")}|{req.get("collection")}' if req.get("collection") else None
@@ -134,8 +145,9 @@ class Owner:
                         return
                     self.inflight_by_collection[key] = n + 1
             deadline = time.monotonic() + max(0.05, float(req.get("deadline_ms", 5000)) / 1000.0)
+            lane = self.jobs if self._is_read(req) else self.wjobs
             try:
-                self.jobs.put_nowait((conn, req, deadline))
+                lane.put_nowait((conn, req, deadline))
             except queue.Full:
                 if key:
                     with self.coll_lock:
@@ -163,9 +175,11 @@ class Owner:
         srv.listen(64)
         srv.settimeout(0.5)
         for _ in range(self.workers):
-            threading.Thread(target=self._worker, daemon=True).start()
+            threading.Thread(target=self._worker, args=(self.jobs,), daemon=True).start()
+        for _ in range(self.write_workers):
+            threading.Thread(target=self._worker, args=(self.wjobs,), daemon=True).start()
         while not self.stop.is_set():
-            if time.monotonic() - self.last_activity > self.idle_exit_s and self.jobs.empty():
+            if time.monotonic() - self.last_activity > self.idle_exit_s and self.jobs.empty() and self.wjobs.empty():
                 break
             if self.max_rss_mb and time.monotonic() - self._rss_checked > 1.0:
                 self._rss_checked = time.monotonic()
@@ -173,7 +187,7 @@ class Owner:
 
                 with self.run_lock:
                     quiet = not self.running
-                if quiet and self.jobs.empty() and proc_rss_mb() > self.max_rss_mb:
+                if quiet and self.jobs.empty() and self.wjobs.empty() and proc_rss_mb() > self.max_rss_mb:
                     # chromadb does not give memory back when collections are closed (measured). The only reliable release is a new process: leave when nothing is running; the next call starts a
                     # fresh owner (~0.6 s) and the data is untouched.
                     self.exit_reason = "rss"
@@ -203,7 +217,7 @@ class Owner:
         with self.run_lock:
             oldest = round(time.monotonic() - min(self.running.values()), 2) if self.running else 0.0
             running = len(self.running)
-        return {**self.host.stats(), "queue_depth": self.jobs.qsize(), "connections": self.conns, "refused": dict(self.refused), "workers": self.workers, "running": running,
+        return {**self.host.stats(), "queue_depth": self.jobs.qsize() + self.wjobs.qsize(), "read_queue": self.jobs.qsize(), "write_queue": self.wjobs.qsize(), "connections": self.conns, "refused": dict(self.refused), "workers": self.workers, "write_workers": self.write_workers, "running": running,
                 "oldest_running_s": oldest}
 
 

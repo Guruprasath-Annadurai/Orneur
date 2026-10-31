@@ -172,7 +172,9 @@ def test_admission_is_bounded_a_flood_during_a_stall_is_refused_or_timed_out_not
     holder = Holder(svc.root / "chroma.sqlite3", 20)
     t = svc.t
     t.max_inflight, t.max_waiting, t.queue_wait_s = 3, 4, 0.3
+    t.max_write_inflight = 3
     t._sem = threading.BoundedSemaphore(3)
+    t._wsem = threading.BoundedSemaphore(3)
     outcomes, lock = [], threading.Lock()
 
     def one(i):
@@ -309,3 +311,49 @@ def test_an_owner_whose_memory_passes_its_limit_leaves_when_idle_and_the_next_ca
         time.sleep(0.3)
     assert svc.t.owner_pid() != pid0, "the over-limit owner did not recycle"
     assert col.count() == 2 and svc.t.owner_pid() not in (None, pid0)
+
+
+def test_writes_stuck_behind_a_held_lock_fill_only_the_write_lane_every_caller_is_released_in_time_and_service_resumes_when_the_lock_ends(svc):
+    """Stuck writes occupy only the write lane (bounded), further writes are refused rather than queued, every call returns within its deadline, and once the competing lock is
+    released the service answers reads and writes again. (Whether READS are served *during* the stall depends on whether the native call froze the owner's interpreter -- about one
+    trial in three at baseline; when it did, the supervisor replaces the owner and a fresh chromadb client cannot initialise until the competing lock ends. That limit is recorded in
+    L03_VECTOR_ISOLATION_ARCHITECTURE.md, it is not asserted away here.)"""
+    a = _seed(svc, "orca_readable01")
+    cols = [_seed(svc, f"orca_writer{i:04d}") for i in range(4)]
+    holder = Holder(svc.root / "chroma.sqlite3", 14)
+    svc.t.default_deadline_s = 3.0
+    svc.t.queue_wait_s = 0.5
+    results, lock = [], threading.Lock()
+
+    def attempt(i):
+        t = time.monotonic()
+        try:
+            cols[i % 4].add(documents=["blocked"], ids=[f"w{i}"], metadatas=[{"a": 1}])
+            r = "ok"
+        except V.VectorBusy:
+            r = "busy"
+        except V.VectorError as e:
+            r = type(e).__name__
+        with lock:
+            results.append((r, time.monotonic() - t))
+
+    try:
+        ths = [threading.Thread(target=attempt, args=(i,), daemon=True) for i in range(12)]
+        t0 = time.monotonic()
+        [t.start() for t in ths]
+        [t.join(15) for t in ths]
+        assert len(results) == 12 and time.monotonic() - t0 < 9, "a caller was not released in time"
+        assert max(d for _, d in results) < 5.0, results
+        assert any(r == "busy" for r, _ in results), f"no write was refused: {results}"
+    finally:
+        holder.release()
+    deadline = time.monotonic() + 30
+    ok = False
+    while time.monotonic() < deadline and not ok:
+        try:
+            ok = a.count() == 1
+            cols[0].add(documents=["after the lock"], ids=["after"], metadatas=[{"a": 1}])
+        except V.VectorError:
+            ok = False
+            time.sleep(0.5)
+    assert ok, "the service did not resume after the competing lock was released"

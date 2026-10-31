@@ -47,7 +47,9 @@ class ServiceTransport:
         self.max_inflight, self.max_waiting, self.queue_wait_s, self.default_deadline_s, self.start_timeout_s = max_inflight, max_waiting, queue_wait_s, default_deadline_s, start_timeout_s
         self.stuck_after_s = stuck_after_s
         self.owner_env = owner_env or {}
-        self._sem = threading.BoundedSemaphore(max_inflight)
+        self._sem = threading.BoundedSemaphore(max_inflight)                        # read lane
+        self.max_write_inflight = max(1, min(max_inflight, int(os.environ.get("ORNEUR_VECTOR_MAX_WRITE_INFLIGHT", "3"))))
+        self._wsem = threading.BoundedSemaphore(self.max_write_inflight)             # write lane: writes are what block behind a database lock, so they get their own, smaller budget
         self._waiting = 0
         self._wlock = threading.Lock()
         self._probe_lock = threading.Lock()
@@ -179,13 +181,15 @@ class ServiceTransport:
     def call(self, req: dict, deadline_s: float | None = None) -> dict:
         deadline_s = float(deadline_s or self.default_deadline_s)
         self.counters["calls"] += 1
+        is_read = req.get("op") in ("list_collections", "collection_info", "binding_report", "ping", "stats") or (req.get("op") == "call" and req.get("method") in ("query", "get", "peek", "count"))
+        sem = self._sem if is_read else self._wsem
         with self._wlock:
             if self._waiting >= self.max_waiting:
                 self.counters["busy_local"] += 1
                 raise VectorBusy("vector operations are at capacity")
             self._waiting += 1
         try:
-            if not self._sem.acquire(timeout=self.queue_wait_s):
+            if not sem.acquire(timeout=self.queue_wait_s):
                 self.counters["busy_local"] += 1
                 raise VectorBusy("vector operations are at capacity")
         finally:
@@ -195,7 +199,7 @@ class ServiceTransport:
         try:
             return self._do(req, deadline_s, t0)
         finally:
-            self._sem.release()
+            sem.release()
             with self._latlock:
                 self.lat_ms.append((time.monotonic() - t0) * 1000)
                 if len(self.lat_ms) > 2000:
@@ -249,7 +253,7 @@ class ServiceTransport:
             lat = sorted(self.lat_ms)
         pct = lambda p: round(lat[min(len(lat) - 1, int(len(lat) * p))], 1) if lat else None
         return {"client": dict(self.counters), "latency_ms": {"p50": pct(0.5), "p95": pct(0.95), "p99": pct(0.99), "n": len(lat)}, "max_inflight": self.max_inflight,
-                "max_waiting": self.max_waiting}
+                "max_write_inflight": self.max_write_inflight, "max_waiting": self.max_waiting}
 
     def owner_stats_quick(self, max_age_s: float = 2.0) -> dict | None:
         """Owner statistics for a readiness probe: a half-second budget, no spawning, and the answer (or the failure) is reused for ``max_age_s`` so a probe storm does not turn

@@ -1,0 +1,37 @@
+{
+ "product_checkout": "/home/pc/projects/Orneur-l03",
+ "product_sha": "2c84c44e21042ad08fc3c7ccafd740387b455dad",
+ "lock_seconds": 18.0,
+ "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+ "recorded_at": "2026-10-31T07:51:19Z",
+ "seed_remember": 200,
+ "seed_remember_read_conversation": 200,
+ "requests": {
+  "remember_new_conversation_2": {
+   "status": 504,
+   "code": "request_timeout",
+   "seconds": 5.02
+  },
+  "recall_open_conversation": {
+   "status": 503,
+   "code": "server_busy",
+   "seconds": 5.12
+  },
+  "remember_new_conversation_1": {
+   "status": 503,
+   "code": "server_busy",
+   "seconds": 5.12
+  },
+  "delete_seeded_conversation": {
+   "status": 202,
+   "code": null,
+   "seconds": 13.77
+  }
+ },
+ "livez_probes": {
+  "count": 62,
+  "worst_seconds": 0.02,
+  "slow_over_1s": [],
+  "failed": []
+ }
+}
