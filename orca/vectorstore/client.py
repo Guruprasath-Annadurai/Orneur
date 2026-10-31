@@ -28,6 +28,15 @@ from orca.vectorstore.errors import VectorBusy, VectorNotFound, VectorTimeout, V
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return False
+    return state != "Z"                                                  # a zombie is dead; it only awaits its parent's wait()
+
+
 class ServiceTransport:
     def __init__(self, home: Path, *, max_inflight=8, max_waiting=16, queue_wait_s=2.0, default_deadline_s=5.0, start_timeout_s=20.0, stuck_after_s=8.0, owner_env=None):
         self.home = Path(home).resolve()
@@ -86,21 +95,22 @@ class ServiceTransport:
         env = {k: v for k, v in os.environ.items()}
         env.update({"ORNEUR_HOME": str(self.home), "PYTHONPATH": str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", ""), **self.owner_env})
         log = open(paths.log_path(self.home), "ab")
-        subprocess.Popen([sys.executable, "-m", "orca.vectorstore.server", "--home", str(self.home)], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                         start_new_session=True, close_fds=True, cwd=str(REPO_ROOT))
+        proc = subprocess.Popen([sys.executable, "-m", "orca.vectorstore.server", "--home", str(self.home)], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                start_new_session=True, close_fds=True, cwd=str(REPO_ROOT))
         log.close()
+        threading.Thread(target=proc.wait, daemon=True, name="vector-owner-reaper").start()      # reap it when it exits, so a replaced owner never lingers as a zombie
         self.counters["owner_starts"] += 1
 
     def ensure_owner(self, budget_s: float | None = None) -> None:
-        if self.ping(1.0):
-            return
         end = time.monotonic() + (budget_s if budget_s is not None else self.start_timeout_s)
+        if self.ping(max(0.1, min(1.0, end - time.monotonic()))):
+            return
         fd = os.open(str(paths.spawn_lock_path(self.home)), os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)                                   # one starter at a time, across every application process
             last_spawn = 0.0
             while time.monotonic() < end:
-                if self.ping(0.5):
+                if self.ping(max(0.1, min(0.5, end - time.monotonic()))):
                     return
                 # No live owner process (never started, or killed by the supervisor): start one. A previous owner that is merely FROZEN still holds the owner lock, and a new
                 # instance would exit at once, so only spawn when none is alive, and retry while waiting (the supervisor may kill the frozen one a moment from now).
@@ -120,9 +130,7 @@ class ServiceTransport:
         self.counters["owner_kills"] += 1
         end = time.monotonic() + wait_s
         while time.monotonic() < end:
-            try:
-                os.kill(pid, 0)
-            except OSError:
+            if not _alive(pid):
                 return True
             time.sleep(0.05)
         return False
@@ -135,9 +143,7 @@ class ServiceTransport:
         os.kill(pid, signal.SIGTERM)
         end = time.monotonic() + wait_s
         while time.monotonic() < end:
-            try:
-                os.kill(pid, 0)
-            except OSError:
+            if not _alive(pid):
                 return True
             time.sleep(0.05)
         return False
@@ -193,6 +199,7 @@ class ServiceTransport:
             self.ensure_owner(budget_s=min(self.start_timeout_s, max(0.5, deadline_s - (time.monotonic() - t0))))
         except VectorUnavailable:
             self.counters["unavailable"] += 1
+            self._suspect()                                              # an owner that is alive but never answers is exactly what the supervisor exists for
             raise
         left = deadline_s - (time.monotonic() - t0)
         if left <= 0:

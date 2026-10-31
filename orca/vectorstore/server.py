@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import fcntl
 import hmac
 import os
@@ -208,6 +209,7 @@ def main(argv=None) -> int:
     owner = Owner(home, workers=int(env("ORNEUR_VECTOR_WORKERS", "4")), queue_max=int(env("ORNEUR_VECTOR_QUEUE_MAX", "32")), max_conns=int(env("ORNEUR_VECTOR_MAX_CONNS", "64")),
                   per_collection=int(env("ORNEUR_VECTOR_PER_COLLECTION", "2")), idle_exit_s=float(env("ORNEUR_VECTOR_IDLE_EXIT_S", "300")), max_open=int(env("ORNEUR_VECTOR_MAX_OPEN", "32")))
 
+    faulthandler.register(signal.SIGUSR1, all_threads=True)               # `kill -USR1 <owner pid>` writes every thread's stack to owner.log (diagnosing a stall)
     signal.signal(signal.SIGTERM, lambda *_: owner.stop.set())
     owner.serve()
     return 0
